@@ -16,6 +16,7 @@ stack above it, which turned the intended 413 into a 400.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
@@ -28,6 +29,17 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 #: HTTP status for a body over the cap.
 HTTP_CONTENT_TOO_LARGE = 413
+
+#: Total time the middleware will spend waiting for a body before giving up with 408.
+#:
+#: Without a bound, 200 unauthenticated requests declaring a body and sending one byte took a
+#: listener from 8 to 207 file descriptors and none ever answered. The coarse rate limiter
+#: allows a caller to keep doing that indefinitely, and gunicorn's own request timeout does
+#: not bound it because the worker keeps notifying the arbiter while the loop is alive.
+DRAIN_TIMEOUT_SECONDS = 15.0
+
+#: HTTP status for a client that framed a body and then stopped sending it.
+HTTP_REQUEST_TIMEOUT = 408
 
 #: The only methods whose body this middleware reads. A GET or a probe request is passed
 #: straight through untouched.
@@ -51,20 +63,33 @@ class BodyLimitMiddleware:
     """
 
     def __init__(
-        self, app: ASGIApp, *, max_bytes: int, exempt_paths: frozenset[str] | None = None
+        self,
+        app: ASGIApp,
+        *,
+        max_bytes: int,
+        exempt_paths: frozenset[str] | None = None,
+        drain_timeout: float = DRAIN_TIMEOUT_SECONDS,
     ) -> None:
         self.app = app
         self.max_bytes = max_bytes
         self.exempt_paths = exempt_paths or frozenset()
+        self.drain_timeout = drain_timeout
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
 
+        # The method token is NOT normalised by the server: uvicorn lowercases header names
+        # but passes the method exactly as sent, so `post` in lower case would skip the cap
+        # entirely. Not exploitable today, because Starlette's route match is case sensitive
+        # and no handler would read the body, but this is the third time this cap has decided
+        # NOT to run based on a scope value that the layers behind it normalise differently,
+        # and the first two shipped as exploitable.
+        method = str(scope.get("method", "")).upper()
         if (
             scope.get("path") in self.exempt_paths
-            or scope.get("method") not in BODY_METHODS
+            or method not in BODY_METHODS
             or not self._body_framed(scope)
         ):
             # Nothing to cap, so nothing is read here. See BODY_METHODS.
@@ -77,24 +102,12 @@ class BodyLimitMiddleware:
             await self._refuse(send)
             return
 
-        body = bytearray()
-        disconnected = False
-        more = True
-        while more:
-            message = await receive()
-            if message.get("type") == "http.disconnect":
-                disconnected = True
-                break
-            body.extend(message.get("body", b"") or b"")
-            if len(body) > self.max_bytes:
-                # Stop reading here. The remaining bytes are never buffered, so a huge
-                # body costs the cap, not its own size.
-                await self._refuse(send)
-                return
-            more = bool(message.get("more_body", False))
-
+        drained = await self._drain(receive, send)
+        if drained is None:
+            # Already answered: the body was over the cap, or it stopped arriving.
+            return
+        payload, disconnected = drained
         replayed = False
-        payload = bytes(body)
 
         async def replay() -> Message:
             nonlocal replayed
@@ -106,6 +119,36 @@ class BodyLimitMiddleware:
             return await receive()
 
         await self.app(scope, replay, send)
+
+    async def _drain(self, receive: Receive, send: Send) -> tuple[bytes, bool] | None:
+        """Read the body up to the cap, bounded in time.
+
+        Returns the buffered payload and whether the client disconnected, or ``None`` when
+        the request has already been answered (over the cap, or it stopped arriving).
+        """
+        body = bytearray()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.drain_timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                await self._timed_out(send)
+                return None
+            try:
+                message = await asyncio.wait_for(receive(), remaining)
+            except TimeoutError:
+                await self._timed_out(send)
+                return None
+            if message.get("type") == "http.disconnect":
+                return bytes(body), True
+            body.extend(message.get("body", b"") or b"")
+            if len(body) > self.max_bytes:
+                # Stop reading here. The remaining bytes are never buffered, so a huge body
+                # costs the cap, not its own size.
+                await self._refuse(send)
+                return None
+            if not message.get("more_body", False):
+                return bytes(body), False
 
     def _body_framed(self, scope: Scope) -> bool:
         """True when the request declares a body at all, by length or by chunked framing.
@@ -146,12 +189,19 @@ class BodyLimitMiddleware:
                 declared_length = int(declared) if declared.isdecimal() else None
         return declared_length is not None and declared_length > self.max_bytes
 
+    async def _timed_out(self, send: Send) -> None:
+        """Answer a client that framed a body and then stopped sending it."""
+        await self._answer(send, HTTP_REQUEST_TIMEOUT, "request body was not sent in time")
+
     async def _refuse(self, send: Send) -> None:
-        body = json.dumps({"error": "request body too large"}).encode("utf-8")
+        await self._answer(send, HTTP_CONTENT_TOO_LARGE, "request body too large")
+
+    async def _answer(self, send: Send, status: int, message: str) -> None:
+        body = json.dumps({"error": message}).encode("utf-8")
         await send(
             {
                 "type": "http.response.start",
-                "status": HTTP_CONTENT_TOO_LARGE,
+                "status": status,
                 "headers": [
                     (b"content-type", b"application/json"),
                     (b"content-length", str(len(body)).encode("latin-1")),

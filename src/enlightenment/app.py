@@ -151,7 +151,7 @@ def _client_key(request: Request) -> str:
 async def _probe_storage(runtime: _Runtime) -> ProbeResult:
     """Return a storage verdict, reusing a recent one and never running two at once.
 
-    Three properties, and the first version had only the second:
+    TWO properties, and the first version had only the second:
 
     1. **Single-flight.** A caller arriving while a probe runs awaits THAT probe. Without
        this, concurrency defeats the cache entirely and the queued probes then exceed their
@@ -159,12 +159,23 @@ async def _probe_storage(runtime: _Runtime) -> ProbeResult:
        the pod out of rotation.
     2. **Time-bounded.** A verdict is reused for ``cache_seconds``, well under the
        platform's probe interval, so a real fault is still noticed promptly.
-    Publication ordering needs no separate guard, and deliberately does not have one. Only
-    the caller that STARTED a probe publishes its verdict; every other caller awaits that
-    same task and returns without writing. Single-flight therefore makes two probes racing
-    to publish impossible, so an OK that began before a fault cannot overwrite the newer
-    failure. An explicit ordering check here would be unreachable, and unreachable code
-    inside a security control invites a wrong mental model of how the control behaves.
+
+    Publication ordering deliberately has no separate guard, and single-flight is NOT what
+    makes that safe. Two probe tasks CAN coexist: cancel a starter at its ``shield`` and the
+    ``finally`` clears ``inflight`` while the shielded task keeps running, so the next caller
+    starts a second one. Two independent reviewers reproduced exactly that. The invariants
+    the code actually relies on are narrower:
+
+    ● Only the caller that STARTED a probe publishes it, and a cancelled starter never
+      reaches the publication lines at all.
+    ● The probe pool has ONE worker, so a second probe's executor round trip cannot finish
+      before the first starter's two remaining loop hops.
+
+    Together those make a stale verdict overwriting a newer one non-constructible, which is
+    why an explicit ordering check would be unreachable, and unreachable code inside a
+    security control invites a wrong mental model of how the control behaves. A consequence
+    worth knowing: a cancelled starter abandons its probe holding the single worker, so the
+    next caller's probe queues behind it and may return the fail-closed timeout verdict.
     """
     now = runtime.clock()
     cached = runtime.cached_probe

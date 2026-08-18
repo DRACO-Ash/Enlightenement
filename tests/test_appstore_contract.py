@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -354,3 +356,76 @@ def test_the_loop_audits_every_lockfile_it_installs() -> None:
     # commented out with the suite still green, which is the third time a test here has
     # asserted prose rather than the instruction beside it.
     assert sum(1 for line in verify.splitlines() if line.strip().startswith("audit_lockfile ")) >= 2
+
+
+# --- the image script is EXECUTED, not grepped ----------------------------------------
+
+
+def _run_build_image(tmp_path: Path, stub: str) -> subprocess.CompletedProcess[str]:
+    """Run scripts/build-image.sh with a stub `docker` earlier on PATH."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "docker"
+    fake.write_text(stub, encoding="utf-8")
+    fake.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    shell = shutil.which("sh")
+    assert shell, "no POSIX shell on PATH"
+    return subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script path
+        [shell, str(ROOT / "scripts" / "build-image.sh"), "enlightenment:test"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT),
+        timeout=120,
+        check=False,
+    )
+
+
+def test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit(tmp_path: Path) -> None:
+    """EXECUTED, not grepped. The earlier version asserted only that the strings
+    "THIS IS NOT A PASS" and "exit 3" appeared somewhere in the file, so rewriting the
+    no-daemon leg to `echo PASS; exit 0` left the suite green. That is the one leg that
+    matters most, because it is the leg that currently cannot run for real.
+    """
+    result = _run_build_image(tmp_path, "#!/bin/sh\nexit 1\n")
+    assert result.returncode == 3, f"expected the deferral exit code, got {result.returncode}"
+    assert "THIS IS NOT A PASS" in result.stderr
+    assert "PASS (" not in result.stdout
+
+
+def test_an_unreachable_registry_defers_rather_than_passing(tmp_path: Path) -> None:
+    stub = (
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  info) exit 0 ;;\n"
+        "  build) echo 'ERROR: failed to resolve source metadata: Forbidden' >&2; exit 1 ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    result = _run_build_image(tmp_path, stub)
+    assert result.returncode == 3, f"expected the deferral exit code, got {result.returncode}"
+    assert "THIS IS NOT A PASS" in result.stderr
+
+
+def test_a_rejected_dockerfile_fails_rather_than_deferring(tmp_path: Path) -> None:
+    """A Dockerfile the builder REACHED and refused is a real failure, exit 1, not a deferral.
+    Conflating the two would let a broken Dockerfile read as an environment problem.
+    """
+    stub = (
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  info) exit 0 ;;\n"
+        "  build) echo 'ERROR: unknown instruction: FRM' >&2; exit 1 ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    result = _run_build_image(tmp_path, stub)
+    assert result.returncode == 1, f"expected a hard failure, got {result.returncode}"
+    assert "THIS IS NOT A PASS" not in result.stderr
+
+
+def test_a_successful_build_reports_a_pass(tmp_path: Path) -> None:
+    result = _run_build_image(tmp_path, "#!/bin/sh\nexit 0\n")
+    assert result.returncode == 0
+    assert "IMAGE BUILD: PASS" in result.stdout

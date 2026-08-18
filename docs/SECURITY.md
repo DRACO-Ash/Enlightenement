@@ -30,6 +30,10 @@ state-changing route.
 | Unknown keys rejected (`extra="forbid"`) | `models.py` | same, `body1` case |
 | Body cap enforced on BYTES READ, so chunked framing cannot bypass it | `middleware.py` | `test_an_oversize_chunked_body_is_refused_on_bytes_read` |
 | The cap holds whatever ORDER the framing headers arrive in | `middleware.py` | `test_the_cap_holds_whatever_order_the_framing_headers_arrive_in` |
+| The cap runs whatever CASE the method token arrives in | `middleware.py` | `test_a_lower_case_method_token_does_not_skip_the_cap` |
+| The drain is time-bounded, so undrained sockets cannot accumulate | `middleware.py` | `test_a_client_that_frames_a_body_and_stops_sending_is_timed_out` |
+| The image script defers rather than passing, proved by EXECUTING it | `scripts/build-image.sh` | `test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit` |
+| An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_an_app_that_is_never_served_holds_no_probe_thread`, `test_the_lifespan_releases_the_probe_thread_it_created` |
 | A declared length is not trusted when a transfer-encoding is present | `middleware.py` | `test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present` |
 | A probe path is never drained, so it cannot be parked unmetered | `middleware.py`, `app.py` | `test_a_probe_path_is_never_drained_even_for_a_body_method`, `test_the_apps_body_cap_exempts_the_probe_paths` |
 | The probe runs on its own pool, so a burst cannot starve store work | `app.py` | `test_the_probe_runs_on_its_own_dedicated_thread_pool` |
@@ -85,7 +89,8 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 1 | 8 killed | 8 killed, 1 survivor recorded |
 | 2 | 21 killed, 1 survivor | 4 survivors (32-mutant run) |
 | 3 | 11 run, 3 survivors closed | 2 further survivors (11-mutant run) |
-| 4 | 10 run, 10 killed after closing 2 survivors | pending re-review |
+| 4 | 10 run, 10 killed after closing 2 survivors | 3 further survivors (engineering), 2 (security) |
+| 5 | 6 run, 6 killed after closing all 5 | pending re-review |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -96,15 +101,19 @@ Survivors that remain, each with the reason it is or is not load-bearing:
 ● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
   than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`
   creates it, so seeding makes the first read cheaper and is not a control.
-● **The `_declared_over_cap` early refusal** (`middleware.py`): survives, and is redundant by
-  design. The byte counter enforces the cap regardless; the header check only avoids reading a
-  body that has already announced itself as too large. An optimisation, not a control.
+● **The `_declared_over_cap` early refusal** (`middleware.py`): NO LONGER a survivor. An
+  earlier version of this ledger said it was, which was wrong in the safe direction:
+  `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` passes a `receive`
+  that raises, so disabling the refusal fails that test. Listed here because a ledger that
+  under-reports its own coverage is still a ledger that is wrong.
 
 Closed after surviving: the `asyncio.to_thread` offload, the dedicated probe pool, the quoted
 bind address in the launch command, the dev-lockfile audit leg, the snapshot symlink defence,
-the ASCII-digit port guard, and the application's own exempt-path wiring for the body cap.
+the ASCII-digit port guard, the application's own exempt-path wiring for the body cap, the
+lazy pool creation, the lifespan pool release, and the deferral behaviour of
+`scripts/build-image.sh`, which is now EXECUTED against a stub `docker` rather than grepped.
 
-Four mutants across the rounds were killed only after fixing the TEST rather than the code:
+Six mutants across the rounds were killed only after fixing the TEST rather than the code:
 two asserted a Dockerfile invariant against the file's own explanatory prose, one matched
 `--user 0` inside the comment explaining why the flag is needed, and one matched a shell
 function call inside a commented-out line. All four would have passed while the control was

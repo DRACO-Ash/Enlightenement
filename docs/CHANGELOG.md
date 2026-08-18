@@ -2,6 +2,65 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.5 (2026-08-18)
+
+**What.** The security gate PASSED at round 4 with four MINORs. The engineering gate FAILED,
+and not on the request path: on the RELEASE RECORD. The V0.4 audit row stated in the past tense
+that the single-flight docstring's two false claims had been corrected. They had not. The edit
+was a string replacement whose anchor did not match, so it silently did nothing, and I wrote the
+entry as though it had landed.
+
+That is worse than the prose it failed to fix, and worse than a code defect, because a record
+that certifies work not done makes every other claim in it worth less. It happened in the same
+commit that added a ledger about claims running ahead of evidence.
+
+**The process fix, not just the text fix.** Every edit now goes through a helper that reads the
+file back and fails loudly on a missed anchor or an absent replacement. The first thing it did
+was refuse the docstring edit and print the anchor, which is how the correction finally landed.
+
+Corrected for real this time: `_probe_storage`'s docstring counts two properties rather than
+three, and states the invariants the code actually relies on (only the caller that started a
+probe publishes it, and the pool has one worker) instead of claiming single-flight makes a
+publication race impossible. Two independent reviewers reproduced two coexisting probe tasks, so
+the impossibility claim was simply false. A test docstring repeating the same overstatement is
+corrected too. A second false mechanism claim in the V0.4 entry is corrected in place: a probe
+after lifespan shutdown does NOT raise, because the lifespan sets the pool to `None` and
+`_run_probe` silently builds a new one.
+
+**Four controls that were claimed closed and were asserted by nothing**, each found by an
+independent run rather than by me:
+
+● The image script's deferral behaviour was tested by grepping for the strings
+  `THIS IS NOT A PASS` and `exit 3` anywhere in the file, so rewriting the no-daemon leg to
+  `echo PASS; exit 0` stayed green. That is the leg that matters most, because it is the one
+  that currently cannot run for real. It is now EXECUTED against a stub `docker`, four ways: no
+  daemon defers with exit 3, an unreachable registry defers, a Dockerfile the builder reached
+  and refused fails hard with exit 1, and a successful build reports a pass.
+● The lazy probe-pool creation and the lifespan release. Both mutants survived; both are now
+  asserted by counting probe threads by IDENTITY, since every pool names its worker `probe_0`
+  and a set of names silently deduplicated across apps.
+
+**Two latent defects closed on the way.** The body cap read `scope["method"]` un-normalised, so
+a lowercase `post` skipped the cap entirely: not exploitable today, because Starlette's route
+match is case sensitive, but this is the third time this cap has declined to run on a scope value
+the layers behind it normalise differently and the first two shipped as exploitable. And the
+drain had no time bound: 200 unauthenticated requests declaring a body and sending one byte took
+a listener from 8 to 207 file descriptors with none ever answering. The drain is now bounded at
+15 seconds and answers 408.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 275 tests
+collected (274 passed, 1 skipped) with branch coverage at 98.37% against an 80% floor,
+Cobertura written, `pip-audit` clean over both lockfiles. Pipeline simulation green. Six fresh
+mutants, all six killed first time. Re-measured on a real uvicorn socket: the round-3 header
+order, a lowercase method token and mixed-case header names all return 413 with peak resident
+set flat at 46 MB, and 120 parked undrained connections were all answered by the drain bound,
+with the listener's file descriptors falling from 110 back to 83 and liveness answering 200
+throughout.
+
+**Still not verified.** The container image build, for the same reason as every prior release:
+the registry blob endpoint is denied by this environment's network policy. The CI `image` job
+binds, and its own assertions are now themselves mutation-proved.
+
 ## V0.4 (2026-08-18)
 
 **What.** Closed the third round. Both gates independently found the same bypass, and it was
@@ -21,9 +80,12 @@ one I introduced in the round-two fix.
   resident set flat at 46 MB.
 ● **My own fix had broken a control's only assertion.** Seeding the boot verdict into the probe
   cache meant the fail-closed test was served from the boot-time result, so the async handler
-  never ran: inverting it to `ok=True` left all 244 tests green. Concretely, after the lifespan
-  shuts the probe pool down any later probe raises, and a fail-open handler would answer
-  `200 ready` on a pod whose storage was never proved. The test now pins `cache_seconds=0.0`.
+  never ran: inverting it to `ok=True` left all 244 tests green. The test now pins
+  `cache_seconds=0.0` so the handler is actually reached. (An earlier version of this entry
+  justified the fix by claiming that a probe after lifespan shutdown raises. It does not: the
+  lifespan sets the pool to `None` and `_run_probe` silently builds a new one. The reason the
+  fix matters is simply that a fail-open readiness handler answers `200 ready` on a pod whose
+  storage was never proved, and nothing was asserting otherwise.)
 
 Also fixed: a POST on a probe path could be parked indefinitely at zero cost, because the drain
 awaits with no timeout and those paths are rate-limit exempt by design, so the cap now skips
@@ -33,12 +95,14 @@ through the API and copied into a backup; the probe pool is created on first pro
 at construction, because a `ThreadPoolExecutor` is held by a module-level registry and 40 apps
 built and never served left 40 idle threads alive.
 
-**Two claims corrected because they were not the reason the code is safe.** The single-flight
-docstring said "two probes racing to publish is impossible". Two probe tasks CAN briefly
-coexist: a cancelled starter clears the in-flight slot while its probe still runs. A stale
-overwrite is still not constructible, but because a cancelled starter never reaches the
-publication lines and the pool has one worker, not because single-flight forbids the race. The
-docstring also announced three properties and listed two.
+**Two claims that this entry originally recorded as corrected, and were not.** The
+single-flight docstring said "two probes racing to publish is impossible" and announced three
+properties while listing two. Both were left untouched: the edit was a string replacement whose
+anchor did not match, so it silently did nothing, and this entry was written as though it had
+landed. The fourth engineering review caught the release record asserting a source change the
+diff did not contain, which is a worse defect than the prose it failed to fix. Corrected for
+real in V0.5, and every edit is now applied through a helper that fails loudly on a missed
+anchor.
 
 **Three controls this release claimed were mutation-proved and were not**, each found by an
 independent run rather than by me: the dedicated probe pool, the quoted bind address in the

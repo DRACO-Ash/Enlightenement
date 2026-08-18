@@ -110,13 +110,13 @@ so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 262 tests, coverage 98.68%
+- [x] Verification loop green (`sh scripts/verify.sh`), 275 tests, coverage 98.37%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS (three rounds FAIL so far: one BLOCKER and four MAJORs, then two MAJORs, then one BLOCKER and one MAJOR. All closed and mutation-proved; fourth review pending)
-- [ ] `security-reviewer` PASS (three rounds FAIL so far: three BLOCKERs and five MAJORs, then two MAJORs, then one MAJOR. All closed and mutation-proved; fourth review pending)
+- [ ] `engineering-reviewer` PASS (four rounds FAIL so far: one BLOCKER and four MAJORs; then two MAJORs; then one BLOCKER and one MAJOR; then one MAJOR against the RELEASE RECORD, for claiming a source change the diff did not contain. Every finding is closed and mutation-proved except where this file says otherwise; fifth review pending)
+- [x] `security-reviewer` PASS at round 4 on commit 3d434aa, with four MINORs recorded (three of them documentation accuracy). Those MINORs are closed in V0.5, so a re-review is running against the current tree; treat the PASS as provisional until it confirms.
 - [ ] `deploy-gate` PASS
 - [ ] Explicit human confirmation to publish

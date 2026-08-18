@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import threading
 import time
 from collections.abc import Iterator
@@ -719,9 +720,12 @@ def test_concurrent_readiness_requests_run_one_probe_between_them(
 def test_concurrent_callers_all_receive_the_same_verdict(
     config: Config, store: TrainingStore
 ) -> None:
-    """Single-flight is what removes the publication-ordering hazard: only the caller that
-    started a probe publishes it, so two verdicts can never race to overwrite each other.
-    This asserts the property that makes that true, rather than an unreachable guard.
+    """Concurrent callers must agree, and one probe must serve them all.
+
+    Note what this does NOT claim: single-flight alone does not make a publication race
+    impossible, because a cancelled starter clears the in-flight slot while its shielded task
+    keeps running. What orders publication is that a cancelled starter never publishes and the
+    pool has one worker. See `_probe_storage` for the full reasoning.
     """
     verdicts: list[ProbeResult] = []
 
@@ -825,3 +829,47 @@ def test_the_apps_body_cap_exempts_the_probe_paths(config: Config, store: Traini
             assert starts, f"{path} never answered"
 
     asyncio.run(drive())
+
+
+def probe_threads() -> set[int | None]:
+    """Identities of the live threads belonging to a dedicated probe pool.
+
+    Keyed by IDENTITY, not by name: every pool names its single worker `probe_0`, so a set of
+    names silently deduplicates across apps and made this assertion vacuous.
+    """
+    return {t.ident for t in threading.enumerate() if t.name.startswith("probe")}
+
+
+def test_an_app_that_is_never_served_holds_no_probe_thread(
+    config: Config, store: TrainingStore
+) -> None:
+    """A ThreadPoolExecutor is held by a module-level registry, so creating the pool at
+    construction left an idle non-daemon thread alive per app: 40 apps, 40 threads, after
+    dropping every reference and forcing a collection. Both this and the release below were
+    claimed closed in V0.4 while surviving mutation.
+    """
+    before = probe_threads()
+    apps = [create_app(config=config, store=store, probe=ok_probe) for _ in range(5)]
+    assert apps
+    gc.collect()
+    assert probe_threads() == before, "building apps spawned probe threads"
+
+
+def test_the_lifespan_releases_the_probe_thread_it_created(
+    config: Config, store: TrainingStore
+) -> None:
+    before = probe_threads()
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(app) as client:
+        assert client.get("/readyz").status_code == 200
+        assert probe_threads() - before, "the probe did not run on a dedicated pool thread"
+    for _ in range(60):
+        if not probe_threads() - before:
+            break
+        time.sleep(0.05)
+    assert probe_threads() - before == set(), "the lifespan did not release the pool"

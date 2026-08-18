@@ -7,6 +7,7 @@ The middleware runs ahead of authentication, so a gap here is a pre-authenticati
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 
@@ -331,3 +332,79 @@ async def test_a_probe_path_is_never_drained_even_for_a_body_method(path: str) -
     probe_scope["path"] = path
     await middleware(probe_scope, must_not_be_called, send)
     assert sent[0]["status"] == 200
+
+
+# --- the method token, and the drain bound --------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["post", "Post", "pAtCh", "put"])
+async def test_a_lower_case_method_token_does_not_skip_the_cap(method: str) -> None:
+    """uvicorn lowercases header names but passes the method token exactly as sent, so an
+    un-normalised comparison let `post` skip the cap entirely. Not exploitable today, but
+    this cap has now twice decided NOT to run on a scope value the layers behind it
+    normalise differently, and both earlier instances shipped as exploitable.
+    """
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=10)
+    sent, send = collector()
+    await middleware(
+        scope(method=method),
+        feeder([{"type": "http.request", "body": b"x" * 20, "more_body": False}]),
+        send,
+    )
+    assert sent[0]["status"] == 413, f"the cap was skipped for method {method!r}"
+    assert app.called is False
+
+
+@pytest.mark.anyio
+async def test_an_unknown_method_is_passed_through_rather_than_drained() -> None:
+    app = Silent()
+    middleware = BodyLimitMiddleware(app, max_bytes=10)
+
+    async def must_not_be_called() -> Message:
+        raise AssertionError("an unknown method was drained")
+
+    sent, send = collector()
+    await middleware(scope(method="BREW"), must_not_be_called, send)
+    assert sent[0]["status"] == 200
+
+
+@pytest.mark.anyio
+async def test_a_client_that_frames_a_body_and_stops_sending_is_timed_out() -> None:
+    """Without a bound, 200 such requests took a listener from 8 to 207 file descriptors and
+    none ever answered. The coarse limiter lets a caller keep doing that indefinitely.
+    """
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=1024, drain_timeout=0.05)
+    started = asyncio.get_running_loop().time()
+
+    async def one_byte_then_silence() -> Message:
+        if not hasattr(one_byte_then_silence, "sent"):
+            one_byte_then_silence.sent = True  # type: ignore[attr-defined]
+            return {"type": "http.request", "body": b"x", "more_body": True}
+        await asyncio.sleep(30)
+        raise AssertionError("unreachable")
+
+    sent, send = collector()
+    await middleware(scope(), one_byte_then_silence, send)
+    elapsed = asyncio.get_running_loop().time() - started
+    assert sent[0]["status"] == 408
+    assert app.called is False
+    assert elapsed < 5, f"the drain was not bounded: {elapsed:.2f}s"
+
+
+@pytest.mark.anyio
+async def test_a_body_arriving_within_the_budget_is_not_timed_out() -> None:
+    """The boundary in the other direction: a slow but honest client must still be served."""
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=1024, drain_timeout=5.0)
+
+    async def slow_but_honest() -> Message:
+        await asyncio.sleep(0.01)
+        return {"type": "http.request", "body": b"payload", "more_body": False}
+
+    sent, send = collector()
+    await middleware(scope(), slow_but_honest, send)
+    assert sent[0]["status"] == 200
+    assert bytes(app.body) == b"payload"
