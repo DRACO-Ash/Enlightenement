@@ -31,12 +31,13 @@ state-changing route.
 | Body cap enforced on BYTES READ, so chunked framing cannot bypass it | `middleware.py` | `test_an_oversize_chunked_body_is_refused_on_bytes_read` |
 | The cap holds whatever ORDER the framing headers arrive in | `middleware.py` | `test_the_cap_holds_whatever_order_the_framing_headers_arrive_in` |
 | The cap runs whatever CASE the method token arrives in | `middleware.py` | `test_a_lower_case_method_token_does_not_skip_the_cap` |
-| The drain is time-bounded, so undrained sockets cannot accumulate | `middleware.py` | `test_a_client_that_frames_a_body_and_stops_sending_is_timed_out` |
+| The BODY drain is time-bounded on a TOTAL budget, so a framed body cannot park a socket | `middleware.py` | `test_a_client_that_frames_a_body_and_stops_sending_is_timed_out`, `test_the_budget_is_total_not_per_message`, `test_the_shipped_drain_budget_is_finite_and_wired_into_the_app` |
 | The image script defers rather than passing, proved by EXECUTING it | `scripts/build-image.sh` | `test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit` |
 | An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_an_app_that_is_never_served_holds_no_probe_thread`, `test_the_lifespan_releases_the_probe_thread_it_created` |
 | A declared length is not trusted when a transfer-encoding is present | `middleware.py` | `test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present` |
 | A probe path is never drained, so it cannot be parked unmetered | `middleware.py`, `app.py` | `test_a_probe_path_is_never_drained_even_for_a_body_method`, `test_the_apps_body_cap_exempts_the_probe_paths` |
 | The probe runs on its own pool, so a burst cannot starve store work | `app.py` | `test_the_probe_runs_on_its_own_dedicated_thread_pool` |
+| The probe pool has exactly ONE worker, which is what orders publication | `app.py` | `test_the_probe_pool_has_exactly_one_worker` |
 | The snapshot is not read through a symlink | `storage.py` | `test_the_snapshot_is_not_read_through_a_symlink` |
 | The cap runs ahead of authentication | `middleware.py` | `test_an_oversize_chunked_body_is_refused_before_authentication` |
 | Two-tier rate limiting, 429 in both tiers | `ratelimit.py`, `app.py` | `test_the_coarse_tier...`, `test_the_strict_tier...` |
@@ -90,7 +91,8 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 2 | 21 killed, 1 survivor | 4 survivors (32-mutant run) |
 | 3 | 11 run, 3 survivors closed | 2 further survivors (11-mutant run) |
 | 4 | 10 run, 10 killed after closing 2 survivors | 3 further survivors (engineering), 2 (security) |
-| 5 | 6 run, 6 killed after closing all 5 | pending re-review |
+| 5 | 6 run, 6 killed after closing all 5 | 1 MAJOR (a claimed proof disproved), 2 survivors (eng), 2 (sec) |
+| 6 | 10 run, 10 killed after closing all 3 survivors | pending re-review |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -113,11 +115,32 @@ the ASCII-digit port guard, the application's own exempt-path wiring for the bod
 lazy pool creation, the lifespan pool release, and the deferral behaviour of
 `scripts/build-image.sh`, which is now EXECUTED against a stub `docker` rather than grepped.
 
-Six mutants across the rounds were killed only after fixing the TEST rather than the code:
-two asserted a Dockerfile invariant against the file's own explanatory prose, one matched
-`--user 0` inside the comment explaining why the flag is needed, and one matched a shell
-function call inside a commented-out line. All four would have passed while the control was
-removed. Assertions here are about what executes, never about the words beside it.
+NINE mutants across the rounds were killed only after fixing the TEST rather than the code,
+and the count is spelled out here because an earlier version of this paragraph said "six" and
+then listed four:
+
+1. and 2. Two asserted a Dockerfile invariant against the file's own explanatory prose.
+3. One matched `--user 0` inside the comment explaining why the flag is needed, rather than in
+   the command.
+4. One matched a shell function call inside a commented-out line.
+5. One asserted the image script's deferral by grepping for `THIS IS NOT A PASS` and `exit 3`
+   anywhere in the file, so rewriting the no-daemon leg to `echo PASS; exit 0` stayed green.
+   That test is deleted; four tests now EXECUTE the script against a stub `docker`.
+6. One counted probe threads by NAME, and every pool names its worker `probe_0`, so a set of
+   names deduplicated across applications and the assertion was vacuous.
+7. One claimed lazy pool creation saved threads. A `ThreadPoolExecutor` starts no worker until
+   work is submitted, so the test passed whether the pool was built lazily or eagerly. The
+   branch was then REMOVED rather than defended: a dereferenced executor's worker also exits
+   when the executor is collected, so no test could ever distinguish the two variants.
+8. One asserted the drain bound by injecting the timeout, so the CONSTANT the container runs
+   with was never read: setting it to 86 400 seconds left every test green.
+9. One asserted the drain bound with a fake that stops sending, so making the budget
+   per-message instead of total left the suite green. That mutant also made the test HANG
+   rather than fail, because the test relied on the bound it was testing to terminate. Both
+   the budget and the test's own bound are now explicit.
+
+All nine would have passed while the control was removed. Assertions here are about what
+executes, never about the words beside it.
 
 ## Accepted risks (deliberate decisions, not oversights)
 
@@ -142,6 +165,16 @@ removed. Assertions here are about what executes, never about the words beside i
 5. **Reads are open.** `GET /api/v1/sessions` is unauthenticated because the dataset is
    low-sensitivity and its integrity, not its secrecy, is what is defended. Writes are gated.
 6. **Dataset confidentiality is out of scope.** Recorded, not assumed.
+7. **Socket parking during the HEADER phase is not bounded by this application.** The body
+   drain is bounded on a total budget, measured: 120 connections that frame a body and stop
+   sending are all answered 408 and the listener's file descriptors return to their baseline.
+   A connection that stops BEFORE the blank line ending the headers never reaches the ASGI
+   application at all, so neither the drain bound nor the rate limiter can see it: 200 such
+   connections took a worker from 10 to 210 descriptors and were still parked 27 seconds
+   later. This is not fixable inside an ASGI application without writing a custom protocol,
+   and it is what an ingress read timeout exists for. Recorded as an accepted residual with
+   the platform ingress named as its bound, rather than left as an omission. It predates the
+   drain bound and is not a regression of it.
 
 ## Recovery, not just fail-closed
 

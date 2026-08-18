@@ -387,11 +387,56 @@ async def test_a_client_that_frames_a_body_and_stops_sending_is_timed_out() -> N
         raise AssertionError("unreachable")
 
     sent, send = collector()
-    await middleware(scope(), one_byte_then_silence, send)
+    await asyncio.wait_for(middleware(scope(), one_byte_then_silence, send), 3.0)
     elapsed = asyncio.get_running_loop().time() - started
     assert sent[0]["status"] == 408
     assert app.called is False
     assert elapsed < 5, f"the drain was not bounded: {elapsed:.2f}s"
+
+
+@pytest.mark.anyio
+async def test_the_budget_is_total_not_per_message() -> None:
+    """A client that keeps dripping bytes must still hit the bound.
+
+    Moving the deadline inside the loop, so each message gets the full budget, left all 274
+    tests green because the existing test's fake sends one byte and then sleeps forever. On a
+    real socket that mutant left a client dripping one byte every 10 s unanswered after 46 s,
+    against 15.0 s for the shipped code: it reopens exactly the unbounded park this closes.
+    """
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=1_000_000, drain_timeout=0.2)
+    started = asyncio.get_running_loop().time()
+
+    async def drip_forever() -> Message:
+        await asyncio.sleep(0.05)
+        return {"type": "http.request", "body": b"x", "more_body": True}
+
+    sent, send = collector()
+    # The call is bounded by the TEST as well as by the code under test. Without this, the
+    # per-message mutant makes the middleware wait forever and the test HANGS instead of
+    # failing, and a hanging test is not a failing test: continuous integration reports a job
+    # timeout, which reads as infrastructure trouble rather than as a defect.
+    await asyncio.wait_for(middleware(scope(), drip_forever, send), 3.0)
+    elapsed = asyncio.get_running_loop().time() - started
+    assert sent[0]["status"] == 408
+    assert app.called is False
+    assert elapsed < 1.0, f"the budget was per-message, not total: {elapsed:.2f}s"
+
+
+@pytest.mark.anyio
+async def test_a_zero_budget_times_out_immediately() -> None:
+    """The boundary at zero, so removing the non-positive-timeout reasoning cannot go unseen."""
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=1024, drain_timeout=0.0)
+
+    async def never() -> Message:
+        await asyncio.sleep(30)
+        raise AssertionError("unreachable")
+
+    sent, send = collector()
+    await asyncio.wait_for(middleware(scope(), never, send), 3.0)
+    assert sent[0]["status"] == 408
+    assert app.called is False
 
 
 @pytest.mark.anyio

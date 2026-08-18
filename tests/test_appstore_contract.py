@@ -335,13 +335,10 @@ def test_no_verification_script_pipes_a_gating_command_into_another() -> None:
     )
 
 
-def test_the_image_script_never_reports_a_pass_for_an_unreachable_registry() -> None:
-    """A failure to CHECK is not a pass. The deferral banner and a non-zero exit are the
-    only honest outcome when the registry cannot be reached.
-    """
-    script = (ROOT / "scripts" / "build-image.sh").read_text(encoding="utf-8")
-    assert "THIS IS NOT A PASS" in script
-    assert "exit 3" in script
+# The prose grep that used to live here is deleted, not weakened. It asserted only that the
+# strings "THIS IS NOT A PASS" and "exit 3" appeared SOMEWHERE in the script, so rewriting the
+# no-daemon leg to `echo PASS; exit 0` left it green while carrying the most reassuring name
+# in the file. The four executing tests below replaced it.
 
 
 def test_the_loop_audits_every_lockfile_it_installs() -> None:

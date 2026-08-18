@@ -135,8 +135,16 @@ class _Runtime:
     inflight: asyncio.Task[ProbeResult] | None = field(default=None)
     #: A dedicated single-thread executor for the probe, so a burst of probes can never
     #: starve the store's own thread-pool work. Sharing the default executor was measured
-    #: taking a legitimate listing from 1.4 ms to 109 ms at the median. Created on first
-    #: probe and released by the lifespan handler.
+    #: taking a legitimate listing from 1.4 ms to 109 ms at the median.
+    #:
+    #: Built eagerly, and lazily on purpose no longer. Two rounds of review went into an
+    #: attempt to create it on first probe, on the theory that an unserved app would otherwise
+    #: hold an idle thread. That theory is wrong twice over: a ThreadPoolExecutor starts no
+    #: worker until work is submitted, and a dereferenced executor's worker exits when the
+    #: executor is collected. So laziness saved no thread, no test could distinguish the two
+    #: variants, and the branch was unassertable code inside a control. It is gone. The
+    #: control that does matter is the lifespan release, which stops the worker of the pool the
+    #: runtime still holds a reference to, and that IS asserted.
     probe_pool: ThreadPoolExecutor | None = field(default=None)
 
 
@@ -212,12 +220,6 @@ async def _run_probe(runtime: _Runtime) -> ProbeResult:
     """
     data_dir = runtime.settings.data_dir
     loop = asyncio.get_running_loop()
-    if runtime.probe_pool is None:
-        # Created on first use, not at construction: a ThreadPoolExecutor is held by a
-        # module-level registry, so building an app and never probing it used to leave an
-        # idle non-daemon thread alive for the life of the process. Measured at 40 threads
-        # for 40 apps after dropping every reference and forcing a collection.
-        runtime.probe_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe")
     try:
         return await asyncio.wait_for(
             loop.run_in_executor(runtime.probe_pool, runtime.probe, data_dir),
@@ -596,6 +598,7 @@ def create_app(
         strict=write_limiter or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
         started=ticks(),
         clock=ticks,
+        probe_pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe"),
     )
 
     @asynccontextmanager
@@ -630,6 +633,12 @@ def create_app(
     app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES, exempt_paths=UNLIMITED_PATHS)
     _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
+
+    # An IN-PROCESS inspection seam, so a test can assert the runtime's actual wiring rather
+    # than grep the source for it. Never serialised and never rendered: nothing reads
+    # app.state over HTTP, and the diagnostics route builds its response field by field from
+    # explicit, secret-free values.
+    app.state.runtime = runtime
 
     _install_error_handlers(app)
     _boot(runtime)

@@ -110,7 +110,7 @@ so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 275 tests, coverage 98.37%
+- [x] Verification loop green (`sh scripts/verify.sh`), 279 tests, coverage 98.71%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table

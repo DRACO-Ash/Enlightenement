@@ -130,10 +130,10 @@ class BodyLimitMiddleware:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.drain_timeout
         while True:
+            # No `remaining <= 0` guard: asyncio.wait_for raises TimeoutError on a
+            # non-positive timeout itself, so a guard here would be behaviourally inert, and
+            # unreachable code inside a control invites a wrong mental model of the control.
             remaining = deadline - loop.time()
-            if remaining <= 0:
-                await self._timed_out(send)
-                return None
             try:
                 message = await asyncio.wait_for(receive(), remaining)
             except TimeoutError:

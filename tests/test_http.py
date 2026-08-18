@@ -18,6 +18,7 @@ from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
 from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, create_app
 from enlightenment.auth import TOKEN_HEADER
 from enlightenment.config import Config
+from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import ProbeResult, TrainingStore
 
@@ -777,6 +778,21 @@ def test_the_probe_runs_on_its_own_dedicated_thread_pool(
     assert served, f"no probe ran on the dedicated pool; threads seen: {threads}"
 
 
+def test_the_shipped_drain_budget_is_finite_and_wired_into_the_app(
+    config: Config, store: TrainingStore
+) -> None:
+    """Both drain tests inject `drain_timeout`, so the CONSTANT the container runs with was
+    asserted by nothing: setting it to 86400 left every test green while the deployed drain
+    was effectively unbounded again. This walks the application's own middleware stack.
+    """
+    assert 0 < DRAIN_TIMEOUT_SECONDS <= 30.0, "the shipped drain budget is not a bound"
+    app = create_app(config=config, store=store, probe=ok_probe)
+    caps = [layer for layer in app.user_middleware if layer.cls is BodyLimitMiddleware]
+    assert len(caps) == 1, "the body cap is not wired exactly once"
+    wired = caps[0].kwargs.get("drain_timeout", DRAIN_TIMEOUT_SECONDS)
+    assert 0 < wired <= 30.0, f"the wired drain budget is not a bound: {wired}"
+
+
 def test_a_probe_path_declaring_a_body_answers_even_for_a_body_method(
     config: Config, store: TrainingStore
 ) -> None:
@@ -840,19 +856,50 @@ def probe_threads() -> set[int | None]:
     return {t.ident for t in threading.enumerate() if t.name.startswith("probe")}
 
 
-def test_an_app_that_is_never_served_holds_no_probe_thread(
+def test_building_an_app_spawns_no_thread_however_the_pool_is_created(
     config: Config, store: TrainingStore
 ) -> None:
-    """A ThreadPoolExecutor is held by a module-level registry, so creating the pool at
-    construction left an idle non-daemon thread alive per app: 40 apps, 40 threads, after
-    dropping every reference and forcing a collection. Both this and the release below were
-    claimed closed in V0.4 while surviving mutation.
+    """Asserts the property that is actually TRUE, having had the previous version disproved.
+
+    An earlier test here claimed lazy pool creation saved threads, citing "40 apps, 40
+    threads". Two reviewers measured otherwise: a ThreadPoolExecutor starts no worker until
+    work is submitted, so 40 constructed pools hold 0 threads, and the test passed whether the
+    pool was built lazily or eagerly. It therefore asserted nothing, and the lazy branch has
+    since been removed rather than defended.
+
+    What holds regardless is this: constructing an application spawns no probe thread, which
+    is what makes an unserved app free. The thread CONTROL is the lifespan release, asserted
+    separately below.
     """
     before = probe_threads()
     apps = [create_app(config=config, store=store, probe=ok_probe) for _ in range(5)]
     assert apps
     gc.collect()
     assert probe_threads() == before, "building apps spawned probe threads"
+
+
+def test_repeated_probes_hold_exactly_one_probe_thread(
+    config: Config, store: TrainingStore
+) -> None:
+    """The pool is built once, eagerly, and four probes do not multiply its worker.
+
+    This deliberately does NOT claim to assert lazy-versus-eager creation. Nothing can: a
+    ThreadPoolExecutor starts no worker until work is submitted, and a dereferenced executor's
+    worker exits when the executor is collected, so both variants hold exactly one thread at
+    any moment. Two review rounds went into discovering that, and the lazy branch was removed
+    rather than defended with a test that could not tell the difference.
+    """
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    before = probe_threads()
+    with TestClient(app) as client:
+        for _ in range(4):
+            assert client.get("/readyz").status_code == 200
+        assert len(probe_threads() - before) == 1, "the probe pool multiplied its worker"
 
 
 def test_the_lifespan_releases_the_probe_thread_it_created(
@@ -873,3 +920,17 @@ def test_the_lifespan_releases_the_probe_thread_it_created(
             break
         time.sleep(0.05)
     assert probe_threads() - before == set(), "the lifespan did not release the pool"
+
+
+def test_the_probe_pool_has_exactly_one_worker(config: Config, store: TrainingStore) -> None:
+    """Single-worker serialisation is one of the TWO invariants `_probe_storage` names as what
+    keeps publication ordered, so it is a control and not a tuning choice.
+
+    Raising it to eight workers was a surviving mutant: thread counts cannot catch it, because
+    single-flight means only one probe runs at a time either way, so only one worker is ever
+    started. This asserts the constructed wiring through the app's own inspection seam.
+    """
+    app = create_app(config=config, store=store, probe=ok_probe)
+    pool = app.state.runtime.probe_pool
+    assert pool is not None, "no dedicated probe pool was constructed"
+    assert pool._max_workers == 1, f"the probe pool has {pool._max_workers} workers, not 1"

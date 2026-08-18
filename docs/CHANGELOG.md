@@ -2,6 +2,69 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.6 (2026-08-18)
+
+**What.** The security gate PASSED again on the current tree. The engineering gate FAILED on one
+MAJOR, and it was the same fault line as the two rounds before it: my record certified a
+mutation proof that a five-line experiment disproved.
+
+**The disproved claim.** I said lazy probe-pool creation was closed and mutation-proved, and
+gave a mechanism: "a ThreadPoolExecutor is held by a module-level registry, so building an app
+and never probing it left an idle thread alive; 40 threads for 40 apps". Both reviewers measured
+otherwise. A `ThreadPoolExecutor` starts NO worker until work is submitted, so 40 constructed
+pools hold 0 threads, and my test counting threads passed whether the pool was built lazily or
+eagerly. It asserted nothing.
+
+Investigating properly turned up a second wrong half: a dereferenced executor's worker also
+exits when the executor is collected, so creating a new pool per probe leaks nothing observable
+either. Laziness was therefore unassertable in both directions. **The branch is removed, not
+defended.** The pool is built eagerly, and the control that does matter, the lifespan release,
+is the one that kills its mutant.
+
+**A control the removal exposed.** Raising the pool from one worker to eight was a surviving
+mutant, and single-worker serialisation is one of the two invariants `_probe_storage` names as
+what keeps publication ordered. Thread counts cannot catch it, because single-flight means only
+one probe runs at a time either way. It is now asserted through an explicit in-process
+inspection seam (`app.state.runtime`), so the wiring is checked rather than the source grepped.
+
+**Two more unasserted controls, both mine.** The drain bound that SHIPS was asserted by nothing,
+because both drain tests injected the timeout: setting the constant to 86 400 seconds left every
+test green while the deployed drain was effectively unbounded again. And the budget being TOTAL
+rather than per-message was unasserted: moving the deadline inside the loop left the suite green,
+and on a real socket that mutant left a client dripping one byte every 10 seconds unanswered
+after 46 seconds against 15.0 for the shipped code.
+
+**A test that hung instead of failing.** The per-message mutant made my own drain test wait
+forever, because the test relied on the bound it was testing to terminate. A hanging test is not
+a failing test: continuous integration reports a job timeout, which reads as infrastructure
+trouble rather than as a defect. Every drain test now bounds itself as well as the code.
+
+**Dead weight removed rather than kept.** The `remaining <= 0` guard in the drain was inert,
+because `asyncio.wait_for` raises on a non-positive timeout itself, and the prose grep for the
+image script's deferral is deleted now that four tests execute it.
+
+**The process claim is now checkable.** The verified-edit helper is landed at
+`scripts/verified-edit.py` instead of living only in an authoring session. It refuses a missing
+anchor, an AMBIGUOUS anchor, and a replacement that is not present afterwards. A reader of this
+record can run it.
+
+**Honest residual recorded, not omitted.** The body drain is bounded, measured at 120 of 120
+parked connections answered 408 with descriptors returning to baseline. A connection that stops
+before the blank line ending the headers never reaches the ASGI application, so neither the
+drain bound nor the rate limiter can see it: 200 such connections took a worker from 10 to 210
+descriptors. That is not fixable inside an ASGI application without a custom protocol, so it is
+recorded as an accepted residual with the platform ingress named as its bound.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 279 tests
+collected (278 passed, 1 skipped) with branch coverage at 98.71% against an 80% floor,
+Cobertura written, `pip-audit` clean over both lockfiles. Pipeline simulation green. Ten mutants
+this round: seven killed first time, three survived and were closed by removing the unassertable
+branch and asserting the two real controls, then re-proved killed.
+
+**Still not verified.** The container image build, for the same reason as every prior release:
+the registry blob endpoint is denied by this environment's network policy. The CI `image` job
+binds, and its own assertions are mutation-proved.
+
 ## V0.5 (2026-08-18)
 
 **What.** The security gate PASSED at round 4 with four MINORs. The engineering gate FAILED,
