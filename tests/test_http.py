@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
-from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, create_app
+from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, _expected_rev, create_app
 from enlightenment.auth import TOKEN_HEADER
 from enlightenment.config import Config
 from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
@@ -993,3 +993,62 @@ def test_a_probe_after_shutdown_fails_closed_rather_than_using_the_shared_execut
     status, body = asyncio.run(probe_after_shutdown())
     assert status == 503, "a probe after shutdown did not fail closed"
     assert "shutting down" in body["storage"]["detail"]
+
+
+@pytest.mark.parametrize(
+    "validator",
+    [
+        'W/"\u00b2"',  # superscript two: isdigit() is True, int() raises
+        '"\u00b2"',
+        "\u00b2",
+        '"\u0660"',  # Arabic-Indic zero: isdecimal() is True, so int() would succeed
+        '"0x1"',
+        '"1.5"',
+        '"+1"',
+        '"  "',
+        "W/",
+        '""',
+        "garbage",
+    ],
+)
+def test_an_exotic_if_match_parses_to_no_revision_rather_than_raising(validator: str) -> None:
+    """The parser directly, because a client library will not put these bytes on the wire.
+
+    An exotic-digit If-Match returned 500 from a path documented to IGNORE an unparsable
+    validator, because `isdigit()` accepts characters `int()` rejects. A reviewer reached it on
+    a raw socket: uvicorn latin-1 decodes header bytes, so byte 0xB2 arrives as that character.
+    httpx refuses to encode it, so the wire case is covered separately below and the whole
+    hostile set is covered here.
+    """
+    assert _expected_rev(validator) is None, f"{validator!r} was not ignored"
+
+
+@pytest.mark.parametrize(("validator", "expected"), [('W/"7"', 7), ('"7"', 7), ("7", 7)])
+def test_a_well_formed_if_match_still_parses(validator: str, expected: int) -> None:
+    """The boundary in the other direction: the guard must not reject a real validator."""
+    assert _expected_rev(validator) == expected
+
+
+def test_a_latin1_if_match_byte_on_the_wire_is_ignored_rather_than_raising(
+    client: TestClient,
+) -> None:
+    """End to end with the byte a real client can actually send."""
+    response = client.post(
+        "/api/v1/sessions", json=VALID_SESSION, headers={b"if-match": b'W/"\xb2"'}
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_the_published_pool_reference_is_cleared_with_the_pool(
+    config: Config, store: TrainingStore
+) -> None:
+    """The seam must not publish two facts that disagree. Leaving the reference pointing at a
+    shut-down executor while the runtime's own is None invites a later reader to take the
+    stale one as live.
+    """
+    app = create_app(config=config, store=store, probe=ok_probe)
+    with TestClient(app) as client:
+        assert client.get("/livez").status_code == 200
+        assert app.state.probe_pool is not None
+    assert app.state.probe_pool is None
+    assert app.state.runtime_probe_pool_released is True

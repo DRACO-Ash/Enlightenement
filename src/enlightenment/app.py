@@ -462,7 +462,13 @@ def _expected_rev(if_match: str | None) -> int | None:
     if not if_match:
         return None
     candidate = if_match.strip().removeprefix("W/").strip('"')
-    return int(candidate) if candidate.isdigit() else None
+    # ASCII decimal digits only. `isdigit()` accepts characters `int()` rejects, so
+    # `If-Match: "\u00b2"` raised an uncaught ValueError and returned 500 from a path
+    # documented to IGNORE an unparsable validator. Same class, same fix as
+    # healthcheck.resolve_port; found there first and missed here.
+    if not (candidate.isascii() and candidate.isdecimal()):
+        return None
+    return int(candidate)
 
 
 def _guard_write_rate(runtime: _Runtime, request: Request) -> None:
@@ -625,6 +631,10 @@ def create_app(
             if runtime.probe_pool is not None:
                 runtime.probe_pool.shutdown(wait=False)
                 runtime.probe_pool = None
+            # Cleared in the same breath as the release. Leaving the published reference
+            # pointing at a shut-down executor while the runtime's own is None publishes two
+            # facts that disagree, and a later reader can take the stale one as live.
+            app.state.probe_pool = None
             # Published so a test can assert the precondition it depends on, rather than
             # assuming the release happened and then testing what follows from it.
             app.state.runtime_probe_pool_released = True

@@ -31,6 +31,11 @@ state-changing route.
 | Body cap enforced on BYTES READ, so chunked framing cannot bypass it | `middleware.py` | `test_an_oversize_chunked_body_is_refused_on_bytes_read` |
 | The cap holds whatever ORDER the framing headers arrive in | `middleware.py` | `test_the_cap_holds_whatever_order_the_framing_headers_arrive_in` |
 | The cap runs whatever CASE the method token arrives in | `middleware.py` | `test_a_lower_case_method_token_does_not_skip_the_cap` |
+| An unparsable `If-Match` is ignored, not a 500 | `app.py` | `test_an_exotic_if_match_parses_to_no_revision_rather_than_raising` |
+| No config file shadows the manifest's pytest settings | `pyproject.toml` | `test_no_configuration_file_shadows_the_manifests_pytest_settings` |
+| The release version matches across the manifest and the package | both | `test_the_release_version_matches_across_the_manifest_and_the_package` |
+| The BUILT artefact carries no `.git`, `.venv`, `var/`, `dist/` or `.env` | `scripts/package-appstore.sh` | `test_no_build_output_can_reach_the_platform_checkout` |
+| The edit helper refuses a symlinked target and never half-edits | `scripts/verified-edit.py` | `test_the_edit_helper_refuses_a_symlinked_target`, `test_the_edit_helper_leaves_the_file_untouched_when_it_refuses` |
 | The BODY drain is time-bounded on a TOTAL budget, so a framed body cannot park a socket | `middleware.py` | `test_a_client_that_frames_a_body_and_stops_sending_is_timed_out`, `test_the_budget_is_total_not_per_message`, `test_the_shipped_drain_budget_is_finite_and_wired_into_the_app` |
 | The image script defers rather than passing, proved by EXECUTING it | `scripts/build-image.sh` | `test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit` |
 | An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_building_an_app_spawns_no_thread_however_the_pool_is_created`, `test_the_lifespan_releases_the_probe_thread_it_created` |
@@ -96,7 +101,8 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 4 | 10 run, 10 killed after closing 2 survivors | 3 further survivors (engineering), 2 (security) |
 | 5 | 6 run, 6 killed after closing all 5 | 1 MAJOR (a claimed proof disproved), 2 survivors (eng), 2 (sec) |
 | 6 | 10 run, 10 killed after closing all 3 survivors | 2 MAJORs, 4 survivors, 1 dangling citation |
-| 7 | 9 run, 9 killed after closing the last survivor | pending re-review |
+| 7 | 9 run, 9 killed after closing the last survivor | **both gates PASS**; 6 MINORs (eng), 5 (sec) |
+| 8 | 10 run, 10 killed or shown neutralised by a layer | pending confirmation |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -125,7 +131,7 @@ killed and never could be. No test can distinguish lazy from eager creation, so 
 deleted rather than defended, and calling that a closed mutant would be the same overstatement
 this ledger exists to prevent.
 
-THIRTEEN mutants across the rounds were killed only after fixing the TEST rather than the code,
+FIFTEEN mutants across the rounds were killed only after fixing the TEST rather than the code,
 and the count is spelled out here because an earlier version of this paragraph said "six" and
 then listed four:
 
@@ -155,7 +161,17 @@ then listed four:
     surviving as a commented-out line. They now go through a `.properties` parser, `tomllib`,
     and an executable-lines reader, so a comment cannot satisfy a contract assertion.
 
-All thirteen would have passed while the control was removed. Assertions here are about what
+14. One asserted the packaging purge by matching a comment-stripped LINE, so a trailing
+    `# TODO restore: rm -rf ...` on a live line deleted the purge with the suite green. It now
+    BUILDS the artefact and inspects the zip. While fixing it, a reviewer's measurement
+    corrected the claim behind it: the real control is the allowlist copy loop, which never
+    copies those paths, and the `rm -rf` is a defensive re-check behind it. Removing either
+    layer alone still yields a clean artefact; removing BOTH is what the test catches, which is
+    what layered defence is supposed to look like.
+15. One exempted every ellipsis-elided citation from the documentation sweep, leaving 12 of 63
+    cited names unchecked. Elided names are now resolved by prefix.
+
+All fifteen would have passed while the control was removed. Assertions here are about what
 executes, never about the words beside it.
 
 ## Accepted risks (deliberate decisions, not oversights)

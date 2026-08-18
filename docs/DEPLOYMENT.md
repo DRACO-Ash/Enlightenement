@@ -110,13 +110,13 @@ so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 286 tests, coverage 98.71%
+- [x] Verification loop green (`sh scripts/verify.sh`), 307 tests, coverage 98.72%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS (four rounds FAIL so far: one BLOCKER and four MAJORs; then two MAJORs; then one BLOCKER and one MAJOR; then one MAJOR against the RELEASE RECORD, for claiming a source change the diff did not contain. Every finding is closed and mutation-proved except where this file says otherwise; fifth review pending)
-- [x] `security-reviewer` PASS at round 4 on commit 3d434aa, with four MINORs recorded (three of them documentation accuracy). Those MINORs are closed in V0.5, so a re-review is running against the current tree; treat the PASS as provisional until it confirms.
+- [x] `engineering-reviewer` PASS at round 7 on commit 068b1c4, after four FAILed rounds (one BLOCKER and four MAJORs; two MAJORs; one BLOCKER and one MAJOR; one MAJOR against the release record). Its six MINORs are closed in V0.8, so a confirmation review is running against the current tree.
+- [x] `security-reviewer` PASS at rounds 4, 5 and 7, most recently on commit 068b1c4. Its five MINORs, including one real 500 on an unparsable `If-Match`, are closed in V0.8, so a confirmation review is running against the current tree.
 - [ ] `deploy-gate` PASS
 - [ ] Explicit human confirmation to publish

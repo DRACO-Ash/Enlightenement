@@ -2,6 +2,58 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.8 (2026-08-18)
+
+**What.** Both gates PASSED at round 7 on V0.7. This closes the eleven MINORs they raised
+alongside those passes, including one real bug in shipped code.
+
+**The bug.** `If-Match: "\u00b2"` returned 500 from a path documented to IGNORE an unparsable
+validator, because `isdigit()` accepts characters `int()` rejects. Reached by a reviewer on a raw
+socket: uvicorn latin-1 decodes header bytes, so byte 0xB2 arrives as that character. Graded
+MINOR because the route sits behind authentication, no state is written and both limiter tiers
+bound it, but it is a 500 in shipped code and this project had already found and fixed the same
+class in `healthcheck.resolve_port` two releases earlier. Found there, missed here. The guard is
+now `isascii() and isdecimal()` in both places, and the parser is tested directly across eleven
+hostile spellings plus the wire case, because a client library refuses to encode the bytes.
+
+**Two claims corrected by measurement rather than reasoning.** The packaging test asserted that
+commenting out the `rm -rf` purge would ship `.git`, `.venv`, `var/` and `dist/` in the App Store
+zip. A reviewer built the artefact with the purge removed and found it clean: the real control is
+the ALLOWLIST copy loop, and the purge is a defensive re-check behind it. So the test now BUILDS
+the artefact and inspects the zip, and the claim says what the layers actually do. Removing either
+layer alone still gives a clean artefact; removing both is what the test catches.
+
+**Four demonstrated escapes in my own test instruments.** A trailing `#` comment on a live shell
+line could delete the packaging purge with the suite green. A four-line `pytest.ini` outranks
+`[tool.pytest.ini_options]`, so the coverage-flag assertion stayed green while a bare `pytest`
+wrote no Cobertura, which is the exact 0%-coverage gate failure it exists to prevent. The
+documentation sweep exempted elided citations, leaving 12 of 63 names unchecked. And the version
+lived in two files with no parity test, which is the class the sweep was added to close.
+
+**The edit helper reviewed as shipped code, and it needed it.** `Path.write_text` follows a
+symlink, so a symlinked target wrote OUTSIDE the named directory: the same reasoning that puts
+`O_NOFOLLOW` on every file this project's store opens. It also wrote before verifying, so its
+`EXIT_UNVERIFIED` refusal left a half-edited file, which is the inverse of what the tool exists
+to prevent. It now refuses a symlink, verifies BEFORE writing, writes atomically through a
+temporary sibling, and reports an unreadable target with a documented code instead of a
+traceback. Nine tests drive it.
+
+**A process note worth recording.** The first run of this round's mutation battery reported eight
+kills that were not real: my mutant copy omitted two root files, so the packaging test failed in
+every run including the control, and eight mutants appeared "killed" by a test that was failing
+for an unrelated reason. The control run is what caught it. Running the control FIRST, not last,
+is the cheap habit that turns a mutation battery from theatre into evidence.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 307 tests
+collected (306 passed, 1 skipped) with branch coverage at 98.72% against an 80% floor,
+Cobertura written, `pip-audit` clean over both lockfiles. Pipeline simulation green. Ten mutants
+this round on a COMPLETE copy with the control verified first: eight killed by the intended test,
+one shown to be neutralised by a second layer rather than undetected, and that layered case then
+proved detectable by removing both layers at once.
+
+**Still not verified.** The container image build, for the same reason as every prior release: the
+registry blob endpoint is denied by this environment's network policy. The CI `image` job binds.
+
 ## V0.7 (2026-08-18)
 
 **What.** Round 6 returned two MAJORs, and the more important one is a class rather than a bug:
@@ -205,8 +257,10 @@ awaits with no timeout and those paths are rate-limit exempt by design, so the c
 them entirely; the snapshot was read following symlinks while the lock guarding it was opened
 `O_NOFOLLOW`, so a principal with write access to the volume could have its own file served
 through the API and copied into a backup; the probe pool is created on first probe rather than
-at construction, because a `ThreadPoolExecutor` is held by a module-level registry and 40 apps
-built and never served left 40 idle threads alive.
+at construction. (Retracted in V0.6: the stated mechanism was false. A `ThreadPoolExecutor`
+starts no worker until work is submitted, so 40 constructed pools hold 0 threads, and a
+dereferenced executor's worker exits on collection. The change to lazy creation was real; the
+reason given for it was not, and the branch was later removed as unassertable.)
 
 **Two claims that this entry originally recorded as corrected, and were not.** The
 single-flight docstring said "two probes racing to publish is impossible" and announced three

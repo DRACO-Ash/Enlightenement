@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +251,37 @@ def test_a_bare_pytest_run_still_emits_the_cobertura_report_the_gate_reads() -> 
     assert "--cov-fail-under=80" in addopts
 
 
+def test_no_configuration_file_shadows_the_manifests_pytest_settings() -> None:
+    """pytest prefers `pytest.ini`, `tox.ini` and `setup.cfg` over the manifest.
+
+    Adding a four-line `pytest.ini` therefore left the assertion above green while a bare
+    `pytest` wrote NO coverage.xml, which is the exact 0%-coverage gate failure that assertion
+    exists to prevent. Asserting the manifest is only meaningful if nothing outranks it.
+    """
+    for shadow in ("pytest.ini", "tox.ini"):
+        assert not (ROOT / shadow).exists(), f"{shadow} outranks the manifest's pytest settings"
+    setup_cfg = ROOT / "setup.cfg"
+    if setup_cfg.exists():
+        assert "[tool:pytest]" not in setup_cfg.read_text(encoding="utf-8")
+
+
+def test_the_release_version_matches_across_the_manifest_and_the_package() -> None:
+    """The version lives in two files and the deploy checklist asks a human to compare them.
+
+    That is the class the documentation sweep was added to close, so it is mechanised here
+    too: a bump that touches one and not the other fails before a reviewer has to notice.
+    """
+    manifest = _pyproject()["project"]["version"]
+    package = re.search(
+        r'__version__ = "([^"]+)"',
+        (ROOT / "src" / "enlightenment" / "__init__.py").read_text(encoding="utf-8"),
+    )
+    assert package is not None, "the package declares no __version__"
+    assert manifest == package.group(1), (
+        f"pyproject says {manifest}, the package says {package.group(1)}"
+    )
+
+
 def test_the_local_complexity_cap_is_tighter_than_the_platform_cap() -> None:
     """Sonar S3776 caps cognitive complexity at 15; a looser local cap is a future
     upload failure."""
@@ -338,20 +370,49 @@ def test_no_build_output_can_reach_the_platform_checkout() -> None:
     so nothing there may depend on a build output.
 
     Classified: asserting that `dist/` is ABSENT would be guaranteed-false in any checkout
-    where packaging has been run, which is every checkout about to be uploaded. The
-    invariant that actually holds everywhere is that `dist/` is git-ignored AND excluded
-    from the upload allowlist, so it can never be in the platform's checkout at all. That
-    the suite then passes in that checkout is proved end to end by
-    `scripts/simulate-pipeline.sh`, which unzips the artefact and runs the suite there.
+    where packaging has been run, which is every checkout about to be uploaded. The invariant
+    that holds everywhere is that `dist/` is git-ignored and cannot reach the artefact.
+
+    Asserted by BUILDING the artefact and looking inside it, not by matching a line of the
+    script. Two reasons. A substring match over comment-stripped lines could still be
+    satisfied by a trailing `# TODO restore: rm -rf ...` on a live line, which deletes the
+    purge. And the counterfactual an earlier version of this docstring asserted was wrong: the
+    real control is the ALLOWLIST copy loop, which never copies `.git`, `.venv`, `var/` or
+    `dist/` in the first place. The `rm -rf` is a defensive re-check behind it. Reviewers
+    measured that with the purge removed the zip is still clean, so the claim is corrected
+    here rather than repeated.
     """
     assert "dist/" in set(_live_lines(ROOT / ".gitignore"))
-    # EXECUTABLE lines only. Commenting the purge out used to keep this green while `.git`,
-    # `.venv`, `var/` and `dist/` shipped inside the App Store zip.
-    packaging = _live_lines(ROOT / "scripts" / "package-appstore.sh")
-    assert any(
-        'rm -rf "$STAGE/.git" "$STAGE/.venv" "$STAGE/var" "$STAGE/dist"' in line
-        for line in packaging
-    ), "the packaging purge is not an executed line"
+
+    shell = shutil.which("sh")
+    assert shell, "no POSIX shell on PATH"
+    built = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
+        [shell, str(ROOT / "scripts" / "package-appstore.sh"), "0.0.0-contract-test"],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        timeout=300,
+        check=False,
+    )
+    assert built.returncode == 0, f"packaging failed: {built.stderr[-500:]}"
+    artefact = ROOT / "dist" / "enlightenment-appstore-0.0.0-contract-test.zip"
+    try:
+        with zipfile.ZipFile(artefact) as package:
+            names = package.namelist()
+    finally:
+        artefact.unlink(missing_ok=True)
+
+    banned = ("/.git/", "/.venv/", "/var/", "/dist/", "__pycache__", ".coverage")
+    offenders = [
+        name
+        for name in names
+        if any(marker in f"/{name}" for marker in banned)
+        or (name.endswith((".pyc", ".env")) and not name.endswith(".env.example"))
+    ]
+    assert offenders == [], f"the artefact carries files it must not: {offenders[:10]}"
+    # The Dockerfile must be at the ROOT of the zip, never nested.
+    assert "Dockerfile" in names, "the artefact has no root-level Dockerfile"
+    assert any(name.startswith("tests/") for name in names), "the suite is missing from the zip"
 
 
 # --- the loop scripts must not fail open --------------------------------------------
@@ -497,6 +558,9 @@ def test_every_test_named_in_the_security_policy_exists() -> None:
         for name in re.findall(r"`(test_[A-Za-z0-9_]+)(?:\.\.\.)?`", policy)
         if not name.endswith("_")
     }
+    # An elided citation is RESOLVED BY PREFIX, not exempted. Skipping them left 12 of 63
+    # cited names unchecked, so renaming one of those left the policy citing a test that no
+    # longer exists with the sweep still green.
     elided = set(re.findall(r"`(test_[A-Za-z0-9_]+)\.\.\.`", policy))
     defined: set[str] = set()
     for module in sorted((ROOT / "tests").glob("test_*.py")):
@@ -507,7 +571,12 @@ def test_every_test_named_in_the_security_policy_exists() -> None:
                 re.MULTILINE,
             )
         )
-    dangling = sorted(name for name in cited - elided if name not in defined)
+    dangling = sorted(
+        name
+        for name in cited
+        if name not in defined
+        and not (name in elided and any(known.startswith(name) for known in defined))
+    )
     assert dangling == [], f"docs/SECURITY.md cites tests that do not exist: {dangling}"
     assert cited, "the sweep found no cited test names, so it is asserting nothing"
 
@@ -569,3 +638,71 @@ def test_the_edit_helper_reports_misuse(tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 2
+
+
+def test_the_edit_helper_refuses_a_symlinked_target(tmp_path: Path) -> None:
+    """`Path.write_text` follows a symlink, so a symlinked target would write OUTSIDE the named
+    directory. The same reasoning puts `O_NOFOLLOW` on every file this project's store opens.
+    """
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched", encoding="utf-8")
+    link = tmp_path / "target.txt"
+    link.symlink_to(outside)
+    anchor = tmp_path / "anchor.txt"
+    anchor.write_text("untouched", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("overwritten", encoding="utf-8")
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "verified-edit.py"),
+            str(link),
+            str(anchor),
+            str(replacement),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 3
+    assert outside.read_text(encoding="utf-8") == "untouched", "the tool wrote through a symlink"
+
+
+def test_the_edit_helper_leaves_the_file_untouched_when_it_refuses(tmp_path: Path) -> None:
+    """A caller treating a non-zero exit as "nothing happened" must be right.
+
+    The earlier version wrote first and verified afterwards, so this refusal left the file
+    half-edited: the inverse of what the tool exists to prevent. Asserting only the exit code
+    did not catch it.
+    """
+    assert _run_verified_edit(tmp_path, "aabb", "ab", "") == 4
+    assert (tmp_path / "target.txt").read_text(encoding="utf-8") == "aabb"
+
+
+def test_the_edit_helper_reports_an_unreadable_target(tmp_path: Path) -> None:
+    """A directory, a missing file or non-UTF-8 bytes exit with a documented code, not a raw
+    traceback outside the codes the docstring promises.
+    """
+    anchor = tmp_path / "anchor.txt"
+    anchor.write_text("x", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("y", encoding="utf-8")
+    binary = tmp_path / "binary.bin"
+    binary.write_bytes(b"\xff\xfe\x00\x01")
+    for target in (tmp_path / "missing.txt", tmp_path, binary):
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed script
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "verified-edit.py"),
+                str(target),
+                str(anchor),
+                str(replacement),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 5, f"{target} gave {result.returncode}: {result.stderr[-200:]}"
+        assert "Traceback" not in result.stderr
