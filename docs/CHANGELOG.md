@@ -2,6 +2,67 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.4 (2026-08-18)
+
+**What.** Closed the third round. Both gates independently found the same bypass, and it was
+one I introduced in the round-two fix.
+
+● **The body cap was bypassable by header ORDER.** `_body_framed` returned from inside its
+  header loop on whichever framing header appeared first, and treated `Content-Length: 0` as
+  "no body". RFC 7230 section 3.3.3 makes `Transfer-Encoding` win, and h11 agrees, so
+  `Content-Length: 0` sent BEFORE `Transfer-Encoding: chunked` read as no body while the
+  server delivered the whole thing. Measured unauthenticated on a raw socket: 128 MB accepted,
+  resident set 45 MB to 326 MB, answering 422 rather than 413. Swapping the two headers gave a
+  correct 413, and that order dependence was the entire defect. So the round-two
+  pre-authentication denial of service was live again, one commit after I declared it closed.
+  Every header is now examined before deciding, and a declared length is ignored when a
+  transfer-encoding is present, because the framing header wins and the length is then not the
+  body's size. Re-measured on a real socket across four header orders: 413 every time,
+  resident set flat at 46 MB.
+● **My own fix had broken a control's only assertion.** Seeding the boot verdict into the probe
+  cache meant the fail-closed test was served from the boot-time result, so the async handler
+  never ran: inverting it to `ok=True` left all 244 tests green. Concretely, after the lifespan
+  shuts the probe pool down any later probe raises, and a fail-open handler would answer
+  `200 ready` on a pod whose storage was never proved. The test now pins `cache_seconds=0.0`.
+
+Also fixed: a POST on a probe path could be parked indefinitely at zero cost, because the drain
+awaits with no timeout and those paths are rate-limit exempt by design, so the cap now skips
+them entirely; the snapshot was read following symlinks while the lock guarding it was opened
+`O_NOFOLLOW`, so a principal with write access to the volume could have its own file served
+through the API and copied into a backup; the probe pool is created on first probe rather than
+at construction, because a `ThreadPoolExecutor` is held by a module-level registry and 40 apps
+built and never served left 40 idle threads alive.
+
+**Two claims corrected because they were not the reason the code is safe.** The single-flight
+docstring said "two probes racing to publish is impossible". Two probe tasks CAN briefly
+coexist: a cancelled starter clears the in-flight slot while its probe still runs. A stale
+overwrite is still not constructible, but because a cancelled starter never reaches the
+publication lines and the pool has one worker, not because single-flight forbids the race. The
+docstring also announced three properties and listed two.
+
+**Three controls this release claimed were mutation-proved and were not**, each found by an
+independent run rather than by me: the dedicated probe pool, the quoted bind address in the
+launch command, and the dev-lockfile audit leg. All three now have tests that die under
+mutation. The mutation ledger in `docs/SECURITY.md` now carries a per-round table of what was
+claimed against what an independent run found, because three rounds have now shown my own
+counts running ahead of the evidence.
+
+**Two of my own tests were asserting prose, not behaviour.** The lockfile-audit test matched
+the words in `verify.sh` including comments, so commenting the leg out stayed green. The
+probe-path exemption test built its own middleware rather than the application's, so removing
+the exemption from the real wiring stayed green. Both now exercise what executes.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 262 tests
+collected (261 passed, 1 skipped) with branch coverage at 98.68% against an 80% floor,
+Cobertura written, `pip-audit` clean over both lockfiles. Pipeline simulation green against the
+artefact on the pinned interpreter with `GITLAB_CI=true`. Ten fresh mutants this round: eight
+killed first time, two survived, were closed, then re-proved killed. The header-order bypass
+was additionally re-measured on a real uvicorn socket rather than only in tests.
+
+**Still not verified.** The container image build, for the same reason as every prior release:
+the registry blob endpoint is denied by this environment's network policy. The CI `image` job
+binds.
+
 ## V0.3 (2026-08-18)
 
 **What.** Closed the second round of gate findings. Both gates independently found the same

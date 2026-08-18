@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -92,7 +93,16 @@ def test_a_probe_that_raises_reads_as_unready_never_as_a_pass(
     def exploding_probe(path: Path) -> ProbeResult:
         raise RuntimeError("probe blew up")
 
-    app = create_app(config=config, store=store, probe=exploding_probe)
+    # cache_seconds=0.0 deliberately. Boot publishes its own verdict into the cache, so with
+    # the default window this request was served from the boot-time result and the ASYNC
+    # fail-closed handler never ran: inverting that handler to ok=True left the whole suite
+    # green. The test was passing for the wrong reason.
+    app = create_app(
+        config=config,
+        store=store,
+        probe=exploding_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
     with TestClient(app) as client:
         response = client.get("/readyz")
     assert response.status_code == 503
@@ -736,3 +746,82 @@ def test_concurrent_callers_all_receive_the_same_verdict(
     codes = asyncio.run(drive())
     assert set(codes) == {503}, f"callers disagreed: {sorted(set(codes))}"
     assert len(verdicts) <= 2, f"20 concurrent callers produced {len(verdicts)} verdicts"
+
+
+def test_the_probe_runs_on_its_own_dedicated_thread_pool(
+    config: Config, store: TrainingStore
+) -> None:
+    """Sharing the default executor with the store was measured taking a legitimate listing
+    from 1.4 ms to 109 ms at the median, so the dedicated pool is a control, not a detail.
+    Replacing it with None used to leave the whole suite green.
+    """
+    threads: list[str] = []
+
+    def thread_recording_probe(path: Path) -> ProbeResult:
+        threads.append(threading.current_thread().name)
+        return ok_probe(path)
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=thread_recording_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(app) as client:
+        assert client.get("/readyz").status_code == 200
+    served = [name for name in threads if name.startswith("probe")]
+    assert served, f"no probe ran on the dedicated pool; threads seen: {threads}"
+
+
+def test_a_probe_path_declaring_a_body_answers_even_for_a_body_method(
+    config: Config, store: TrainingStore
+) -> None:
+    """POST /livez with a declared length and no bytes must not park the connection."""
+    app = create_app(config=config, store=store, probe=ok_probe)
+    with TestClient(app) as client:
+        response = client.request("POST", "/livez", headers={"content-length": "65000"})
+    # The route accepts no POST, so the honest answer is 405. What matters is that it ANSWERS.
+    assert response.status_code in {405, 200}
+
+
+def test_the_apps_body_cap_exempts_the_probe_paths(config: Config, store: TrainingStore) -> None:
+    """Drives the REAL app at the ASGI layer with a receive that refuses to be called.
+
+    The previous version of this test built its own middleware with explicit exempt paths,
+    so removing them from the application's own wiring left the suite green. A test of a
+    control must exercise the control as the application assembles it.
+    """
+    app = create_app(config=config, store=store, probe=ok_probe)
+    sent: list[dict[str, Any]] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    async def receive() -> dict[str, Any]:
+        raise AssertionError("the application drained the body of a probe path")
+
+    async def drive() -> None:
+        for path in ("/livez", "/healthz", "/readyz", "/ping", "/health", "/"):
+            sent.clear()
+            await app(
+                {
+                    "type": "http",
+                    "asgi": {"version": "3.0"},
+                    "http_version": "1.1",
+                    "method": "POST",
+                    "path": path,
+                    "raw_path": path.encode(),
+                    "query_string": b"",
+                    "root_path": "",
+                    "scheme": "http",
+                    "headers": [(b"host", b"probe"), (b"content-length", b"65000")],
+                    "client": ("127.0.0.1", 5000),
+                    "server": ("127.0.0.1", 8080),
+                },
+                receive,
+                send,
+            )
+            starts = [message for message in sent if message["type"] == "http.response.start"]
+            assert starts, f"{path} never answered"
+
+    asyncio.run(drive())

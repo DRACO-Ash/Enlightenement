@@ -42,18 +42,31 @@ BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 
 class BodyLimitMiddleware:
-    """Reject any request whose body exceeds ``max_bytes``, however it is framed."""
+    """Reject any request whose body exceeds ``max_bytes``, however it is framed.
 
-    def __init__(self, app: ASGIApp, *, max_bytes: int) -> None:
+    ``exempt_paths`` are passed straight through without reading anything. The probe paths
+    accept no body and are exempt from rate limiting by design, so draining one lets an
+    unmetered caller park a connection on exactly the paths the deploy contract depends on:
+    ``POST /livez`` with a declared length and one byte sent never answered.
+    """
+
+    def __init__(
+        self, app: ASGIApp, *, max_bytes: int, exempt_paths: frozenset[str] | None = None
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.exempt_paths = exempt_paths or frozenset()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
 
-        if scope.get("method") not in BODY_METHODS or not self._body_framed(scope):
+        if (
+            scope.get("path") in self.exempt_paths
+            or scope.get("method") not in BODY_METHODS
+            or not self._body_framed(scope)
+        ):
             # Nothing to cap, so nothing is read here. See BODY_METHODS.
             await self.app(scope, receive, send)
             return
@@ -95,23 +108,43 @@ class BodyLimitMiddleware:
         await self.app(scope, replay, send)
 
     def _body_framed(self, scope: Scope) -> bool:
-        """True when the request declares a body at all, by length or by chunked framing."""
+        """True when the request declares a body at all, by length or by chunked framing.
+
+        EVERY header is examined before deciding. Returning from inside the loop on
+        whichever header appeared first was a real bypass, and a measured one: RFC 7230
+        section 3.3.3 makes ``Transfer-Encoding`` win over ``Content-Length``, and h11
+        agrees, so ``Content-Length: 0`` sent BEFORE ``Transfer-Encoding: chunked`` looked
+        like "no body" while the server delivered 128 MB in full. Resident set went from
+        45 MB to 326 MB on an unauthenticated request that answered 422, not 413. Swapping
+        the two headers gave a correct 413, and that order dependence was the whole defect.
+        """
+        chunked = False
+        by_length = False
         for name, value in scope.get("headers", []):
             if name == b"transfer-encoding":
-                return True
-            if name == b"content-length":
+                chunked = True
+            elif name == b"content-length":
                 declared = value.decode("latin-1").strip()
-                # A non-numeric or zero length frames no body we can cap; the byte counter
-                # covers the non-numeric case if a body arrives anyway.
-                return not declared.isdecimal() or int(declared) > 0
-        return False
+                # A non-numeric length frames a body we cannot trust the header for, so the
+                # byte counter must run; a zero length frames nothing.
+                by_length = by_length or not declared.isdecimal() or int(declared) > 0
+        return chunked or by_length
 
     def _declared_over_cap(self, scope: Scope) -> bool:
+        """True only when a TRUSTWORTHY declared length already exceeds the cap.
+
+        ``Content-Length`` is ignored when a transfer-encoding is present, because the
+        framing header wins and the length is then not the body's size. The byte counter
+        enforces the cap in that case, so nothing is lost by declining to guess here.
+        """
+        declared_length: int | None = None
         for name, value in scope.get("headers", []):
+            if name == b"transfer-encoding":
+                return False
             if name == b"content-length":
                 declared = value.decode("latin-1").strip()
-                return declared.isdecimal() and int(declared) > self.max_bytes
-        return False
+                declared_length = int(declared) if declared.isdecimal() else None
+        return declared_length is not None and declared_length > self.max_bytes
 
     async def _refuse(self, send: Send) -> None:
         body = json.dumps({"error": "request body too large"}).encode("utf-8")

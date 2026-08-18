@@ -334,3 +334,34 @@ def test_the_lock_file_is_not_followed_through_a_symlink(tmp_path: Path) -> None
     store = TrainingStore(data_dir, now=fixed_now)
     with pytest.raises(OSError, match=r"symbolic link|Too many levels|ELOOP|loop"):
         store.upsert_session(dict(SESSION))
+
+
+def test_the_snapshot_is_not_read_through_a_symlink(tmp_path: Path) -> None:
+    """The lock path is opened O_NOFOLLOW against a principal holding write access to the
+    volume. The snapshot it guards needs the same defence: otherwise that principal plants
+    `training.json` as a symlink and has the target's content served through the API and
+    copied into a backup inside the data directory.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text(
+        '{"schemaVersion": 1, "rev": 99, "sessions": [{"id": "not-ours"}]}', encoding="utf-8"
+    )
+    (data_dir / STORE_FILENAME).symlink_to(foreign)
+    store = TrainingStore(data_dir, now=fixed_now)
+    with pytest.raises(OSError, match=r"symbolic link|Too many levels|ELOOP|loop"):
+        store.load()
+
+
+def test_a_symlinked_snapshot_cannot_be_copied_into_a_backup(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text("secret-content", encoding="utf-8")
+    (data_dir / STORE_FILENAME).symlink_to(foreign)
+    store = TrainingStore(data_dir, now=fixed_now)
+    with pytest.raises(OSError, match=r"symbolic link|Too many levels|ELOOP|loop"):
+        store.upsert_session(dict(SESSION))
+    for backup in data_dir.glob(f"{STORE_FILENAME}.*.bak"):
+        assert "secret-content" not in backup.read_text(encoding="utf-8")

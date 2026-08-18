@@ -29,6 +29,11 @@ state-changing route.
 | Boundary validation rejects, never coerces | `models.py` | `test_a_malformed_body_is_rejected_generically` |
 | Unknown keys rejected (`extra="forbid"`) | `models.py` | same, `body1` case |
 | Body cap enforced on BYTES READ, so chunked framing cannot bypass it | `middleware.py` | `test_an_oversize_chunked_body_is_refused_on_bytes_read` |
+| The cap holds whatever ORDER the framing headers arrive in | `middleware.py` | `test_the_cap_holds_whatever_order_the_framing_headers_arrive_in` |
+| A declared length is not trusted when a transfer-encoding is present | `middleware.py` | `test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present` |
+| A probe path is never drained, so it cannot be parked unmetered | `middleware.py`, `app.py` | `test_a_probe_path_is_never_drained_even_for_a_body_method`, `test_the_apps_body_cap_exempts_the_probe_paths` |
+| The probe runs on its own pool, so a burst cannot starve store work | `app.py` | `test_the_probe_runs_on_its_own_dedicated_thread_pool` |
+| The snapshot is not read through a symlink | `storage.py` | `test_the_snapshot_is_not_read_through_a_symlink` |
 | The cap runs ahead of authentication | `middleware.py` | `test_an_oversize_chunked_body_is_refused_before_authentication` |
 | Two-tier rate limiting, 429 in both tiers | `ratelimit.py`, `app.py` | `test_the_coarse_tier...`, `test_the_strict_tier...` |
 | Probe paths never rate-limited | `app.py` | `test_probe_paths_are_never_rate_limited` |
@@ -71,38 +76,39 @@ validation, the exclusive write lock, the revision guard, the fail-closed key ta
 worker count, the package-manager purge, the package-database retention, and the two binding
 image checks in continuous integration.
 
-**Surviving mutants, all of them.** An earlier version of this section claimed one survivor.
-An independent 32-mutant run found four, which is a reminder that a mutation claim is only
-worth what the run behind it measured. The current position:
+**Surviving mutants.** Not "all of them", which is what an earlier version of this section
+claimed twice while independent runs kept finding more. A mutation claim is worth exactly what
+the run behind it measured, and three separate rounds have proved that on this project:
 
-● **`hmac.compare_digest` to `==`** (`auth.py`): still survives every BEHAVIOURAL test,
-  because the difference is timing, not output. Now caught by a source assertion instead
-  (`test_the_token_comparison_uses_the_constant_time_primitive`), plus a module-wide check
-  that no token is compared with plain equality. The timing property itself remains
-  unassertable; the primitive's presence no longer is.
-● **The `asyncio.to_thread` offload** (`app.py`): survived, and was a real MAJOR finding. Now
-  killed by `test_no_store_call_runs_on_the_event_loop`, which proves the offload directly by
-  asserting no running event loop is visible inside the store call.
-● **Deleting the `store.seed()` call at boot**: still survives, and is recorded as harmless
-  rather than proved. `load()` returns an empty snapshot when the file is absent and
-  `upsert_session` creates it, so seeding is a convenience that makes the first read cheaper,
-  not a control. It is listed here so the ledger is complete.
-● **The `_declared_over_cap` early refusal** (`middleware.py`): still survives, and is
-  redundant by design. The byte counter enforces the cap regardless; the header check only
-  avoids reading a body that has already announced itself as too large. An optimisation, not
-  a control.
+| Round | Claimed | Independently found |
+|---|---|---|
+| 1 | 8 killed | 8 killed, 1 survivor recorded |
+| 2 | 21 killed, 1 survivor | 4 survivors (32-mutant run) |
+| 3 | 11 run, 3 survivors closed | 2 further survivors (11-mutant run) |
+| 4 | 10 run, 10 killed after closing 2 survivors | pending re-review |
 
-Two mutants were killed only after fixing the TEST rather than the code: one asserted a
-Dockerfile invariant against the file's own explanatory prose, and one matched `--user 0`
-inside the comment explaining why the flag is needed rather than in the command. Both would
-have passed while the control was removed. Assertions here are about what executes, never
-about the words beside it.
+Survivors that remain, each with the reason it is or is not load-bearing:
 
-Two of those mutants were killed only after fixing the TEST rather than the code: one
-asserted a Dockerfile invariant against the file's own explanatory prose, and one matched
-`--user 0` inside the comment explaining why the flag is needed rather than in the command.
-Both would have passed while the control was removed. Assertions here are about what
-executes, never about the words beside it.
+● **`hmac.compare_digest` to `==`** (`auth.py`): survives every BEHAVIOURAL test, because the
+  difference is timing, not output. Caught instead by a source assertion that the primitive is
+  present, plus a module-wide check that no token is compared with plain equality. The timing
+  property itself stays unassertable and is recorded as such.
+● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
+  than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`
+  creates it, so seeding makes the first read cheaper and is not a control.
+● **The `_declared_over_cap` early refusal** (`middleware.py`): survives, and is redundant by
+  design. The byte counter enforces the cap regardless; the header check only avoids reading a
+  body that has already announced itself as too large. An optimisation, not a control.
+
+Closed after surviving: the `asyncio.to_thread` offload, the dedicated probe pool, the quoted
+bind address in the launch command, the dev-lockfile audit leg, the snapshot symlink defence,
+the ASCII-digit port guard, and the application's own exempt-path wiring for the body cap.
+
+Four mutants across the rounds were killed only after fixing the TEST rather than the code:
+two asserted a Dockerfile invariant against the file's own explanatory prose, one matched
+`--user 0` inside the comment explaining why the flag is needed, and one matched a shell
+function call inside a commented-out line. All four would have passed while the control was
+removed. Assertions here are about what executes, never about the words beside it.
 
 ## Accepted risks (deliberate decisions, not oversights)
 

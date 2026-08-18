@@ -135,7 +135,8 @@ class _Runtime:
     inflight: asyncio.Task[ProbeResult] | None = field(default=None)
     #: A dedicated single-thread executor for the probe, so a burst of probes can never
     #: starve the store's own thread-pool work. Sharing the default executor was measured
-    #: taking a legitimate listing from 1.4 ms to 109 ms at the median.
+    #: taking a legitimate listing from 1.4 ms to 109 ms at the median. Created on first
+    #: probe and released by the lifespan handler.
     probe_pool: ThreadPoolExecutor | None = field(default=None)
 
 
@@ -200,6 +201,12 @@ async def _run_probe(runtime: _Runtime) -> ProbeResult:
     """
     data_dir = runtime.settings.data_dir
     loop = asyncio.get_running_loop()
+    if runtime.probe_pool is None:
+        # Created on first use, not at construction: a ThreadPoolExecutor is held by a
+        # module-level registry, so building an app and never probing it used to leave an
+        # idle non-daemon thread alive for the life of the process. Measured at 40 threads
+        # for 40 apps after dropping every reference and forcing a collection.
+        runtime.probe_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe")
     try:
         return await asyncio.wait_for(
             loop.run_in_executor(runtime.probe_pool, runtime.probe, data_dir),
@@ -578,17 +585,22 @@ def create_app(
         strict=write_limiter or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
         started=ticks(),
         clock=ticks,
-        probe_pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe"),
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        """Release the dedicated probe thread on shutdown, so a long-lived process (or a
-        suite building hundreds of apps) does not accumulate threads.
+        """Release the dedicated probe thread when the application shuts down.
+
+        This runs only if the lifespan runs, which is why the pool is created on FIRST PROBE
+        rather than at construction: an app that is built and never served then holds no
+        thread at all, so the two together give the property this used to claim on its own.
         """
-        yield
-        if runtime.probe_pool is not None:
-            runtime.probe_pool.shutdown(wait=False)
+        try:
+            yield
+        finally:
+            if runtime.probe_pool is not None:
+                runtime.probe_pool.shutdown(wait=False)
+                runtime.probe_pool = None
 
     app = FastAPI(
         title="Enlightenment",
@@ -604,7 +616,7 @@ def create_app(
     # the wire inwards is: CORS, rate limit, body cap, routes. Asserted by
     # test_the_middleware_order_puts_the_limiter_outside_the_body_cap, because getting it
     # backwards let an oversize request be read in full while spending no limiter budget.
-    app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES)
+    app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES, exempt_paths=UNLIMITED_PATHS)
     _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
 

@@ -234,3 +234,100 @@ async def test_a_non_http_scope_is_passed_through_untouched() -> None:
     _sent, send = collector()
     await middleware({"type": "lifespan"}, feeder([{"type": "http.disconnect"}]), send)
     assert app.called is True
+
+
+# --- header framing, in every order -------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("label", "headers"),
+    [
+        ("transfer-encoding only", [(b"transfer-encoding", b"chunked")]),
+        (
+            "content-length ZERO first, then transfer-encoding",
+            [(b"content-length", b"0"), (b"transfer-encoding", b"chunked")],
+        ),
+        (
+            "transfer-encoding first, then content-length zero",
+            [(b"transfer-encoding", b"chunked"), (b"content-length", b"0")],
+        ),
+        (
+            "content-length small first, then transfer-encoding",
+            [(b"content-length", b"5"), (b"transfer-encoding", b"chunked")],
+        ),
+        (
+            "a non-numeric content-length",
+            [(b"content-length", b"0x100")],
+        ),
+    ],
+)
+async def test_the_cap_holds_whatever_order_the_framing_headers_arrive_in(
+    label: str, headers: list[tuple[bytes, bytes]]
+) -> None:
+    """RFC 7230 section 3.3.3 makes transfer-encoding win over content-length, and h11
+    agrees, so `Content-Length: 0` sent BEFORE `Transfer-Encoding: chunked` used to read as
+    "no body" while the server delivered the whole thing: 45 MB to 326 MB resident on an
+    unauthenticated request that answered 422 rather than 413. Swapping the two headers gave
+    a correct 413, and that order dependence was the entire defect.
+    """
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=10)
+    sent, send = collector()
+    await middleware(
+        scope(headers=headers),
+        feeder(
+            [
+                {"type": "http.request", "body": b"x" * 8, "more_body": True},
+                {"type": "http.request", "body": b"x" * 8, "more_body": False},
+            ]
+        ),
+        send,
+    )
+    assert sent[0]["status"] == 413, f"the cap was bypassed with {label}"
+    assert app.called is False, f"the application saw an oversize body with {label}"
+
+
+@pytest.mark.anyio
+async def test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present() -> None:
+    """The framing header wins, so the length is not the body's size. Refusing early on it
+    would be guessing; the byte counter is what decides.
+    """
+    app = Recorder()
+    middleware = BodyLimitMiddleware(app, max_bytes=100)
+    sent, send = collector()
+    await middleware(
+        scope(headers=[(b"content-length", b"999999"), (b"transfer-encoding", b"chunked")]),
+        feeder([{"type": "http.request", "body": b"small", "more_body": False}]),
+        send,
+    )
+    assert sent[0]["status"] == 200
+    assert bytes(app.body) == b"small"
+
+
+# --- exempt paths are never drained ---------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["/livez", "/healthz", "/readyz", "/ping", "/health", "/"])
+async def test_a_probe_path_is_never_drained_even_for_a_body_method(path: str) -> None:
+    """`POST /livez` with a declared length and one byte sent never answered: the drain
+    awaits with no timeout and the probe paths are exempt from rate limiting by design, so
+    an unmetered caller could park connections on exactly the paths the deploy contract
+    depends on.
+    """
+    app = Silent()
+    middleware = BodyLimitMiddleware(
+        app,
+        max_bytes=10,
+        exempt_paths=frozenset({"/livez", "/healthz", "/readyz", "/ping", "/health", "/"}),
+    )
+
+    async def must_not_be_called() -> Message:
+        raise AssertionError(f"the body of a request to {path} was read")
+
+    sent, send = collector()
+    probe_scope = scope(headers=[(b"content-length", b"65000")])
+    probe_scope["path"] = path
+    await middleware(probe_scope, must_not_be_called, send)
+    assert sent[0]["status"] == 200

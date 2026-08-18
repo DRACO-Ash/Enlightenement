@@ -110,13 +110,13 @@ so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 245 tests, coverage 98.04%
+- [x] Verification loop green (`sh scripts/verify.sh`), 262 tests, coverage 98.68%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS (first round FAIL: one BLOCKER and four MAJORs, all fixed; re-review pending)
-- [ ] `security-reviewer` PASS (first round FAIL: three BLOCKERs and five MAJORs, all fixed; re-review pending)
+- [ ] `engineering-reviewer` PASS (three rounds FAIL so far: one BLOCKER and four MAJORs, then two MAJORs, then one BLOCKER and one MAJOR. All closed and mutation-proved; fourth review pending)
+- [ ] `security-reviewer` PASS (three rounds FAIL so far: three BLOCKERs and five MAJORs, then two MAJORs, then one MAJOR. All closed and mutation-proved; fourth review pending)
 - [ ] `deploy-gate` PASS
 - [ ] Explicit human confirmation to publish

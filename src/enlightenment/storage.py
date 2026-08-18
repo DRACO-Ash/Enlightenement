@@ -226,10 +226,22 @@ class TrainingStore:
             self._write_atomic(snapshot, backup=False)
             return snapshot
 
+    def _read_snapshot_bytes(self) -> bytes:
+        """Read the snapshot without following a symlink.
+
+        The lock path is opened ``O_NOFOLLOW`` against a principal holding write access to
+        the volume; the snapshot it guards needs the same defence, or that principal can
+        plant ``training.json`` as a symlink and have its target served through the API and
+        copied into a backup inside the data directory.
+        """
+        handle = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(handle, "rb") as stream:
+            return stream.read()
+
     def load(self) -> Snapshot:
         """Read and migrate the snapshot, returning an empty one when none exists."""
         try:
-            raw = self.path.read_text(encoding="utf-8")
+            raw = self._read_snapshot_bytes().decode("utf-8")
         except FileNotFoundError:
             return empty_snapshot()
         try:
@@ -347,7 +359,7 @@ class TrainingStore:
         # weaker mode, on a volume that may be shared with an add-on, is a downgrade.
         handle = os.open(target, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
         with os.fdopen(handle, "wb") as stream:
-            stream.write(self.path.read_bytes())
+            stream.write(self._read_snapshot_bytes())
             stream.flush()
             os.fsync(stream.fileno())
         _logger.info("pre-write backup taken: %s", target.name)

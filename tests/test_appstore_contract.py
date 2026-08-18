@@ -52,8 +52,16 @@ def test_no_baked_environment_default_can_defeat_the_injected_value(banned: str)
 
 
 def test_the_launch_command_binds_every_interface_on_the_platform_port() -> None:
-    """gunicorn and uvicorn default to 127.0.0.1, which the platform probe cannot reach."""
-    assert "0.0.0.0:${PORT:-8080}" in DOCKER_INSTRUCTIONS
+    """gunicorn and uvicorn default to 127.0.0.1, which the platform probe cannot reach.
+
+    The bind address must be QUOTED. Unquoted, `${PORT}` word-splits inside `sh -c`, so an
+    operator-pasted value injects extra gunicorn arguments instead of failing loudly, and
+    guidance prose pasted into the environment tab is a catalogued platform failure. The
+    earlier assertion matched a substring present either way, so removing the quotes stayed
+    green.
+    """
+    # The CMD is a JSON array, so the shell quotes appear escaped in the file itself.
+    assert r"-b \"0.0.0.0:${PORT:-8080}\"" in DOCKER_INSTRUCTIONS
 
 
 def test_the_launch_command_execs_so_sigterm_reaches_the_server() -> None:
@@ -339,7 +347,10 @@ def test_the_loop_audits_every_lockfile_it_installs() -> None:
     advisory there is shipped code on the runner, not just local tooling. Removing the
     second leg used to leave the suite green.
     """
-    verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+    verify = _instructions((ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8"))
     for lockfile in ("requirements.txt", "requirements-dev.txt"):
         assert f"audit_lockfile {lockfile}" in verify, f"{lockfile} is never audited"
-    assert verify.count("audit_lockfile ") >= 2
+    # Two CALLS, counted over executable lines only. Matching the raw file let the leg be
+    # commented out with the suite still green, which is the third time a test here has
+    # asserted prose rather than the instruction beside it.
+    assert sum(1 for line in verify.splitlines() if line.strip().startswith("audit_lockfile ")) >= 2
