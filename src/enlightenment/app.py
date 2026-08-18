@@ -9,6 +9,13 @@ byte-counting body cap, then per-route authentication on every cost-incurring or
 state-changing route, then boundary validation of the body, then the handler, then a
 generic error response with the detail kept server-side.
 
+``add_middleware`` PREPENDS, so the registration order at the bottom of this module is the
+reverse of that list. The order is load-bearing twice over: the limiter must sit OUTSIDE the
+body cap, or an oversize request is read in full while spending no limiter budget, and the
+cross-origin layer must be outermost, or a 413 or a 429 reaches a browser with no
+``Access-Control-Allow-Origin`` header and reads as an opaque network error. Both were wrong
+in the first version and both are now asserted by tests.
+
 Route registration is split into small ``_register_*`` helpers rather than one long
 factory, so no function approaches the cognitive-complexity cap the quality gate enforces.
 """
@@ -20,7 +27,9 @@ import logging
 import os
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,6 +51,7 @@ from enlightenment.storage import (
     ProbeResult,
     StaleRevisionError,
     TrainingStore,
+    UnknownSessionError,
     probe_writable,
 )
 
@@ -63,9 +73,15 @@ PROBE_TIMEOUT_SECONDS = 2.0
 #: exempt from rate limiting BY DESIGN, so without this an unauthenticated flood turns into
 #: one real create-write-fsync-unlink cycle per request against the volume: measured at
 #: about 265 per second from a single client, which exhausts a network volume's IOPS and
-#: then trips the probe's own timeout, so the pod flips unready and is restarted. Caching
-#: bounds probe cost by TIME rather than by request rate, and stays well under the
-#: platform's probe interval so a real fault is still noticed promptly.
+#: then trips the probe's own timeout, so the pod flips unready and is restarted.
+#:
+#: Caching alone is NOT sufficient, and the first version of this was not. A cache with an
+#: await between the read and the write bounds nothing under concurrency: every request
+#: arriving while a probe is in flight misses and starts its own. Measured at 17 400
+#: concurrent requests producing 228 real probes, and worse, queued probes on a slow volume
+#: exceeded the probe timeout so a majority of responses were 503 against storage that was
+#: fine. So probes are ALSO single-flight (below): concurrent callers await the one probe
+#: already running. Cost is then bounded by time AND by concurrency.
 PROBE_CACHE_SECONDS = 5.0
 
 #: Coarse limiter: protects the process on every non-probe route.
@@ -114,6 +130,13 @@ class _Runtime:
     ready: bool | None = field(default=None)
     cached_probe: ProbeResult | None = field(default=None)
     cached_at: float | None = field(default=None)
+    #: The one probe currently running, if any. Concurrent callers await this rather than
+    #: starting their own.
+    inflight: asyncio.Task[ProbeResult] | None = field(default=None)
+    #: A dedicated single-thread executor for the probe, so a burst of probes can never
+    #: starve the store's own thread-pool work. Sharing the default executor was measured
+    #: taking a legitimate listing from 1.4 ms to 109 ms at the median.
+    probe_pool: ThreadPoolExecutor | None = field(default=None)
 
 
 def _client_key(request: Request) -> str:
@@ -125,27 +148,65 @@ def _client_key(request: Request) -> str:
 
 
 async def _probe_storage(runtime: _Runtime) -> ProbeResult:
-    """Return a storage verdict, reusing a recent one rather than writing again.
+    """Return a storage verdict, reusing a recent one and never running two at once.
 
-    The probe is raced against a hard timeout and every rejection is converted into a
-    value: a probe that can hang turns an infrastructure fault into an undiagnosable
-    silent liveness kill.
+    Three properties, and the first version had only the second:
+
+    1. **Single-flight.** A caller arriving while a probe runs awaits THAT probe. Without
+       this, concurrency defeats the cache entirely and the queued probes then exceed their
+       own timeout, so an unauthenticated burst makes healthy storage report 503 and takes
+       the pod out of rotation.
+    2. **Time-bounded.** A verdict is reused for ``cache_seconds``, well under the
+       platform's probe interval, so a real fault is still noticed promptly.
+    Publication ordering needs no separate guard, and deliberately does not have one. Only
+    the caller that STARTED a probe publishes its verdict; every other caller awaits that
+    same task and returns without writing. Single-flight therefore makes two probes racing
+    to publish impossible, so an OK that began before a fault cannot overwrite the newer
+    failure. An explicit ordering check here would be unreachable, and unreachable code
+    inside a security control invites a wrong mental model of how the control behaves.
     """
     now = runtime.clock()
+    cached = runtime.cached_probe
     if (
-        runtime.cached_probe is not None
+        cached is not None
         and runtime.cached_at is not None
         and now - runtime.cached_at < runtime.probe_settings.cache_seconds
     ):
-        return runtime.cached_probe
+        return cached
 
-    data_dir = runtime.settings.data_dir
+    inflight = runtime.inflight
+    if inflight is not None and not inflight.done():
+        # Join the probe already running. `shield` so a cancelled waiter cannot cancel the
+        # shared probe out from under the others.
+        return await asyncio.shield(inflight)
+
+    task: asyncio.Task[ProbeResult] = asyncio.ensure_future(_run_probe(runtime))
+    runtime.inflight = task
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(runtime.probe, data_dir), runtime.probe_settings.timeout
+        result = await asyncio.shield(task)
+    finally:
+        if runtime.inflight is task:
+            runtime.inflight = None
+
+    runtime.cached_probe = result
+    runtime.cached_at = runtime.clock()
+    return result
+
+
+async def _run_probe(runtime: _Runtime) -> ProbeResult:
+    """Race one storage probe against a hard timeout on the dedicated pool, converting
+    every rejection into a value. A probe that can hang turns an infrastructure fault into
+    an undiagnosable silent liveness kill.
+    """
+    data_dir = runtime.settings.data_dir
+    loop = asyncio.get_running_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(runtime.probe_pool, runtime.probe, data_dir),
+            runtime.probe_settings.timeout,
         )
     except TimeoutError:
-        result = ProbeResult(
+        return ProbeResult(
             ok=False,
             resolved=str(data_dir),
             detail=f"storage probe timed out after {runtime.probe_settings.timeout}s",
@@ -153,11 +214,7 @@ async def _probe_storage(runtime: _Runtime) -> ProbeResult:
     except Exception as exc:
         # Fail closed: any probe failure at all is an unready state, never a pass.
         _logger.exception("storage probe raised")
-        result = ProbeResult(ok=False, resolved=str(data_dir), detail=exc.__class__.__name__)
-
-    runtime.cached_probe = result
-    runtime.cached_at = now
-    return result
+        return ProbeResult(ok=False, resolved=str(data_dir), detail=exc.__class__.__name__)
 
 
 def _identity() -> dict[str, Any]:
@@ -201,6 +258,8 @@ def _boot(runtime: _Runtime) -> None:
         )
 
     runtime.ready = result.ok
+    runtime.cached_probe = result
+    runtime.cached_at = runtime.clock()
     log_event(
         "boot.storage",
         writable=result.ok,
@@ -448,11 +507,14 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         send keeps its stored value rather than being deleted.
         """
         _guard_write_rate(runtime, request)
-        known = {session.get("id") for session in await asyncio.to_thread(runtime.store.sessions)}
-        if session_id not in known:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such session")
         update = payload.model_dump(exclude_none=True)
-        result = await _write(runtime, {"id": session_id, **update}, _expected_rev(if_match))
+        # must_exist is checked INSIDE the store's lock. Checking it here first left a
+        # window in which a concurrent new-id write could trip the session cap and evict
+        # this id, so the "merge" would append a partial record with only the patched
+        # fields and a fresh createdAt.
+        result = await _write(
+            runtime, {"id": session_id, **update}, _expected_rev(if_match), must_exist=True
+        )
         audit(
             "session.patch",
             actor=actor,
@@ -464,12 +526,25 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         return {"session": result.session, "rev": result.rev}
 
 
-async def _write(runtime: _Runtime, record: dict[str, Any], expected_rev: int | None) -> Any:
-    """Perform a guarded write off the event loop, mapping a stale revision to a 409."""
+async def _write(
+    runtime: _Runtime,
+    record: dict[str, Any],
+    expected_rev: int | None,
+    *,
+    must_exist: bool = False,
+) -> Any:
+    """Perform a guarded write off the event loop, mapping the store's refusals to statuses."""
     try:
         return await asyncio.to_thread(
-            runtime.store.upsert_session, record, expected_rev=expected_rev
+            runtime.store.upsert_session,
+            record,
+            expected_rev=expected_rev,
+            must_exist=must_exist,
         )
+    except UnknownSessionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no such session"
+        ) from exc
     except StaleRevisionError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -503,7 +578,17 @@ def create_app(
         strict=write_limiter or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
         started=ticks(),
         clock=ticks,
+        probe_pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe"),
     )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        """Release the dedicated probe thread on shutdown, so a long-lived process (or a
+        suite building hundreds of apps) does not accumulate threads.
+        """
+        yield
+        if runtime.probe_pool is not None:
+            runtime.probe_pool.shutdown(wait=False)
 
     app = FastAPI(
         title="Enlightenment",
@@ -512,12 +597,15 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
-    # Registered innermost first: add_middleware puts each new layer OUTSIDE the last, so
-    # the resulting order from the wire inwards is CORS, rate limit, body cap, routes.
-    _install_rate_limit(app, runtime)
+    # Registered innermost FIRST, because add_middleware prepends. The resulting order from
+    # the wire inwards is: CORS, rate limit, body cap, routes. Asserted by
+    # test_the_middleware_order_puts_the_limiter_outside_the_body_cap, because getting it
+    # backwards let an oversize request be read in full while spending no limiter budget.
     app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES)
+    _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
 
     _install_error_handlers(app)

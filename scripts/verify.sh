@@ -35,39 +35,50 @@ green "5/5 dependency vulnerability scan (pip-audit)"
 # happens to contain one, turning a real finding into an honest-looking skip. Instead the
 # scan is asked for JSON: valid JSON means the endpoint answered and the verdict is real,
 # whatever it says; unparsable output means the scan never ran.
-audit_json=$(mktemp)
+#
+# BOTH lockfiles are scanned. The platform installs the dev lockfile and executes it in its
+# own test stage, so an advisory there is shipped code on the runner, not just local tooling.
 skipped=0
-if pip-audit --require-hashes --disable-pip --format json -r requirements.txt >"$audit_json" 2>/dev/null; then
-  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("packages audited:", len(d.get("dependencies", d if isinstance(d, list) else [])))' "$audit_json"
-  echo "No known vulnerabilities found"
-elif python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$audit_json" 2>/dev/null; then
-  # Parsable JSON with a non-zero exit means the scan RAN and found something real.
-  python3 -m json.tool "$audit_json" | head -40
-  echo "FAIL: pip-audit reported an advisory. Upgrade and re-lock, or record the" >&2
-  echo "suppression with a written justification." >&2
-  rm -f "$audit_json"
-  exit 1
-else
-  # No parsable report: the scan did not run. Show whatever it did say. Redirected, not
-  # piped: the class guard in tests/test_appstore_contract.py takes no exemptions, and a
-  # pipe here would be indistinguishable from one that loses a real exit status.
-  audit_text=$(mktemp)
-  pip-audit --require-hashes --disable-pip -r requirements.txt >"$audit_text" 2>&1 || true
-  tail -5 "$audit_text"
-  rm -f "$audit_text"
-  if [ "${OFFLINE:-0}" = "1" ]; then
-    echo "SKIPPED (honest): the advisory endpoint could not be reached and OFFLINE=1 is set."
-    echo "Continuous integration is the authoritative networked runner for this leg."
-    skipped=1
-  else
-    echo "FAIL: could not reach the advisory endpoint, so the scan did not run." >&2
-    echo "This is a failure to check, not a clean tree. Set OFFLINE=1 only on a runner" >&2
-    echo "that is deliberately offline." >&2
+
+audit_lockfile() {
+  lockfile="$1"
+  echo "-- auditing $lockfile"
+  audit_json=$(mktemp)
+  if pip-audit --require-hashes --disable-pip --format json -r "$lockfile" >"$audit_json" 2>/dev/null; then
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("  packages audited:", len(d.get("dependencies", [])))' "$audit_json"
+    echo "  no known vulnerabilities found"
     rm -f "$audit_json"
-    exit 1
+    return 0
   fi
-fi
-rm -f "$audit_json"
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$audit_json" 2>/dev/null; then
+    # Parsable JSON with a non-zero exit means the scan RAN and found something real.
+    python3 -m json.tool "$audit_json" > "$audit_json.pretty"
+    head -40 "$audit_json.pretty"
+    rm -f "$audit_json" "$audit_json.pretty"
+    echo "FAIL: pip-audit reported an advisory in $lockfile. Upgrade and re-lock, or" >&2
+    echo "record the suppression with a written justification." >&2
+    return 1
+  fi
+  # No parsable report: the scan did not run. Show whatever it did say. Redirected, not
+  # piped: the class guard in tests/test_appstore_contract.py takes no exemptions.
+  audit_text=$(mktemp)
+  pip-audit --require-hashes --disable-pip -r "$lockfile" >"$audit_text" 2>&1 || true
+  tail -5 "$audit_text"
+  rm -f "$audit_text" "$audit_json"
+  if [ "${OFFLINE:-0}" = "1" ]; then
+    echo "  SKIPPED (honest): the advisory endpoint could not be reached and OFFLINE=1 is set."
+    echo "  Continuous integration is the authoritative networked runner for this leg."
+    skipped=1
+    return 0
+  fi
+  echo "FAIL: could not reach the advisory endpoint, so $lockfile was not scanned." >&2
+  echo "This is a failure to check, not a clean tree. Set OFFLINE=1 only on a runner" >&2
+  echo "that is deliberately offline." >&2
+  return 1
+}
+
+audit_lockfile requirements.txt || exit 1
+audit_lockfile requirements-dev.txt || exit 1
 
 # The banner names a skipped leg explicitly. A partial loop reported as an unqualified
 # PASS is how a leg that never ran reads as covered.

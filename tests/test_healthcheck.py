@@ -94,6 +94,10 @@ def test_any_transport_failure_is_unhealthy_never_a_pass(
         "65536",
         "8080;rm -rf /",
         "0x1f90",
+        # isdigit() accepts this; int() rejects it. isdecimal() is the correct test.
+        "80\u00b2",
+        "\u00b2",
+        "\u0660\u0661",
     ],
 )
 def test_a_hostile_port_is_refused_rather_than_interpolated(hostile: str) -> None:

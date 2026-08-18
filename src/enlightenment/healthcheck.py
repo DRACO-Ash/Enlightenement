@@ -48,7 +48,15 @@ def resolve_port(raw: str | None) -> int | None:
     if raw is None or raw == "":
         return DEFAULT_PORT
     candidate = "".join(ch for ch in raw.strip() if ch.isprintable())
-    if not candidate.isdigit():
+    # ASCII decimal digits only, and nothing else.
+    #
+    # `isdigit()` accepts characters `int()` rejects (a superscript two), so it would raise
+    # an uncaught ValueError out of a function documented to return None. `isdecimal()`
+    # fixes that but still accepts non-ASCII decimals: `int("\u0660\u0661")` is 1, so an
+    # exotic spelling would silently resolve to a different port than it looks like. A
+    # platform-injected port is always ASCII, so requiring that removes the ambiguity
+    # rather than reasoning about it.
+    if not (candidate.isascii() and candidate.isdecimal()):
         return None
     port = int(candidate)
     return port if 1 <= port <= MAX_PORT else None

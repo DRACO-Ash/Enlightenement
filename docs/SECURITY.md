@@ -43,20 +43,27 @@ state-changing route.
 | Log injection blocked; actor sanitised and capped | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
-| No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_reports_booleans_and_lengths_but_never_a_secret_value` |
+| No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length` |
 | Operator values normalised before use | `config.py` | `test_clean_strips_quotes_whitespace_and_control_characters` |
 | Storage proved by a REAL write, never an existence check | `storage.py` | `test_probe_reports_an_existing_path_that_is_a_file...` |
 | Probe cannot hang; hard timeout shorter than the platform's | `app.py` | `test_a_hanging_probe_times_out...` |
-| Probe cost bounded by TIME, so an unauthenticated flood cannot exhaust volume IOPS | `app.py` | `test_a_readiness_flood_causes_one_real_write_not_one_per_request` |
+| Probe cost bounded by TIME and by CONCURRENCY (single-flight) | `app.py` | `test_a_readiness_flood_causes_one_real_write...`, `test_concurrent_readiness_requests_run_one_probe_between_them` |
+| Concurrent callers all receive one verdict, so none can race to overwrite another | `app.py` | `test_concurrent_callers_all_receive_the_same_verdict` |
+| The rate limiter sits OUTSIDE the body cap, so oversize requests spend budget | `app.py` | `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, `test_an_oversize_request_still_spends_rate_limit_budget` |
+| A probe path declaring a body that never arrives still answers | `middleware.py` | `test_a_liveness_request_declaring_a_body_that_never_arrives_still_answers` |
+| The existence check for a partial update runs inside the store lock | `storage.py` | `test_the_cap_cannot_turn_a_must_exist_merge_into_a_partial_append` |
+| The constant-time primitive is present and no token is compared with `==` | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive` |
+| Backups carry the same restrictive mode as the snapshot | `storage.py` | `test_the_snapshot_and_its_backups_share_the_same_restrictive_mode` |
+| The lock path is not followed through a symlink | `storage.py` | `test_the_lock_file_is_not_followed_through_a_symlink` |
 | A storage fault leaves the app unready, never unstartable | `app.py` | `test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt` |
 | The rate-limit key table fails CLOSED when full | `ratelimit.py` | `test_a_full_table_refuses_a_new_caller_rather_than_evicting_a_tracked_one` |
 | The HEALTHCHECK port is validated, never interpolated raw | `healthcheck.py` | `test_a_hostile_port_is_refused_rather_than_interpolated` |
-| Store input and output runs off the event loop | `app.py` | exercised throughout `test_http.py` |
+| Store input and output runs off the event loop | `app.py` | `test_no_store_call_runs_on_the_event_loop` |
 | Non-root numeric user, no suid or sgid bits, flat image | `Dockerfile` | `tests/test_appstore_contract.py` |
 
 Each control was mutation-proved before submission: the code it protects was broken in a
-copy of the tree and the named test went red. Twenty-one mutants have been killed across two
-rounds, covering the anti-shrink merge, the token compare, both rate-limit boundary
+copy of the tree and the named test went red. Mutants have been killed across three rounds,
+covering the anti-shrink merge, the token compare, both rate-limit boundary
 directions, the readiness fail-closed branch, the unknown-key rejection, the size cap, the
 actor sanitiser, the closed-by-default write posture, the cross-origin method list, the
 strict tier on both write routes, the byte-counting body cap, the probe cache, the port
@@ -64,11 +71,32 @@ validation, the exclusive write lock, the revision guard, the fail-closed key ta
 worker count, the package-manager purge, the package-database retention, and the two binding
 image checks in continuous integration.
 
-One mutant SURVIVED and is recorded rather than hidden: replacing `hmac.compare_digest` with
-`==` in `auth.py` leaves the suite green. The constant-time property is not assertable by a
-functional test, which is a property of timing, not a gap in the suite. The functional
-fail-closed behaviour is covered; the timing property rests on using the standard-library
-primitive, and the review gates read that line.
+**Surviving mutants, all of them.** An earlier version of this section claimed one survivor.
+An independent 32-mutant run found four, which is a reminder that a mutation claim is only
+worth what the run behind it measured. The current position:
+
+● **`hmac.compare_digest` to `==`** (`auth.py`): still survives every BEHAVIOURAL test,
+  because the difference is timing, not output. Now caught by a source assertion instead
+  (`test_the_token_comparison_uses_the_constant_time_primitive`), plus a module-wide check
+  that no token is compared with plain equality. The timing property itself remains
+  unassertable; the primitive's presence no longer is.
+● **The `asyncio.to_thread` offload** (`app.py`): survived, and was a real MAJOR finding. Now
+  killed by `test_no_store_call_runs_on_the_event_loop`, which proves the offload directly by
+  asserting no running event loop is visible inside the store call.
+● **Deleting the `store.seed()` call at boot**: still survives, and is recorded as harmless
+  rather than proved. `load()` returns an empty snapshot when the file is absent and
+  `upsert_session` creates it, so seeding is a convenience that makes the first read cheaper,
+  not a control. It is listed here so the ledger is complete.
+● **The `_declared_over_cap` early refusal** (`middleware.py`): still survives, and is
+  redundant by design. The byte counter enforces the cap regardless; the header check only
+  avoids reading a body that has already announced itself as too large. An optimisation, not
+  a control.
+
+Two mutants were killed only after fixing the TEST rather than the code: one asserted a
+Dockerfile invariant against the file's own explanatory prose, and one matched `--user 0`
+inside the comment explaining why the flag is needed rather than in the command. Both would
+have passed while the control was removed. Assertions here are about what executes, never
+about the words beside it.
 
 Two of those mutants were killed only after fixing the TEST rather than the code: one
 asserted a Dockerfile invariant against the file's own explanatory prose, and one matched

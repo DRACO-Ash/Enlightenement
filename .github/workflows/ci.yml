@@ -52,7 +52,12 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Simulate the platform pipeline against the upload artefact
-        run: sh scripts/simulate-pipeline.sh 0.1.0
+        # The version is READ from the manifest, never hardcoded here: a literal drifts the
+        # moment the release is bumped, and then CI stops simulating what is being shipped.
+        run: |
+          version=$(python3 -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')
+          echo "simulating version $version"
+          sh scripts/simulate-pipeline.sh "$version"
 
   image:
     name: container image (binding leg)

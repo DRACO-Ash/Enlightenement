@@ -57,9 +57,10 @@ class RateLimiter:
             # Fail closed: the table is full of live windows, so refuse the new caller
             # rather than evicting a tracked one and resetting its count.
             return False
+        # No window-reset arm here: _drop_expired above has already removed every window
+        # satisfying the identical predicate, so a reset branch would be dead code inside a
+        # security control, which invites a wrong mental model of how the limiter behaves.
         start, count = tracked if tracked is not None else (now, 0)
-        if now - start >= self._window:
-            start, count = now, 0
         self._windows[key] = (start, count + 1)
         return count + 1 <= self._limit
 

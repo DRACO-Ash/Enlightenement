@@ -97,19 +97,20 @@ the resolved directory until it is set, so the symptom is unambiguous.
 
 | Resource | Request | Notes |
 |---|---|---|
-| Memory | TBC, re-verify against the App Store envelope before submission | Two gunicorn workers, no in-memory dataset of size |
+| Memory | TBC, re-verify against the App Store envelope before submission | ONE gunicorn worker (see Concurrency), no in-memory dataset of size |
 | CPU | TBC, re-verify against the App Store envelope before submission | Request-bound, no batch work |
 
 ## Rollback
 
 **First release. There is no previous version to roll back to.** Stated honestly rather than
-implied. Once V0.2 exists, rollback is redeploying the previous image tag; the JSON snapshot
-carries `schemaVersion` and every destructive write takes a timestamped backup first (five
-retained), so a data rollback is a file restore inside the volume.
+implied: V0.1 and V0.2 are both pre-submission, so nothing has ever been deployed. Once a
+version has shipped, rollback is redeploying the previous image tag; the JSON snapshot carries
+`schemaVersion` and every destructive write takes a timestamped backup first (five retained),
+so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 217 tests, coverage 97.63%
+- [x] Verification loop green (`sh scripts/verify.sh`), 245 tests, coverage 98.04%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table

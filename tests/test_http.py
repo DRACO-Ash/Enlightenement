@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
 from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, create_app
@@ -575,3 +577,162 @@ def test_an_oversize_response_still_carries_the_cross_origin_header(
         )
     assert response.status_code == 413
     assert response.headers["access-control-allow-origin"] == TEST_ORIGIN
+
+
+# --- controls the first two gate rounds found unasserted -------------------------------
+
+
+class LoopWatchingStore(TrainingStore):
+    """A store that records whether it was executed ON the event loop thread.
+
+    A coroutine running inside the loop has a running loop; a function handed to a worker
+    thread does not. So `asyncio.get_running_loop()` raising is the direct, precise proof
+    that the call was offloaded, with no reliance on thread names.
+    """
+
+    def __init__(self, data_dir: Path) -> None:
+        super().__init__(data_dir)
+        self.on_loop: list[str] = []
+
+    def _record(self, name: str) -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self.on_loop.append(name)
+
+    def load(self) -> dict[str, Any]:
+        self._record("load")
+        return super().load()
+
+    def sessions(self) -> list[dict[str, Any]]:
+        self._record("sessions")
+        return super().sessions()
+
+    def upsert_session(self, record: dict[str, Any], **kwargs: Any) -> Any:
+        self._record("upsert_session")
+        return super().upsert_session(record, **kwargs)
+
+
+def test_no_store_call_runs_on_the_event_loop(config: Config, data_dir: Path) -> None:
+    """The store does blocking file input and output including an fsync. Running it inline
+    in an async handler blocks the loop, which stalls the liveness and readiness paths on
+    that worker whenever the volume is slow: measured at 4 ms offloaded against 792 ms
+    inline. With one worker, a stalled loop is a silent liveness kill.
+    """
+    watcher = LoopWatchingStore(data_dir)
+    app = create_app(config=config, store=watcher, probe=ok_probe)
+    with TestClient(app) as client:
+        assert client.get("/api/v1/sessions").status_code == 200
+        assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
+        assert client.patch("/api/v1/sessions/alpha-one", json={"title": "x"}).status_code == 200
+    assert watcher.on_loop == [], f"store calls ran on the event loop: {watcher.on_loop}"
+
+
+def test_the_middleware_order_puts_the_limiter_outside_the_body_cap(
+    token_config: Config, store: TrainingStore
+) -> None:
+    """Order is load-bearing twice. The limiter must be OUTSIDE the cap, or an oversize
+    request is read in full while spending no limiter budget; and the cross-origin layer
+    must be outermost, or a 413 or 429 reaches a browser with no header and reads as an
+    opaque network error. Both were wrong in the first version.
+    """
+    app = create_app(config=token_config, store=store, probe=ok_probe)
+    order = [layer.cls.__name__ for layer in app.user_middleware]
+    assert order == ["CORSMiddleware", "BaseHTTPMiddleware", "BodyLimitMiddleware"], order
+
+
+def test_an_oversize_request_still_spends_rate_limit_budget(
+    config: Config, store: TrainingStore
+) -> None:
+    """With the cap outside the limiter, oversize requests were free: twelve of them left
+    the limiter's key table empty, so an unauthenticated caller could send unlimited
+    64 KB-body requests without ever being refused.
+    """
+    limiter = RateLimiter(2, 60.0)
+    app = create_app(config=config, store=store, probe=ok_probe, global_limiter=limiter)
+    with TestClient(app) as client:
+        oversize = b"x" * (MAX_BODY_BYTES + 1)
+        headers = {"content-type": "application/json"}
+        first = client.post("/api/v1/sessions", content=oversize, headers=headers)
+        second = client.post("/api/v1/sessions", content=oversize, headers=headers)
+        third = client.post("/api/v1/sessions", content=oversize, headers=headers)
+    assert [first.status_code, second.status_code] == [413, 413]
+    assert third.status_code == 429, "an oversize request spent no limiter budget"
+    assert limiter.tracked_keys() > 0
+
+
+def test_a_liveness_request_declaring_a_body_that_never_arrives_still_answers(
+    config: Config, store: TrainingStore
+) -> None:
+    """`GET /livez` with a declared length and no bytes must not park. The liveness and
+    readiness paths are the ones the deploy contract depends on.
+    """
+    app = create_app(config=config, store=store, probe=ok_probe)
+    with TestClient(app) as client:
+        response = client.request("GET", "/livez", headers={"content-length": "10"})
+    assert response.status_code == 200
+
+
+def test_concurrent_readiness_requests_run_one_probe_between_them(
+    config: Config, store: TrainingStore
+) -> None:
+    """Single-flight. A cache with an await between its read and its write bounds nothing
+    under concurrency: 17 400 concurrent requests were measured producing 228 real probes,
+    and the queued probes then exceeded their own timeout so healthy storage reported 503.
+    """
+    calls = {"count": 0}
+
+    def slow_probe(path: Path) -> ProbeResult:
+        calls["count"] += 1
+        time.sleep(0.15)
+        return ok_probe(path)
+
+    async def drive() -> list[int]:
+        app = create_app(
+            config=config,
+            store=store,
+            probe=slow_probe,
+            probe_settings=ProbeSettings(timeout=5.0, cache_seconds=0.0),
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://probe") as client:
+            calls["count"] = 0
+            responses = await asyncio.gather(*(client.get("/readyz") for _ in range(40)))
+            return [response.status_code for response in responses]
+
+    codes = asyncio.run(drive())
+    assert set(codes) == {200}, f"healthy storage reported {sorted(set(codes))}"
+    assert calls["count"] <= 2, f"40 concurrent requests ran {calls['count']} probes"
+
+
+def test_concurrent_callers_all_receive_the_same_verdict(
+    config: Config, store: TrainingStore
+) -> None:
+    """Single-flight is what removes the publication-ordering hazard: only the caller that
+    started a probe publishes it, so two verdicts can never race to overwrite each other.
+    This asserts the property that makes that true, rather than an unreachable guard.
+    """
+    verdicts: list[ProbeResult] = []
+
+    def slow_failing_probe(path: Path) -> ProbeResult:
+        time.sleep(0.1)
+        result = failing_probe(path)
+        verdicts.append(result)
+        return result
+
+    async def drive() -> list[int]:
+        app = create_app(
+            config=config,
+            store=store,
+            probe=slow_failing_probe,
+            probe_settings=ProbeSettings(timeout=5.0, cache_seconds=0.0),
+        )
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://probe") as client:
+            verdicts.clear()
+            responses = await asyncio.gather(*(client.get("/readyz") for _ in range(20)))
+            return [response.status_code for response in responses]
+
+    codes = asyncio.run(drive())
+    assert set(codes) == {503}, f"callers disagreed: {sorted(set(codes))}"
+    assert len(verdicts) <= 2, f"20 concurrent callers produced {len(verdicts)} verdicts"

@@ -105,4 +105,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # it safe even where advisory locking does not hold, such as some network mounts, and the
 # workload is asynchronous and input-output bound, so a second process buys nothing
 # measurable. Two workers were measured losing half of all acknowledged writes.
-CMD ["sh", "-c", "exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8080} --workers 1 --timeout 60 --access-logfile - --error-logfile -"]
+CMD ["sh", "-c", "exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b \"0.0.0.0:${PORT:-8080}\" --workers 1 --timeout 60 --access-logfile - --error-logfile -"]

@@ -22,6 +22,12 @@ TEST_ORIGIN = "https://enlightenment.apps.bluestaq.com"
 
 
 @pytest.fixture
+def anyio_backend() -> str:
+    """Run the `@pytest.mark.anyio` tests on asyncio only; the app has no trio support."""
+    return "asyncio"
+
+
+@pytest.fixture
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """An isolated storage directory, with the environment cleared of any real values."""
     target = tmp_path / "data"

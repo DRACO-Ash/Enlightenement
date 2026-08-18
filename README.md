@@ -15,7 +15,8 @@ sh scripts/verify.sh          # the verification loop
 **Writes are closed by default.** With no `ENLIGHTENMENT_TEAM_TOKEN` set, every write route
 returns 401 while reads, the health paths, and the diagnostics read-out stay open. To host for
 a team, set `ENLIGHTENMENT_TEAM_TOKEN` (at least 24 characters) and `ALLOWED_ORIGIN` together;
-either alone makes the application refuse to start, as does a wildcard origin. For local
+a token without an origin makes the application refuse to start, as does a wildcard origin at
+any time. An origin alone is harmless and simply leaves writes closed. For local
 single-user work with writes open, set `ENLIGHTENMENT_ALLOW_ANONYMOUS=1`, which cannot be
 combined with a token.
 

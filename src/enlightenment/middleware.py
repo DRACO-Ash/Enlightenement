@@ -29,6 +29,17 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 #: HTTP status for a body over the cap.
 HTTP_CONTENT_TOO_LARGE = 413
 
+#: The only methods whose body this middleware reads. A GET or a probe request is passed
+#: straight through untouched.
+#:
+#: Draining unconditionally was a regression: `GET /livez` with `Content-Length: 10` and the
+#: ten bytes never sent used to answer 200 in 0.01 s, because no handler reads the body, and
+#: after the first version of this middleware it parked with no response at all. The
+#: liveness and readiness paths are exactly the ones the deploy contract depends on, so they
+#: must never wait on a client that is not talking. A body on a method that carries none is
+#: left for the server to discard; nothing here buffers it.
+BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
+
 
 class BodyLimitMiddleware:
     """Reject any request whose body exceeds ``max_bytes``, however it is framed."""
@@ -42,7 +53,13 @@ class BodyLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # An honest oversize request is refused without reading its body at all.
+        if scope.get("method") not in BODY_METHODS or not self._body_framed(scope):
+            # Nothing to cap, so nothing is read here. See BODY_METHODS.
+            await self.app(scope, receive, send)
+            return
+
+        # An honest oversize request is refused without reading its body at all. Redundant
+        # with the byte counter below, so an optimisation rather than a control.
         if self._declared_over_cap(scope):
             await self._refuse(send)
             return
@@ -77,11 +94,23 @@ class BodyLimitMiddleware:
 
         await self.app(scope, replay, send)
 
+    def _body_framed(self, scope: Scope) -> bool:
+        """True when the request declares a body at all, by length or by chunked framing."""
+        for name, value in scope.get("headers", []):
+            if name == b"transfer-encoding":
+                return True
+            if name == b"content-length":
+                declared = value.decode("latin-1").strip()
+                # A non-numeric or zero length frames no body we can cap; the byte counter
+                # covers the non-numeric case if a body arrives anyway.
+                return not declared.isdecimal() or int(declared) > 0
+        return False
+
     def _declared_over_cap(self, scope: Scope) -> bool:
         for name, value in scope.get("headers", []):
             if name == b"content-length":
                 declared = value.decode("latin-1").strip()
-                return declared.isdigit() and int(declared) > self.max_bytes
+                return declared.isdecimal() and int(declared) > self.max_bytes
         return False
 
     async def _refuse(self, send: Send) -> None:

@@ -18,6 +18,7 @@ from enlightenment.storage import (
     STORE_FILENAME,
     StaleRevisionError,
     TrainingStore,
+    UnknownSessionError,
     empty_snapshot,
     merge_session,
     migrate,
@@ -274,3 +275,62 @@ def test_probe_reports_an_existing_path_that_is_a_file_not_a_directory(tmp_path:
     result = probe_writable(occupied)
     assert result.ok is False
     assert result.errno is not None
+
+
+def test_a_must_exist_write_is_refused_when_the_id_is_absent(store: TrainingStore) -> None:
+    """The existence check runs INSIDE the lock. Checking before taking the lock left a
+    window in which a concurrent write could trip the session cap and evict the id, turning
+    an intended merge into an append of a partial record with a fresh createdAt.
+    """
+    with pytest.raises(UnknownSessionError):
+        store.upsert_session({"id": "never-created", "title": "x"}, must_exist=True)
+    assert store.sessions() == []
+    assert store.revision() == 0
+
+
+def test_a_must_exist_write_merges_when_the_id_is_present(store: TrainingStore) -> None:
+    store.upsert_session({**SESSION, "notes": "keep me"})
+    result = store.upsert_session({"id": "alpha", "title": "Renamed"}, must_exist=True)
+    assert result.session["notes"] == "keep me"
+    assert result.session["title"] == "Renamed"
+
+
+def test_the_cap_cannot_turn_a_must_exist_merge_into_a_partial_append(tmp_path: Path) -> None:
+    """The concrete failure the locked check closes: the id is evicted by the cap, so the
+    'merge' would create a record carrying only the patched fields.
+    """
+    store = TrainingStore(tmp_path / "data", now=fixed_now, max_sessions=2)
+    for index in range(3):
+        store.upsert_session({"id": f"s{index}", "title": "t", "scenario": "TBC, re-verify"})
+    assert [session["id"] for session in store.sessions()] == ["s1", "s2"]
+    with pytest.raises(UnknownSessionError):
+        store.upsert_session({"id": "s0", "title": "only this field"}, must_exist=True)
+
+
+def test_the_snapshot_and_its_backups_share_the_same_restrictive_mode(tmp_path: Path) -> None:
+    """A backup holding identical data under a weaker mode, on a volume that may be shared
+    with an add-on, is a downgrade.
+    """
+    stamps = iter([datetime(2026, 8, 18, 12, 0, second, tzinfo=UTC) for second in range(1, 10)])
+    store = TrainingStore(tmp_path / "data", now=lambda: next(stamps))
+    store.upsert_session(dict(SESSION))
+    store.upsert_session({**SESSION, "title": "Renamed"})
+    snapshot_mode = store.path.stat().st_mode & 0o777
+    backups = list(store.path.parent.glob(f"{STORE_FILENAME}.*.bak"))
+    assert backups, "no backup was taken"
+    for backup in backups:
+        assert backup.stat().st_mode & 0o777 == snapshot_mode
+
+
+def test_the_lock_file_is_not_followed_through_a_symlink(tmp_path: Path) -> None:
+    """A principal with write access to the volume could otherwise plant the lock path as a
+    symlink and de-serialise every writer.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.touch()
+    (data_dir / "training.lock").symlink_to(elsewhere)
+    store = TrainingStore(data_dir, now=fixed_now)
+    with pytest.raises(OSError, match=r"symbolic link|Too many levels|ELOOP|loop"):
+        store.upsert_session(dict(SESSION))

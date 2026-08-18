@@ -55,6 +55,19 @@ Snapshot = dict[str, Any]
 Session = dict[str, Any]
 
 
+class UnknownSessionError(LookupError):
+    """Raised when a caller required an existing session and none was found.
+
+    Checked INSIDE the exclusive lock. Checking existence before taking the lock left a
+    window in which a concurrent write could trip the session cap and evict the id, turning
+    an intended merge into an append of a partial record.
+    """
+
+    def __init__(self, session_id: object) -> None:
+        super().__init__(f"no session with id {session_id!r}")
+        self.session_id = session_id
+
+
 class StaleRevisionError(RuntimeError):
     """Raised when a caller's expected revision no longer matches the stored one."""
 
@@ -192,7 +205,9 @@ class TrainingStore:
     def _exclusive(self) -> Iterator[None]:
         """Hold an exclusive advisory lock for the whole read-modify-write."""
         self._data_dir.mkdir(parents=True, exist_ok=True)
-        handle = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        # O_NOFOLLOW: a principal with write access to the volume could otherwise plant the
+        # lock path as a symlink and de-serialise every writer. Cheap to close, so closed.
+        handle = os.open(self.lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(handle, fcntl.LOCK_EX)
             try:
@@ -238,12 +253,20 @@ class TrainingStore:
         stored = self.load()["sessions"]
         return [dict(session) for session in stored]
 
-    def upsert_session(self, record: Session, *, expected_rev: int | None = None) -> WriteResult:
+    def upsert_session(
+        self,
+        record: Session,
+        *,
+        expected_rev: int | None = None,
+        must_exist: bool = False,
+    ) -> WriteResult:
         """Insert or anti-shrink-merge ``record`` by its ``id`` and persist the result.
 
         The whole read-modify-write runs under the exclusive lock, so a concurrent writer
         in another process cannot lose this update. When ``expected_rev`` is given and no
-        longer matches, :class:`StaleRevisionError` is raised instead of overwriting.
+        longer matches, :class:`StaleRevisionError` is raised instead of overwriting. When
+        ``must_exist`` is set and the id is absent, :class:`UnknownSessionError` is raised
+        rather than creating a partial record.
         """
         with self._exclusive():
             snapshot = self.load()
@@ -252,6 +275,8 @@ class TrainingStore:
                 raise StaleRevisionError(expected_rev, current_rev)
 
             stored: list[Session] = list(snapshot["sessions"])
+            if must_exist and not any(item.get("id") == record.get("id") for item in stored):
+                raise UnknownSessionError(record.get("id"))
             count_before = len(stored)
             stamped = self._apply(stored, record)
             stored = self._enforce_cap(stored)
@@ -318,7 +343,13 @@ class TrainingStore:
         """Copy the current snapshot to a timestamped file and prune old backups."""
         stamp = self._now().strftime("%Y%m%dT%H%M%S%f")
         target = self._data_dir / f"{STORE_FILENAME}.{stamp}.bak"
-        target.write_bytes(self.path.read_bytes())
+        # Same mode as the snapshot itself (0600). A backup holding identical data under a
+        # weaker mode, on a volume that may be shared with an add-on, is a downgrade.
+        handle = os.open(target, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(self.path.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
         _logger.info("pre-write backup taken: %s", target.name)
         backups = sorted(self._data_dir.glob(f"{STORE_FILENAME}.*.bak"))
         for stale in backups[:-BACKUP_RETENTION]:

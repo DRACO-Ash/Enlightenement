@@ -2,6 +2,70 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.3 (2026-08-18)
+
+**What.** Closed the second round of gate findings. Both gates independently found the same
+two MAJORs, which is the strongest possible signal that they were real.
+
+● **The probe cache bounded nothing under concurrency.** The cache was read, awaited, then
+  written, so every request arriving while a probe ran started its own. Measured at 500
+  concurrent requests producing 500 real probes, and 17 400 concurrent requests producing
+  228. Worse than wasted work: on a slow volume the queued probes exceeded their own 2s
+  timeout, so a majority of responses were 503 against storage that was fine, and those
+  paths are unauthenticated and rate-limit exempt by design, so any caller could take a
+  healthy pod out of rotation. Probes are now single-flight: a caller arriving while one runs
+  awaits that one. The probe also moved to its own single-thread executor, because sharing the
+  default pool with the store took a legitimate listing from 1.4ms to 109ms at the median.
+● **The body cap sat outside the coarse rate limiter, not inside it as documented.** Twelve
+  oversize requests left the limiter's key table empty, so an unauthenticated caller could
+  send unlimited 64KB-body requests without ever spending budget. Registration order is
+  corrected and now asserted. The same middleware had also made every path drainable: `GET
+  /livez` with a declared length and no bytes went from answering in 0.01s to parking with no
+  response at all. It now reads a body only for POST, PUT and PATCH, and only when one is
+  framed.
+● **Two controls the code and the security policy both claimed were mutation-proved were
+  asserted by nothing.** Deleting the `asyncio.to_thread` offload left all 216 tests green,
+  while the reviewer measured the event-loop stall going from 4ms to 792ms; with one worker a
+  stalled loop stalls the platform's own liveness probe. Replacing `hmac.compare_digest` with
+  `==` also left the suite green. The first is now proved directly by asserting no running
+  event loop is visible inside a store call; the second by a source assertion that the
+  primitive is present and no token is compared with plain equality.
+
+Also fixed: the PATCH existence check ran outside the store lock, so a concurrent write that
+tripped the session cap between check and write turned an intended merge into an append of a
+partial record; `str.isdigit()` accepted characters `int()` rejects, so a hostile PORT raised
+an uncaught ValueError out of a function documented to return None, and non-ASCII decimals
+would silently resolve to a different port than they look like; pre-write backups were written
+0644 while the snapshot is 0600; the lock path is opened `O_NOFOLLOW`, so it cannot be planted
+as a symlink to de-serialise every writer; `verify.sh` now audits the dev lockfile too, since
+the platform installs and executes it on its own test stage; the limiter's dead window-reset
+branch is gone; the interpolated `PORT` in the launch command is quoted; the deprecated
+`on_event` shutdown hook is a lifespan handler.
+
+**Corrections to my own record**, which matter more than the code fixes. An independent
+32-mutant run found four surviving mutants where I had recorded one. `docs/SECURITY.md` cited a
+test name that does not exist. The data-loss figure was out by a factor of two: reproduced
+three times at 81, 83 and 84 records surviving of 160, not 40 of 80. The README claimed either
+access variable alone refuses to start, when only a token without an origin does. The stated
+middleware order was inverted. The deployment table still sized memory for two workers. All
+corrected, and the mutation ledger in `docs/SECURITY.md` now lists every survivor with the
+reason each is or is not load-bearing.
+
+**Removed rather than left untestable.** The probe's publication-ordering guard is gone. Once
+probes are single-flight only the caller that started one publishes it, so two verdicts cannot
+race, and the guard became unreachable. A mutation proved no test could kill it. Unreachable
+code inside a security control invites a wrong mental model, which is the same reason the
+limiter's dead branch came out.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 245 tests
+collected (244 passed, 1 skipped) with branch coverage at 98.04% against an 80% floor,
+Cobertura written, `pip-audit` clean over BOTH lockfiles. Pipeline simulation green against the
+artefact on the pinned interpreter with `GITLAB_CI=true`. Eleven fresh mutants run this round:
+eight killed first time, three survived and were closed, then re-proved killed.
+
+**Still not verified.** The container image build, for the same reason as V0.1 and V0.2: the
+registry blob endpoint is denied by this environment's network policy. The CI `image` job binds.
+
 ## V0.2 (2026-08-18)
 
 **What.** Closed every finding from the first engineering and security gate reviews: one

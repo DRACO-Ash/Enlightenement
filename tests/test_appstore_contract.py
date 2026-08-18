@@ -119,15 +119,23 @@ def test_the_container_runs_a_single_worker() -> None:
 
 
 @pytest.mark.parametrize(
-    "tool",
-    ["/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/dpkg", "/opt/venv/bin/pip"],
+    "family",
+    [r"/usr/bin/apt\S*", r"/usr/bin/dpkg\S*", r"/opt/venv/bin/pip\S*", r"/etc/apt\b"],
 )
-def test_no_package_manager_survives_into_the_shipped_image(tool: str) -> None:
-    """The scanner judges what is IN the image, not what the entrypoint runs. Checked as a
-    class rather than for pip alone, which is all the first version removed.
+def test_no_package_manager_family_survives_into_the_shipped_image(family: str) -> None:
+    """The scanner judges what is IN the image, not what the entrypoint runs.
+
+    Matched by FAMILY (a glob-shaped pattern), not by a fixed list of binary names, because
+    the first version removed pip alone and the second enumerated eight names.
+
+    What this CANNOT see: a package-manager binary the base image ships under a path none of
+    these patterns covers. The image cannot be built in the authoring environment (the
+    registry blob endpoint is denied), so nothing here can enumerate the base image's real
+    contents. The CI `image` job is the check that can, and it runs the equivalent test
+    against the built filesystem.
     """
     sweep = DOCKER_INSTRUCTIONS.split("FROM scratch")[0]
-    assert tool in sweep, f"{tool} is not removed from the runtime filesystem"
+    assert re.search(family, sweep), f"no path matching {family} is removed from the runtime"
 
 
 def test_the_package_database_is_deliberately_kept() -> None:
@@ -324,3 +332,14 @@ def test_the_image_script_never_reports_a_pass_for_an_unreachable_registry() -> 
     script = (ROOT / "scripts" / "build-image.sh").read_text(encoding="utf-8")
     assert "THIS IS NOT A PASS" in script
     assert "exit 3" in script
+
+
+def test_the_loop_audits_every_lockfile_it_installs() -> None:
+    """The platform installs the dev lockfile and executes it in its own test stage, so an
+    advisory there is shipped code on the runner, not just local tooling. Removing the
+    second leg used to leave the suite green.
+    """
+    verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+    for lockfile in ("requirements.txt", "requirements-dev.txt"):
+        assert f"audit_lockfile {lockfile}" in verify, f"{lockfile} is never audited"
+    assert verify.count("audit_lockfile ") >= 2
