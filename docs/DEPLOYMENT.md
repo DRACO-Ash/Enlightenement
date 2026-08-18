@@ -24,13 +24,15 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 |---|---|
 | Container port | 8080 |
 | `PORT` handling | Read at runtime, default 8080, bound `0.0.0.0`. Never `ENV PORT=` |
-| Launch command | `exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8080}` |
+| Launch command | `exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8080} --workers 1 --timeout 60 --access-logfile - --error-logfile -` (verbatim; the worker count is load-bearing, see Concurrency below) |
 | User | `10001:10001`, numeric and non-root |
 | Root path | `GET /` returns 200 with JSON. Never a 302 |
 | Liveness paths | `/livez`, `/ping`, `/health`. Always 200, dependency-free |
 | Readiness paths | `/healthz`, `/readyz`. 200 when storage accepts a real write, else 503 with the resolved directory and errno |
 | Diagnostics | `GET /api/v1/diagnostics`. Unauthenticated and secret-free by construction |
-| Image healthcheck | `python -m enlightenment.healthcheck`, 5 second timeout, 3 retries |
+| Image healthcheck | `python -m enlightenment.healthcheck`, 5 second timeout, 3 retries. Probes `/livez`, NOT readiness: a Docker HEALTHCHECK is a liveness signal and anything acting on it restarts the container, so pointing it at readiness would restart the pod on a storage fault |
+| **Platform readiness probe** | Configure on `/healthz`. That is the path carrying the real-write proof and the diagnostic 503 |
+| **Platform liveness probe** | Configure on `/livez`. Dependency-free, so a storage fault never restarts a healthy container |
 
 ## Environment variables
 
@@ -45,9 +47,38 @@ explicitly `[delete]`.
 | `PORT` | `[delete]` | Platform-injected | Code default 8080 |
 | `STORAGE_MOUNT_PATH` | `[delete]` | Injected by the FILE_STORAGE add-on | Code reads it at request time |
 | `DATA_DIR` | `[delete]` | Optional override | Only to point storage somewhere other than the add-on mount |
-| `ENLIGHTENMENT_TEAM_TOKEN` | Set only to host for a team | Operator-set secret | Unset means single-user local mode. If set, `ALLOWED_ORIGIN` must also be set |
-| `ALLOWED_ORIGIN` | `https://enlightenment.apps.bluestaq.com` | Operator-set | Mandatory whenever the token is set. A wildcard with a token makes the app refuse to start |
+| `ENLIGHTENMENT_TEAM_TOKEN` | Set to host for a team | Operator-set secret | At least 24 characters. Unset means writes return 401 while reads, health, and diagnostics stay open. If set, `ALLOWED_ORIGIN` is mandatory or the app refuses to start |
+| `ALLOWED_ORIGIN` | `https://enlightenment.apps.bluestaq.com` | Operator-set | Mandatory whenever the token is set. A wildcard refuses to start whether or not a token is set |
+| `ENLIGHTENMENT_ALLOW_ANONYMOUS` | `[delete]` | Operator-set | Local single-user work ONLY. Opens every write route to any caller. Cannot combine with a token: the app refuses to start on the contradiction |
 | `BUILD_ID` | `[delete]` | Optional, stamped by CI | Falls back to the package version |
+
+## Access posture (read before configuring the environment tab)
+
+**Writes are closed by default.** With no `ENLIGHTENMENT_TEAM_TOKEN` and no
+`ENLIGHTENMENT_ALLOW_ANONYMOUS`, every write route returns 401 while `GET /`, the health
+paths, the session listing, and the diagnostics read-out stay open. That combination is
+deliberate: an absent token is the container default and this tab is documented as empty, so
+treating "no token" as "open" would place an unauthenticated write endpoint on a public
+ingress by omission. It was measured doing exactly that before the fix.
+
+Reads and diagnostics stay open so the posture is recoverable: an operator can always see
+what the application thinks its configuration is, even when writes are shut.
+
+## Concurrency
+
+The training snapshot is a file-backed read-modify-write store, so the write path is
+serialised three ways and all three matter:
+
+● The launch command runs **one** worker. Two workers were measured losing half of all
+  acknowledged writes, with a 201 and an audit line returned for each one that vanished.
+● Every write holds an exclusive `fcntl.flock` across load, merge, and rename, so a second
+  process cannot lose an update even if the worker count changes or the pod restarts.
+● Each snapshot carries a monotonic `rev`. A caller may send `If-Match`, and a mismatch is a
+  409 rather than a silent overwrite. This is the backstop where advisory locking does not
+  hold, such as some network mounts.
+
+If a future change needs more than one worker, move the store to the database add-on rather
+than raising the worker count.
 
 ## Add-ons
 
@@ -78,13 +109,13 @@ retained), so a data rollback is a file restore inside the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`)
+- [x] Verification loop green (`sh scripts/verify.sh`), 217 tests, coverage 97.63%
 - [x] Pipeline simulation green (`sh scripts/simulate-pipeline.sh`)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS
-- [ ] `security-reviewer` PASS
+- [ ] `engineering-reviewer` PASS (first round FAIL: one BLOCKER and four MAJORs, all fixed; re-review pending)
+- [ ] `security-reviewer` PASS (first round FAIL: three BLOCKERs and five MAJORs, all fixed; re-review pending)
 - [ ] `deploy-gate` PASS
 - [ ] Explicit human confirmation to publish

@@ -59,7 +59,19 @@ RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip \
            /usr/local/lib/python3.12/site-packages/wheel-*.dist-info \
            /opt/venv/bin/pip /opt/venv/bin/pip3 /opt/venv/bin/pip3.12 \
            /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12 \
+           /usr/bin/apt /usr/bin/apt-get /usr/bin/apt-cache /usr/bin/apt-config \
+           /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/aptitude \
+           /usr/bin/dpkg /usr/bin/dpkg-deb /usr/bin/dpkg-divert /usr/bin/dpkg-query \
+           /usr/bin/dpkg-split /usr/bin/dpkg-statoverride /usr/bin/dpkg-trigger \
+           /usr/bin/dpkg-maintscript-helper /usr/sbin/dpkg-preconfigure \
+           /etc/apt /usr/lib/apt \
            /var/lib/apt/lists/* /var/cache/apt/* /root/.cache /tmp/*
+
+# NOTE on what is deliberately KEPT: /var/lib/dpkg stays. It is the package DATABASE, not
+# a tool, and it is what the platform's image policy scan reads to enumerate the OS
+# packages present. Deleting it would remove the scanner's evidence rather than the risk,
+# which is suppressing a finding rather than addressing it, and that is forbidden. The
+# tools come out; the truth about what ships stays in.
 
 # Fail-CLOSED and LAST: clear every setuid and setgid bit, on files AND directories. The
 # policy scan stops (it does not warn) on suid_or_guid_set, and a file-only sweep misses
@@ -77,9 +89,20 @@ ENV PATH="/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/
 WORKDIR /app
 USER 10001:10001
 EXPOSE 8080
+# Probes the LIVENESS path, not readiness. A Docker HEALTHCHECK is a liveness signal, and
+# any runtime that acts on it restarts an unhealthy container, so pointing it at a
+# readiness path would restart the pod on a storage fault: exactly the coupling the split
+# paths exist to prevent. The PLATFORM readiness probe is configured on /healthz, which
+# carries the real-write proof and the diagnostic 503 (see docs/DEPLOYMENT.md).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["python", "-m", "enlightenment.healthcheck"]
 # `exec` so SIGTERM reaches gunicorn and shutdown does not hang. `-b 0.0.0.0:${PORT:-8080}`
 # is load-bearing: gunicorn and uvicorn default to 127.0.0.1, which the platform probe
 # cannot reach.
-CMD ["sh", "-c", "exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8080} --workers 2 --timeout 60 --access-logfile - --error-logfile -"]
+# ONE worker, deliberately. The training snapshot is a file-backed read-modify-write
+# store. The store now serialises writes with an exclusive advisory lock and guards them
+# with a revision, so more than one writer is safe by construction; a single worker keeps
+# it safe even where advisory locking does not hold, such as some network mounts, and the
+# workload is asynchronous and input-output bound, so a second process buys nothing
+# measurable. Two workers were measured losing half of all acknowledged writes.
+CMD ["sh", "-c", "exec gunicorn enlightenment.asgi:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8080} --workers 1 --timeout 60 --access-logfile - --error-logfile -"]

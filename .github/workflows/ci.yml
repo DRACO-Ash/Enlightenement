@@ -70,14 +70,32 @@ jobs:
           set -eu
           user=$(docker image inspect enlightenment:ci --format '{{.Config.User}}')
           test "$user" = "10001:10001" || { echo "image user is '$user', expected 10001:10001"; exit 1; }
-          # No setuid or setgid bit may ship. The platform policy scan stops, not warns, on this.
-          found=$(docker run --rm --entrypoint sh enlightenment:ci -c \
-            'find / -xdev -perm /6000 \( -type f -o -type d \) 2>/dev/null | wc -l')
-          test "$found" -eq 0 || { echo "image carries $found setuid/setgid paths"; exit 1; }
-          # The package manager must not ship: the scanner judges what is in the image.
-          pip_present=$(docker run --rm --entrypoint sh enlightenment:ci -c \
-            'command -v pip >/dev/null 2>&1 && echo yes || echo no')
-          test "$pip_present" = "no" || { echo "pip ships in the runtime image"; exit 1; }
+
+          # No setuid or setgid bit may ship. The platform policy scan STOPS, not warns.
+          #
+          # Run this as ROOT (--user 0), not as the image's own non-root user. A non-root
+          # find cannot descend into a directory it cannot read, the error goes to stderr,
+          # and the count comes back 0 while bits still ship: this check is the binding
+          # stand-in for the platform's own scan, so it must not be able to pass blind.
+          # Errors are surfaced, not discarded, for the same reason.
+          docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
+            'find / -xdev -perm /6000 \( -type f -o -type d \) -print > /tmp/suid.txt 2>/tmp/suid.err; \
+             if [ -s /tmp/suid.err ]; then echo "find reported errors:"; cat /tmp/suid.err; exit 1; fi; \
+             if [ -s /tmp/suid.txt ]; then echo "image carries setuid/setgid paths:"; cat /tmp/suid.txt; exit 1; fi; \
+             echo "suid/sgid paths: 0"'
+
+          # No package manager may ship: the scanner judges what is in the image, not what
+          # the entrypoint runs. Checked as a CLASS, not one named binary.
+          docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
+            'for tool in pip pip3 apt apt-get apt-key dpkg dpkg-deb aptitude; do \
+               if command -v "$tool" >/dev/null 2>&1; then echo "$tool ships in the runtime image"; exit 1; fi; \
+             done; echo "package managers present: 0"'
+
+          # The package DATABASE must remain, so the platform scanner can still enumerate
+          # the OS packages honestly. Removing it would hide findings rather than fix them.
+          docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
+            'test -s /var/lib/dpkg/status || { echo "dpkg database missing: the scanner cannot enumerate packages"; exit 1; }; \
+             echo "package database present"' 
 
       - name: Assert the container answers the platform probes on 8080
         run: |
@@ -91,8 +109,21 @@ jobs:
           for path in livez ping health; do
             curl -fsS -o /dev/null -w "$path %{http_code}\n" "http://127.0.0.1:8080/$path"
           done
-          # Readiness is allowed to be 503 here: no file-storage add-on is mounted, so the
-          # real-write probe is expected to report the errno rather than pass.
-          curl -sS -o /dev/null -w 'readyz %{http_code}\n' http://127.0.0.1:8080/readyz
+          # Readiness is allowed to be 200 or 503 here: no file-storage add-on is mounted, so
+          # the real-write probe may legitimately report an errno. Anything else, including
+          # a 500 or an empty reply, is a broken handler and must fail the job. `curl -sS`
+          # without -f exits 0 on any status, so the code is captured and asserted.
+          code=$(curl -sS -o /tmp/readyz.json -w '%{http_code}' http://127.0.0.1:8080/readyz)
+          echo "readyz $code"
+          case "$code" in
+            200|503) ;;
+            *) echo "readiness returned $code"; cat /tmp/readyz.json; docker logs probe; docker rm -f probe; exit 1 ;;
+          esac
+          python3 -c 'import json,sys; b=json.load(open("/tmp/readyz.json")); s=b["storage"]; missing=[f for f in ("writable","resolvedDataDir","errno","errnoName","detail") if f not in s]; assert not missing, f"readiness body missing {missing}: {b}"; assert s["resolvedDataDir"], f"no data directory resolved: {b}"; print("readiness body carries a complete diagnosis")'
+
+          # The diagnostics read-out must answer without authentication and leak no value.
+          curl -fsS http://127.0.0.1:8080/api/v1/diagnostics | python3 -c \
+            'import json,sys; d=json.load(sys.stdin); assert "length" not in d["config"]["teamToken"], d; print("diagnostics: no exact token length")'
+
           docker logs probe
           docker rm -f probe

@@ -104,9 +104,75 @@ def test_nothing_follows_the_suid_sweep_in_its_stage() -> None:
     assert mutating == [], f"instructions follow the sweep: {mutating}"
 
 
-def test_the_healthcheck_probes_an_unauthenticated_readiness_path() -> None:
+def test_the_healthcheck_runs_the_projects_own_validated_probe() -> None:
     assert "HEALTHCHECK" in DOCKER_INSTRUCTIONS
     assert "enlightenment.healthcheck" in DOCKER_INSTRUCTIONS
+
+
+def test_the_container_runs_a_single_worker() -> None:
+    """The training snapshot is a file-backed read-modify-write store. Two workers were
+    measured losing half of all acknowledged writes; the store now serialises with an
+    exclusive lock, and one worker keeps it safe even where advisory locking does not hold.
+    """
+    assert "--workers 1" in DOCKER_INSTRUCTIONS
+    assert "--workers 2" not in DOCKER_INSTRUCTIONS
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["/usr/bin/apt", "/usr/bin/apt-get", "/usr/bin/dpkg", "/opt/venv/bin/pip"],
+)
+def test_no_package_manager_survives_into_the_shipped_image(tool: str) -> None:
+    """The scanner judges what is IN the image, not what the entrypoint runs. Checked as a
+    class rather than for pip alone, which is all the first version removed.
+    """
+    sweep = DOCKER_INSTRUCTIONS.split("FROM scratch")[0]
+    assert tool in sweep, f"{tool} is not removed from the runtime filesystem"
+
+
+def test_the_package_database_is_deliberately_kept() -> None:
+    """/var/lib/dpkg is the package DATABASE, not a tool, and it is what the platform's
+    policy scan reads to enumerate OS packages. Deleting it would remove the scanner's
+    evidence rather than the risk, which is suppressing a finding.
+    """
+    assert "/var/lib/dpkg " not in DOCKER_INSTRUCTIONS
+    assert "/var/lib/dpkg\\" not in DOCKER_INSTRUCTIONS
+
+
+def _ci_instructions() -> list[str]:
+    """The workflow's executable lines, with comments and blanks removed.
+
+    Comment lines are stripped for the same reason they are in `_instructions`: an earlier
+    version of this test matched `--user 0` inside the COMMENT explaining why the flag is
+    needed, so removing the flag from the actual command left the test green. A mutation
+    proved it. Assertions are about what runs, never about the prose beside it.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    return [
+        line for line in workflow.splitlines() if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def test_the_binding_suid_sweep_in_ci_runs_as_root() -> None:
+    """A non-root `find` cannot descend into a directory it cannot read: the error goes to
+    stderr and the count comes back zero while bits still ship. This check stands in for
+    the platform's own policy scan, so it must not be able to pass blind.
+    """
+    lines = _ci_instructions()
+    sweep = next(index for index, line in enumerate(lines) if "-perm /6000" in line)
+    # The docker run invocation is the line (or two) immediately before the find.
+    command = " ".join(lines[max(0, sweep - 2) : sweep + 1])
+    assert "docker run" in command, f"the sweep is not run against the image: {command}"
+    assert "--user 0" in command, f"the suid sweep does not run as root: {command}"
+    assert "2>/dev/null" not in command, "the sweep discards the errors that reveal a blind pass"
+
+
+def test_the_package_manager_check_in_ci_covers_the_class() -> None:
+    lines = _ci_instructions()
+    joined = "\n".join(lines)
+    assert "for tool in pip pip3 apt apt-get" in joined
+    for tool in ("dpkg", "aptitude"):
+        assert tool in joined, f"the CI package-manager check does not cover {tool}"
 
 
 # --- the quality gate ---------------------------------------------------------------
@@ -234,11 +300,15 @@ def test_no_verification_script_pipes_a_gating_command_into_another() -> None:
     discarded into a variable and never checked). Those are reviewed by eye at the gates.
     """
     gating = ("docker build", "pytest", "ruff check", "mypy", "pip-audit")
+    # A single `|` is a pipe; `||` is a logical OR and loses nothing. Matching bare "|"
+    # flagged every `|| true` in the tree, which is a false positive, and a guard that
+    # cries wolf gets exempted rather than obeyed.
+    pipe = re.compile(r"(?<!\|)\|(?!\|)")
     offenders: list[str] = []
     for script in sorted((ROOT / "scripts").glob("*.sh")):
         for number, line in enumerate(script.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("#") or "|" not in stripped:
+            if stripped.startswith("#") or not pipe.search(stripped):
                 continue
             if any(command in stripped for command in gating):
                 offenders.append(f"{script.name}:{number}: {stripped}")

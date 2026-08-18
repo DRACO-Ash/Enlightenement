@@ -12,9 +12,12 @@ sh scripts/verify.sh          # the verification loop
 .venv/bin/python -m enlightenment
 ```
 
-With no team token set the application runs in single-user local mode with authentication
-off, bound to loopback. Set `ENLIGHTENMENT_TEAM_TOKEN` and `ALLOWED_ORIGIN` together to host
-it for a team; a token with a wildcard origin makes the application refuse to start.
+**Writes are closed by default.** With no `ENLIGHTENMENT_TEAM_TOKEN` set, every write route
+returns 401 while reads, the health paths, and the diagnostics read-out stay open. To host for
+a team, set `ENLIGHTENMENT_TEAM_TOKEN` (at least 24 characters) and `ALLOWED_ORIGIN` together;
+either alone makes the application refuse to start, as does a wildcard origin. For local
+single-user work with writes open, set `ENLIGHTENMENT_ALLOW_ANONYMOUS=1`, which cannot be
+combined with a token.
 
 ## The endpoints
 
@@ -24,9 +27,9 @@ it for a team; a token with a wildcard origin makes the application refuse to st
 | `GET /livez`, `/ping`, `/health` | none | Liveness. Always 200, dependency-free |
 | `GET /healthz`, `/readyz` | none | Readiness. Proves storage with a real write; 503 with the errno when it cannot |
 | `GET /api/v1/diagnostics` | none | Secret-free read-out: booleans, lengths, errnos, own identity |
-| `GET /api/v1/sessions` | none | List training sessions |
-| `POST /api/v1/sessions` | token | Create or fully upsert a session |
-| `PATCH /api/v1/sessions/{id}` | token | Partial update, anti-shrink |
+| `GET /api/v1/sessions` | none | List training sessions. Emits an ETag, answers 304 |
+| `POST /api/v1/sessions` | token | Create or fully upsert a session. Honours `If-Match`, 409 on a stale revision |
+| `PATCH /api/v1/sessions/{id}` | token | Partial update, anti-shrink. Honours `If-Match` |
 
 ## Documentation
 

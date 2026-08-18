@@ -5,36 +5,23 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import failing_probe, ok_probe
-from enlightenment.app import MAX_BODY_BYTES, create_app
+from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
+from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, create_app
 from enlightenment.auth import TOKEN_HEADER
 from enlightenment.config import Config
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import ProbeResult, TrainingStore
 
 VALID_SESSION = {"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"}
+AUTH = {TOKEN_HEADER: TEST_TOKEN}
 
-
-def token_config(data_dir: Path) -> Config:
-    """A hosted configuration: a team token and a real allowed origin."""
-    return Config(
-        port=8080,
-        host="0.0.0.0",
-        data_dir=data_dir,
-        team_token="a-real-length-token",
-        allowed_origin="https://enlightenment.apps.bluestaq.com",
-        build_id="test-build",
-    )
-
-
-@pytest.fixture
-def gated_client(data_dir: Path, store: TrainingStore) -> Iterator[TestClient]:
-    with TestClient(create_app(config=token_config(data_dir), store=store)) as client:
-        yield client
+#: Every method the API exposes, so the cross-origin policy cannot silently omit one.
+EXPOSED_METHODS = ("GET", "POST", "PATCH")
 
 
 # --- root and liveness -------------------------------------------------------------
@@ -83,7 +70,12 @@ def test_a_hanging_probe_times_out_rather_than_hanging_the_request(
         time.sleep(5)
         return ok_probe(path)
 
-    app = create_app(config=config, store=store, probe=stalled_probe, probe_timeout=0.05)
+    app = create_app(
+        config=config,
+        store=store,
+        probe=stalled_probe,
+        probe_settings=ProbeSettings(timeout=0.05, cache_seconds=0.0),
+    )
     with TestClient(app) as client:
         response = client.get("/readyz")
     assert response.status_code == 503
@@ -105,16 +97,108 @@ def test_a_probe_that_raises_reads_as_unready_never_as_a_pass(
     assert response.json()["storage"]["writable"] is False
 
 
+def test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt(
+    config: Config, data_dir: Path
+) -> None:
+    """Unready, never unstartable. A worker that refuses to boot cannot serve the
+    readiness diagnosis explaining why, which turns a mount problem into a crash loop.
+    """
+    (data_dir / "training.json").write_text("{truncated", encoding="utf-8")
+    app = create_app(config=config, store=TrainingStore(data_dir))
+    with TestClient(app) as client:
+        assert client.get("/livez").status_code == 200
+        assert client.get("/api/v1/diagnostics").status_code == 200
+
+
+def test_the_readiness_probe_uses_the_validated_config_not_a_fresh_environment_read(
+    config: Config, store: TrainingStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Probing a directory the store never writes to would prove the wrong thing."""
+    seen: list[Path] = []
+
+    def recording_probe(path: Path) -> ProbeResult:
+        seen.append(path)
+        return ok_probe(path)
+
+    monkeypatch.setenv("DATA_DIR", "/somewhere/else/entirely")
+    app = create_app(
+        config=config,
+        store=store,
+        probe=recording_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(app) as client:
+        client.get("/readyz")
+    assert seen, "the probe was never called"
+    assert all(path == config.data_dir for path in seen)
+
+
+def test_a_readiness_flood_causes_one_real_write_not_one_per_request(
+    config: Config, store: TrainingStore
+) -> None:
+    """The readiness paths are unauthenticated and exempt from rate limiting by design, so
+    an uncached real-write probe turns a flood into one create-write-fsync cycle per
+    request against the volume, which then trips the probe's own timeout and restarts the
+    pod. Probe cost must be bounded by time, not by request rate.
+    """
+    calls = {"count": 0}
+
+    def counting_probe(path: Path) -> ProbeResult:
+        calls["count"] += 1
+        return ok_probe(path)
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=counting_probe,
+        probe_settings=ProbeSettings(cache_seconds=60.0),
+    )
+    with TestClient(app) as client:
+        for _ in range(50):
+            assert client.get("/readyz").status_code == 200
+    # One at boot, one for the first request, none after that inside the window.
+    assert calls["count"] <= 2, f"probe ran {calls['count']} times for 50 requests"
+
+
+def test_a_stale_probe_verdict_is_refreshed_once_the_window_passes(
+    config: Config, store: TrainingStore
+) -> None:
+    ticks = {"now": 1000.0}
+    calls = {"count": 0}
+
+    def counting_probe(path: Path) -> ProbeResult:
+        calls["count"] += 1
+        return ok_probe(path)
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=counting_probe,
+        probe_settings=ProbeSettings(cache_seconds=5.0),
+        clock=lambda: ticks["now"],
+    )
+    with TestClient(app) as client:
+        client.get("/readyz")
+        before = calls["count"]
+        client.get("/readyz")
+        assert calls["count"] == before
+        ticks["now"] += 6.0
+        client.get("/readyz")
+    assert calls["count"] == before + 1
+
+
 # --- diagnostics --------------------------------------------------------------------
 
 
-def test_diagnostics_reports_booleans_and_lengths_but_never_a_secret_value(
+def test_diagnostics_never_exposes_a_token_value_or_an_exact_length(
     gated_client: TestClient,
 ) -> None:
-    body = gated_client.get("/api/v1/diagnostics").json()
-    assert body["config"]["teamToken"] == {"set": True, "length": len("a-real-length-token")}
-    assert body["config"]["authRequired"] is True
-    assert "a-real-length-token" not in gated_client.get("/api/v1/diagnostics").text
+    response = gated_client.get("/api/v1/diagnostics")
+    body = response.json()
+    assert body["config"]["teamToken"] == {"set": True, "lengthBucket": "adequate"}
+    assert "length" not in body["config"]["teamToken"]
+    assert TEST_TOKEN not in response.text
+    assert str(len(TEST_TOKEN)) not in str(body["config"]["teamToken"])
 
 
 def test_diagnostics_answers_every_plausible_deploy_question_at_once(
@@ -135,6 +219,37 @@ def test_diagnostics_answers_every_plausible_deploy_question_at_once(
     ):
         assert field in body, f"diagnostics is missing {field}"
     assert set(body["identity"]) == {"uid", "gid"}
+    assert body["config"]["anonymousWritesEnabled"] is False
+
+
+def test_diagnostics_reports_the_anonymous_write_posture(client: TestClient) -> None:
+    body = client.get("/api/v1/diagnostics").json()
+    assert body["config"]["authRequired"] is False
+    assert body["config"]["anonymousWritesEnabled"] is True
+    assert body["config"]["teamToken"]["lengthBucket"] == "unset"
+
+
+# --- the closed default: no token and no opt-in ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("post", "/api/v1/sessions"), ("patch", "/api/v1/sessions/alpha-one")],
+)
+def test_writes_are_refused_by_default_with_no_token_configured(
+    closed_client: TestClient, method: str, path: str
+) -> None:
+    """The container default with an empty operator environment tab. Treating an absent
+    token as "open" put an unauthenticated write endpoint on a public ingress by omission.
+    """
+    response = getattr(closed_client, method)(path, json=VALID_SESSION)
+    assert response.status_code == 401
+
+
+def test_reads_and_probes_stay_open_in_the_closed_default(closed_client: TestClient) -> None:
+    """Recoverability: the operator can still diagnose an app whose writes are shut."""
+    for path in ("/", "/livez", "/healthz", "/api/v1/sessions", "/api/v1/diagnostics"):
+        assert closed_client.get(path).status_code == 200, path
 
 
 # --- authentication -----------------------------------------------------------------
@@ -146,17 +261,18 @@ def test_a_write_without_a_token_is_refused_when_a_token_is_configured(
     assert gated_client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 401
 
 
-def test_a_write_with_a_wrong_token_is_refused(gated_client: TestClient) -> None:
+def test_a_write_with_a_wrong_token_of_the_same_length_is_refused(
+    gated_client: TestClient,
+) -> None:
+    wrong = TEST_TOKEN[:-1] + "X"
     response = gated_client.post(
-        "/api/v1/sessions", json=VALID_SESSION, headers={TOKEN_HEADER: "wrong-length-token!"}
+        "/api/v1/sessions", json=VALID_SESSION, headers={TOKEN_HEADER: wrong}
     )
     assert response.status_code == 401
 
 
 def test_a_write_with_the_right_token_succeeds(gated_client: TestClient) -> None:
-    response = gated_client.post(
-        "/api/v1/sessions", json=VALID_SESSION, headers={TOKEN_HEADER: "a-real-length-token"}
-    )
+    response = gated_client.post("/api/v1/sessions", json=VALID_SESSION, headers=AUTH)
     assert response.status_code == 201
     assert response.json()["session"]["id"] == "alpha-one"
 
@@ -166,7 +282,9 @@ def test_health_paths_stay_public_when_a_token_is_configured(gated_client: TestC
         assert gated_client.get(path).status_code == 200, path
 
 
-def test_local_mode_with_no_token_allows_the_write(client: TestClient) -> None:
+def test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous(
+    client: TestClient,
+) -> None:
     assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
 
 
@@ -178,21 +296,23 @@ def test_local_mode_with_no_token_allows_the_write(client: TestClient) -> None:
     [
         {"id": "alpha", "title": "A"},
         {"id": "alpha", "title": "A", "scenario": "s", "unexpected": "key"},
+        {"id": "alpha", "title": "A", "scenario": "s", "__proto__": {"x": 1}},
         {"id": "Alpha-Upper", "title": "A", "scenario": "s"},
         {"id": "double--hyphen", "title": "A", "scenario": "s"},
         {"id": "", "title": "A", "scenario": "s"},
         {"id": "alpha", "title": "", "scenario": "s"},
         {"id": "alpha", "title": "A", "scenario": "s", "notes": "n" * 2001},
         {"id": "a" * 65, "title": "A", "scenario": "s"},
+        {"id": {"nested": "object"}, "title": "A", "scenario": "s"},
     ],
 )
-def test_a_malformed_body_is_rejected_generically(client: TestClient, body: dict[str, str]) -> None:
+def test_a_malformed_body_is_rejected_generically(client: TestClient, body: dict[str, Any]) -> None:
     response = client.post("/api/v1/sessions", json=body)
     assert response.status_code == 422
     assert response.json() == {"error": "invalid request"}
 
 
-def test_an_oversize_body_is_refused_before_it_is_parsed(client: TestClient) -> None:
+def test_an_oversize_body_with_a_declared_length_is_refused(client: TestClient) -> None:
     response = client.post(
         "/api/v1/sessions",
         content=b"x" * (MAX_BODY_BYTES + 1),
@@ -202,11 +322,60 @@ def test_an_oversize_body_is_refused_before_it_is_parsed(client: TestClient) -> 
     assert response.json() == {"error": "request body too large"}
 
 
+def test_an_oversize_chunked_body_is_refused_on_bytes_read(client: TestClient) -> None:
+    """A chunked request declares no content-length, so a header-only cap is skipped and
+    the whole body is buffered before any handler or dependency runs. Measured before the
+    fix: 256 MB streamed took the worker from 52 MB to 821 MB resident and returned 422.
+    """
+
+    def chunks() -> Iterator[bytes]:
+        for _ in range(40):
+            yield b"x" * 8192
+
+    response = client.post(
+        "/api/v1/sessions", content=chunks(), headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 413
+    assert response.json() == {"error": "request body too large"}
+
+
+def test_an_oversize_chunked_body_is_refused_before_authentication(
+    closed_client: TestClient,
+) -> None:
+    """The cap must run ahead of the auth dependency, or an unauthenticated caller can
+    still make the worker buffer an unbounded body.
+    """
+
+    def chunks() -> Iterator[bytes]:
+        for _ in range(40):
+            yield b"x" * 8192
+
+    response = closed_client.post(
+        "/api/v1/sessions", content=chunks(), headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 413
+
+
+def test_a_body_within_the_cap_is_accepted_when_sent_chunked(client: TestClient) -> None:
+    """The boundary in the other direction: the cap must not reject a legitimate body."""
+    import json as json_module
+
+    payload = json_module.dumps({**VALID_SESSION, "notes": "n" * 1000}).encode("utf-8")
+
+    def chunks() -> Iterator[bytes]:
+        yield payload
+
+    response = client.post(
+        "/api/v1/sessions", content=chunks(), headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 201
+
+
 def test_an_unhandled_error_returns_a_generic_message_and_no_stack_trace(
     config: Config, data_dir: Path
 ) -> None:
     class ExplodingStore(TrainingStore):
-        def sessions(self) -> list[dict[str, object]]:
+        def load(self) -> dict[str, Any]:
             raise RuntimeError("internal detail that must not reach the client")
 
     app = create_app(config=config, store=ExplodingStore(data_dir), probe=ok_probe)
@@ -232,41 +401,96 @@ def test_a_partial_patch_keeps_every_field_the_caller_did_not_send(client: TestC
 
 
 def test_a_post_still_requires_every_mandatory_field(client: TestClient) -> None:
-    """POST is a full upsert, so a missing required field is a rejection, not a merge."""
     client.post("/api/v1/sessions", json=VALID_SESSION)
     response = client.post("/api/v1/sessions", json={"id": "alpha-one", "title": "Renamed"})
     assert response.status_code == 422
 
 
-def test_a_patch_to_an_unknown_session_is_a_404_not_a_silent_create(
-    client: TestClient,
-) -> None:
-    response = client.patch("/api/v1/sessions/never-created", json={"title": "x"})
-    assert response.status_code == 404
+def test_a_patch_to_an_unknown_session_is_a_404_not_a_silent_create(client: TestClient) -> None:
+    assert client.patch("/api/v1/sessions/never-created", json={"title": "x"}).status_code == 404
 
 
 def test_a_patch_with_an_unknown_key_is_rejected(client: TestClient) -> None:
     client.post("/api/v1/sessions", json=VALID_SESSION)
-    response = client.patch("/api/v1/sessions/alpha-one", json={"unexpected": "key"})
-    assert response.status_code == 422
+    assert client.patch("/api/v1/sessions/alpha-one", json={"unexpected": "k"}).status_code == 422
 
 
-def test_a_patch_without_a_token_is_refused_when_a_token_is_configured(
-    gated_client: TestClient,
+# --- concurrency validators -----------------------------------------------------------
+
+
+def test_a_listing_carries_an_etag_and_answers_304_when_unchanged(client: TestClient) -> None:
+    first = client.get("/api/v1/sessions")
+    etag = first.headers["etag"]
+    assert etag
+    again = client.get("/api/v1/sessions", headers={"if-none-match": etag})
+    assert again.status_code == 304
+
+
+def test_the_etag_changes_after_a_write(client: TestClient) -> None:
+    before = client.get("/api/v1/sessions").headers["etag"]
+    client.post("/api/v1/sessions", json=VALID_SESSION)
+    after = client.get("/api/v1/sessions").headers["etag"]
+    assert before != after
+
+
+def test_a_stale_if_match_is_a_409_rather_than_a_silent_overwrite(client: TestClient) -> None:
+    client.post("/api/v1/sessions", json=VALID_SESSION)
+    response = client.post(
+        "/api/v1/sessions",
+        json={**VALID_SESSION, "title": "Clobber"},
+        headers={"if-match": 'W/"0"'},
+    )
+    assert response.status_code == 409
+    listed = client.get("/api/v1/sessions").json()
+    assert listed["sessions"][0]["title"] == "Alpha One"
+
+
+def test_a_matching_if_match_is_accepted(client: TestClient) -> None:
+    created = client.post("/api/v1/sessions", json=VALID_SESSION)
+    rev = created.json()["rev"]
+    response = client.post(
+        "/api/v1/sessions",
+        json={**VALID_SESSION, "title": "Renamed"},
+        headers={"if-match": f'W/"{rev}"'},
+    )
+    assert response.status_code == 201
+
+
+def test_an_unparsable_if_match_is_ignored_rather_than_failing_the_request(
+    client: TestClient,
 ) -> None:
-    assert gated_client.patch("/api/v1/sessions/alpha-one", json={"title": "x"}).status_code == 401
+    response = client.post(
+        "/api/v1/sessions", json=VALID_SESSION, headers={"if-match": "not-a-revision"}
+    )
+    assert response.status_code == 201
 
 
 # --- rate limiting ------------------------------------------------------------------
 
 
-def test_the_strict_tier_returns_429_after_its_limit(config: Config, store: TrainingStore) -> None:
+def test_the_strict_tier_returns_429_after_its_limit_on_a_post(
+    config: Config, store: TrainingStore
+) -> None:
     app = create_app(config=config, store=store, probe=ok_probe, write_limiter=RateLimiter(2, 60.0))
     with TestClient(app) as client:
-        first = client.post("/api/v1/sessions", json=VALID_SESSION)
-        second = client.post("/api/v1/sessions", json=VALID_SESSION)
-        third = client.post("/api/v1/sessions", json=VALID_SESSION)
-    assert [first.status_code, second.status_code] == [201, 201]
+        codes = [client.post("/api/v1/sessions", json=VALID_SESSION).status_code for _ in range(3)]
+    assert codes == [201, 201, 429]
+
+
+def test_the_strict_tier_returns_429_after_its_limit_on_a_patch(
+    config: Config, store: TrainingStore
+) -> None:
+    """Without this the limiter on the PATCH handler could be deleted and the suite would
+    stay green, which means it asserts nothing. Each PATCH is a full snapshot
+    read-modify-write plus a backup copy, so an unlimited one is real volume churn.
+    """
+    app = create_app(config=config, store=store, probe=ok_probe, write_limiter=RateLimiter(3, 60.0))
+    with TestClient(app) as client:
+        assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
+        first = client.patch("/api/v1/sessions/alpha-one", json={"title": "one"})
+        second = client.patch("/api/v1/sessions/alpha-one", json={"title": "two"})
+        third = client.patch("/api/v1/sessions/alpha-one", json={"title": "three"})
+    assert [first.status_code, second.status_code] == [200, 200]
     assert third.status_code == 429
 
 
@@ -293,13 +517,29 @@ def test_probe_paths_are_never_rate_limited(config: Config, store: TrainingStore
 # --- cross-origin -------------------------------------------------------------------
 
 
-def test_the_allowed_origin_is_echoed_and_another_origin_is_not(
-    gated_client: TestClient,
+@pytest.mark.parametrize("method", EXPOSED_METHODS)
+def test_every_exposed_method_survives_a_preflight_from_the_allowed_origin(
+    gated_client: TestClient, method: str
 ) -> None:
-    allowed = gated_client.get("/", headers={"origin": "https://enlightenment.apps.bluestaq.com"})
-    assert (
-        allowed.headers["access-control-allow-origin"] == "https://enlightenment.apps.bluestaq.com"
+    """PATCH was omitted from allow_methods while being a shipped route, so the partial
+    update was unreachable from a browser. Parametrised over the real method list so the
+    policy and the route table cannot drift apart again.
+    """
+    response = gated_client.options(
+        "/api/v1/sessions",
+        headers={
+            "origin": TEST_ORIGIN,
+            "access-control-request-method": method,
+            "access-control-request-headers": TOKEN_HEADER,
+        },
     )
+    assert response.status_code == 200, response.text
+    assert method in response.headers["access-control-allow-methods"]
+
+
+def test_the_allowed_origin_is_echoed_and_another_origin_is_not(gated_client: TestClient) -> None:
+    allowed = gated_client.get("/", headers={"origin": TEST_ORIGIN})
+    assert allowed.headers["access-control-allow-origin"] == TEST_ORIGIN
     other = gated_client.get("/", headers={"origin": "https://attacker.example"})
     assert "access-control-allow-origin" not in other.headers
 
@@ -307,3 +547,31 @@ def test_the_allowed_origin_is_echoed_and_another_origin_is_not(
 def test_no_cors_header_is_emitted_when_no_origin_is_configured(client: TestClient) -> None:
     response = client.get("/", headers={"origin": "https://anything.example"})
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_a_rate_limited_response_still_carries_the_cross_origin_header(
+    token_config: Config, store: TrainingStore
+) -> None:
+    """Without the header a browser client sees an opaque network error rather than a 429."""
+    app = create_app(
+        config=token_config, store=store, probe=ok_probe, global_limiter=RateLimiter(1, 3600.0)
+    )
+    with TestClient(app) as client:
+        client.get("/api/v1/sessions", headers={"origin": TEST_ORIGIN})
+        limited = client.get("/api/v1/sessions", headers={"origin": TEST_ORIGIN})
+    assert limited.status_code == 429
+    assert limited.headers["access-control-allow-origin"] == TEST_ORIGIN
+
+
+def test_an_oversize_response_still_carries_the_cross_origin_header(
+    token_config: Config, store: TrainingStore
+) -> None:
+    app = create_app(config=token_config, store=store, probe=ok_probe)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/sessions",
+            content=b"x" * (MAX_BODY_BYTES + 1),
+            headers={"content-type": "application/json", "origin": TEST_ORIGIN},
+        )
+    assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == TEST_ORIGIN

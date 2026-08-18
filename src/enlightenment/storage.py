@@ -1,20 +1,34 @@
-"""Persistence: an atomic JSON store on the file-storage add-on.
+"""Persistence: an atomic, lock-serialised JSON store on the file-storage add-on.
 
-Every write is temp-write-then-rename, so a crash never leaves a half-written file.
+Three properties make a write safe here, and all three are needed:
+
+1. **Atomic.** Temp-write then rename, so a crash never leaves a half-written file and a
+   reader never sees a partial one.
+2. **Serialised.** An exclusive ``fcntl.flock`` is held across load, merge, and rename.
+   Atomicity alone does NOT prevent lost updates: two processes can each load the same
+   snapshot, each append, and the second rename silently discards the first write. That
+   was measured at half of all records lost with two workers, and the atomic rename is
+   exactly why the loss is invisible. POSIX only, which the Linux container satisfies.
+3. **Revision-guarded.** Each snapshot carries a monotonic ``rev``. A caller may pass the
+   revision it expects, and a mismatch is a visible 409 rather than a silent overwrite.
+   This is the backstop for a filesystem where advisory locking does not hold, such as
+   some network mounts.
+
 Every merge is anti-shrink: a partial update never deletes a field the caller did not
-send. The stored snapshot carries a schema version so a later shape change can migrate
-forward additively. A destructive overwrite takes a backup first and records that it
-did, which is what makes a rollback real rather than assumed.
+send. A destructive overwrite takes a backup first and records that it did, which is what
+makes a rollback real rather than assumed.
 """
 
 from __future__ import annotations
 
 import errno as errno_module
+import fcntl
 import json
 import logging
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,6 +40,9 @@ SCHEMA_VERSION = 1
 #: The snapshot filename inside the data directory.
 STORE_FILENAME = "training.json"
 
+#: The advisory lock file guarding every write. Never holds data.
+LOCK_FILENAME = "training.lock"
+
 #: Cap on stored sessions. The newest are kept; a fresh entry is never the one dropped.
 MAX_SESSIONS = 500
 
@@ -36,6 +53,15 @@ _logger = logging.getLogger("enlightenment.storage")
 
 Snapshot = dict[str, Any]
 Session = dict[str, Any]
+
+
+class StaleRevisionError(RuntimeError):
+    """Raised when a caller's expected revision no longer matches the stored one."""
+
+    def __init__(self, expected: int, current: int) -> None:
+        super().__init__(f"expected revision {expected}, store is at {current}")
+        self.expected = expected
+        self.current = current
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +86,16 @@ class ProbeResult:
             "errnoName": errno_module.errorcode.get(self.errno, "") if self.errno else "",
             "detail": self.detail,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class WriteResult:
+    """What a completed write did, measured inside the lock rather than re-read after it."""
+
+    session: Session
+    rev: int
+    count_before: int
+    count_after: int
 
 
 def probe_writable(data_dir: Path) -> ProbeResult:
@@ -94,7 +130,7 @@ def probe_writable(data_dir: Path) -> ProbeResult:
 
 def empty_snapshot() -> Snapshot:
     """A valid, empty snapshot at the current schema version."""
-    return {"schemaVersion": SCHEMA_VERSION, "sessions": []}
+    return {"schemaVersion": SCHEMA_VERSION, "rev": 0, "sessions": []}
 
 
 def migrate(snapshot: Snapshot) -> Snapshot:
@@ -104,10 +140,13 @@ def migrate(snapshot: Snapshot) -> Snapshot:
     migrated = dict(snapshot)
     migrated.setdefault("schemaVersion", SCHEMA_VERSION)
     migrated.setdefault("sessions", [])
+    migrated.setdefault("rev", 0)
     if not isinstance(migrated["sessions"], list):
         # ValueError, not TypeError: this is a data-validation failure at the store
         # boundary, which every caller already handles, not a programming type error.
         raise ValueError("stored snapshot is malformed: 'sessions' is not a list")  # noqa: TRY004
+    if not isinstance(migrated["rev"], int) or isinstance(migrated["rev"], bool):
+        raise ValueError("stored snapshot is malformed: 'rev' is not an integer")  # noqa: TRY004
     migrated["schemaVersion"] = SCHEMA_VERSION
     return migrated
 
@@ -122,7 +161,11 @@ def merge_session(existing: Session, update: Session) -> Session:
 
 
 class TrainingStore:
-    """The single writer for the training snapshot in ``data_dir``."""
+    """The serialised writer for the training snapshot in ``data_dir``.
+
+    "Serialised", not "single": correctness does not depend on there being one process,
+    because the deploy target can restart or scale the pod at will.
+    """
 
     def __init__(
         self,
@@ -140,13 +183,33 @@ class TrainingStore:
         """Absolute path of the snapshot file."""
         return self._data_dir / STORE_FILENAME
 
+    @property
+    def lock_path(self) -> Path:
+        """Absolute path of the advisory lock file."""
+        return self._data_dir / LOCK_FILENAME
+
+    @contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """Hold an exclusive advisory lock for the whole read-modify-write."""
+        self._data_dir.mkdir(parents=True, exist_ok=True)
+        handle = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+        finally:
+            os.close(handle)
+
     def seed(self) -> Snapshot:
         """Create the snapshot if absent and return it. Idempotent on re-run."""
-        if self.path.exists():
-            return self.load()
-        snapshot = empty_snapshot()
-        self._write_atomic(snapshot, backup=False)
-        return snapshot
+        with self._exclusive():
+            if self.path.exists():
+                return self.load()
+            snapshot = empty_snapshot()
+            self._write_atomic(snapshot, backup=False)
+            return snapshot
 
     def load(self) -> Snapshot:
         """Read and migrate the snapshot, returning an empty one when none exists."""
@@ -166,18 +229,47 @@ class TrainingStore:
             )
         return migrate(parsed)
 
+    def revision(self) -> int:
+        """The stored revision, for a caller that wants to guard its next write."""
+        return int(self.load()["rev"])
+
     def sessions(self) -> list[Session]:
         """Every stored session, oldest first."""
         stored = self.load()["sessions"]
         return [dict(session) for session in stored]
 
-    def upsert_session(self, record: Session) -> Session:
-        """Insert or anti-shrink-merge ``record`` by its ``id`` and persist the result."""
-        snapshot = self.load()
-        stored: list[Session] = list(snapshot["sessions"])
+    def upsert_session(self, record: Session, *, expected_rev: int | None = None) -> WriteResult:
+        """Insert or anti-shrink-merge ``record`` by its ``id`` and persist the result.
+
+        The whole read-modify-write runs under the exclusive lock, so a concurrent writer
+        in another process cannot lose this update. When ``expected_rev`` is given and no
+        longer matches, :class:`StaleRevisionError` is raised instead of overwriting.
+        """
+        with self._exclusive():
+            snapshot = self.load()
+            current_rev = int(snapshot["rev"])
+            if expected_rev is not None and expected_rev != current_rev:
+                raise StaleRevisionError(expected_rev, current_rev)
+
+            stored: list[Session] = list(snapshot["sessions"])
+            count_before = len(stored)
+            stamped = self._apply(stored, record)
+            stored = self._enforce_cap(stored)
+
+            snapshot["sessions"] = stored
+            snapshot["rev"] = current_rev + 1
+            self._write_atomic(snapshot, backup=True)
+            return WriteResult(
+                session=stamped,
+                rev=current_rev + 1,
+                count_before=count_before,
+                count_after=len(stored),
+            )
+
+    def _apply(self, stored: list[Session], record: Session) -> Session:
+        """Insert or merge ``record`` into ``stored`` in place, returning the result."""
         stamped = dict(record)
         stamped["updatedAt"] = self._now().isoformat()
-
         index = next(
             (i for i, item in enumerate(stored) if item.get("id") == stamped.get("id")),
             None,
@@ -185,28 +277,26 @@ class TrainingStore:
         if index is None:
             stamped.setdefault("createdAt", stamped["updatedAt"])
             stored.append(stamped)
-        else:
-            stamped = merge_session(stored[index], stamped)
-            stored[index] = stamped
-
-        dropped = max(0, len(stored) - self._max_sessions)
-        if dropped:
-            # Keep the newest. The fresh entry is at the end, so it is never the loss.
-            stored = stored[dropped:]
-            _logger.warning(
-                "session cap reached, pruned %d oldest record(s) to stay within %d",
-                dropped,
-                self._max_sessions,
-            )
-
-        snapshot["sessions"] = stored
-        self._write_atomic(snapshot, backup=True)
+            return stamped
+        stamped = merge_session(stored[index], stamped)
+        stored[index] = stamped
         return stamped
+
+    def _enforce_cap(self, stored: list[Session]) -> list[Session]:
+        """Keep the newest within the cap. The fresh entry is at the end, never the loss."""
+        dropped = max(0, len(stored) - self._max_sessions)
+        if not dropped:
+            return stored
+        _logger.warning(
+            "session cap reached, pruned %d oldest record(s) to stay within %d",
+            dropped,
+            self._max_sessions,
+        )
+        return stored[dropped:]
 
     def _write_atomic(self, snapshot: Snapshot, *, backup: bool) -> None:
         """Write ``snapshot`` durably: back up the current file, write a sibling temp
-        file, fsync it, then rename over the target. Rename is atomic on one filesystem,
-        so a reader never observes a partial write.
+        file, fsync it, then rename over the target. Called only under the lock.
         """
         self._data_dir.mkdir(parents=True, exist_ok=True)
         if backup and self.path.exists():

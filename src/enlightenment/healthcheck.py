@@ -1,8 +1,17 @@
 """Container HEALTHCHECK probe: ``python -m enlightenment.healthcheck``.
 
 Runs inside the image with no extra tooling, so the runtime stage needs no curl or wget.
-The timeout is hard and strictly shorter than the platform's probe timeout, so a stalled
-mount produces a failed probe rather than a hanging one that the kubelet kills silently.
+
+It probes the LIVENESS path, not readiness. A Docker HEALTHCHECK is a liveness signal:
+any runtime that acts on it (Compose, Swarm, an autoheal sidecar) restarts an unhealthy
+container, and restarting on a storage fault is exactly the coupling the split liveness
+and readiness paths exist to prevent. The platform's own readiness probe is configured on
+``/healthz``, which carries the real-write proof and the diagnostic 503.
+
+``PORT`` is operator-supplied and therefore untrusted, so it is validated before it is put
+anywhere near a URL. Interpolating it raw lets ``PORT=8080@evil.example`` turn
+``127.0.0.1:8080`` into userinfo and resolve an attacker-controlled host, which would make
+this control report HEALTHY while probing somewhere else entirely.
 """
 
 from __future__ import annotations
@@ -15,18 +24,42 @@ import urllib.request
 #: Strictly shorter than the platform probe timeout.
 TIMEOUT_SECONDS = 3.0
 
-#: The only status the readiness path returns when it is ready.
+#: The only status the liveness path returns when the process is alive.
 HTTP_OK = 200
+
+#: Highest valid TCP port.
+MAX_PORT = 65535
+
+#: Documented fallback when the platform injects nothing.
+DEFAULT_PORT = 8080
 
 #: Exit codes Docker reads: 0 healthy, 1 unhealthy.
 HEALTHY = 0
 UNHEALTHY = 1
 
 
+def resolve_port(raw: str | None) -> int | None:
+    """Return a validated port, or None when the value cannot be trusted.
+
+    None means UNHEALTHY, never "fall back and carry on": a malformed port is the same
+    malformed value the application itself refuses to start on, so this probe must not
+    paper over it.
+    """
+    if raw is None or raw == "":
+        return DEFAULT_PORT
+    candidate = "".join(ch for ch in raw.strip() if ch.isprintable())
+    if not candidate.isdigit():
+        return None
+    port = int(candidate)
+    return port if 1 <= port <= MAX_PORT else None
+
+
 def check(port: str | None = None) -> int:
-    """Return 0 when the readiness path answers 200, 1 otherwise."""
-    resolved = port or os.environ.get("PORT") or "8080"
-    url = f"http://127.0.0.1:{resolved}/healthz"
+    """Return 0 when the liveness path answers 200, 1 otherwise."""
+    resolved = resolve_port(port if port is not None else os.environ.get("PORT"))
+    if resolved is None:
+        return UNHEALTHY
+    url = f"http://127.0.0.1:{resolved}/livez"
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as response:
             return HEALTHY if response.status == HTTP_OK else UNHEALTHY

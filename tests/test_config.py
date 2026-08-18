@@ -1,4 +1,4 @@
-"""Configuration is env-only, normalised, and fail-closed."""
+"""Configuration is env-only, normalised, and fail-closed on every access posture."""
 
 from __future__ import annotations
 
@@ -8,12 +8,23 @@ import pytest
 
 from enlightenment.config import (
     DEFAULT_PORT,
+    LONG_TOKEN_LENGTH,
+    MAX_VALUE_LENGTH,
+    MIN_TOKEN_LENGTH,
     Config,
     ConfigError,
     clean,
     load_config,
     resolve_data_dir,
+    token_length_bucket,
 )
+
+TOKEN = "a-token-of-sufficient-length"
+ORIGIN = "https://enlightenment.apps.bluestaq.com"
+HOSTED = {"ENLIGHTENMENT_TEAM_TOKEN": TOKEN, "ALLOWED_ORIGIN": ORIGIN}
+
+
+# --- normalisation ------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -35,8 +46,17 @@ def test_clean_strips_quotes_whitespace_and_control_characters(
     assert clean(raw) == expected
 
 
-def test_clean_caps_length() -> None:
-    assert len(clean("x" * 5000)) == 512
+def test_an_over_long_value_is_rejected_not_truncated() -> None:
+    """Truncating a token silently produces one that matches nothing, with no signal."""
+    with pytest.raises(ConfigError, match="refusing to truncate"):
+        clean("x" * (MAX_VALUE_LENGTH + 1), name="ENLIGHTENMENT_TEAM_TOKEN")
+
+
+def test_a_value_at_the_cap_is_accepted() -> None:
+    assert len(clean("x" * MAX_VALUE_LENGTH)) == MAX_VALUE_LENGTH
+
+
+# --- storage path -------------------------------------------------------------------
 
 
 def test_data_dir_resolution_prefers_explicit_then_platform_then_default() -> None:
@@ -47,13 +67,75 @@ def test_data_dir_resolution_prefers_explicit_then_platform_then_default() -> No
     assert resolve_data_dir({}).is_absolute()
 
 
-def test_wildcard_origin_with_a_token_refuses_to_start() -> None:
-    with pytest.raises(ConfigError, match="refusing to start"):
-        load_config({"ENLIGHTENMENT_TEAM_TOKEN": "abc", "ALLOWED_ORIGIN": "*"})
+def test_relative_data_dir_is_refused() -> None:
+    with pytest.raises(ConfigError, match="absolute path"):
+        load_config({"DATA_DIR": "relative/path"})
 
 
-def test_wildcard_origin_without_a_token_is_allowed() -> None:
-    assert load_config({"ALLOWED_ORIGIN": "*"}).allowed_origin == "*"
+def test_filesystem_root_as_data_dir_is_refused() -> None:
+    with pytest.raises(ConfigError, match="must not be the filesystem root"):
+        load_config({"DATA_DIR": "/"})
+
+
+# --- access posture, all fail-closed -------------------------------------------------
+
+
+def test_a_wildcard_origin_always_refuses_to_start_even_without_a_token() -> None:
+    """A wildcard origin lets any web page drive this API, which is never legitimate here.
+    Gating the refusal on a token being present left the tokenless deployment exposed.
+    """
+    with pytest.raises(ConfigError, match=r"ALLOWED_ORIGIN is '\*'"):
+        load_config({"ALLOWED_ORIGIN": "*"})
+    with pytest.raises(ConfigError, match=r"ALLOWED_ORIGIN is '\*'"):
+        load_config({**HOSTED, "ALLOWED_ORIGIN": "*"})
+
+
+def test_a_token_shorter_than_the_minimum_refuses_to_start() -> None:
+    short = "x" * (MIN_TOKEN_LENGTH - 1)
+    with pytest.raises(ConfigError, match="shorter than"):
+        load_config({"ENLIGHTENMENT_TEAM_TOKEN": short, "ALLOWED_ORIGIN": ORIGIN})
+
+
+def test_a_token_at_the_minimum_is_accepted() -> None:
+    exact = "x" * MIN_TOKEN_LENGTH
+    assert load_config({"ENLIGHTENMENT_TEAM_TOKEN": exact, "ALLOWED_ORIGIN": ORIGIN}).team_token
+
+
+def test_a_token_without_an_allowed_origin_refuses_to_start() -> None:
+    """The deployment notes state both are required together, so the code enforces it."""
+    with pytest.raises(ConfigError, match="ALLOWED_ORIGIN"):
+        load_config({"ENLIGHTENMENT_TEAM_TOKEN": TOKEN})
+
+
+def test_a_token_alongside_anonymous_writes_refuses_to_start() -> None:
+    with pytest.raises(ConfigError, match="contradictory"):
+        load_config({**HOSTED, "ENLIGHTENMENT_ALLOW_ANONYMOUS": "1"})
+
+
+def test_writes_are_closed_by_default_with_no_token_and_no_opt_in() -> None:
+    """The container default. Without this the shipped app takes unauthenticated writes."""
+    settings = load_config({})
+    assert settings.auth_required is False
+    assert settings.writes_open is False
+
+
+@pytest.mark.parametrize("flag", ["1", "true", "TRUE", "yes", "on"])
+def test_anonymous_writes_require_the_explicit_opt_in(flag: str) -> None:
+    assert load_config({"ENLIGHTENMENT_ALLOW_ANONYMOUS": flag}).writes_open is True
+
+
+@pytest.mark.parametrize("flag", ["0", "false", "no", "off", "", "maybe"])
+def test_anything_other_than_an_affirmative_leaves_writes_closed(flag: str) -> None:
+    assert load_config({"ENLIGHTENMENT_ALLOW_ANONYMOUS": flag}).writes_open is False
+
+
+def test_a_configured_token_requires_authentication_and_keeps_writes_closed() -> None:
+    settings = load_config(HOSTED)
+    assert settings.auth_required is True
+    assert settings.writes_open is False
+
+
+# --- host and port -------------------------------------------------------------------
 
 
 def test_host_binds_loopback_when_authentication_is_off() -> None:
@@ -61,7 +143,7 @@ def test_host_binds_loopback_when_authentication_is_off() -> None:
 
 
 def test_host_binds_every_interface_when_a_token_is_set() -> None:
-    assert load_config({"ENLIGHTENMENT_TEAM_TOKEN": "abc"}).host == "0.0.0.0"
+    assert load_config(HOSTED).host == "0.0.0.0"
 
 
 def test_explicit_host_overrides_the_default() -> None:
@@ -79,19 +161,18 @@ def test_port_defaults_to_8080_and_validates() -> None:
         load_config({"PORT": "65536"})
 
 
-def test_relative_data_dir_is_refused() -> None:
-    with pytest.raises(ConfigError, match="absolute path"):
-        load_config({"DATA_DIR": "relative/path"})
-
-
-def test_filesystem_root_as_data_dir_is_refused() -> None:
-    with pytest.raises(ConfigError, match="must not be the filesystem root"):
-        load_config({"DATA_DIR": "/"})
-
-
 def test_build_id_falls_back_to_the_package_version() -> None:
     assert load_config({}).build_id.startswith("v")
     assert load_config({"BUILD_ID": "ci-123"}).build_id == "ci-123"
+
+
+# --- the diagnostics size band -------------------------------------------------------
+
+
+def test_the_token_band_never_exposes_an_exact_length() -> None:
+    assert token_length_bucket("") == "unset"
+    assert token_length_bucket("x" * MIN_TOKEN_LENGTH) == "adequate"
+    assert token_length_bucket("x" * LONG_TOKEN_LENGTH) == "long"
 
 
 def test_auth_required_tracks_the_token(tmp_path: Path) -> None:
@@ -103,4 +184,4 @@ def test_auth_required_tracks_the_token(tmp_path: Path) -> None:
         "build_id": "x",
     }
     assert Config(team_token="", **base).auth_required is False  # type: ignore[arg-type]
-    assert Config(team_token="abc", **base).auth_required is True  # type: ignore[arg-type]
+    assert Config(team_token=TOKEN, **base).auth_required is True  # type: ignore[arg-type]

@@ -25,8 +25,12 @@ for file in Dockerfile .dockerignore .gitignore .python-version .env.example \
   cp "$file" "$STAGE/$file"
 done
 
-# Directories: source, the suite the platform runs, the loop scripts, the runbooks.
-for dir in src tests scripts docs; do
+# Directories: source, the suite the platform runs, the loop scripts, the runbooks, and
+# .github. The workflow is included because the SUITE READS IT: two contract tests assert
+# that the binding image checks run as root and cover the package-manager class, and an
+# assertion that cannot run on the machine gating the deploy is worse than no assertion.
+# The platform generates and commits its own pipeline regardless and ignores this one.
+for dir in src tests scripts docs .github; do
   mkdir -p "$STAGE/$dir"
   tar -cf - --exclude='__pycache__' --exclude='*.pyc' "$dir" | tar -xf - -C "$STAGE"
 done

@@ -1,9 +1,12 @@
-"""The store is atomic, anti-shrink, capped, backed up, and honest about writability."""
+"""The store is atomic, serialised, revision-guarded, anti-shrink, capped, and backed up."""
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
+import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -13,12 +16,15 @@ from enlightenment.storage import (
     BACKUP_RETENTION,
     SCHEMA_VERSION,
     STORE_FILENAME,
+    StaleRevisionError,
     TrainingStore,
     empty_snapshot,
     merge_session,
     migrate,
     probe_writable,
 )
+
+SESSION = {"id": "alpha", "title": "Alpha", "scenario": "TBC, re-verify"}
 
 
 def fixed_now() -> datetime:
@@ -28,6 +34,9 @@ def fixed_now() -> datetime:
 @pytest.fixture
 def store(tmp_path: Path) -> TrainingStore:
     return TrainingStore(tmp_path / "data", now=fixed_now)
+
+
+# --- seeding and reading ------------------------------------------------------------
 
 
 def test_seed_creates_the_snapshot_and_is_idempotent(store: TrainingStore) -> None:
@@ -42,16 +51,115 @@ def test_load_returns_an_empty_snapshot_when_absent(store: TrainingStore) -> Non
 
 
 def test_write_is_atomic_leaving_no_temporary_file(store: TrainingStore) -> None:
-    store.upsert_session({"id": "alpha", "title": "Alpha", "scenario": "TBC, re-verify"})
-    leftovers = list(store.path.parent.glob(".snapshot-*"))
-    assert leftovers == []
+    store.upsert_session(dict(SESSION))
+    assert list(store.path.parent.glob(".snapshot-*")) == []
     assert json.loads(store.path.read_text(encoding="utf-8"))["schemaVersion"] == SCHEMA_VERSION
 
 
-def test_a_partial_update_never_deletes_an_unsent_field(store: TrainingStore) -> None:
-    store.upsert_session(
-        {"id": "alpha", "title": "Alpha", "scenario": "TBC, re-verify", "notes": "keep me"}
+def test_a_failed_write_leaves_no_temporary_file_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = TrainingStore(tmp_path / "data", now=fixed_now)
+    store.seed()
+
+    def refuse(self: Path, target: object) -> Path:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "replace", refuse)
+    with pytest.raises(OSError, match="No space left on device"):
+        store.upsert_session(dict(SESSION))
+    assert list((tmp_path / "data").glob(".snapshot-*")) == []
+
+
+# --- the revision guard --------------------------------------------------------------
+
+
+def test_every_write_advances_the_revision(store: TrainingStore) -> None:
+    assert store.revision() == 0
+    first = store.upsert_session(dict(SESSION))
+    assert first.rev == 1
+    second = store.upsert_session({**SESSION, "id": "bravo"})
+    assert second.rev == 2
+    assert store.revision() == 2
+
+
+def test_a_stale_expected_revision_is_refused_rather_than_overwriting(
+    store: TrainingStore,
+) -> None:
+    store.upsert_session(dict(SESSION))
+    with pytest.raises(StaleRevisionError) as raised:
+        store.upsert_session({**SESSION, "title": "Clobber"}, expected_rev=0)
+    assert raised.value.expected == 0
+    assert raised.value.current == 1
+    assert store.sessions()[0]["title"] == "Alpha"
+
+
+def test_a_matching_expected_revision_is_accepted(store: TrainingStore) -> None:
+    store.upsert_session(dict(SESSION))
+    result = store.upsert_session({**SESSION, "title": "Renamed"}, expected_rev=1)
+    assert result.session["title"] == "Renamed"
+
+
+def test_the_write_result_counts_are_measured_inside_the_lock(store: TrainingStore) -> None:
+    first = store.upsert_session(dict(SESSION))
+    assert (first.count_before, first.count_after) == (0, 1)
+    same = store.upsert_session({**SESSION, "title": "Renamed"})
+    assert (same.count_before, same.count_after) == (1, 1)
+
+
+# --- concurrency: the property two workers destroyed ---------------------------------
+
+
+def test_two_processes_writing_at_once_lose_no_record(tmp_path: Path) -> None:
+    """The regression test for the measured data-loss defect.
+
+    Before the exclusive lock, two processes each loaded the same snapshot, each appended,
+    and the second rename silently discarded the first process's writes: half of all
+    acknowledged records vanished. The atomic rename is precisely why the loss left no
+    torn file and no error.
+    """
+    data_dir = tmp_path / "data"
+    writer = tmp_path / "writer.py"
+    writer.write_text(
+        textwrap.dedent(
+            """
+            import sys
+            from pathlib import Path
+            from enlightenment.storage import TrainingStore
+
+            store = TrainingStore(Path(sys.argv[1]))
+            offset = int(sys.argv[2])
+            for index in range(40):
+                store.upsert_session({
+                    "id": f"s{offset + index}",
+                    "title": "t",
+                    "scenario": "TBC, re-verify",
+                })
+            """
+        ),
+        encoding="utf-8",
     )
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
+    processes = [
+        subprocess.Popen(  # noqa: S603 - a fixed interpreter and a test-authored script
+            [sys.executable, str(writer), str(data_dir), str(offset)], env=env
+        )
+        for offset in (0, 1000)
+    ]
+    for process in processes:
+        assert process.wait(timeout=120) == 0
+
+    store = TrainingStore(data_dir)
+    stored = store.sessions()
+    assert len(stored) == 80, f"expected 80 sessions, store holds {len(stored)}"
+    assert store.revision() == 80
+
+
+# --- anti-shrink ---------------------------------------------------------------------
+
+
+def test_a_partial_update_never_deletes_an_unsent_field(store: TrainingStore) -> None:
+    store.upsert_session({**SESSION, "notes": "keep me"})
     store.upsert_session({"id": "alpha", "title": "Alpha renamed"})
     stored = store.sessions()
     assert len(stored) == 1
@@ -61,8 +169,10 @@ def test_a_partial_update_never_deletes_an_unsent_field(store: TrainingStore) ->
 
 
 def test_merge_session_keeps_existing_values_absent_from_the_update() -> None:
-    merged = merge_session({"a": 1, "b": 2}, {"b": 3, "c": None})
-    assert merged == {"a": 1, "b": 3}
+    assert merge_session({"a": 1, "b": 2}, {"b": 3, "c": None}) == {"a": 1, "b": 3}
+
+
+# --- malformed stored data ------------------------------------------------------------
 
 
 def test_malformed_json_is_rejected_not_coerced(store: TrainingStore) -> None:
@@ -83,6 +193,7 @@ def test_migrate_preserves_unrecognised_fields() -> None:
     migrated = migrate({"sessions": [], "futureField": "keep"})
     assert migrated["futureField"] == "keep"
     assert migrated["schemaVersion"] == SCHEMA_VERSION
+    assert migrated["rev"] == 0
 
 
 def test_migrate_rejects_a_malformed_sessions_field() -> None:
@@ -90,14 +201,20 @@ def test_migrate_rejects_a_malformed_sessions_field() -> None:
         migrate({"sessions": "nope"})
 
 
+@pytest.mark.parametrize("bad_rev", ["1", 1.5, True, None, []])
+def test_migrate_rejects_a_non_integer_revision(bad_rev: object) -> None:
+    with pytest.raises(ValueError, match="'rev' is not an integer"):
+        migrate({"sessions": [], "rev": bad_rev})
+
+
+# --- caps and backups ----------------------------------------------------------------
+
+
 def test_the_cap_keeps_the_newest_and_never_drops_the_fresh_entry(tmp_path: Path) -> None:
     store = TrainingStore(tmp_path / "data", now=fixed_now, max_sessions=3)
     for index in range(5):
-        store.upsert_session(
-            {"id": f"s{index}", "title": f"Session {index}", "scenario": "TBC, re-verify"}
-        )
-    ids = [session["id"] for session in store.sessions()]
-    assert ids == ["s2", "s3", "s4"]
+        store.upsert_session({"id": f"s{index}", "title": "t", "scenario": "TBC, re-verify"})
+    assert [session["id"] for session in store.sessions()] == ["s2", "s3", "s4"]
 
 
 def test_the_cap_boundary_holds_in_both_directions(tmp_path: Path) -> None:
@@ -118,6 +235,9 @@ def test_a_backup_is_taken_before_an_overwrite_and_pruned_to_the_retention(
         store.upsert_session({"id": f"s{index}", "title": "t", "scenario": "TBC, re-verify"})
     backups = list(store.path.parent.glob(f"{STORE_FILENAME}.*.bak"))
     assert len(backups) == BACKUP_RETENTION
+
+
+# --- the real-write probe ------------------------------------------------------------
 
 
 def test_probe_writable_proves_a_usable_directory_with_a_real_write(tmp_path: Path) -> None:
@@ -154,21 +274,3 @@ def test_probe_reports_an_existing_path_that_is_a_file_not_a_directory(tmp_path:
     result = probe_writable(occupied)
     assert result.ok is False
     assert result.errno is not None
-
-
-def test_a_failed_write_leaves_no_temporary_file_behind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The temp-write-then-rename must not litter when the rename fails: a reader would
-    otherwise find a partial sibling file where the store should be.
-    """
-    store = TrainingStore(tmp_path / "data", now=fixed_now)
-    store.seed()
-
-    def refuse(self: Path, target: object) -> Path:
-        raise OSError(28, "No space left on device")
-
-    monkeypatch.setattr(Path, "replace", refuse)
-    with pytest.raises(OSError, match="No space left on device"):
-        store.upsert_session({"id": "alpha", "title": "t", "scenario": "TBC, re-verify"})
-    assert list((tmp_path / "data").glob(".snapshot-*")) == []

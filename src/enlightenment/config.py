@@ -18,33 +18,65 @@ from enlightenment import __version__
 #: Default listen port. The platform injects PORT; this is the documented fallback.
 DEFAULT_PORT = 8080
 
-#: Cap on an operator-supplied value, so a pasted document cannot become a config value.
-MAX_VALUE_LENGTH = 512
-
 #: Highest valid TCP port.
 MAX_PORT = 65535
 
+#: Cap on an operator-supplied value. Over the cap is REJECTED, never truncated: a
+#: silently shortened token authenticates against nothing and gives no signal.
+MAX_VALUE_LENGTH = 512
+
 #: Shortest string that can be a quoted value (an opening and a closing quote).
 MIN_QUOTED_LENGTH = 2
+
+#: Shortest team token the app will start with. Enforced so the unauthenticated
+#: diagnostics read-out never needs to publish an exact length to be useful.
+MIN_TOKEN_LENGTH = 24
+
+#: Length above which a token is reported as "long" rather than "adequate".
+LONG_TOKEN_LENGTH = 64
+
+#: Values that turn the explicit local anonymous-write mode on.
+TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
 class ConfigError(RuntimeError):
     """Raised when configuration is invalid. The app refuses to start rather than guess."""
 
 
-def clean(raw: str | None) -> str:
+def clean(raw: str | None, *, name: str = "value") -> str:
     """Return ``raw`` with surrounding whitespace, wrapping quotes, and control
     characters removed. An empty string means "not set".
+
+    Rejects a value over :data:`MAX_VALUE_LENGTH` rather than truncating it. Truncation
+    turns a too-long token into a token that matches nothing, with no error and no way
+    for the operator to see why authentication fails.
     """
     if raw is None:
         return ""
-    value = raw.strip()[:MAX_VALUE_LENGTH]
+    if len(raw) > MAX_VALUE_LENGTH:
+        raise ConfigError(
+            f"{name} is longer than {MAX_VALUE_LENGTH} characters; refusing to truncate it"
+        )
+    value = raw.strip()
     for quote in ('"', "'"):
         if len(value) >= MIN_QUOTED_LENGTH and value.startswith(quote) and value.endswith(quote):
             value = value[1:-1]
             break
     value = "".join(ch for ch in value if ch.isprintable())
     return value.strip()
+
+
+def token_length_bucket(token: str) -> str:
+    """Coarse size band for the unauthenticated diagnostics read-out.
+
+    The read-out must let an operator tell a stale value from a correct one without
+    telling an unauthenticated caller exactly how many characters to attack, so the
+    length is reported as a band rather than a number. A token below
+    :data:`MIN_TOKEN_LENGTH` cannot occur here: the app refuses to start on one.
+    """
+    if not token:
+        return "unset"
+    return "long" if len(token) >= LONG_TOKEN_LENGTH else "adequate"
 
 
 def resolve_data_dir(env: dict[str, str] | None = None) -> Path:
@@ -57,7 +89,7 @@ def resolve_data_dir(env: dict[str, str] | None = None) -> Path:
     """
     source = env if env is not None else dict(os.environ)
     for name in ("DATA_DIR", "STORAGE_MOUNT_PATH"):
-        candidate = clean(source.get(name))
+        candidate = clean(source.get(name), name=name)
         if candidate:
             return Path(candidate)
     return Path.cwd() / "var" / "data"
@@ -85,11 +117,22 @@ class Config:
     team_token: str
     allowed_origin: str
     build_id: str
+    allow_anonymous_writes: bool = False
 
     @property
     def auth_required(self) -> bool:
         """True when a team token is configured, which gates every privileged route."""
         return bool(self.team_token)
+
+    @property
+    def writes_open(self) -> bool:
+        """True only in explicitly opted-in local anonymous mode.
+
+        Without a token AND without the explicit opt-in, write routes return 401. An
+        absent token is the container default, so treating it as "open" would put an
+        unauthenticated write endpoint on a public ingress by omission.
+        """
+        return not self.auth_required and self.allow_anonymous_writes
 
 
 def _resolve_port(raw: str) -> int:
@@ -107,13 +150,39 @@ def _resolve_port(raw: str) -> int:
 def _resolve_host(raw: str, *, auth_required: bool) -> str:
     """Bind loopback when authentication is off, every interface when it is on.
 
-    With no team token the app is in single-user local mode, so it must not be
-    reachable off the machine. The container does not rely on this: its launch command
-    binds ``0.0.0.0`` explicitly, and the platform gateway sits in front.
+    Only the local runner reads this. The container binds ``0.0.0.0`` from its launch
+    command, which is why loopback binding is NOT relied on as an access control: the
+    write routes fail closed on their own (see :meth:`Config.writes_open`).
     """
     if raw:
         return raw
     return "0.0.0.0" if auth_required else "127.0.0.1"  # noqa: S104
+
+
+def _validate_access(*, team_token: str, allowed_origin: str, allow_anonymous: bool) -> None:
+    """Fail closed on any access posture that cannot be justified."""
+    if allowed_origin == "*":
+        raise ConfigError(
+            "refusing to start: ALLOWED_ORIGIN is '*'. A wildcard origin lets any web "
+            "page drive this API. Set it to the application's real origin, or leave it "
+            "unset to emit no cross-origin header at all."
+        )
+    if team_token and len(team_token) < MIN_TOKEN_LENGTH:
+        raise ConfigError(
+            f"refusing to start: ENLIGHTENMENT_TEAM_TOKEN is shorter than "
+            f"{MIN_TOKEN_LENGTH} characters."
+        )
+    if team_token and not allowed_origin:
+        raise ConfigError(
+            "refusing to start: ENLIGHTENMENT_TEAM_TOKEN is set but ALLOWED_ORIGIN is "
+            "not. A hosted deployment needs both; set ALLOWED_ORIGIN to the "
+            "application's real origin."
+        )
+    if team_token and allow_anonymous:
+        raise ConfigError(
+            "refusing to start: ENLIGHTENMENT_ALLOW_ANONYMOUS is set alongside a team "
+            "token. Anonymous writes and a token are contradictory; unset one."
+        )
 
 
 def load_config(env: dict[str, str] | None = None) -> Config:
@@ -121,20 +190,25 @@ def load_config(env: dict[str, str] | None = None) -> Config:
     :class:`ConfigError` on anything it cannot honour.
     """
     source = env if env is not None else dict(os.environ)
-    team_token = clean(source.get("ENLIGHTENMENT_TEAM_TOKEN"))
-    allowed_origin = clean(source.get("ALLOWED_ORIGIN"))
+    team_token = clean(source.get("ENLIGHTENMENT_TEAM_TOKEN"), name="ENLIGHTENMENT_TEAM_TOKEN")
+    allowed_origin = clean(source.get("ALLOWED_ORIGIN"), name="ALLOWED_ORIGIN")
+    allow_anonymous = (
+        clean(
+            source.get("ENLIGHTENMENT_ALLOW_ANONYMOUS"), name="ENLIGHTENMENT_ALLOW_ANONYMOUS"
+        ).lower()
+        in TRUTHY
+    )
 
-    if team_token and allowed_origin == "*":
-        raise ConfigError(
-            "refusing to start: ALLOWED_ORIGIN is '*' with a team token set. "
-            "Set ALLOWED_ORIGIN to the application's real origin."
-        )
+    _validate_access(
+        team_token=team_token, allowed_origin=allowed_origin, allow_anonymous=allow_anonymous
+    )
 
     return Config(
-        port=_resolve_port(clean(source.get("PORT"))),
-        host=_resolve_host(clean(source.get("HOST")), auth_required=bool(team_token)),
+        port=_resolve_port(clean(source.get("PORT"), name="PORT")),
+        host=_resolve_host(clean(source.get("HOST"), name="HOST"), auth_required=bool(team_token)),
         data_dir=_validate_data_dir(resolve_data_dir(source)),
         team_token=team_token,
         allowed_origin=allowed_origin,
-        build_id=clean(source.get("BUILD_ID")) or f"v{__version__}",
+        build_id=clean(source.get("BUILD_ID"), name="BUILD_ID") or f"v{__version__}",
+        allow_anonymous_writes=allow_anonymous,
     )
