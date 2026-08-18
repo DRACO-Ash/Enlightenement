@@ -1,0 +1,13 @@
+# RUNTIME dependencies only. Policy (dependencies skill): no new runtime dependency
+# without a recorded reason. Each reason is below. Exact pins are resolved into the
+# hash-locked requirements.txt by scripts/lock-requirements.sh.
+#
+# fastapi  - boundary validation. Pydantic models reject a malformed body at the edge
+#            rather than coercing it, which is the fail-closed rule the security gate
+#            checks. Writing that by hand is more code and more risk than the pin.
+# uvicorn  - the ASGI server the App Store python recipe's gunicorn worker class needs.
+# gunicorn - the process manager in the reference CMD; gives SIGTERM handling and
+#            worker supervision the platform expects.
+fastapi==0.141.1
+uvicorn==0.52.3
+gunicorn==26.1.0

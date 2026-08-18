@@ -1,0 +1,27 @@
+# Build context hygiene. This shapes the IMAGE; the upload allowlist in
+# scripts/package-appstore.sh shapes the ZIP. Two separate contracts.
+.git
+.github
+.claude
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+.coverage
+.coverage.*
+coverage.xml
+.env
+.env.local
+.env.*.local
+var
+data
+dist
+build
+*.egg-info
+docs
+tests
+*.zip

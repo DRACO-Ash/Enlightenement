@@ -1,0 +1,86 @@
+[project]
+name = "enlightenment"
+version = "0.1.0"
+description = "Orbital warfare training application for the Bluestaq App Store."
+requires-python = ">=3.12,<3.13"
+
+[tool.pytest.ini_options]
+# addopts owns its flags so the platform's test stage produces the artefact the
+# SonarQube gate reads even when it invokes a bare `pytest`. Only the xml report
+# writes the Cobertura file; a bare run would score 0% coverage and fail the gate.
+addopts = "-q --strict-markers --strict-config --cov=src --cov-branch --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# The whole recommended profile, not a hand-picked subset. The Foundations lesson is
+# that hand-picking the rules an external analyser has so far named guarantees a next
+# wave; inherit broadly and justify each ignore in writing.
+select = [
+  "E", "W",      # pycodestyle
+  "F",           # pyflakes
+  "I",           # isort
+  "N",           # pep8-naming
+  "UP",          # pyupgrade
+  "B",           # flake8-bugbear
+  "A",           # flake8-builtins
+  "C4",          # flake8-comprehensions
+  "C90",         # mccabe complexity
+  "DTZ",         # flake8-datetimez
+  "T20",         # flake8-print
+  "PT",          # flake8-pytest-style
+  "RET",         # flake8-return
+  "SIM",         # flake8-simplify
+  "ARG",         # flake8-unused-arguments
+  "PTH",         # flake8-use-pathlib
+  "ERA",         # eradicate (commented-out code)
+  "S",           # flake8-bandit, the local mirror of Sonar security hotspots
+  "TRY",         # tryceratops
+  "PL",          # pylint
+  "PERF",        # perflint
+  "RUF",         # ruff-specific
+]
+ignore = [
+  # Sonar's own rule allows a single-line f-string in a raise; TRY003 would force an
+  # exception class per message and add violations rather than remove them.
+  "TRY003",
+]
+
+[tool.ruff.lint.pylint]
+# create_app is a dependency-injection factory: six keyword-only injection points is the
+# design, not accidental growth. Sonar's own parameter rule (S107) caps at seven.
+max-args = 7
+
+[tool.ruff.lint.mccabe]
+# Sonar rule S3776 caps COGNITIVE complexity at 15. Cyclomatic complexity is a
+# different, looser measure, so the local cap is set tighter at 10: a function that
+# passes here cannot fail the platform on complexity.
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert with `assert` (S101 is a production rule) and bind to loopback in
+# fixtures (S104 does not apply to a test server on 127.0.0.1).
+# S101 assert is the test idiom; S104/S105/S106 flag the fixture token and bind address
+# that exist to EXERCISE the production controls; PLR2004 literals are the expected
+# values under test; SLF001 lets a test assert a private memory bound directly.
+"tests/*" = ["S101", "S104", "S105", "S106", "PLR2004", "ARG001", "SLF001", "PLC0415"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["enlightenment"]
+strict = true
+warn_unreachable = true

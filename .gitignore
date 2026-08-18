@@ -1,0 +1,29 @@
+# Secrets and local environment (never tracked)
+.env
+.env.local
+.env.*.local
+
+# Local data directories (the file-storage add-on provides these at runtime)
+var/
+data/
+
+# Coverage and test artefacts
+coverage.xml
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Packaging output
+dist/
+build/
+*.egg-info/
+enlightenment-appstore-*.zip
