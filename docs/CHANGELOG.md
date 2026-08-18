@@ -2,6 +2,56 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.7 (2026-08-18)
+
+**What.** Round 6 returned two MAJORs, and the more important one is a class rather than a bug:
+**four contract assertions read their target file raw, so a comment satisfied them.** Each was
+measured surviving as a commented-out line, and each protects something that matters:
+
+| Commented out | What the suite still said | What would have happened |
+|---|---|---|
+| `sonar.python.coverage.reportPaths` | green | SonarQube reads no report, scores 0%, quality gate fails on upload |
+| `--cov-report=xml:coverage.xml` in `addopts` | green | a bare platform `pytest` writes no Cobertura, and `verify.sh` is satisfied by a stale file |
+| `.env` in `.gitignore` | green | a developer's real `.env` becomes committable |
+| the packaging purge | green | `.git`, `.venv`, `var/` and `dist/` ship inside the App Store zip |
+
+That last one is the same defect this project's own ledger already recorded once, reproduced
+verbatim on a different line of the same file, in a test file that already contained two
+comment-stripping readers written to prevent exactly this. Every one of these now goes through a
+real parser: `tomllib` for the manifest, a `.properties` parser, and an executable-lines reader.
+
+**The second MAJOR.** The lifespan docstring still said the pool is "created on FIRST PROBE
+rather than at construction", three lines above the code that builds it eagerly, in the very
+function the previous round edited. The field comment 460 lines away was rewritten at length
+while this one was missed.
+
+**A guard so the documentation cannot rot silently.** `test_every_test_named_in_the_security_policy_exists`
+sweeps every backticked test name in this document and fails if one does not resolve. It found a
+dangling citation the moment it was written, from a rename two commits earlier. It states its own
+blind spot: it cannot see a row whose named test exists but no longer asserts the control it is
+cited for, which is what the mutation ledger is for.
+
+**Three controls that needed a better instrument, not just a test.** The single-worker pool is now
+asserted as SERIALISATION, by submitting two blocking callables and proving the second cannot
+start until the first returns, rather than by reading a private CPython attribute. A probe after
+lifespan shutdown now fails closed instead of silently falling back to the shared default
+executor, which is the starvation the dedicated pool exists to prevent. And the inspection seam
+was narrowed: publishing the whole runtime put the plaintext team token within reach of any
+handler through `request.app.state`, so only the pool is published.
+
+**The edit helper is now executed, not asserted.** Five tests drive `scripts/verified-edit.py`
+through its outcomes, and the unreachable third refusal it advertised is deleted rather than
+claimed, on the same reasoning that removed the inert drain guard.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 286 tests
+collected (285 passed, 1 skipped) with branch coverage at 98.71% against an 80% floor,
+Cobertura written, `pip-audit` clean over both lockfiles. Pipeline simulation green. Nine mutants
+this round, eight killed first time; the ninth, a post-shutdown probe silently using the shared
+executor, was closed and re-proved killed.
+
+**Still not verified.** The container image build, for the same reason as every prior release: the
+registry blob endpoint is denied by this environment's network policy. The CI `image` job binds.
+
 ## V0.6 (2026-08-18)
 
 **What.** The security gate PASSED again on the current tree. The engineering gate FAILED on one

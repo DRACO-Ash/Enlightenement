@@ -33,11 +33,14 @@ state-changing route.
 | The cap runs whatever CASE the method token arrives in | `middleware.py` | `test_a_lower_case_method_token_does_not_skip_the_cap` |
 | The BODY drain is time-bounded on a TOTAL budget, so a framed body cannot park a socket | `middleware.py` | `test_a_client_that_frames_a_body_and_stops_sending_is_timed_out`, `test_the_budget_is_total_not_per_message`, `test_the_shipped_drain_budget_is_finite_and_wired_into_the_app` |
 | The image script defers rather than passing, proved by EXECUTING it | `scripts/build-image.sh` | `test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit` |
-| An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_an_app_that_is_never_served_holds_no_probe_thread`, `test_the_lifespan_releases_the_probe_thread_it_created` |
+| An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_building_an_app_spawns_no_thread_however_the_pool_is_created`, `test_the_lifespan_releases_the_probe_thread_it_created` |
 | A declared length is not trusted when a transfer-encoding is present | `middleware.py` | `test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present` |
 | A probe path is never drained, so it cannot be parked unmetered | `middleware.py`, `app.py` | `test_a_probe_path_is_never_drained_even_for_a_body_method`, `test_the_apps_body_cap_exempts_the_probe_paths` |
 | The probe runs on its own pool, so a burst cannot starve store work | `app.py` | `test_the_probe_runs_on_its_own_dedicated_thread_pool` |
-| The probe pool has exactly ONE worker, which is what orders publication | `app.py` | `test_the_probe_pool_has_exactly_one_worker` |
+| The probe pool SERIALISES its work, which is what orders publication | `app.py` | `test_the_probe_pool_serialises_its_work` |
+| A probe after shutdown fails closed instead of using the shared executor | `app.py` | `test_a_probe_after_shutdown_fails_closed_rather_than_using_the_shared_executor` |
+| Every control this document cites resolves to a test that exists | docs | `test_every_test_named_in_the_security_policy_exists` |
+| The edit helper refuses a missing or ambiguous anchor | `scripts/verified-edit.py` | `test_the_edit_helper_refuses_a_missing_anchor`, `test_the_edit_helper_refuses_an_ambiguous_anchor` |
 | The snapshot is not read through a symlink | `storage.py` | `test_the_snapshot_is_not_read_through_a_symlink` |
 | The cap runs ahead of authentication | `middleware.py` | `test_an_oversize_chunked_body_is_refused_before_authentication` |
 | Two-tier rate limiting, 429 in both tiers | `ratelimit.py`, `app.py` | `test_the_coarse_tier...`, `test_the_strict_tier...` |
@@ -92,7 +95,8 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 3 | 11 run, 3 survivors closed | 2 further survivors (11-mutant run) |
 | 4 | 10 run, 10 killed after closing 2 survivors | 3 further survivors (engineering), 2 (security) |
 | 5 | 6 run, 6 killed after closing all 5 | 1 MAJOR (a claimed proof disproved), 2 survivors (eng), 2 (sec) |
-| 6 | 10 run, 10 killed after closing all 3 survivors | pending re-review |
+| 6 | 10 run, 10 killed after closing all 3 survivors | 2 MAJORs, 4 survivors, 1 dangling citation |
+| 7 | 9 run, 9 killed after closing the last survivor | pending re-review |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -112,10 +116,16 @@ Survivors that remain, each with the reason it is or is not load-bearing:
 Closed after surviving: the `asyncio.to_thread` offload, the dedicated probe pool, the quoted
 bind address in the launch command, the dev-lockfile audit leg, the snapshot symlink defence,
 the ASCII-digit port guard, the application's own exempt-path wiring for the body cap, the
-lazy pool creation, the lifespan pool release, and the deferral behaviour of
+lifespan pool release, the single-worker serialisation of the probe pool, the shipped drain
+budget and its total-rather-than-per-message property, and the deferral behaviour of
 `scripts/build-image.sh`, which is now EXECUTED against a stub `docker` rather than grepped.
 
-NINE mutants across the rounds were killed only after fixing the TEST rather than the code,
+REMOVED rather than closed: the lazy pool creation. Listed separately because it was never
+killed and never could be. No test can distinguish lazy from eager creation, so the branch was
+deleted rather than defended, and calling that a closed mutant would be the same overstatement
+this ledger exists to prevent.
+
+THIRTEEN mutants across the rounds were killed only after fixing the TEST rather than the code,
 and the count is spelled out here because an earlier version of this paragraph said "six" and
 then listed four:
 
@@ -139,7 +149,13 @@ then listed four:
    rather than fail, because the test relied on the bound it was testing to terminate. Both
    the budget and the test's own bound are now explicit.
 
-All nine would have passed while the control was removed. Assertions here are about what
+10. to 13. Four contract assertions read their target file RAW, so a COMMENT satisfied them:
+    the SonarQube coverage path, the pytest coverage flag, `.env` in `.gitignore`, and the
+    packaging purge that keeps `.git`, `.venv` and `dist/` out of the upload. Each was measured
+    surviving as a commented-out line. They now go through a `.properties` parser, `tomllib`,
+    and an executable-lines reader, so a comment cannot satisfy a contract assertion.
+
+All thirteen would have passed while the control was removed. Assertions here are about what
 executes, never about the words beside it.
 
 ## Accepted risks (deliberate decisions, not oversights)

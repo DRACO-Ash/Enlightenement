@@ -922,15 +922,74 @@ def test_the_lifespan_releases_the_probe_thread_it_created(
     assert probe_threads() - before == set(), "the lifespan did not release the pool"
 
 
-def test_the_probe_pool_has_exactly_one_worker(config: Config, store: TrainingStore) -> None:
-    """Single-worker serialisation is one of the TWO invariants `_probe_storage` names as what
-    keeps publication ordered, so it is a control and not a tuning choice.
+def test_the_probe_pool_serialises_its_work(config: Config, store: TrainingStore) -> None:
+    """Serialisation is one of the TWO invariants `_probe_storage` names as what keeps
+    publication ordered, so it is a control and not a tuning choice.
 
-    Raising it to eight workers was a surviving mutant: thread counts cannot catch it, because
-    single-flight means only one probe runs at a time either way, so only one worker is ever
-    started. This asserts the constructed wiring through the app's own inspection seam.
+    Asserted as BEHAVIOUR, not as configuration. Raising the pool to eight workers was a
+    surviving mutant, and thread counts cannot catch it because single-flight means one probe
+    runs at a time either way. Reading `_max_workers` would kill the mutant but assert a
+    private CPython attribute rather than the property named; this submits two blocking
+    callables and asserts the second cannot start until the first returns.
     """
     app = create_app(config=config, store=store, probe=ok_probe)
-    pool = app.state.runtime.probe_pool
+    pool = app.state.probe_pool
     assert pool is not None, "no dedicated probe pool was constructed"
-    assert pool._max_workers == 1, f"the probe pool has {pool._max_workers} workers, not 1"
+
+    order: list[str] = []
+    first_running = threading.Event()
+    release_first = threading.Event()
+
+    def blocker() -> None:
+        order.append("first-start")
+        first_running.set()
+        release_first.wait(timeout=5)
+        order.append("first-end")
+
+    def follower() -> None:
+        order.append("second-start")
+
+    try:
+        first = pool.submit(blocker)
+        assert first_running.wait(timeout=5), "the pool never started the first task"
+        second = pool.submit(follower)
+        # A second worker would run this immediately, while the first is still blocked.
+        time.sleep(0.2)
+        assert "second-start" not in order, "the pool ran two tasks at once"
+        release_first.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+    finally:
+        release_first.set()
+    assert order == ["first-start", "first-end", "second-start"], order
+
+
+def test_a_probe_after_shutdown_fails_closed_rather_than_using_the_shared_executor(
+    config: Config, store: TrainingStore
+) -> None:
+    """Once the lifespan releases the pool, a further probe must NOT quietly fall back.
+
+    `loop.run_in_executor(None, ...)` uses the shared default executor, which is the exact
+    starvation the dedicated pool exists to prevent: a legitimate listing was measured at
+    1.4 ms against 109 ms when the two shared a pool. Not reachable in production, because
+    shutdown follows the last request, but a silent degradation inside a control is worth a
+    test rather than a comment.
+    """
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(app) as client:
+        assert client.get("/readyz").status_code == 200
+    assert app.state.runtime_probe_pool_released is True
+
+    async def probe_after_shutdown() -> tuple[int, dict[str, Any]]:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://probe") as after:
+            response = await after.get("/readyz")
+            return response.status_code, response.json()
+
+    status, body = asyncio.run(probe_after_shutdown())
+    assert status == 503, "a probe after shutdown did not fail closed"
+    assert "shutting down" in body["storage"]["detail"]

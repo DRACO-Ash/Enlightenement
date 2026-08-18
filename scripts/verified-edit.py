@@ -13,8 +13,8 @@ Use this for any scripted edit to a tracked file:
     python3 scripts/verified-edit.py <file> <anchor-file> <replacement-file>
 
 It exits non-zero, with the anchor printed, when the anchor is absent, when the anchor is
-ambiguous (more than one occurrence, so the edit would be arbitrary), or when the
-replacement is not present in the file afterwards.
+ambiguous (more than one occurrence, so the edit would be arbitrary), or when the anchor is
+still present after the write.
 """
 
 from __future__ import annotations
@@ -42,10 +42,11 @@ def apply_edit(target: Path, anchor: str, replacement: str) -> int:
 
     target.write_text(original.replace(anchor, replacement, 1), encoding="utf-8")
 
+    # No "replacement not present" check: `str.replace` always inserts the replacement, so
+    # through this CLI that branch is unreachable, and an unreachable refusal advertised as a
+    # control is the same defect as unreachable code inside one. What IS checkable is that the
+    # anchor is gone.
     after = target.read_text(encoding="utf-8")
-    if replacement and replacement not in after:
-        sys.stderr.write(f"REPLACEMENT NOT PRESENT after writing {target}\n")
-        return EXIT_UNVERIFIED
     if anchor in after and anchor not in replacement:
         sys.stderr.write(f"ANCHOR STILL PRESENT after writing {target}\n")
         return EXIT_UNVERIFIED

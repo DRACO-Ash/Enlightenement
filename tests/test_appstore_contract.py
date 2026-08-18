@@ -12,7 +12,10 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -34,6 +37,38 @@ def _instructions(text: str) -> str:
 
 
 DOCKER_INSTRUCTIONS = _instructions(DOCKERFILE)
+
+
+def _properties(path: Path) -> dict[str, str]:
+    """Parse a `.properties` file into live key-value pairs, ignoring comments.
+
+    Reading the raw text let `# DISABLED: sonar.python.coverage.reportPaths=coverage.xml`
+    satisfy the assertion that the coverage path is configured, while SonarQube read no report
+    and scored 0%. A settings file is parsed, never grepped.
+    """
+    settings: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "!")) or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        settings[key.strip()] = value.strip()
+    return settings
+
+
+def _live_lines(path: Path, comment: str = "#") -> list[str]:
+    """The lines of a file that actually execute: no blanks, no comments."""
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith(comment)
+    ]
+
+
+def _pyproject() -> dict[str, Any]:
+    """The parsed manifest. `tomllib` cannot be fooled by a commented-out setting."""
+    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
 
 #: True when running on the platform's GitLab runner, which adds files to the checkout.
 ON_PLATFORM_RUNNER = os.environ.get("GITLAB_CI") == "true"
@@ -197,26 +232,29 @@ def test_the_package_manager_check_in_ci_covers_the_class() -> None:
 
 
 def test_sonar_configuration_scopes_sources_tests_and_the_coverage_report() -> None:
-    props = (ROOT / "sonar-project.properties").read_text(encoding="utf-8")
-    assert "sonar.sources=src" in props
-    assert "sonar.tests=tests" in props
-    assert "sonar.python.coverage.reportPaths=coverage.xml" in props
+    settings = _properties(ROOT / "sonar-project.properties")
+    assert settings.get("sonar.sources") == "src"
+    assert settings.get("sonar.tests") == "tests"
+    assert settings.get("sonar.python.coverage.reportPaths") == "coverage.xml"
 
 
 def test_a_bare_pytest_run_still_emits_the_cobertura_report_the_gate_reads() -> None:
-    """Only the xml report writes the file Sonar consumes; a bare run would score 0%."""
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "--cov-report=xml:coverage.xml" in pyproject
-    assert "--cov-fail-under=80" in pyproject
+    """Only the xml report writes the file Sonar consumes; a bare run would score 0%.
+
+    Read from the PARSED manifest: mentioning the flag in a comment while dropping it from
+    `addopts` used to satisfy this, and a bare platform `pytest` would then write no Cobertura
+    while `verify.sh` was satisfied by a stale file from a previous run.
+    """
+    addopts = _pyproject()["tool"]["pytest"]["ini_options"]["addopts"]
+    assert "--cov-report=xml:coverage.xml" in addopts
+    assert "--cov-fail-under=80" in addopts
 
 
 def test_the_local_complexity_cap_is_tighter_than_the_platform_cap() -> None:
     """Sonar S3776 caps cognitive complexity at 15; a looser local cap is a future
     upload failure."""
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    cap = re.search(r"max-complexity\s*=\s*(\d+)", pyproject)
-    assert cap is not None
-    assert int(cap.group(1)) <= 15
+    cap = _pyproject()["tool"]["ruff"]["lint"]["mccabe"]["max-complexity"]
+    assert cap <= 15
 
 
 # --- dependency hygiene -------------------------------------------------------------
@@ -224,7 +262,9 @@ def test_the_local_complexity_cap_is_tighter_than_the_platform_cap() -> None:
 
 @pytest.mark.parametrize("lockfile", ["requirements.txt", "requirements-dev.txt"])
 def test_every_locked_requirement_is_exact_and_hash_pinned(lockfile: str) -> None:
-    text = (ROOT / lockfile).read_text(encoding="utf-8")
+    # Comment lines stripped first: a lockfile's own header is a comment, and a requirement
+    # commented out must not count as pinned.
+    text = "\n".join(_live_lines(ROOT / lockfile))
     requirements = re.findall(r"^([A-Za-z0-9._-]+)==(\S+)", text, re.MULTILINE)
     assert requirements, f"{lockfile} declares no requirements"
     for name, _version in requirements:
@@ -265,7 +305,10 @@ def test_the_environment_template_names_every_variable_without_a_value() -> None
 
 
 def test_gitignore_blocks_secrets_data_and_coverage_from_day_one() -> None:
-    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
+    """Live patterns only. Splitting the raw text made `# .env` two tokens, so commenting the
+    rule out kept this green while a developer's real `.env` became committable.
+    """
+    ignored = set(_live_lines(ROOT / ".gitignore"))
     for pattern in (".env", ".env.local", ".env.*.local", "coverage.xml", "var/"):
         assert pattern in ignored, f"{pattern} is not git-ignored"
 
@@ -301,9 +344,14 @@ def test_no_build_output_can_reach_the_platform_checkout() -> None:
     the suite then passes in that checkout is proved end to end by
     `scripts/simulate-pipeline.sh`, which unzips the artefact and runs the suite there.
     """
-    assert "dist/" in (ROOT / ".gitignore").read_text(encoding="utf-8").split()
-    packaging = (ROOT / "scripts" / "package-appstore.sh").read_text(encoding="utf-8")
-    assert 'rm -rf "$STAGE/.git" "$STAGE/.venv" "$STAGE/var" "$STAGE/dist"' in packaging
+    assert "dist/" in set(_live_lines(ROOT / ".gitignore"))
+    # EXECUTABLE lines only. Commenting the purge out used to keep this green while `.git`,
+    # `.venv`, `var/` and `dist/` shipped inside the App Store zip.
+    packaging = _live_lines(ROOT / "scripts" / "package-appstore.sh")
+    assert any(
+        'rm -rf "$STAGE/.git" "$STAGE/.venv" "$STAGE/var" "$STAGE/dist"' in line
+        for line in packaging
+    ), "the packaging purge is not an executed line"
 
 
 # --- the loop scripts must not fail open --------------------------------------------
@@ -346,7 +394,7 @@ def test_the_loop_audits_every_lockfile_it_installs() -> None:
     advisory there is shipped code on the runner, not just local tooling. Removing the
     second leg used to leave the suite green.
     """
-    verify = _instructions((ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8"))
+    verify = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
     for lockfile in ("requirements.txt", "requirements-dev.txt"):
         assert f"audit_lockfile {lockfile}" in verify, f"{lockfile} is never audited"
     # Two CALLS, counted over executable lines only. Matching the raw file let the leg be
@@ -426,3 +474,98 @@ def test_a_successful_build_reports_a_pass(tmp_path: Path) -> None:
     result = _run_build_image(tmp_path, "#!/bin/sh\nexit 0\n")
     assert result.returncode == 0
     assert "IMAGE BUILD: PASS" in result.stdout
+
+
+# --- the documentation cannot rot silently --------------------------------------------
+
+
+def test_every_test_named_in_the_security_policy_exists() -> None:
+    """`docs/SECURITY.md` promises "each with a test that fails if it regresses", so a row
+    pointing at a test that no longer exists cannot keep that promise.
+
+    A rename in one commit left exactly one dangling name, found by a reviewer's sweep rather
+    than by anything in the suite. This is that sweep, mechanised. Names written with a
+    trailing ellipsis are deliberate abbreviations and are skipped.
+
+    What this CANNOT see: a row whose named test exists but no longer asserts the control it
+    is cited for. Mutation testing is the instrument for that, and its ledger is in the same
+    document.
+    """
+    policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    cited = {
+        name
+        for name in re.findall(r"`(test_[A-Za-z0-9_]+)(?:\.\.\.)?`", policy)
+        if not name.endswith("_")
+    }
+    elided = set(re.findall(r"`(test_[A-Za-z0-9_]+)\.\.\.`", policy))
+    defined: set[str] = set()
+    for module in sorted((ROOT / "tests").glob("test_*.py")):
+        defined.update(
+            re.findall(
+                r"^(?:async )?def (test_[A-Za-z0-9_]+)",
+                module.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+        )
+    dangling = sorted(name for name in cited - elided if name not in defined)
+    assert dangling == [], f"docs/SECURITY.md cites tests that do not exist: {dangling}"
+    assert cited, "the sweep found no cited test names, so it is asserting nothing"
+
+
+# --- the verified-edit helper is itself executed --------------------------------------
+
+
+def _run_verified_edit(tmp_path: Path, body: str, anchor: str, replacement: str) -> int:
+    target = tmp_path / "target.txt"
+    target.write_text(body, encoding="utf-8")
+    anchor_file = tmp_path / "anchor.txt"
+    anchor_file.write_text(anchor, encoding="utf-8")
+    replacement_file = tmp_path / "replacement.txt"
+    replacement_file.write_text(replacement, encoding="utf-8")
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "verified-edit.py"),
+            str(target),
+            str(anchor_file),
+            str(replacement_file),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return result.returncode
+
+
+def test_the_edit_helper_applies_a_matching_anchor(tmp_path: Path) -> None:
+    assert _run_verified_edit(tmp_path, "alpha bravo charlie", "bravo", "delta") == 0
+    assert (tmp_path / "target.txt").read_text(encoding="utf-8") == "alpha delta charlie"
+
+
+def test_the_edit_helper_refuses_a_missing_anchor(tmp_path: Path) -> None:
+    """The exact failure that let a changelog certify a docstring correction never applied."""
+    assert _run_verified_edit(tmp_path, "alpha bravo", "not-here", "delta") == 3
+    assert (tmp_path / "target.txt").read_text(encoding="utf-8") == "alpha bravo"
+
+
+def test_the_edit_helper_refuses_an_ambiguous_anchor(tmp_path: Path) -> None:
+    """Two matches means the edit would be arbitrary, so it is refused rather than guessed."""
+    assert _run_verified_edit(tmp_path, "bravo and bravo", "bravo", "delta") == 3
+    assert (tmp_path / "target.txt").read_text(encoding="utf-8") == "bravo and bravo"
+
+
+def test_the_edit_helper_refuses_when_the_anchor_survives_the_write(tmp_path: Path) -> None:
+    """A replacement that still contains the anchor leaves the file unchanged in substance."""
+    assert _run_verified_edit(tmp_path, "aabb", "ab", "") == 4
+
+
+def test_the_edit_helper_reports_misuse(tmp_path: Path) -> None:
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [sys.executable, str(ROOT / "scripts" / "verified-edit.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 2

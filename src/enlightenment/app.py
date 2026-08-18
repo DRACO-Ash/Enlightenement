@@ -219,6 +219,14 @@ async def _run_probe(runtime: _Runtime) -> ProbeResult:
     an undiagnosable silent liveness kill.
     """
     data_dir = runtime.settings.data_dir
+    if runtime.probe_pool is None:
+        # Only reachable after the lifespan released the pool. Passing None to
+        # run_in_executor would silently fall back to the DEFAULT executor, which is the exact
+        # starvation the dedicated pool exists to prevent (a legitimate listing measured at
+        # 1.4 ms against 109 ms). Fail closed instead of degrading quietly.
+        return ProbeResult(
+            ok=False, resolved=str(data_dir), detail="probe pool released; app is shutting down"
+        )
     loop = asyncio.get_running_loop()
     try:
         return await asyncio.wait_for(
@@ -603,11 +611,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        """Release the dedicated probe thread when the application shuts down.
+        """Release the pool the runtime holds.
 
-        This runs only if the lifespan runs, which is why the pool is created on FIRST PROBE
-        rather than at construction: an app that is built and never served then holds no
-        thread at all, so the two together give the property this used to claim on its own.
+        Constructing the pool starts no worker; this stops the one a probe started. An app
+        built and never served therefore holds no thread whether or not this ever runs, which
+        is a property of ``ThreadPoolExecutor`` and not of when the pool is created. An earlier
+        version of this docstring credited lazy creation for it, three lines above the code
+        that builds the pool eagerly.
         """
         try:
             yield
@@ -615,6 +625,9 @@ def create_app(
             if runtime.probe_pool is not None:
                 runtime.probe_pool.shutdown(wait=False)
                 runtime.probe_pool = None
+            # Published so a test can assert the precondition it depends on, rather than
+            # assuming the release happened and then testing what follows from it.
+            app.state.runtime_probe_pool_released = True
 
     app = FastAPI(
         title="Enlightenment",
@@ -634,11 +647,13 @@ def create_app(
     _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
 
-    # An IN-PROCESS inspection seam, so a test can assert the runtime's actual wiring rather
-    # than grep the source for it. Never serialised and never rendered: nothing reads
-    # app.state over HTTP, and the diagnostics route builds its response field by field from
-    # explicit, secret-free values.
-    app.state.runtime = runtime
+    # An IN-PROCESS inspection seam, so a test can assert the constructed wiring rather than
+    # grep the source for it. Deliberately narrow: publishing the whole runtime put
+    # `settings.team_token` within reach of any handler or third-party ASGI middleware through
+    # `request.app.state`, where before it was only closure-captured. Nothing read it, but reach
+    # is the thing to avoid, so only the pool is published.
+    app.state.probe_pool = runtime.probe_pool
+    app.state.runtime_probe_pool_released = False
 
     _install_error_handlers(app)
     _boot(runtime)
