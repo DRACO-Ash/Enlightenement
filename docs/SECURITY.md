@@ -239,7 +239,24 @@ no longer taken on construction alone, they are measured against the built files
 ● No package-manager binary on `PATH`.
 ● The dpkg database is present, so the platform scanner can still enumerate OS packages.
 
-**And it found a real defect on that first run**, which is the argument for the check existing.
+The container also RAN and answered every platform probe, from the built image on port 8080:
+
+```
+GET /        200        GET /livez  200        GET /ping 200      GET /health 200
+GET /readyz  503        with a complete diagnosis: errno 13, EACCES, resolved directory
+GET /api/v1/diagnostics 200, and CI asserts the exact token length is absent
+boot.access  {"authRequired":false,"writesOpen":false,"buildId":"v0.10.0"}
+```
+
+**The 503 there is correct, and worth explaining because it looks like a fault.** No file-storage
+add-on is mounted in CI, so the non-root user cannot write the image's own default directory. The
+application therefore starts, serves every liveness path, publishes a full diagnosis, and reports
+itself UNREADY. That is the designed behaviour and it is deliberately not softened: making the
+in-image directory writable would let a pod whose volume failed to mount run happily on ephemeral
+storage and lose every training session on the next restart. A loud unready state is better than
+silent data loss, so the fail-closed branch stays.
+
+**And the first run found a real defect**, which is the argument for the check existing.
 `ensurepip` vendors a complete pip wheel, `pip-25.0.1-py3-none-any.whl`. It is not a binary, so
 `command -v pip` reported nothing and the package-manager check passed, while a filesystem CVE
 scanner would report pip as a shipped package. The claim "the runtime ships no package manager"
