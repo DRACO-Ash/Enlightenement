@@ -120,14 +120,20 @@ jobs:
              if [ -n "$found" ]; then echo "bundled package-manager payloads ship:"; echo "$found"; exit 1; fi; \
              echo "bundled wheels: 0"'
 
-          # The base-image patch level gets a binding check of its own. `apt-get upgrade` in the
-          # Dockerfile is deliberately fail-open (`|| true`), because a runner behind a mirror
-          # may have no public route, so nothing else asserts the patch level. Read from the
-          # retained dpkg database, which is why keeping it matters.
+          # The OS package inventory must be ENUMERABLE from the retained dpkg database.
+          #
+          # Be precise about what this does and does not prove, because an earlier version of
+          # this comment called it a "binding patch-level check" and it is nothing of the kind:
+          # counting `Package:` lines proves the scanner can see what ships, not that anything
+          # is patched. `apt-get upgrade` in the Dockerfile is deliberately fail-open, so the
+          # honest position is that patch assurance rests on the digest-pinned base plus the
+          # platform's own container-scan stage, which is the only thing here with a real CVE
+          # database. What this check protects is the scanner's ABILITY to enumerate, which a
+          # well-meant cleanup of /var/lib/dpkg would silently destroy.
           docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
             'count=$(grep -c "^Package: " /var/lib/dpkg/status); \
              echo "OS packages present: $count"; \
-             test "$count" -gt 0 || { echo "cannot enumerate OS packages"; exit 1; }' 
+             test "$count" -gt 0 || { echo "cannot enumerate OS packages"; exit 1; }'
 
       - name: Assert the container answers the platform probes on 8080
         run: |

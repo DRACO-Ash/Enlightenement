@@ -222,11 +222,13 @@ def test_the_binding_suid_sweep_in_ci_runs_as_root() -> None:
 
 
 def test_the_package_manager_check_in_ci_covers_the_class() -> None:
-    lines = _ci_instructions()
-    joined = "\n".join(lines)
-    assert "for tool in pip pip3 apt apt-get" in joined
-    for tool in ("dpkg", "aptitude"):
-        assert tool in joined, f"the CI package-manager check does not cover {tool}"
+    """Superseded in substance by the per-tool test further down, which binds each name to the
+    loop's own step. Kept because it asserts the loop EXISTS at all, which the per-tool test
+    depends on.
+    """
+    step = _ci_step_containing("for tool in")
+    assert step, "the image job has no package-manager loop"
+    assert "command -v" in step, "the loop does not actually test for the tools"
 
 
 # --- the quality gate ---------------------------------------------------------------
@@ -732,22 +734,77 @@ def test_the_binding_image_job_can_actually_fire_on_a_release_branch() -> None:
     )
 
 
+def _ci_step_containing(needle: str, window: int = 6) -> str:
+    """The `docker run` invocation whose command contains ``needle``.
+
+    Binding a marker to its OWN step is the point. Matching the marker anywhere in the file let
+    each of these checks be deleted with the suite green: the OS-package step could be replaced
+    by an `echo` mentioning the marker, the bundled-wheel scan by an `echo` naming it, and
+    `dpkg` in the tool list was satisfied by the unrelated `/var/lib/dpkg/status` line
+    elsewhere. That is instances sixteen to eighteen of the assert-the-prose class in this file
+    alone, which is why the index-window technique is used here as it already is for the suid
+    sweep rather than reinvented per test.
+    """
+    lines = _ci_instructions()
+    for index, line in enumerate(lines):
+        if needle not in line:
+            continue
+        # Spans BOTH directions: the `docker run` invocation sits above the needle and the
+        # command body continues below it, so a backward-only window missed half the step.
+        block = lines[max(0, index - window) : index + window + 1]
+        joined = " ".join(block)
+        if "docker run" in joined:
+            return joined
+    return ""
+
+
 @pytest.mark.parametrize(
-    ("marker", "why"),
+    ("needle", "must_contain", "why"),
     [
-        ("*.whl", "a bundled package-manager wheel is on no PATH but IS reported by scanners"),
-        ("ensurepip", "the bundled installer directory ships the same payload"),
-        ("^Package: ", "the OS patch level needs a binding check of its own"),
+        (
+            '-name "*.whl"',
+            "find /",
+            "a bundled package-manager wheel is on no PATH but IS reported by CVE scanners; "
+            "this scan is what found the shipped pip-25.0.1 wheel on the first ever build",
+        ),
+        (
+            "ensurepip",
+            "find /",
+            "the bundled installer directory ships the same payload",
+        ),
+        (
+            'grep -c "^Package: "',
+            "/var/lib/dpkg/status",
+            "the OS package inventory must be read from the retained database",
+        ),
     ],
 )
-def test_the_image_job_checks_what_only_a_built_image_can_show(marker: str, why: str) -> None:
-    """These three can only be settled against a built filesystem, so they live in CI.
+def test_the_image_job_checks_what_only_a_built_image_can_show(
+    needle: str, must_contain: str, why: str
+) -> None:
+    """These can only be settled against a built filesystem, so they live in CI.
 
-    The Dockerfile's `apt-get upgrade` is deliberately fail-open, so without the package
-    enumeration nothing asserts the patch level at all.
+    Each marker is bound to the `docker run` step that must carry it, so replacing the step
+    with an `echo` that merely mentions the marker fails.
     """
-    workflow = "\n".join(_ci_instructions())
-    assert marker in workflow, f"the image job does not check {marker}: {why}"
+    step = _ci_step_containing(needle)
+    assert step, f"no docker run step carries {needle}: {why}"
+    assert must_contain in step, f"the step carrying {needle} does not run against {must_contain}"
+
+
+@pytest.mark.parametrize("tool", ["pip", "pip3", "apt", "apt-get", "dpkg", "dpkg-deb", "aptitude"])
+def test_the_package_manager_loop_covers_each_tool(tool: str) -> None:
+    """Parsed from the loop's own word list, not matched anywhere in the file.
+
+    `dpkg` used to be satisfied by the unrelated `/var/lib/dpkg/status` line elsewhere in the
+    job, so deleting it from the tool list left the suite green.
+    """
+    step = _ci_step_containing("for tool in")
+    assert step, "the package-manager loop is missing from the image job"
+    listed = re.search(r"for tool in ([^;]+);", step)
+    assert listed, f"cannot parse the tool list from: {step[:160]}"
+    tools = listed.group(1).split()
+    assert tool in tools, f"{tool} is not in the loop's tool list {tools}"
 
 
 def test_the_bundled_pip_wheel_is_removed_from_the_runtime() -> None:
@@ -762,3 +819,52 @@ def test_the_bundled_pip_wheel_is_removed_from_the_runtime() -> None:
     """
     sweep = DOCKER_INSTRUCTIONS.split("FROM scratch")[0]
     assert "ensurepip" in sweep, "the bundled pip wheel is not removed from the runtime stage"
+
+
+def test_the_edit_helper_preserves_the_targets_mode(tmp_path: Path) -> None:
+    """A scripted edit must not silently change a file's mode.
+
+    `mkstemp` creates 0600, so without an explicit chmod an edit to any of this repository's
+    mode-755 scripts stripped the executable bit and put an unrequested change in the diff.
+    """
+    # _run_verified_edit writes to target.txt, so chmod THAT file. An earlier version created
+    # target.sh, chmodded it, and then asserted on a file the helper never touched: the test
+    # passed whether or not the mode was preserved.
+    target = tmp_path / "target.txt"
+    target.write_text("alpha bravo", encoding="utf-8")
+    target.chmod(0o755)
+    assert _run_verified_edit(tmp_path, "alpha bravo", "bravo", "delta") == 0
+    assert target.read_text(encoding="utf-8") == "alpha delta"
+    assert target.stat().st_mode & 0o777 == 0o755, "the edit changed the target's mode"
+
+
+def test_packaging_needs_only_the_interpreter() -> None:
+    """The platform runs this suite in ITS environment, so a contract test that shells out to a
+    tool the runner may not have fails the test stage and skips quality, container build and
+    deploy, with the diagnosis pointing at packaging rather than at the missing tool.
+
+    `zip` is not part of a stock Python image, so the archive is built with `zipfile`.
+    """
+    packaging = "\n".join(_live_lines(ROOT / "scripts" / "package-appstore.sh"))
+    assert "zipfile" in packaging, "packaging does not build the archive with the interpreter"
+    assert not re.search(r"(^|\s)zip\s+-", packaging), (
+        "packaging still shells out to the zip binary"
+    )
+
+
+def test_the_changelog_carries_a_row_for_the_version_being_shipped() -> None:
+    """One audit row per change is a project rule, and the deploy gate reads this document.
+
+    V0.10 shipped with the newest row still reading V0.9, so the record the gate reads described
+    a state three commits stale and still said the container image was unverified after two
+    commits had changed exactly that. The version-parity test did not cover the changelog, so
+    this closes the same gap for the record rather than only for the code.
+    """
+    version = _pyproject()["project"]["version"]
+    major_minor = ".".join(version.split(".")[:2])
+    changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    heading = f"## V{major_minor} "
+    assert heading in changelog, (
+        f"docs/CHANGELOG.md has no audit row for V{major_minor}; newest headings are "
+        f"{re.findall(r'^## (V[0-9.]+)', changelog, re.MULTILINE)[:3]}"
+    )

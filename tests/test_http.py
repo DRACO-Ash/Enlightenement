@@ -15,7 +15,13 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
-from enlightenment.app import MAX_BODY_BYTES, ProbeSettings, _expected_rev, create_app
+from enlightenment.app import (
+    MAX_BODY_BYTES,
+    MAX_REVISION_DIGITS,
+    ProbeSettings,
+    _expected_rev,
+    create_app,
+)
 from enlightenment.auth import TOKEN_HEADER
 from enlightenment.config import Config
 from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
@@ -1005,6 +1011,11 @@ def test_a_probe_after_shutdown_fails_closed_rather_than_using_the_shared_execut
         '"0x1"',
         '"1.5"',
         '"+1"',
+        # CPython caps integer string conversion at 4300 digits, so all-ASCII digits still
+        # raise past that. A reviewer found this on a real socket AFTER the character-class fix
+        # was recorded as closing this class.
+        '"' + "1" * 4301 + '"',
+        '"' + "9" * 5000 + '"',
         '"  "',
         "W/",
         '""',
@@ -1052,3 +1063,37 @@ def test_the_published_pool_reference_is_cleared_with_the_pool(
         assert app.state.probe_pool is not None
     assert app.state.probe_pool is None
     assert app.state.runtime_probe_pool_released is True
+
+
+def test_nothing_on_app_state_exposes_the_configuration(
+    token_config: Config, store: TrainingStore
+) -> None:
+    """The inspection seam must stay narrow.
+
+    Publishing the whole runtime put `settings.team_token` within reach of any handler or
+    third-party ASGI middleware through `request.app.state`. It was narrowed to the pool and a
+    boolean, but nothing asserted the narrowness: adding `app.state.runtime = runtime` back left
+    the entire suite green.
+    """
+    app = create_app(config=token_config, store=store, probe=ok_probe)
+    published = vars(app.state).get("_state", vars(app.state))
+    for name, value in published.items():
+        assert not isinstance(value, Config), f"app.state.{name} exposes the configuration"
+        rendered = repr(value)
+        assert TEST_TOKEN not in rendered, f"app.state.{name} renders the team token"
+    assert "runtime" not in published, f"app.state publishes the whole runtime: {sorted(published)}"
+
+
+def test_the_revision_digit_bound_stays_well_below_the_interpreter_limit() -> None:
+    """The bound is a deliberate value, and raising it silently weakens the first layer.
+
+    A 64-bit counter is 19 digits, so 19 is generous for any real revision, and it is three
+    orders of magnitude below CPython's 4300-digit integer conversion limit. Raising it to
+    something past that limit left the suite green, because the guarded conversion then absorbed
+    the case: the two layers mask each other under mutation, which is what defence in depth
+    looks like, so the bound is pinned here directly.
+    """
+    assert 0 < MAX_REVISION_DIGITS <= 19, (
+        f"the revision digit bound is {MAX_REVISION_DIGITS}, which no real revision needs and "
+        "which weakens the first of three layers"
+    )

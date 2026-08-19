@@ -63,7 +63,7 @@ state-changing route.
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
 | No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length` |
 | Operator values normalised before use | `config.py` | `test_clean_strips_quotes_whitespace_and_control_characters` |
-| Storage proved by a REAL write, never an existence check | `storage.py` | `test_probe_reports_an_existing_path_that_is_a_file...` |
+| Storage proved by a REAL write, never an existence check | `storage.py` | `test_probe_writable_reports_the_errno_when_the_write_is_refused`. NOTE: skipped when the suite runs as root, because root bypasses directory permissions, so this control is proved on the CI runner rather than locally. The file-not-a-directory case runs on every uid but does NOT kill an existence-check mutant, since it never reaches the write; citing that one here was wrong |
 | Probe cannot hang; hard timeout shorter than the platform's | `app.py` | `test_a_hanging_probe_times_out...` |
 | Probe cost bounded by TIME and by CONCURRENCY (single-flight) | `app.py` | `test_a_readiness_flood_causes_one_real_write...`, `test_concurrent_readiness_requests_run_one_probe_between_them` |
 | Concurrent callers all receive one verdict, so none can race to overwrite another | `app.py` | `test_concurrent_callers_all_receive_the_same_verdict` |
@@ -113,6 +113,16 @@ Survivors that remain, each with the reason it is or is not load-bearing:
 ● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
   than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`
   creates it, so seeding makes the first read cheaper and is not a control.
+● **The guarded `int()` conversion in `_expected_rev`** (`app.py`): survives while the 19-digit
+  length bound holds, because the bound catches every hostile spelling the suite can express. It
+  is kept anyway, and this is a different judgement from the inert drain guard that was DELETED
+  for being unreachable. That guard was behaviourally identical to the line after it. This one
+  catches a different failure: an `int()` that raises for a reason other than length, which is
+  precisely the category that has already bitten this function twice, once on a character class
+  and once on the interpreter's digit limit. A backstop against the next unknown spelling cannot
+  be asserted by enumerating known spellings, and its absence is what made the first two fixes
+  incomplete. The bound itself IS pinned by a test, so the layer in front of it cannot be
+  loosened silently.
 ● **The `_declared_over_cap` early refusal** (`middleware.py`): NO LONGER a survivor. An
   earlier version of this ledger said it was, which was wrong in the safe direction:
   `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` passes a `receive`

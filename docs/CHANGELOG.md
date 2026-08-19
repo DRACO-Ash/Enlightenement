@@ -2,6 +2,86 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.11 (2026-08-19)
+
+**What.** Both gates FAILED the V0.10 head with five MAJORs. Two were claims I had recorded as
+closed and had not been, which is the third time that has been the failing finding.
+
+● **The unparsable `If-Match` 500 was not closed.** `isascii() and isdecimal()` still lets `int()`
+  raise: CPython caps integer string conversion at 4300 digits, so a 4301-digit validator returned
+  500 on a real socket. A reviewer found it AFTER I recorded the class as closed. The guard is now
+  three-layered: character class, a 19-digit length bound, and a guarded conversion. The third
+  layer exists because a documented fail-safe should not depend on having enumerated every hostile
+  input, which two rounds of this same bug proved I cannot.
+● **The "binding patch-level check" checked no patch level.** Counting `Package:` lines proves the
+  scanner can ENUMERATE what ships, not that anything is patched, while three places said
+  otherwise. `apt-get upgrade` is deliberately fail-open, so the honest position is that patch
+  assurance rests on the digest-pinned base plus the platform's own container scan, which is the
+  only thing with a real CVE database. The claim is narrowed to what the check does; the check
+  stays, because a well-meant cleanup of `/var/lib/dpkg` would silently blind the scanner.
+
+● **Three CI assertions were satisfied by any mention of their marker**, so each check could be
+  deleted with the suite green: the OS-package step replaced by an `echo` naming the marker, the
+  bundled-wheel scan likewise, and `dpkg` in the tool list satisfied by the unrelated
+  `/var/lib/dpkg/status` line. Instances sixteen to eighteen of the assert-the-prose class in one
+  file. Each marker is now bound to the `docker run` step that must carry it, and the tool list is
+  parsed rather than matched.
+● **The artefact-building test shelled out to `zip`.** The platform runs this suite in ITS
+  environment, and `zip` is not part of a stock Python image, so an absent binary would fail the
+  test stage and skip quality, container build and deploy, with the diagnosis pointing at
+  packaging. Packaging now builds the archive with `zipfile`, so the release path needs only the
+  interpreter that is already running the suite.
+● **V0.10 shipped with no audit row.** Written above, retrospectively, and a test now fails when
+  the version being shipped has none.
+
+Also: the edit helper preserved no file mode, so a scripted edit to any mode-755 script stripped
+its executable bit; the security policy cited a test for the real-write control that does not kill
+an existence-check mutant, because the case it covers never reaches the write; the narrowness of
+the `app.state` seam was unasserted, so re-publishing the whole runtime and its plaintext token
+left the suite green; and the deployment record carried a hand-copied test count that had already
+been wrong twice, now removed rather than corrected again.
+
+**How verified.** Loop green, ruff and mypy strict clean, 326 tests collected (325 passed, 1
+skipped) with branch coverage at 98.50% against an 80% floor, `pip-audit` clean over both lockfiles, pipeline simulation green against the
+artefact, CI green across all three jobs including the binding image leg.
+
+## V0.10 (2026-08-19)
+
+**What.** The container was built for the first time, and the build immediately found a defect no
+local check could have.
+
+`ensurepip` vendors a complete pip wheel, `pip-25.0.1-py3-none-any.whl`. It is not a binary, so
+`command -v pip` reported nothing and the package-manager check passed, while a filesystem CVE
+scanner reports pip as a shipped package. The claim "the runtime ships no package manager" was
+therefore FALSE for three releases of documentation. A reviewer had hypothesised exactly this and
+said plainly it could not be settled without a build; fixing the CI trigger in V0.9 is what let
+the hypothesis be tested. `ensurepip` is purged in the prep stage and asserted locally and in CI.
+
+**The lesson is not about pip.** A `PATH` check answers "what can the entrypoint run". A scanner
+asks "what is in the image". Those are different questions, and the documentation asserted the
+second while only ever testing the first.
+
+**What the first build proved**, against the built filesystem rather than the Dockerfile text:
+`Config.User = 10001:10001`; zero setuid or setgid paths, swept as root with stderr surfaced;
+no package-manager binary on `PATH`; the dpkg database retained so the platform scanner can still
+enumerate; and, after the fix, zero bundled wheels. The container also ran and answered every
+platform probe on 8080.
+
+**`/readyz` returned 503 in that run, and that is correct.** No file-storage add-on is mounted in
+CI, so the non-root user cannot write the image's own default directory. The application starts,
+serves every liveness path, publishes a complete diagnosis with `errno 13 EACCES` and the resolved
+directory, and reports itself unready. Deliberately not softened: a writable in-image directory
+would let a pod whose volume failed to mount run on ephemeral storage and lose every training
+session at the next restart. A loud unready state beats silent data loss.
+
+**How verified.** Loop green, 312 tests collected, branch coverage 98.72%, `pip-audit` clean over
+both lockfiles, pipeline simulation green, and all three CI jobs green including the binding image
+leg.
+
+**This row was missing when V0.10 shipped**, and is written here retrospectively. A test now fails
+if the version being shipped has no audit row, because the deploy gate reads this document and
+V0.10 left it describing a three-commit-stale state.
+
 ## V0.9 (2026-08-18)
 
 **What.** `deploy-gate` returned FAIL on V0.8.0 with three blockers. None was a defect in the

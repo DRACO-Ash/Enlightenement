@@ -98,6 +98,11 @@ MAX_BODY_BYTES = 64 * 1024
 #: Actor label for a call authenticated with the shared team token.
 TEAM_ACTOR = "team"
 
+#: Longest revision a validator may declare. Comfortably past any real revision (a 64-bit
+#: counter is 19 digits) and far below CPython's 4300-digit integer conversion limit, which a
+#: longer value would trip as a ValueError.
+MAX_REVISION_DIGITS = 19
+
 _logger = logging.getLogger("enlightenment.app")
 
 ProbeFn = Callable[[Path], ProbeResult]
@@ -462,13 +467,25 @@ def _expected_rev(if_match: str | None) -> int | None:
     if not if_match:
         return None
     candidate = if_match.strip().removeprefix("W/").strip('"')
-    # ASCII decimal digits only. `isdigit()` accepts characters `int()` rejects, so
-    # `If-Match: "\u00b2"` raised an uncaught ValueError and returned 500 from a path
-    # documented to IGNORE an unparsable validator. Same class, same fix as
-    # healthcheck.resolve_port; found there first and missed here.
+    # ASCII decimal digits only, AND a length bound, AND a guarded conversion. Each closes a
+    # different way this has already returned 500 from a path documented to IGNORE an
+    # unparsable validator:
+    #
+    # ● `isdigit()` accepts characters `int()` rejects (a superscript two), fixed first.
+    # ● Even all-ASCII digits raise: CPython caps integer string conversion at 4300 digits, so
+    #   a 4301-digit validator raised `ValueError: Exceeds the limit`. A reviewer found that on
+    #   a real socket AFTER the first fix was recorded as closing this class, which is why the
+    #   guard is now three-layered rather than one more predicate.
+    # ● The try/except is the backstop for whatever the next spelling turns out to be. A
+    #   documented fail-safe should not depend on having enumerated every hostile input.
     if not (candidate.isascii() and candidate.isdecimal()):
         return None
-    return int(candidate)
+    if len(candidate) > MAX_REVISION_DIGITS:
+        return None
+    try:
+        return int(candidate)
+    except ValueError:
+        return None
 
 
 def _guard_write_rate(runtime: _Runtime, request: Request) -> None:

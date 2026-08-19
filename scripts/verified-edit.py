@@ -55,6 +55,10 @@ def _write_atomically(target: Path, content: str) -> None:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+        # Preserve the target's mode. mkstemp creates 0600, so without this a scripted edit to
+        # any of this repository's mode-755 scripts or hooks would strip the executable bit and
+        # put an unrequested mode change in the diff.
+        temp_path.chmod(target.stat().st_mode & 0o7777)
         temp_path.replace(target)
     except OSError:
         temp_path.unlink(missing_ok=True)

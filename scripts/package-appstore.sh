@@ -41,7 +41,21 @@ find "$STAGE" \( -name '*.pyc' -o -name '.coverage' -o -name 'coverage.xml' \
      -o -name '.env' -o -name '.env.*' ! -name '.env.example' \) -delete 2>/dev/null || true
 rm -rf "$STAGE/.git" "$STAGE/.venv" "$STAGE/var" "$STAGE/dist"
 
-( cd "$STAGE" && zip -q -r "../$(basename "$OUT")" . -x '.DS_Store' )
+# Archived with the interpreter, not the `zip` binary. `zip` is not part of a stock Python
+# image, and the platform runs this project's own suite against the uploaded tree in ITS
+# environment: a contract test that shells out to a missing tool fails the test stage and skips
+# quality, container build and deploy, with the diagnosis pointing at packaging rather than at
+# an absent binary. The interpreter is guaranteed present, because it is what runs the suite.
+( cd "$STAGE" && python3 -c '
+import pathlib, sys, zipfile
+root = pathlib.Path(".")
+out = pathlib.Path(sys.argv[1])
+with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob("*")):
+        if path.name == ".DS_Store":
+            continue
+        archive.write(path, path.relative_to(root).as_posix())
+' "../$(basename "$OUT")" )
 rm -rf "$STAGE"
 
 printf '\nPACKAGE: %s\n' "$OUT"
