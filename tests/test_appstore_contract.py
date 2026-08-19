@@ -706,3 +706,45 @@ def test_the_edit_helper_reports_an_unreadable_target(tmp_path: Path) -> None:
         )
         assert result.returncode == 5, f"{target} gave {result.returncode}: {result.stderr[-200:]}"
         assert "Traceback" not in result.stderr
+
+
+def test_the_binding_image_job_can_actually_fire_on_a_release_branch() -> None:
+    """A binding check that cannot fire is not a check.
+
+    The `image` job is the ONLY thing that can build the container, because the authoring
+    environment's network policy denies the registry blob endpoint. Three documents call it the
+    binding check for container hardening. It triggered only from `main`, so on a release branch
+    it had never run once, and the container had never been built by anything, anywhere. The
+    deploy gate caught that by querying the repository rather than by reading the file.
+
+    Asserted over the workflow's executable lines rather than a parsed document, because
+    parsing YAML would mean adding a dependency for one assertion. What this CANNOT see: a
+    trigger present but overridden elsewhere, or a job-level `if` that skips the job. What
+    settles it for real is the job having actually run, which the deploy gate checks by
+    querying the repository.
+    """
+    lines = _ci_instructions()
+    release_branch = any("claude/" in line for line in lines)
+    dispatch = any(line.strip().startswith("workflow_dispatch") for line in lines)
+    assert release_branch or dispatch, (
+        "the image job cannot fire on a release branch: add a release-branch push trigger "
+        "or workflow_dispatch"
+    )
+
+
+@pytest.mark.parametrize(
+    ("marker", "why"),
+    [
+        ("*.whl", "a bundled package-manager wheel is on no PATH but IS reported by scanners"),
+        ("ensurepip", "the bundled installer directory ships the same payload"),
+        ("^Package: ", "the OS patch level needs a binding check of its own"),
+    ],
+)
+def test_the_image_job_checks_what_only_a_built_image_can_show(marker: str, why: str) -> None:
+    """These three can only be settled against a built filesystem, so they live in CI.
+
+    The Dockerfile's `apt-get upgrade` is deliberately fail-open, so without the package
+    enumeration nothing asserts the patch level at all.
+    """
+    workflow = "\n".join(_ci_instructions())
+    assert marker in workflow, f"the image job does not check {marker}: {why}"

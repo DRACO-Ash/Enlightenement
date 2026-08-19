@@ -2,6 +2,57 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.9 (2026-08-18)
+
+**What.** `deploy-gate` returned FAIL on V0.8.0 with three blockers. None was a defect in the
+application: two were owner decisions I must not invent, and the third was a hole in my own
+verification chain.
+
+**The hole, and it is the important one.** The CI `image` job is the only thing that can build
+this container, because the authoring environment's network policy denies the registry blob
+endpoint. Three documents, including `docs/SECURITY.md`, name it as the binding check for
+container hardening. The gate checked whether it had ever run instead of taking that on trust:
+zero workflows registered on the repository, zero pull requests ever opened, `origin/main`
+holding a single file, and a trigger set to `pull_request` into `main` and `push` to `main` only.
+So on a release branch it had never fired once, and **the container had never been built by
+anything, anywhere**, while three documents called its verification binding. A binding check that
+cannot fire is not a check. The trigger now covers release branches and manual dispatch, and a
+test fails if that regresses.
+
+**Two checks only a built image can settle, added while the job was being fixed.** The
+package-manager check tested binaries on `PATH`, so a vendored wheel under `ensurepip` would pass
+it while a filesystem CVE scanner reports it. And nothing at all asserted the base patch level,
+because the Dockerfile's `apt-get upgrade` is deliberately fail-open for runners behind a mirror.
+Both now have a binding check reading the retained dpkg database, which is the reason keeping that
+database was the right call rather than a tidiness loss.
+
+**Owner decisions, recorded as decisions with their date.** Category Training / Simulation.
+Visibility private to the Bluestaq Ltd team. Resource budget 1Gi request and 2Gi limit, 1 CPU
+request and 2 CPU limit. The scenario vocabulary stays an open, length-capped field rather than
+invented terms.
+
+**A consequence of private-to-team worth stating loudly.** It requires the team token, and setting
+the token makes `ALLOWED_ORIGIN` mandatory, so the environment tab is no longer empty for this
+deployment. Two variables are set and every other row stays `[delete]`. The failure mode of
+forgetting the token is a read-only service, never an open one, which is the whole point of the
+fail-closed write posture.
+
+**The withdrawal path for a first deployment, which was missing.** There is no previous version to
+roll back to, and the record said so honestly but documented only the rollback that applies to
+later releases. So an operator had nothing to follow if THIS deployment had to come out. Written
+now: take the app out of service through the lifecycle action, do not delete the record as a first
+move, and never delete-and-recreate under the same slug, because app-record residue is a known
+platform failure that recovers only with a fresh slug and therefore a changed URL. Deleting is the
+step that is hard to undo, not the deploy.
+
+**How verified.** Loop green: ruff format and check, mypy strict over 12 modules, 311 tests
+collected (310 passed, 1 skipped) with branch coverage at 98.72% against an 80% floor, Cobertura
+written, `pip-audit` clean over both lockfiles. Three mutants this round, all three killed, with
+the control run FIRST and confirmed green on a COMPLETE tree either side of them.
+
+**Still not verified, and now actually reachable.** The container image build. Unchanged in this
+environment, but the CI job that can do it is no longer unable to fire.
+
 ## V0.8 (2026-08-18)
 
 **What.** Both gates PASSED at round 7 on V0.7. This closes the eleven MINORs they raised

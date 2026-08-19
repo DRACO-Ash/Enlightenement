@@ -3,11 +3,21 @@
 # own and it is never hand-edited, so no .gitlab-ci.yml is committed here.
 name: ci
 
+# The `image` job here is the ONLY check that can build the container: the authoring
+# environment's network policy denies the registry blob endpoint, so no image can be built
+# locally. Three documents call this job the binding check for container hardening.
+#
+# It was reachable only from `main`, so on a release branch it had never run even once, and the
+# container had therefore never been built by anything, anywhere. A binding check that cannot
+# fire is not a check. Release branches and manual dispatch are both covered now.
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'claude/**'
+  workflow_dispatch:
 
 # Least privilege: the workflow only reads the repository.
 permissions:
@@ -100,7 +110,24 @@ jobs:
           # the OS packages honestly. Removing it would hide findings rather than fix them.
           docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
             'test -s /var/lib/dpkg/status || { echo "dpkg database missing: the scanner cannot enumerate packages"; exit 1; }; \
-             echo "package database present"' 
+             echo "package database present"'
+
+          # No bundled package-manager WHEEL may ship. The check above tests binaries on PATH,
+          # and a vendored wheel under ensurepip is on no PATH but IS reported by filesystem
+          # CVE scanners. Cannot be settled without building, which is why it lives here.
+          docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
+            'found=$(find / -xdev \( -name "*.whl" -o -name ensurepip -type d \) -print 2>/dev/null); \
+             if [ -n "$found" ]; then echo "bundled package-manager payloads ship:"; echo "$found"; exit 1; fi; \
+             echo "bundled wheels: 0"'
+
+          # The base-image patch level gets a binding check of its own. `apt-get upgrade` in the
+          # Dockerfile is deliberately fail-open (`|| true`), because a runner behind a mirror
+          # may have no public route, so nothing else asserts the patch level. Read from the
+          # retained dpkg database, which is why keeping it matters.
+          docker run --rm --user 0 --entrypoint sh enlightenment:ci -c \
+            'count=$(grep -c "^Package: " /var/lib/dpkg/status); \
+             echo "OS packages present: $count"; \
+             test "$count" -gt 0 || { echo "cannot enumerate OS packages"; exit 1; }' 
 
       - name: Assert the container answers the platform probes on 8080
         run: |
