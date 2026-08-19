@@ -2,6 +2,55 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.12 (2026-08-19)
+
+**What.** The first real upload FAILED at the platform's Test stage: four of eight stages passed,
+and Code Quality, Container Build and Container Scan were all skipped. The reported message was
+"Tests failed", which points at the tests. The cause was not a test.
+
+**`scripts/package-appstore.sh` shelled out to `unzip`, which a stock `python:3.12-slim` image
+does not ship.** A contract test EXECUTES that script, so on the platform's runner it exited 127
+and the test asserting a clean exit failed. Locally green, in CI green, and neither environment
+reproduced the one thing that mattered: the platform's TOOL INVENTORY.
+
+**This is a class I had already been told about and fixed one instance of.** A reviewer raised
+exactly this in the previous round, naming `zip`. I removed `zip` and left `unzip`, `tar` and
+`sha256sum` in the same file. Fixing the instance is not fixing the class, and this cost a real
+upload cycle to learn.
+
+**Three fixes, at three different rungs:**
+
+1. **The script now uses nothing but a POSIX shell and `python3`.** `shutil.copytree` for the
+   copy, `zipfile` for the archive and the listing, `hashlib` for the digest. The rule is stated
+   at the top of the file so the next person does not reintroduce it.
+2. **Two tests assert the RULE**, parametrised over the tools a stock python image lacks
+   (`zip`, `unzip`, `git`, `curl`, `wget`, `jq`, `docker`), with a word-boundary match so
+   `zipfile` does not read as `zip`. So the local loop now catches this class at the cheapest rung.
+3. **The pipeline simulation MASKS those tools** during its test stage, replacing each with a
+   stub that exits 127. The simulation previously reproduced the platform's added file and its
+   environment variable, but not its tool inventory, which is why it passed while the upload
+   failed.
+
+Proved rather than assumed: reintroducing `unzip -l` into the packaging script makes the local
+loop go red AND the masked simulation go red. Two independent nets, both verified against the
+actual defect.
+
+**Also widened: the platform-runner gate.** `ON_PLATFORM_RUNNER` tested `GITLAB_CI == "true"`
+exactly, betting the deploy on one variable having one exact value. A negative assertion about a
+file the PLATFORM ITSELF adds must never be guaranteed-false on the machine that gates the
+deploy, so any credible runner signal now counts (`GITLAB_CI`, `CI`, `CI_PIPELINE_ID`,
+`CI_JOB_ID`, `GITHUB_ACTIONS`).
+
+**How verified.** Loop green, 334 tests collected (333 passed, 1 skipped locally; 332 passed and 2
+skipped under the masked simulation), branch coverage 98.50%,
+`pip-audit` clean over both lockfiles. Masked pipeline simulation green against the artefact on
+the pinned interpreter. The masking leg proved load-bearing by reintroducing the defect.
+
+**Caveat on the diagnosis.** The platform's own log for the failed run has not been read. `unzip`
+in an executed script is a defect that produces exactly this symptom and it is fixed, but if the
+new upload fails again, get "More Details" from the console: the specific assertion will name the
+cause, and inference should not substitute for it twice.
+
 ## V0.11 (2026-08-19)
 
 **What.** Both gates FAILED the V0.10 head with five MAJORs. Two were claims I had recorded as

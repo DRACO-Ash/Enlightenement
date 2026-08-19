@@ -37,8 +37,23 @@ echo "== simulated install stage ($PINNED) =="
 "$SIM/.venv/bin/pip" install --quiet --require-hashes --no-deps -r "$SIM/requirements.txt"
 "$SIM/.venv/bin/pip" install --quiet --require-hashes --no-deps -r "$SIM/requirements-dev.txt"
 
+# Mask the tools a stock `python:3.12-slim` image does NOT ship, so the suite runs here the way
+# it runs there. This leg exists because a real upload failed at the Test stage on `unzip`: the
+# local loop was green, this simulation was green, and neither reproduced the one thing that
+# mattered, which is the platform's TOOL INVENTORY. Debian slim does carry coreutils (mktemp,
+# sha256sum, tar, find), so only the genuinely absent tools are masked. Masking is done here,
+# after the artefact has been unpacked, so the simulation's own use of unzip is unaffected.
+MASK="$SIM/masked-bin"
+mkdir -p "$MASK"
+for absent in zip unzip git curl wget jq docker; do
+  printf '#!/bin/sh\necho "%s: not found (masked: absent from a stock python image)" >&2\nexit 127\n' \
+    "$absent" > "$MASK/$absent"
+  chmod +x "$MASK/$absent"
+done
+echo "== masked as absent for the test stage: zip unzip git curl wget jq docker =="
+
 echo "== simulated test stage (the platform's environment, not yours) =="
-( cd "$SIM" && GITLAB_CI=true ./.venv/bin/python -m pytest )
+( cd "$SIM" && PATH="$MASK:$PATH" GITLAB_CI=true ./.venv/bin/python -m pytest )
 
 echo "== the artefact the quality gate reads =="
 test -s "$SIM/coverage.xml" || { echo "FAIL: coverage.xml absent in the checkout" >&2; exit 1; }

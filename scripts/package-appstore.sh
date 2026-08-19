@@ -8,6 +8,17 @@
 # in eight seconds).
 #
 # This allowlist shapes the UPLOAD. .dockerignore shapes the IMAGE. Two separate contracts.
+#
+# HARD RULE: this script may use NOTHING but a POSIX shell and `python3`.
+#
+# A contract test EXECUTES this script, and the platform runs that suite in ITS environment,
+# not ours. A stock `python:3.12-slim` image has no `zip` and no `unzip`. So every external
+# tool here is a way for the platform's Test stage to fail with a diagnosis pointing at
+# packaging instead of at an absent binary, which is exactly what happened: `zip` was removed
+# and `unzip`, `tar` and `sha256sum` were left behind, and the upload failed at Test with
+# Quality, Container Build and Container Scan all skipped. Fixing one instance of a class is
+# not fixing the class. `test_the_packaging_script_shells_out_to_nothing_but_python` enforces
+# this rule mechanically so it cannot rot back.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -31,8 +42,16 @@ done
 # assertion that cannot run on the machine gating the deploy is worse than no assertion.
 # The platform generates and commits its own pipeline regardless and ignores this one.
 for dir in src tests scripts docs .github; do
-  mkdir -p "$STAGE/$dir"
-  tar -cf - --exclude='__pycache__' --exclude='*.pyc' "$dir" | tar -xf - -C "$STAGE"
+  python3 -c '
+import pathlib, shutil, sys
+source, stage = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+shutil.copytree(
+    source,
+    stage / source,
+    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    dirs_exist_ok=True,
+)
+' "$dir" "$STAGE"
 done
 
 # Banned from the upload, defensively re-checked rather than assumed.
@@ -58,7 +77,17 @@ with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as archive:
 ' "../$(basename "$OUT")" )
 rm -rf "$STAGE"
 
-printf '\nPACKAGE: %s\n' "$OUT"
-printf 'SHA-256: %s\n' "$(sha256sum "$OUT" | cut -d' ' -f1)"
-printf '\nContents (Dockerfile must be at the root, never nested):\n'
-unzip -l "$OUT" | head -30
+python3 -c '
+import hashlib, pathlib, sys, zipfile
+out = pathlib.Path(sys.argv[1])
+print(f"\nPACKAGE: {out}")
+print(f"SHA-256: {hashlib.sha256(out.read_bytes()).hexdigest()}")
+print("\nContents (Dockerfile must be at the root, never nested):")
+with zipfile.ZipFile(out) as archive:
+    names = archive.namelist()
+for name in names[:28]:
+    print(f"  {name}")
+if len(names) > 28:
+    print(f"  ... and {len(names) - 28} more")
+print(f"\n{len(names)} files")
+' "$OUT"

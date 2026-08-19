@@ -72,7 +72,16 @@ def _pyproject() -> dict[str, Any]:
 
 
 #: True when running on the platform's GitLab runner, which adds files to the checkout.
-ON_PLATFORM_RUNNER = os.environ.get("GITLAB_CI") == "true"
+#:
+#: Deliberately broad. Gating on `GITLAB_CI == "true"` alone bets the deploy on one variable
+#: having one exact value: if the platform ever sets `CI` but not `GITLAB_CI`, or sets
+#: `GITLAB_CI=1`, a negative assertion about a file the PLATFORM ITSELF adds becomes
+#: guaranteed-false on the machine that gates the deploy. That is the one thing this file's
+#: own docstring forbids, so any credible runner signal counts.
+ON_PLATFORM_RUNNER = any(
+    os.environ.get(name) not in (None, "", "false", "0")
+    for name in ("GITLAB_CI", "CI", "CI_PIPELINE_ID", "CI_JOB_ID", "GITHUB_ACTIONS")
+)
 
 
 # --- the runtime contract -----------------------------------------------------------
@@ -868,3 +877,84 @@ def test_the_changelog_carries_a_row_for_the_version_being_shipped() -> None:
         f"docs/CHANGELOG.md has no audit row for V{major_minor}; newest headings are "
         f"{re.findall(r'^## (V[0-9.]+)', changelog, re.MULTILINE)[:3]}"
     )
+
+
+#: Commands a script the SUITE EXECUTES may rely on. Deliberately tiny.
+PORTABLE_COMMANDS = frozenset(
+    {
+        "python3",  # guaranteed: it is what runs this suite
+        "cd",
+        "set",
+        "printf",
+        "echo",
+        "test",
+        "rm",
+        "mkdir",
+        "cp",
+        "for",
+        "do",
+        "done",
+        "if",
+        "then",
+        "fi",
+        "else",
+        "exit",
+        "true",
+        "false",
+        "read",
+        "shift",
+        "local",
+        "return",
+        "case",
+        "esac",
+        "while",
+        "basename",
+        "dirname",
+        "find",
+    }
+)
+
+#: External tools that are NOT in a stock `python:3.12-slim` image, so a script the suite
+#: executes must never rely on one. `unzip` is the instance that failed a real upload.
+NOT_IN_A_STOCK_PYTHON_IMAGE = ("unzip", "zip", "jq", "curl", "wget", "docker", "git")
+
+
+@pytest.mark.parametrize("tool", NOT_IN_A_STOCK_PYTHON_IMAGE)
+def test_the_packaging_script_shells_out_to_nothing_but_python(tool: str) -> None:
+    """The class, not the instance.
+
+    A contract test EXECUTES `package-appstore.sh`, and the platform runs this suite in ITS
+    environment. A stock `python:3.12-slim` image has no `zip` and no `unzip`. The first fix
+    removed `zip` and left `unzip`, `tar` and `sha256sum` behind, and the upload failed at the
+    Test stage with Quality, Container Build and Container Scan all skipped: four of eight
+    stages passed, and the reported diagnosis was "tests failed", which points at the tests
+    rather than at an absent binary.
+
+    So this asserts the RULE rather than chasing tools one at a time. `python3` does everything
+    the script needs: `shutil.copytree` for the copy, `zipfile` for the archive and the listing,
+    `hashlib` for the digest.
+    """
+    script = "\n".join(_live_lines(ROOT / "scripts" / "package-appstore.sh"))
+    # Word-boundary match, so `zipfile` and `.gitignore` do not read as `zip` and `git`.
+    assert not re.search(rf"(?<![\w.-]){re.escape(tool)}(?![\w.-])", script), (
+        f"packaging invokes `{tool}`, which is not in a stock python image; use python3"
+    )
+
+
+def test_no_script_the_suite_executes_needs_an_unusual_tool() -> None:
+    """Same rule, swept across every script a test actually runs, so a new one inherits it.
+
+    What this CANNOT see: a tool invoked from inside a python block, or one reached through a
+    variable. It catches the plain-command case, which is the one that has actually bitten.
+    """
+    executed = ["package-appstore.sh"]  # build-image.sh legitimately needs `docker`, stubbed
+    offenders = [
+        f"{name} invokes {tool}"
+        for name in executed
+        for tool in NOT_IN_A_STOCK_PYTHON_IMAGE
+        if re.search(
+            rf"(?<![\w.-]){re.escape(tool)}(?![\w.-])",
+            "\n".join(_live_lines(ROOT / "scripts" / name)),
+        )
+    ]
+    assert offenders == [], f"a script the suite executes needs an unusual tool: {offenders}"
