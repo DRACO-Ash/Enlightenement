@@ -65,8 +65,16 @@ RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip \
            /usr/bin/dpkg-split /usr/bin/dpkg-statoverride /usr/bin/dpkg-trigger \
            /usr/bin/dpkg-maintscript-helper /usr/sbin/dpkg-preconfigure \
            /etc/apt /usr/lib/apt \
+           /usr/local/lib/python3.12/ensurepip \
            /var/lib/apt/lists/* /var/cache/apt/* /root/.cache /tmp/*
 
+# ensurepip is removed for a reason a PATH check cannot see. It is not a binary, so
+# `command -v pip` reports nothing, but it vendors a complete pip WHEEL
+# (pip-25.0.1-py3-none-any.whl) that a filesystem CVE scanner reports as a shipped package.
+# The claim "no package manager ships" was false because of it. Found by the CI image job on
+# its first ever run, having been hypothesised by a reviewer who could not settle it without a
+# build. The runtime never calls ensurepip: the venv is built in an earlier stage.
+#
 # NOTE on what is deliberately KEPT: /var/lib/dpkg stays. It is the package DATABASE, not
 # a tool, and it is what the platform's image policy scan reads to enumerate the OS
 # packages present. Deleting it would remove the scanner's evidence rather than the risk,

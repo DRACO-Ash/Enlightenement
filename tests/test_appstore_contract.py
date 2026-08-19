@@ -748,3 +748,17 @@ def test_the_image_job_checks_what_only_a_built_image_can_show(marker: str, why:
     """
     workflow = "\n".join(_ci_instructions())
     assert marker in workflow, f"the image job does not check {marker}: {why}"
+
+
+def test_the_bundled_pip_wheel_is_removed_from_the_runtime() -> None:
+    """`ensurepip` vendors a complete pip wheel that no PATH check can see.
+
+    `command -v pip` reports nothing for it, so the package-manager check passed while
+    `pip-25.0.1-py3-none-any.whl` shipped in the image and a filesystem CVE scanner would
+    report it as a present package. The CI image job caught it on its first ever run.
+
+    Asserted here as well as in CI so a local run catches a regression at the cheapest rung,
+    and because the CI job is the only thing that can see the built filesystem.
+    """
+    sweep = DOCKER_INSTRUCTIONS.split("FROM scratch")[0]
+    assert "ensurepip" in sweep, "the bundled pip wheel is not removed from the runtime stage"

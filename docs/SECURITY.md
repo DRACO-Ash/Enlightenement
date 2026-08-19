@@ -227,9 +227,34 @@ provider and is applied through the App Store env-var lifecycle: `save_env_vars`
 COMPLETE set, then `apply_env_vars`. The repository never held a real value, so rotation
 touches the environment only.
 
+## What the first container build proved, and what it found
+
+**The image has now been built.** The CI `image` job ran for the first time on 2026-08-19 against
+commit `e97a593`, after the trigger was fixed so it could fire at all. Four things are therefore
+no longer taken on construction alone, they are measured against the built filesystem:
+
+● `Config.User` is `10001:10001`, numeric and non-root.
+● **Zero** setuid or setgid paths, files or directories, with the sweep run as root and its stderr
+  surfaced so it cannot pass blind.
+● No package-manager binary on `PATH`.
+● The dpkg database is present, so the platform scanner can still enumerate OS packages.
+
+**And it found a real defect on that first run**, which is the argument for the check existing.
+`ensurepip` vendors a complete pip wheel, `pip-25.0.1-py3-none-any.whl`. It is not a binary, so
+`command -v pip` reported nothing and the package-manager check passed, while a filesystem CVE
+scanner would report pip as a shipped package. The claim "the runtime ships no package manager"
+was therefore FALSE, in exactly the way a reviewer hypothesised and could not settle without a
+build. `ensurepip` is now removed in the prep stage and asserted both locally and in CI.
+
+The lesson is not about pip. It is that a `PATH` check answers "what can the entrypoint run",
+while the scanner asks "what is in the image", and those are different questions. Three releases
+of documentation asserted the second while only testing the first.
+
 ## What is still unverified, and why
 
-The container image has never been built. A Docker daemon starts in the authoring
+The image build now runs in CI, so the items above are confirmed. What remains unconfirmed is the
+platform's OWN policy scan and SonarQube ruleset, which are server-side. The image also cannot be
+built in the authoring environment. A Docker daemon starts in the authoring
 environment, but the registry's blob endpoint is denied by that environment's network
 policy, so no base-image layer can be pulled and the Dockerfile is neither proved nor
 disproved. Container hardening therefore rests on two things: static assertions over the
