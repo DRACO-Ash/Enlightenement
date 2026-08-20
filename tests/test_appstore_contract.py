@@ -518,13 +518,27 @@ def test_the_loop_audits_every_lockfile_it_installs() -> None:
 
 
 def _run_build_image(tmp_path: Path, stub: str) -> subprocess.CompletedProcess[str]:
-    """Run scripts/build-image.sh with a stub `docker` earlier on PATH."""
+    """Run scripts/build-image.sh against a stub container engine.
+
+    Stubs BOTH names and pins the choice with `ENLIGHTENMENT_CONTAINER_ENGINE`, because
+    stubbing `docker` alone stopped working the moment the script learned to prefer Podman -
+    which is what the platform's containerize stage uses. On a runner with a working Podman the
+    script found the real one, built the real image, and returned 0, so three tests asserting a
+    deferral exit code failed. **They failed in CI and not locally**, because this authoring
+    environment has neither engine while the GitHub runner has Podman.
+    """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    fake = bin_dir / "docker"
-    fake.write_text(stub, encoding="utf-8")
-    fake.chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    for name in ("podman", "docker"):
+        fake = bin_dir / name
+        fake.write_text(stub, encoding="utf-8")
+        fake.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        # Explicit, so the test does not depend on which engines the runner happens to have.
+        "ENLIGHTENMENT_CONTAINER_ENGINE": str(bin_dir / "podman"),
+    }
     shell = shutil.which("sh")
     assert shell, "no POSIX shell on PATH"
     return subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script path
@@ -1865,3 +1879,50 @@ def test_a_contract_path_answers_200_and_never_redirects(path: str) -> None:
         f"{' -> ' + str(response.headers.get('location')) if response.is_redirect else ''}"
     )
     assert "location" not in response.headers, f"{path} redirects, so it is not a 200 contract path"
+
+
+def test_the_build_script_honours_an_explicit_engine_override() -> None:
+    """`ENLIGHTENMENT_CONTAINER_ENGINE` must win over PATH discovery.
+
+    This is the seam the three deferral tests above rely on, and it went untested when it was
+    added. Without it those tests depend on which engines the runner happens to have - which is
+    exactly how they passed here and failed in CI, where Podman is installed and this authoring
+    environment has neither engine.
+    """
+    with tempfile.TemporaryDirectory() as workspace:
+        engine = Path(workspace) / "chosen-engine"
+        engine.write_text(
+            '#!/bin/sh\ncase "$1" in info) exit 0 ;; --version) echo chosen ;;'
+            " build) echo built ; exit 0 ;; esac\n",
+            encoding="utf-8",
+        )
+        engine.chmod(0o755)
+        shell = shutil.which("sh")
+        assert shell, "no POSIX shell on PATH"
+        result = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
+            [shell, str(ROOT / "scripts" / "build-image.sh"), "enlightenment:override"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "ENLIGHTENMENT_CONTAINER_ENGINE": str(engine)},
+            cwd=str(ROOT),
+            timeout=120,
+            check=False,
+        )
+    assert "chosen-engine" in result.stdout, (
+        f"the override was ignored; the script chose something else: {result.stdout[:200]}"
+    )
+    assert result.returncode == 0, result.stderr[-300:]
+
+
+def test_the_build_script_prefers_podman_because_the_platform_uses_it() -> None:
+    """Podman first, Docker fallback. Asserted because the ORDER is the contract.
+
+    `appstore-gate-compliance` and the owner's check list both say the containerize stage builds
+    with Podman. Building locally with a different engine hides differences in default build
+    backends, unqualified-name resolution and rootless UID mapping.
+    """
+    lines = _live_lines(ROOT / "scripts" / "build-image.sh")
+    candidates = next(line for line in lines if "for candidate in" in line)
+    assert candidates.index("podman") < candidates.index("docker"), (
+        f"Docker is tried before Podman, which is not what the platform uses: {candidates}"
+    )

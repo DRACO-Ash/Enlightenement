@@ -66,9 +66,34 @@ full tree every time, never a diff. That is the right mitigation and it is in pl
 risk is any Sonar rule class the local profile cannot express, and that is recorded rather than
 claimed closed.
 
-**Verified.** Loop green under the pinned toolchain: **542 passed, 1 skipped**, coverage 98.71%
+### CI was RED for three commits and I never looked
+
+The readiness skill is explicit: read the ACTUAL run conclusion, because a workflow file
+existing is not evidence it passed. Doing that for the first time: runs 11 and 12 both concluded
+`failure`, and run 13 was heading the same way. I had been reporting "loop green" from this
+machine while the pipeline was red.
+
+**The cause was my own Podman change, one commit earlier.** Three tests prove
+`build-image.sh` DEFERS with exit 3 when no engine is reachable, and fails hard on a rejected
+Dockerfile. They work by putting a stub `docker` on PATH. The moment the script learned to prefer
+Podman - correctly, because that is what the platform's containerize stage uses - the stub was
+bypassed on any runner that HAS Podman. The GitHub runner has it; this authoring environment has
+neither engine. So the tests passed here and failed there, and the local loop could not see it.
+
+Reproduced locally rather than inferred, by putting a working fake `podman` on PATH: the three
+tests fail exactly as CI reported. **Fixed** by stubbing both engine names and pinning the choice
+with `ENLIGHTENMENT_CONTAINER_ENGINE`, so the assertion no longer depends on the runner's
+inventory. Confirmed both ways under the simulated runner: fixed helper green, docker-only helper
+red.
+
+Two gaps that let this through are now closed. The `ENLIGHTENMENT_CONTAINER_ENGINE` seam was
+added without a test, so nothing proved an override beats PATH discovery. And nothing asserted
+the ORDER, which is the actual contract: Podman first because the platform builds with Podman.
+
+**Verified.** Loop green under the pinned toolchain: **544 passed, 1 skipped**, coverage 98.71%
 against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
-branch. Ten consecutive loop runs green. Loop also green executed under `dash`.
+branch. Ten consecutive loop runs green. Loop also green executed under `dash`, and green with a
+working Podman on PATH, which is the condition that broke CI.
 
 ## V0.18 (2026-08-20)
 
