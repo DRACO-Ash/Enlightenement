@@ -2,6 +2,129 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.17 (2026-08-20)
+
+**What.** Both gates returned FAIL on V0.16. Two MAJORs in the credential redaction that V0.16
+introduced, and five in the record: docstrings and changelog lines making claims the repository
+itself disproves.
+
+**The diagnosis, in the engineering gate's own words, because it is right and it is about my
+method rather than my prose:** *every one of these is a claim that could have been checked by
+running something that already exists in this repository. The habit to build is not more careful
+prose, it is running the assertion before writing the sentence about it.*
+
+Three rounds running, the code has held up under attack and the record has not. So every figure
+in this entry was measured immediately before it was written, and where a claim is a list rather
+than a number it is now pinned in a test, because a list in a docstring cannot be checked by the
+loop.
+
+### MAJOR: the redaction missed the commonest credential form
+
+V0.16 added `redact()` for URL userinfo. Its pattern required a colon, matching only
+`user:password@`. So `https://ghp_...@github.com/org/repo.git` - a bare token with no password,
+and the ordinary shape of a pip direct reference against a private repository - was never
+matched at all. **The most likely real credential to reach that path was the one form the
+control could not see.** Also bypassed: `https://:token@host`, percent-encoded userinfo (which
+pip's own documentation recommends), and the tail of any password containing a raw `@`, since
+userinfo runs to the LAST `@` before the authority.
+
+Fixed by dropping the colon requirement: `(?P<scheme>...://)[^/\s]+@`. Greedy, and `[^/\s]+`
+cannot cross a `/`, so an ordinary index URL and a URL with an `@` in its path are untouched -
+asserted, because over-redaction is not harmless: the unreadable-line report exists to tell an
+operator which line to fix.
+
+### MAJOR: the redaction was installed at one echo site of two
+
+`redact()` guarded the unreadable-line report only. A line the pin pattern DOES match, whose
+version group is a URL, went out through the missing-and-wrong report in clear:
+`pkg==https://alice:token@host/x.whl` printed `pkg: pinned https://alice:token@host/x.whl, NOT
+INSTALLED`. That is a one-character typo (`==` for `@`) of exactly the form the redaction was
+written for. The comment beside the pattern asserted this was "the one remaining path"; a
+two-line lock file refuted it.
+
+Fixed by redacting where the line is COMPOSED rather than where it is printed. Both remaining
+reports were audited: they carry only an interpreter path, a lock file name, or constant text.
+
+**Verified**, and this is the shape the earlier rounds were missing: five credential forms are
+parametrised named cases, three no-credential URLs are the control against over-redaction, and
+both fixes are mutation-proved. Restoring the colon-requiring pattern turns four cases red;
+removing `redact()` from the composed line turns the fifth red.
+
+### MAJOR, five times over: the record contradicted the repository
+
+Each of these was checkable by running something already present.
+
+● **The V0.15 antisymmetry claim, wrong twice in opposite directions.** The first draft named
+  range, whole-turn and antisymmetry as the old implementation's failures. The correction said
+  antisymmetry was NOT among them and that three tests catch it. Measured by reverting the
+  implementation and running the suite: **five** tests go red, and antisymmetry IS one of them -
+  at `math.nextafter(-180.0, 0.0)`, forward gives `-179.99999999999997` and backward `-180.0`.
+  Range is genuinely not violated. The entry now lists the five test names.
+● **The checksum-failure breakdown.** "Both lines of satellite 33333 and line 1 of 33334 and
+  33335" enumerates four while claiming five, and mis-assigns 33335. Measured: both lines of
+  33333 AND 33335, and line 1 of 33334. The total was right and the breakdown invented, in the
+  docstring justifying the most important opt-out in the module. **Now pinned as
+  `CHECKSUM_FAILURES` and asserted**, so it cannot be prose again.
+● **The opt-out count said one in the source, three in the test, three in the changelog.** The
+  function was telling a maintainer the wrong thing about itself.
+● **Three live docstrings asserted the design V0.16 replaced**, in the file V0.16 edited: that
+  the checksum "is not a gate in `load_elements`" and "belongs in the scenario engine's
+  solvability check". One was inside a live assertion message. A stale docstring beside a
+  passing test is worse than none, because the test passing is what makes the reader trust it.
+● **The checksum residual quoted a rate and a characterisation that contradict each other:**
+  "roughly one line in ten" beside "517 of 50,000", which is one in 97. I copied both from a
+  gate report instead of running it. Measured over 200,000 samples of each shape: **1.05 per
+  cent** for fully random printable-ASCII lines (about one in 94, because column 69 must happen
+  to be a digit before it can be the right digit) and **9.79 per cent** for lines whose column
+  69 is already a digit - the shape a mistyped field produces, and so the realistic authoring
+  error. Both rates are now pinned by a seeded test with deliberately loose bounds, asserting
+  the order-of-magnitude gap rather than a figure that would flake.
+
+### A surplus opt-out, removed rather than documented
+
+One of the three `verify_checksum=False` sites had no written reason. Removing it, its test still
+passed - which is what proved it surplus, and what the count test should have caught: its own
+failure message demands a written reason for each one. It also meant that test was not exercising
+the default path a real caller takes. Now two opt-outs, both with reasons, and the census
+**walks every Python file in the repository** rather than only its own, which is what a guard
+against something spreading has to do.
+
+### Smaller corrections
+
+● `if verify_checksum:` was a truthiness test on a parameter documented as strict fail-closed:
+  `None`, `0`, `""` and empty containers all disabled it. Now `is not False`. Keyword-only, so
+  it cannot be switched off positionally.
+● The broad `except` in `_marker_applies` fails closed but said nothing, leaving an operator
+  looking at "NOT INSTALLED" with no way to tell a real mismatch from an unevaluable marker. It
+  now names the marker, through `redact()`.
+● `TemporaryDirectory` instead of `mkdtemp`: the timeout test created a directory and wrote an
+  executable stub into it outside the `try`, so a write failure would have left both behind.
+● An unused `import runpy` inside an inline `-c` script, where ruff cannot see it.
+● Stale timing figures. Measured: this file is 3.4s at 2,000 examples against 1.1s at the
+  default 100, so the budget costs about 2.3s, on a full suite of 15.4s without coverage and
+  22.2s under the loop. The earlier note said "a fraction of a second on a suite that runs in
+  thirteen", which was neither figure.
+
+### What the gates confirmed, recorded because they were my claims
+
+● The seam fix holds: one gate ran 40 clean-Hypothesis-database sweeps, the other 15 plus 6 of
+  the full suite, all green - and one proved the sweep is SENSITIVE by restoring the
+  `pytest.approx`-gated branch while keeping the new `@example`, which failed 10 of 10 on the
+  first run. That is the part that matters: the sweep detects the defect it exists to detect.
+● Nine and eleven mutants respectively, across both changed source files, all killed.
+● `verify_checksum` cannot be disabled positionally: `load_elements(a, b, False)` is a
+  `TypeError`.
+● 200,000 fuzz lines through `load_elements`: every rejection is `PropagationError`, no escapes.
+  The `# pragma: no cover` branch justified on 60,000 lines in V0.16 held at 200,000.
+● The temp stub leaves nothing: directory diffed before and after, `find /` for the stub name
+  returns nothing.
+
+**Verified.** Loop green under the pinned toolchain: **508 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
+branch. Pipeline simulation green: **507 passed, 2 skipped**. Repo-wide opt-out census: exactly
+two call sites. Clean-Hypothesis-database sweep of the full suite: 0 failures in 12 runs, which
+is a sample and is quoted as one.
+
 ## V0.16 (2026-08-20)
 
 **What.** Both gates returned FAIL on V0.15. The security gate found a BLOCKER: the verification
@@ -166,11 +289,25 @@ no lossy arithmetic touches the input. Verified over 600,000 random samples plus
 exhaustive representable steps either side of both ends: zero range violations, whole-turn
 property holds, antisymmetry holds over the widened range.
 
-Precisely what the old implementation fails, since an earlier draft of this named the wrong
-three properties: it does NOT violate range, the whole-turn property or antisymmetry. It
-returns a DIFFERENT value for an input already inside the interval - 500 of 2,000 measured
-steps - and that is what the three new tests catch: the returned-unchanged assertion and the
-two drift assertions.
+Precisely what the old implementation fails, **measured by reverting it and running the suite**
+rather than reasoned about. Five tests go red:
+
+```
+test_a_value_already_inside_the_interval_is_returned_unchanged[longitude]
+test_a_value_already_inside_the_interval_is_returned_unchanged[radians]
+test_two_frames_one_step_apart_near_the_high_end_report_no_drift
+test_a_drift_is_the_separation_of_two_samples_never_the_difference_of_two_separations
+test_reversing_a_separation_negates_it
+```
+
+It does not violate the range property, and over 2,000 representable steps either side of both
+ends it returns a different value on exactly 500. It DOES violate antisymmetry, at
+`math.nextafter(-180.0, 0.0)`: forward gives `-179.99999999999997` and backward `-180.0`.
+
+Two earlier drafts of this paragraph got it wrong in opposite directions - the first named
+range, whole-turn and antisymmetry as the failures, the second said antisymmetry was NOT among
+them and counted three tests. Both were written from reasoning. The correct answer took one
+`git stash`, one revert and three seconds of pytest.
 
 **Also fixed:** `LONGITUDES` now runs to the last representable value below 180, and the high
 ends are pinned as explicit examples. And a new test asserts the value is returned UNCHANGED,

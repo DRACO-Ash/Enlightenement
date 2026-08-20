@@ -1368,17 +1368,22 @@ def test_the_environment_check_bounds_the_interpreter_probe() -> None:
     Deleting `timeout=PROBE_TIMEOUT_SECONDS` left the suite green. Exercised here against a
     stub interpreter that sleeps, with the bound lowered so the test costs a second rather than
     a minute.
+
+    `TemporaryDirectory` rather than `mkdtemp` plus a `finally`: the earlier version created the
+    directory and wrote an executable stub into it OUTSIDE the try, so a write failure would
+    have left both behind. Not a disclosure - `mkdtemp` is 0700 - but one exception away from
+    not cleaning up.
     """
-    stub = Path(tempfile.mkdtemp()) / "sleepy-python"
-    stub.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
-    stub.chmod(0o755)
-    try:
+    with tempfile.TemporaryDirectory() as workspace:
+        stub = Path(workspace) / "sleepy-python"
+        stub.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
+        stub.chmod(0o755)
         result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
             [
                 sys.executable,
                 "-c",
                 (
-                    "import runpy, sys\n"
+                    "import sys\n"
                     "import importlib.util\n"
                     "spec = importlib.util.spec_from_file_location('ce', sys.argv[1])\n"
                     "module = importlib.util.module_from_spec(spec)\n"
@@ -1397,9 +1402,6 @@ def test_the_environment_check_bounds_the_interpreter_probe() -> None:
         )
         assert result.returncode != 0, "a wedged interpreter did not fail the leg"
         assert "did not answer within" in result.stderr
-    finally:
-        stub.unlink()
-        stub.parent.rmdir()
 
 
 def test_the_environment_check_redacts_a_credential_before_echoing_a_line() -> None:
@@ -1426,3 +1428,71 @@ def test_the_extras_form_is_read_as_a_pin_not_reported_as_unreadable() -> None:
     assert result.returncode != 0
     assert "could not be read" not in result.stderr
     assert "pinned 9.9.9, installed" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("description", "line", "secret"),
+    [
+        (
+            "a bare token, no password",
+            "pkg @ git+https://ghp_S3CR3TTOKEN0000@github.invalid/org/repo.git",
+            "ghp_S3CR3TTOKEN0000",
+        ),
+        (
+            "an empty user with a token",
+            "pkg @ https://:s3cr3t-token@example.invalid/pkg.whl",
+            "s3cr3t-token",
+        ),
+        (
+            "percent-encoded userinfo",
+            "pkg @ https://alice%3As3cr3t-token@example.invalid/pkg.whl",
+            "s3cr3t-token",
+        ),
+        (
+            "a password containing a raw at-sign",
+            "pkg @ https://alice:p@ssS3CR3T@example.invalid/pkg.whl",
+            "ssS3CR3T",
+        ),
+        (
+            "reported through the version group, not the unreadable report",
+            "pkg==https://alice:s3cr3t-token@example.invalid/pkg.whl",
+            "s3cr3t-token",
+        ),
+    ],
+    ids=["bare token", "empty user", "percent-encoded", "at-sign in password", "version group"],
+)
+def test_no_credential_form_reaches_stderr(description: str, line: str, secret: str) -> None:
+    """Every form the gates found bypassing the first redaction attempt.
+
+    The first pattern required a colon, so `https://ghp_...@host` - a bare token with no
+    password, and the ordinary shape of a pip direct reference against a private repository -
+    was never matched: the most likely real credential was the one form the control could not
+    see. And it was installed at one echo site of two, so a one-character typo (`==` for `@`)
+    reported the URL through the version group in full.
+
+    Parametrised so each form is a named case rather than a single assertion that passes as soon
+    as the first one does.
+    """
+    result = _run_environment_check(f"{line}\n")
+    assert result.returncode != 0
+    assert secret not in result.stderr, f"{description}: the credential reached stderr"
+    assert "[REDACTED:credential]" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "https://files.pythonhosted.org/packages/ab/cd/pkg.whl",
+        "pkg @ https://example.invalid/path@fragment/pkg.whl",
+        "pkg @ https://example.invalid/pkg.whl",
+    ],
+    ids=["plain index url", "at-sign in the path", "no userinfo"],
+)
+def test_redaction_does_not_touch_a_url_without_credentials(line: str) -> None:
+    """The control for the test above. A pattern that redacted every URL would pass it.
+
+    Over-redaction is not harmless here: the unreadable-line report exists to tell an operator
+    which line to fix, and a report that hides the line fails at its one job.
+    """
+    result = _run_environment_check(f"{line}\n")
+    assert "[REDACTED:credential]" not in result.stderr

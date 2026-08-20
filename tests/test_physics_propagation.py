@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import ast
 import math
+import random
+import string
 from pathlib import Path
 
 import pytest
@@ -158,9 +160,14 @@ def _reference_propagator(lines: tuple[str, str]) -> Satrec:
     """Load a REFERENCE element set, with the checksum check deliberately off.
 
     `load_elements` verifies the TLE checksum by default, and five of the sixty-six lines in
-    `SGP4-VER.TLE` fail it - both lines of satellite 33333 and line 1 of 33334 and 33335. They
-    are synthetic verification vectors, not real element sets, so the default that protects
+    `SGP4-VER.TLE` fail it: both lines of satellites 33333 and 33335, and line 1 of 33334.
+    They are synthetic verification vectors, not real element sets, so the default that protects
     authored content would here refuse the authority the module is measured against.
+
+    An earlier version of this list said "both lines of 33333 and line 1 of 33334 and 33335",
+    which enumerates four while claiming five, and mis-assigns 33335. The total was measured and
+    the breakdown was not. This is the docstring justifying the most important opt-out in the
+    module, so it is the one a future reader will trust.
 
     Named rather than a bare `verify_checksum=False` at each call site, so the opt-out is one
     decision with one reason attached, and so a new test cannot inherit it by copy and paste.
@@ -538,32 +545,54 @@ def test_a_meaningless_element_set_is_never_served_as_a_non_finite_state(
 def test_the_checksum_catches_what_the_shape_check_and_the_guards_cannot(
     description: str, line: str
 ) -> None:
-    """The layer that actually rejects these, and why it is not at propagation time.
+    """The layer that rejects these, and why the output guard alone could not.
 
     A finite wrong number is indistinguishable from a finite right one inside
     `propagate_minutes_since_epoch`, so the output guard cannot be the whole answer. The
     published TLE checksum can tell, and every meaningless line here fails it.
 
-    It is not a gate in `load_elements` because five of the sixty-six lines in Vallado's own
-    verification file fail it too - they are synthetic vectors, not real element sets - and a
-    control that refuses the reference data is not a control. It belongs in the scenario
-    engine's solvability check, at authoring time.
+    It IS a gate in `load_elements`, on by default, as of the commit that wired it. An earlier
+    version of this docstring said the opposite - that the checksum belonged only in the
+    scenario engine's solvability check - and it survived the commit that changed the design,
+    still asserting the old one in the file that changed. A stale docstring beside a live test
+    is worse than none: the test passes, so the reader trusts the prose.
     """
     assert not element_line_checksum_ok(line)
 
 
-def test_the_checksum_accepts_most_of_the_reference_set_but_not_all_of_it() -> None:
-    """The measurement behind that decision, asserted rather than asserted-about.
+#: The exact reference lines that fail the checksum, as `(satellite, line number)`. Measured,
+#: and pinned rather than described, because the prose version of this list was wrong twice.
+CHECKSUM_FAILURES = [(33333, 1), (33333, 2), (33334, 1), (33335, 1), (33335, 2)]
 
-    If a future wheel ships a corrected verification file, this fails and says the checksum
-    could be promoted to a hard gate in `load_elements`.
+
+def test_the_checksum_failures_in_the_reference_set_are_exactly_these_lines() -> None:
+    """The breakdown, asserted. Every prose version of this list so far has been wrong.
+
+    The TOTAL was measured and repeated correctly; the enumeration was written from memory and
+    named the wrong satellites. A list in a docstring cannot be checked by the loop. This one
+    can.
+    """
+    failures = [
+        (satellite, position)
+        for satellite, pair in ELEMENT_BLOCKS
+        for position, line in enumerate(pair, start=1)
+        if not element_line_checksum_ok(line)
+    ]
+    assert sorted(set(failures)) == CHECKSUM_FAILURES
+
+
+def test_the_checksum_accepts_most_of_the_reference_set_but_not_all_of_it() -> None:
+    """The measurement behind the opt-out, asserted rather than asserted-about.
+
+    If a future wheel ships a corrected verification file, this fails and says the opt-out in
+    `_reference_propagator` can be removed - the gate itself is already on by default.
     """
     lines = [line for _, pair in ELEMENT_BLOCKS for line in pair]
     failing = [line for line in lines if not element_line_checksum_ok(line)]
     assert len(lines) == 66
     assert len(failing) == 5, (
-        "the reference set's checksum failures have changed; revisit whether"
-        " element_line_checksum_ok can become a hard gate in load_elements"
+        "the reference set's checksum failures have changed; the verify_checksum=False"
+        " opt-out in _reference_propagator may no longer be needed"
     )
     assert any(line.startswith(f"1 {REFUSED_SATELLITE}") for line in failing)
 
@@ -648,9 +677,12 @@ def test_a_good_element_line_with_trailing_whitespace_is_still_accepted() -> Non
     would be a fail-closed control that fails on valid data, which is its own defect.
     """
     first, second = ELEMENT_SETS[5]
-    padded = propagate_minutes_since_epoch(
-        load_elements(first + "  \r\n", second + " ", verify_checksum=False), 0.0
-    )
+    # Checksum gate ON, deliberately. Satellite 5 passes it on both lines, and the predicate
+    # rstrips, so the padded forms pass too. An earlier version passed `verify_checksum=False`
+    # here for no reason and with no reason written: it was pinned into the opt-out census as
+    # though it were deliberate, and it stopped this test exercising the default path a real
+    # caller takes. Removing it, the test still passes - which is what proved it surplus.
+    padded = propagate_minutes_since_epoch(load_elements(first + "  \r\n", second + " "), 0.0)
     plain = propagate_minutes_since_epoch(_reference_propagator((first, second)), 0.0)
     assert padded.position_km == plain.position_km
 
@@ -674,30 +706,41 @@ def test_load_elements_refuses_a_meaningless_line_by_default(description: str, l
         load_elements(line, ELEMENT_BLOCKS[0][1][1])
 
 
-def test_the_checksum_gate_can_be_opted_out_of_and_only_the_reference_suite_does() -> None:
-    """The opt-out exists for the reference data alone, and that is asserted not asserted-about.
+def test_the_checksum_gate_is_opted_out_of_in_exactly_two_places_repo_wide() -> None:
+    """The opt-out must not spread, and the census must look everywhere it could spread to.
 
-    A default-strict control with a widely-copied opt-out beside it is a control in name only,
-    so the number of CALL SITES that switch it off is pinned. There are three: the reference
-    propagator, and two tests that deliberately exercise the layer beneath the gate.
+    Two call sites: `_reference_propagator`, because five reference lines fail the checksum,
+    and the meaningless-element-set test, which deliberately exercises the layer beneath the
+    gate. A third existed with no reason written and turned out to be unnecessary; removing it
+    left its test passing, which is what proved it surplus.
 
-    Counted by parsing the file, not by searching its text. The first version counted the string
-    and found six, because docstrings that discuss the opt-out and the test's own literal all
-    matched. A guard that counts mentions instead of calls measures prose.
+    **Walks every Python file in the repository**, not just this one. The first version parsed
+    `Path(__file__)` alone, so an opt-out added in `src/` or in another test file would have
+    been uncounted while the assertion still read as "the opt-out has not spread" - a census
+    that cannot see the places it is warning about.
+
+    Matches only a literal `False`, so `verify_checksum=not True` or a `**kwargs` splat would
+    evade it. That is adequate for a self-check on a repository this suite owns, and it is
+    stated rather than left for a reader to assume airtight.
     """
-    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
-    opt_outs = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        for keyword in node.keywords
-        if keyword.arg == "verify_checksum"
-        and isinstance(keyword.value, ast.Constant)
-        and keyword.value.value is False
-    ]
-    assert len(opt_outs) == 3, (
-        f"{len(opt_outs)} call sites opt out of the checksum gate at lines"
-        f" {[node.lineno for node in opt_outs]}; each one needs a written reason"
+    root = Path(__file__).resolve().parent.parent
+    opt_outs: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        if any(part in {".venv", ".git", "dist", "build"} for part in path.parts):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        opt_outs.extend(
+            f"{path.relative_to(root)}:{node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            for keyword in node.keywords
+            if keyword.arg == "verify_checksum"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is False
+        )
+    assert len(opt_outs) == 2, (
+        f"{len(opt_outs)} call sites opt out of the checksum gate ({opt_outs});"
+        " each one needs a written reason"
     )
 
 
@@ -759,3 +802,50 @@ def test_the_checksum_gate_lets_a_valid_element_set_through() -> None:
     state = propagate_minutes_since_epoch(load_elements(first, second), 0.0)
     assert state.frame == TEME_OF_DATE
     assert 6_000.0 < state.radius_km < 60_000.0
+
+
+#: Samples per shape for the checksum admission-rate measurement. Large enough that the two
+#: rates are separated by far more than their sampling error, small enough to run in the loop.
+ADMISSION_SAMPLES = 20_000
+
+
+def test_the_checksum_admission_rate_is_bounded_for_both_input_shapes() -> None:
+    """The residual the propagation guard exists to cover, asserted rather than described.
+
+    A single mod-10 digit is a weak check, and how weak depends on the input shape. Both rates
+    are pinned because the docstring quoting them has been wrong twice: once claiming the gate
+    admitted nothing, once quoting a rate and a characterisation that contradicted each other.
+
+    Deliberately loose bounds. The point is the ORDER of the two rates and the fact that neither
+    is zero, not a precise figure that would make this test a flake.
+    """
+    # S311 suppressed on the three draws below: this is a statistical measurement of an
+    # admission rate, deliberately seeded so the figure is reproducible. A cryptographic
+    # generator would make the test non-deterministic for no gain; nothing here is a secret.
+    random.seed(20260820)
+    printable = string.printable[:95]
+
+    random_lines = sum(
+        1
+        for _ in range(ADMISSION_SAMPLES)
+        if element_line_checksum_ok(
+            "".join(random.choices(printable, k=TLE_LINE_LENGTH))  # noqa: S311
+        )
+    )
+    digit_tailed = sum(
+        1
+        for _ in range(ADMISSION_SAMPLES)
+        if element_line_checksum_ok(
+            "".join(random.choices(printable, k=TLE_LINE_LENGTH - 1))  # noqa: S311
+            + random.choice(string.digits)  # noqa: S311
+        )
+    )
+
+    random_rate = random_lines / ADMISSION_SAMPLES
+    digit_rate = digit_tailed / ADMISSION_SAMPLES
+    assert 0.005 < random_rate < 0.02, f"random-line admission rate moved: {random_rate:.4f}"
+    assert 0.07 < digit_rate < 0.13, f"digit-tailed admission rate moved: {digit_rate:.4f}"
+    assert digit_rate > random_rate * 5, (
+        "the two shapes no longer differ by an order of magnitude, so the docstring's"
+        " two-rate explanation needs restating"
+    )

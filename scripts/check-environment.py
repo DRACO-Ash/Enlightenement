@@ -153,14 +153,31 @@ def _marker_applies(marker: str | None) -> bool:
         # executes nothing (`__import__("os").system("id")` raises `InvalidMarker`) and does not
         # backtrack pathologically (5,000 conjunctions in 0.08s), but "no code execution" and
         # "only ever raises these three types" are different claims and only the first is tested.
+        #
+        # Named on the way past, redacted, because the exit code alone leaves an operator
+        # looking at "NOT INSTALLED" with no way to tell a real mismatch from a marker that
+        # could not be evaluated. Fail closed AND say why.
+        sys.stderr.write(
+            f"  note: could not evaluate marker, treating as applicable: {redact(marker)}\n"
+        )
         return True
 
 
-#: Credentials embedded in a URL, as `scheme://user:token@host`. A PEP 440 direct reference
-#: (`pkg @ https://user:token@host/pkg.whl`) is a requirement line, so it reaches the unreadable
-#: report and would otherwise be echoed to a log verbatim. Option lines such as `--index-url`
-#: are already skipped, being prefixed with a dash, so this is the one remaining path.
-URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
+#: Credentials embedded in a URL, as `scheme://userinfo@host`. A PEP 440 direct reference
+#: (`pkg @ https://token@host/pkg.whl`) is a requirement line, so it reaches the reports below
+#: and would otherwise be echoed to a log verbatim. Option lines such as `--index-url` are
+#: already skipped, being prefixed with a dash, so requirement lines are the remaining path.
+#:
+#: **No colon is required, and the first version demanded one.** That version matched only
+#: `user:password@`, so `https://ghp_...@github.com/org/repo.git` - a bare token with no
+#: password, and the ordinary shape of a pip direct reference against a private repository -
+#: was never matched at all. The most likely real credential to reach this path was the one
+#: form the control could not see. It also leaked the tail of any password containing a raw
+#: `@`, since userinfo runs to the LAST `@` before the authority.
+#:
+#: Greedy `[^/\s]+` anchors on that last `@` and cannot cross a `/`, so a plain URL with an
+#: `@` in its path (`https://host/path@x`) and an ordinary index URL are left alone.
+URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@")
 
 
 def redact(text: str) -> str:
@@ -261,10 +278,17 @@ def scan(lockfiles: list[str], installed: dict[str, str]) -> Divergences:
         for pinned_name, pinned_version in read_pins(lockfile).items():
             checked += 1
             actual = installed.get(pinned_name)
+            # Redacted where the line is COMPOSED, not at one echo site. The first version
+            # redacted only the unreadable-line report, and this is the other place a URL
+            # reaches stderr: the version group is `[^\s;\\]+`, which swallows a whole URL, so
+            # `pkg==https://user:token@host/x` - a one-character typo of the direct-reference
+            # form the redaction was written for - printed the credential in full.
             if actual is None:
-                missing.append(f"  {pinned_name}: pinned {pinned_version}, NOT INSTALLED")
+                missing.append(f"  {pinned_name}: pinned {redact(pinned_version)}, NOT INSTALLED")
             elif not versions_equal(pinned_version, actual):
-                wrong.append(f"  {pinned_name}: pinned {pinned_version}, installed {actual}")
+                wrong.append(
+                    f"  {pinned_name}: pinned {redact(pinned_version)}, installed {redact(actual)}"
+                )
     return Divergences(checked, missing, wrong, unreadable)
 
 

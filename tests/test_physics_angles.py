@@ -48,8 +48,12 @@ JUST_BELOW_MINUS_180_IN_RANGE = math.nextafter(-180.0, 0.0)
 #:
 #: The default found the antisymmetry defect in about one run in five, and I had already
 #: reported the loop green from a run that did not. A property test's verdict is only as strong
-#: as its search, and "green once" is weak evidence for a boundary this narrow. Raising the
-#: budget costs a fraction of a second on a suite that runs in thirteen.
+#: as its search, and "green once" is weak evidence for a boundary this narrow.
+#:
+#: Measured cost: this file takes 3.4s at 2,000 examples against 1.1s at the default 100, so the
+#: budget costs about 2.3s, on a full suite of 15.4s without coverage and 19.4s under the loop.
+#: Worth paying. An earlier version of this note said "a fraction of a second on a suite that
+#: runs in thirteen", which was neither figure.
 SEAM_EXAMPLES = 2_000
 
 #: Longitudes inside the canonical interval, to the LAST representable value.

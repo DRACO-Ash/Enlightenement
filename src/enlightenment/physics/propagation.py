@@ -171,11 +171,12 @@ def element_line_checksum_ok(line: object) -> bool:
     intact is handled. Callers holding the raw `SGP4-VER.TLE` records must truncate the harness
     span columns appended after column 69 themselves; this function judges what it is given.
 
-    **Enforced by default in :func:`load_elements`, with one documented opt-out.** Five of the
-    sixty-six element-set lines in Vallado's own verification file fail this check, including
-    the deliberate error case at satellite 33334; they are synthetic test vectors rather than
-    real element sets, so the golden-vector suite passes ``verify_checksum=False``. A default
-    that refused the reference data would be a control that refuses its own authority.
+    **Enforced by default in :func:`load_elements`, with two documented opt-outs, both in the
+    test suite.** Five of the sixty-six element-set lines in Vallado's own verification file
+    fail this check - both lines of satellites 33333 and 33335, and line 1 of 33334 - so the
+    golden-vector suite passes ``verify_checksum=False``. A default that refused the reference
+    data would be a control that refuses its own authority. See :func:`load_elements` for the
+    second opt-out and the repo-wide census that bounds them.
 
     For one commit this function had no call site while a docstring described a scenario-engine
     caller in the present tense. Both binding gates found that. It is wired now.
@@ -210,14 +211,27 @@ def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Sa
     :func:`propagate_minutes_since_epoch`. The checksum is the only cheap control that sees it.
 
     Pass ``verify_checksum=False`` only to load a line that is deliberately not a real element
-    set. Exactly one caller does: the golden-vector suite, because five of the sixty-six lines
-    in Vallado's own verification file fail the checksum, including the deliberate error case at
-    satellite 33334. They are synthetic test vectors, and a default that refused the reference
-    data would be a control that refuses its own authority.
+    set. Two callers do, both in the test suite, and the count is asserted repo-wide so it
+    cannot grow unnoticed:
+
+    ● the golden-vector propagator, because five of the sixty-six lines in Vallado's own
+      verification file fail the checksum - both lines of satellites 33333 and 33335, and line 1
+      of 33334. They are synthetic test vectors, and a default that refused the reference data
+      would be a control that refuses its own authority.
+    ● the meaningless-element-set test, which exercises the layer BELOW this gate and so has to
+      get past it.
+
+    An earlier version of this paragraph said "exactly one caller" while the test asserted three
+    and the changelog said three. The function was telling a maintainer the wrong thing about
+    itself.
     """
     first = _check_element_line(line1, 1)
     second = _check_element_line(line2, 2)
-    if verify_checksum:
+    # `is not False`, not truthiness. A parameter documented as a strict fail-closed default
+    # should not be disabled by `None`, `0`, `""` or an empty container, and a bare `Any` from a
+    # future `json.loads` scenario field is exactly the caller that would arrive holding one.
+    # mypy strict rejects those at every in-repo call site today; `Any` it waves through.
+    if verify_checksum is not False:
         for position, line in ((1, first), (2, second)):
             if not element_line_checksum_ok(line):
                 raise PropagationError.from_input(
@@ -273,10 +287,25 @@ def propagate_minutes_since_epoch(elements: Satrec, minutes: float) -> StateVect
     scenario at all.
 
     The finiteness guard here catches the NaN outcome. It cannot catch the plausible one - a
-    finite wrong number is indistinguishable from a finite right one at this layer. What
-    catches that is the checksum check inside :func:`load_elements`, on by default, so a
-    meaningless element set never reaches this function at all. Two layers, because neither is
-    sufficient alone, and neither is claimed to be.
+    finite wrong number is indistinguishable from a finite right one at this layer. What catches
+    most of that is the checksum check inside :func:`load_elements`, on by default.
+
+    **Most, not all, and the residual depends on the input, so both rates are given.** A single
+    mod-10 digit is a weak check. Over 200,000 samples of each shape:
+
+    ● fully random printable-ASCII lines: 1.05 per cent pass, about one in 94, because column 69
+      must happen to be a digit at all before it can happen to be the right one;
+    ● lines whose column 69 IS a digit - the shape a mistyped field produces, and therefore the
+      realistic authoring error: 9.79 per cent pass, about one in ten.
+
+    So the gate leaks roughly one meaningless line in ten of the kind actually likely to be
+    written. Every leaked line measured was caught here, which is why this guard is not
+    redundant.
+
+    Two earlier versions of this paragraph were wrong. The first said a meaningless element set
+    "never reaches this function at all", two lines above a sentence saying neither layer is
+    sufficient alone. The second quoted "one in ten" alongside "517 of 50,000", which is one in
+    97: a rate and a characterisation that contradict each other, both copied rather than run.
 
     That second layer was, for one commit, a function with no call site described in the present
     tense as though it were wired. Both binding gates found it. It is wired now.
