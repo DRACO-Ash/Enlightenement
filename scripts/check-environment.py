@@ -91,8 +91,16 @@ def requirement_lines(lockfile: Path) -> list[str]:
     redaction pattern anchors on, so both halves echo in clear. Measured: a token embedded before
     a ``\\x0b`` printed in full.
 
-    Splitting on ``\\n`` keeps such a line whole, so `redact()` sees the URL it is meant to see -
-    and `redact()` neutralises the separator itself as a second layer.
+    **That reason is history, and the sentence that stood here was worse than history: it
+    described `redact()` neutralising the separator "as a second layer" after `redact()` had
+    been deleted.** Prose describing a control that no longer exists is the same fault as code
+    with no caller, in the file whose own commit message says so, and it is what a reader would
+    have trusted.
+
+    The live reason to split on one terminator alone is the diagnosis. Every report prints
+    ``lockfile:number``, and inventing extra line breaks makes that number wrong: an operator
+    sent to line 12 finds nothing there, because the fault is at line 11 and an earlier line was
+    counted twice. A line number that is off by one is worse than none, because it is believed.
     """
     return [line.rstrip("\r") for line in lockfile.read_text().split("\n")]
 
@@ -215,6 +223,12 @@ def _marker_applies(marker: str | None) -> bool:
 #: deleted rather than kept for a future caller to trust.
 
 
+#: Longest version echoed verbatim. A PEP 440 version with a development release and a local
+#: segment - `1.2.3.dev20260820+abcdef.1`, 27 characters - is about as long as a real one gets, so
+#: 40 is generous. This bounds one log line; it is not a secrecy boundary, for the same reason
+#: `MAX_NAME_ECHO` is not.
+MAX_VERSION_ECHO = 40
+
 #: A version this script is willing to echo VERBATIM. Public PEP 440 shape, and strict: a
 #: numeric release, optional pre/post/dev segments, an optional local segment, nothing else.
 #:
@@ -242,19 +256,53 @@ SAFE_VERSION = re.compile(
 
 
 def describe_version(version: str) -> str:
-    """Echo ``version`` if it is shaped like a version, and describe it if it is not.
+    """Echo ``version`` if it is shaped like a version AND short, else describe it.
 
     Fail closed. An unrecognised value is reported by LENGTH, which is what an operator needs to
     recognise the line they are looking at, and by nothing else.
+
+    **The length half was missing, and its absence was a live disclosure.** `SAFE_VERSION`
+    constrains SHAPE and not size, so `pkg==1.<5000 nines>` printed all five thousand digits to
+    stderr: shaped like a version, and therefore echoed verbatim. `MAX_ECHO_LENGTH` had bounded
+    every echo in this file and was deleted along with `redact()`, which removed the bound from
+    the one site that still needed it. Deleting dead code is right; deleting a live bound because
+    it lived next to dead code is how a fix becomes a regression.
+
+    A real PEP 440 version is short - the longest plausible, a development release with a local
+    segment, runs to about thirty characters - so the cap costs nothing real.
+
+    **The residual, stated as `describe_name` states its own:** an all-numeric secret in version
+    position, under the cap, is shaped exactly like a version and does echo. Nothing in the shape
+    distinguishes `1.2.3` from a short numeric token, and unlike the name echo this one could be
+    dropped entirely at the cost of the report no longer saying WHICH version is pinned - which is
+    half its diagnosis, so it is kept and written down.
     """
-    if SAFE_VERSION.match(version):
+    if len(version) <= MAX_VERSION_ECHO and SAFE_VERSION.match(version):
         return version
     return f"[REDACTED:unrecognised-version, {len(version)} characters]"
 
 
-#: Longest distribution name echoed verbatim. PEP 503 canonical names are chosen by people and
-#: are short: the longest on PyPI run to about thirty characters, so this admits every real one.
-MAX_NAME_ECHO = 32
+#: Longest distribution name echoed verbatim. **This bound is about output length, NOT about
+#: secrecy, and two wrong versions of it shipped before that was admitted.**
+#:
+#: The first said 32 "admits every real name". Measured, it does not:
+#: `opentelemetry-instrumentation-fastapi` is 37 characters,
+#: `opentelemetry-exporter-otlp-proto-http` 38, `google-cloud-bigquery-datatransfer` 34 - exactly
+#: the dependencies a FastAPI service acquires, all of them described instead of named, defeating
+#: the report's one job. 32 is also precisely the length of a hex API key, so the bound admitted
+#: the whole of the commonest fixed-length secret format while excluding real names.
+#:
+#: The second was worse. Told the figure was invented, I re-derived it from the longest name
+#: pinned in THIS repository (`pip-requirements-parser`, 23) and set 24 - which is a real
+#: measurement of the wrong population. A lock file gains dependencies; the bound would have
+#: started redacting real names the first time one arrived.
+#:
+#: The honest reading is that no length separates the two populations. Real names run 3 to 60-odd
+#: characters; credentials run 20 to 45. They overlap completely, so a length cap CANNOT provide
+#: secrecy here and pretending otherwise is what produced two bad numbers. So the cap is now
+#: PyPI's own maximum name length, chosen only to stop one absurd line filling a CI log, and the
+#: residual is stated in `describe_name` rather than implied away by a number.
+MAX_NAME_ECHO = 64
 
 #: A PEP 503 canonical distribution name, which is what `canonicalise` produces.
 CANONICAL_NAME = re.compile(r"\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")
@@ -272,12 +320,20 @@ def describe_name(name: str) -> str:
     canonicalised token in full. `canonicalise` lowercases and folds separators, so a token comes
     out looking exactly like a name.
 
-    So the disclosure is BOUNDED rather than closed: a canonical-shaped name up to
-    `MAX_NAME_ECHO` characters is echoed, and anything longer or oddly shaped is described. The
-    45-character Personal Access Token above is described; a short lowercase alphanumeric secret
-    in the name position would still echo, and that is the accepted residual. It is written down
-    here because a bounded known gap an operator can reason about is worth more than a claim of
-    completeness that a sixth bypass would embarrass.
+    **So this is a residual, not a control, and the earlier wording overstated it.** Two versions
+    of `MAX_NAME_ECHO` claimed to bound the disclosure by length, and both picked a number that
+    excluded real distributions while admitting common secret formats, because the two populations
+    overlap completely. A length test cannot separate them.
+
+    What is left is honest and small: `CANONICAL_NAME` rejects anything that is not PEP 503
+    name-shaped, which excludes a URL, a token containing `@` or `:` or `/`, and any value with
+    uppercase or underscores surviving canonicalisation. A lowercase alphanumeric secret in the
+    name position DOES still echo. That is the accepted residual, and it is accepted because the
+    divergence report cannot do its one job without naming the distribution - "pinned 0.115.0,
+    NOT INSTALLED" about an unnamed package tells an operator nothing.
+
+    The length cap is retained only to bound the size of one log line, at PyPI's own maximum name
+    length. It is not a secrecy boundary and is no longer described as one.
     """
     if len(name) <= MAX_NAME_ECHO and CANONICAL_NAME.match(name):
         return name
@@ -317,10 +373,16 @@ def versions_equal(pinned: str, installed: str) -> bool:
     `pytest==9.1.1.0` and an installed `9.1.1` are the same release and a string comparison
     calls them different. That failed in the safe direction, but a leg that cries wolf on a
     correct environment is a leg people learn to skip.
+
+    Catches `ValueError` as well as `InvalidVersion`, because a release segment over about 4,300
+    digits trips CPython's integer-to-string conversion limit inside `packaging`, which raises
+    plain `ValueError` and escaped as an uncaught traceback. Fail-closed either way and no content
+    was echoed, so this is hygiene rather than a hole - but an uncaught traceback out of leg one is
+    indistinguishable, to whoever reads the CI log, from the leg being broken.
     """
     try:
         return Version(pinned) == Version(installed)
-    except InvalidVersion:
+    except (InvalidVersion, ValueError):
         return pinned == installed
 
 

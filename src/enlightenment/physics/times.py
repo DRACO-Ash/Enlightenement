@@ -54,6 +54,10 @@ MAX_CALENDAR_COMPONENT: Final = MAX_JULIAN_DATE / 365.25
 #: limit, so the message needs one.
 MAX_SHOWN_COMPONENT: Final = 24
 
+#: The components that index the calendar rather than scaling a fraction of a day. Only these
+#: three must be whole numbers; a fractional hour or second is ordinary.
+CALENDAR_INDICES: Final = frozenset({"year", "month", "day"})
+
 #: Seconds in a day, and the seconds-of-time to degrees-of-arc factor (86400 / 360).
 SECONDS_PER_DAY: Final = 86400.0
 SECONDS_PER_DEGREE: Final = 240.0
@@ -100,7 +104,6 @@ def julian_date_from_utc(
         # construction, so skipping it is not a relaxation.
         if not isinstance(value, int) and not math.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value!r}")
-    for name, value in (("year", year), ("month", month), ("day", day)):
         # MAGNITUDE, not only finiteness, and this bound was missing while the lesson sat twenty
         # lines below in `greenwich_mean_sidereal_degrees`: "finite is not sufficient". Measured
         # before it: `year=1e308` raised a bare `OverflowError` from `math.floor`, an int `10**400`
@@ -109,8 +112,21 @@ def julian_date_from_utc(
         # 1e+308. Those are finite values that are not dates, handed back with no complaint, and
         # the whole point of this guard is that a bad time never reaches a plotted longitude.
         #
+        # **ALL SIX, and this is the THIRD time this one guard has been widened.** Round one
+        # checked `second`. Round two widened finiteness to all six and magnitude to year, month
+        # and day. Round three is this: `hour=1e308` returned 4.1666666666666665e+306,
+        # `second=1e308` returned 1.1574074074074075e+303, and `hour=10**400` raised the exact
+        # undocumented `OverflowError` the guard exists to replace - from the `day_fraction`
+        # arithmetic instead of from `math.floor`. The test immediately above this one enumerates
+        # all six for finiteness and says in its own docstring that widening a guard to the
+        # arguments that were REPORTED is how a boundary gets fixed twice. It then got fixed a
+        # third time, one guard along, in the same file, by me, in the next commit.
+        #
+        # One loop over one tuple now, so a seventh argument cannot be half-covered.
+        #
         # Bounded by what can produce a Julian Date this package will accept, so the two guards
-        # agree instead of one of them being decorative.
+        # agree instead of one of them being decorative. The same bound serves all six: a
+        # time-of-day component past 27 million is no more a time than it is a date.
         if abs(value) > MAX_CALENDAR_COMPONENT:
             # Bounded by TRUNCATION, not by formatting. `value!r` put four hundred digits in the
             # message for `10**400`, and the obvious fix, `float(value):.6g`, raises the very
@@ -123,9 +139,10 @@ def julian_date_from_utc(
                 f"{name} of {shown} cannot produce a Julian Date within plus or minus"
                 f" {MAX_JULIAN_DATE:g}"
             )
-        # These index the calendar rather than scaling it, so a fractional value is not a
-        # rounding question, it is a caller who passed the wrong thing.
-        if value != int(value):
+        # Integrality applies to the DATE components only: they index the calendar rather than
+        # scaling it, so a fractional value there is not a rounding question, it is a caller who
+        # passed the wrong thing. A fractional hour or second is ordinary and correct.
+        if name in CALENDAR_INDICES and value != int(value):
             raise ValueError(f"{name} must be a whole number, got {value!r}")
     if month < MARCH:
         year -= 1

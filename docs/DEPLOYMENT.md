@@ -154,7 +154,7 @@ the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 724 passed and 1 skipped, coverage 99.04%
+- [x] Verification loop green (`sh scripts/verify.sh`), 733 passed and 1 skipped, coverage 99.04%
 - [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.22.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table

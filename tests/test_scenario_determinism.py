@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
+import sys
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -227,15 +230,26 @@ def test_a_non_finite_payload_value_is_refused_rather_than_serialised() -> None:
 #: written reason, in the same idiom as the checksum opt-out census: a NEW public name must either
 #: be exported or be added here on purpose, so the reverse check cannot be satisfied by drift.
 #:
-#: These are legitimately internal. `MARCH` and `SECONDS_PER_DAY` are arithmetic constants inside
-#: one function's derivation; `PRINTABLE_ASCII_LOW/HIGH` and `TLE_LINE_LENGTH` bound one
-#: validator; `SGP4_ERRORS` and `TEME_OF_DATE` are looked up through the functions that use them;
-#: `MAX_*` are bounds a caller reads from the error message, not from the package.
+#: These are legitimately internal, and two of the reasons first written here were wrong before
+#: being checked - which matters, because a curation list is worth what its reasons are worth.
+#:
+#: `MARCH`, `SECONDS_PER_DAY`, `SECONDS_PER_DEGREE`, `SECONDS_PER_MINUTE` and
+#: `DAYS_PER_JULIAN_CENTURY` are arithmetic constants inside one function's derivation.
+#: `PRINTABLE_ASCII_LOW/HIGH`, `TLE_LINE_LENGTH` and `CALENDAR_INDICES` each bound one
+#: validator. `MAX_*` are bounds a caller reads from an error message, not from the package.
+#:
+#: `SGP4_ERRORS`, `TEME_OF_DATE` and `BOUNDARY_REFUSAL` were described as "looked up through the
+#: functions that use them". The suite disproves it: `TEME_OF_DATE` is compared directly by
+#: callers in `test_physics_propagation.py`, and `propagation.py` documents `BOUNDARY_REFUSAL` as
+#: the value "a caller switching on `.code`" reads, which a test does. The real reason is that
+#: they are imported from the SUBMODULE, alongside `PropagationError`, which is a defensible
+#: convention and not the one that was claimed.
 DELIBERATELY_NOT_RE_EXPORTED: dict[str, frozenset[str]] = {
     "scenario": frozenset(),
     "physics": frozenset(
         {
             "BOUNDARY_REFUSAL",
+            "CALENDAR_INDICES",
             "DAYS_PER_JULIAN_CENTURY",
             "MARCH",
             "MAX_CALENDAR_COMPONENT",
@@ -725,6 +739,15 @@ def test_the_constructor_seam_enforces_what_record_enforces(
         RunLog(seed=1, events=events)
 
 
+#: How long the node-budget refusal may take, enforced as a subprocess timeout. Measured at 0.064
+#: seconds, so thirty seconds is roughly 470 times the observed cost: this asserts boundedness,
+#: not this machine's speed, and will not flake on a loaded runner.
+NODE_BUDGET_DEADLINE_SECONDS = 30.0
+
+#: The repository root, for launching the deadline subprocess with `src` importable.
+ROOT = Path(__file__).resolve().parent.parent
+
+
 def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
     """A three-hundred-byte payload that the depth and size caps could not stop.
 
@@ -747,6 +770,53 @@ def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
     with pytest.raises(ValueError, match="nodes"):
         log.record(ScenarioClock(tick=0), "shared references", v=payload)
     assert log.events == (), "a refused write must append nothing"
+
+
+def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() -> None:
+    """The refusal's SPEED, bounded by a real timeout rather than by a stopwatch.
+
+    My first attempt at this measured `time.monotonic()` either side of the call. That cannot work,
+    and the reason is the whole point of the control: a stopwatch after the call bounds nothing
+    when the call never returns. Deleting `budget.spend()` makes the process allocate until the
+    machine or the runner kills it, and the elapsed-time assertion is never reached - so the test
+    hung instead of failing, which in CI reads as broken infrastructure rather than as this control
+    being gone.
+
+    A subprocess with `timeout=` is the only version that actually holds. The docstring above
+    claims the refusal arrives in milliseconds instead of never; here that claim is enforced.
+    """
+    programme = (
+        "import sys;"
+        " sys.path.insert(0, 'src');"
+        " from enlightenment.scenario.determinism import RunLog, ScenarioClock;"
+        " v = 'z' * 10\n"
+        "for _ in range(6):\n"
+        "    v = [v] * 40\n"
+        "log = RunLog(seed=1)\n"
+        "try:\n"
+        "    log.record(ScenarioClock(tick=0), 'boom', v=v)\n"
+        "    print('ACCEPTED')\n"
+        "except ValueError as refusal:\n"
+        "    print('REFUSED' if 'nodes' in str(refusal) else 'WRONG-REASON')\n"
+    )
+    try:
+        result = subprocess.run(  # noqa: S603 - this interpreter and a literal programme
+            [sys.executable, "-c", programme],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=NODE_BUDGET_DEADLINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"the write did not return within {NODE_BUDGET_DEADLINE_SECONDS}s, so the cost of"
+            " accepting a payload is no longer bounded before the work is done"
+        )
+    assert result.stdout.strip() == "REFUSED", (
+        f"expected a node-budget refusal, got {result.stdout.strip()!r} with"
+        f" {result.stderr.strip()[:200]!r}"
+    )
 
 
 def test_an_ordinary_nested_payload_is_still_well_within_the_node_budget() -> None:

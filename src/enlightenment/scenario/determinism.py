@@ -360,7 +360,11 @@ class RunLog:
         ● a payload that will not serialise, including a non-finite float at any depth;
         ● a payload over `MAX_PAYLOAD_BYTES`, or nested past `MAX_PAYLOAD_DEPTH`, because a
           50 MB event and a 200,000-deep dict were both accepted, the second raising an
-          undocumented `RecursionError`.
+          undocumented `RecursionError`;
+        ● a payload that EXPANDS past `MAX_PAYLOAD_NODES` while being frozen. Listed because it
+          is a fourth refusal a caller can hit and this list named three: depth and size bound
+          the RESULT of a write and neither bounded its COST, so a few hundred bytes of shared
+          references expanded to billions of nodes and the write never returned at all.
 
         **Not whitelisted by field name**, unlike `audit.py`, and that is a deliberate difference:
         an audit line has a fixed vocabulary, whereas an event log's whole purpose is carrying

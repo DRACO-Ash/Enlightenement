@@ -236,14 +236,85 @@ overriding `canonical()` can still forge a fingerprint, named as outside the thr
 than left to be discovered. And "35 axes" was a real measurement of an ad-hoc grid, not of the
 committed sweep, which reaches that branch at 2; both are now stated.
 
-**Verified.** Loop green under the pinned toolchain: **724 passed, 1 skipped**, coverage
+### Round four: the gates found the fix for the bypass had its own bypasses
+
+Both gates FAILED round three. Between them: nine MAJORs, and the honest summary is that three of
+them were introduced by round three's own fixes.
+
+**The name bound was wrong twice, and the second version was worse than the first.** The comment
+said 32 characters "admits every real name". Measured, it does not:
+`opentelemetry-instrumentation-fastapi` is 37 characters,
+`opentelemetry-exporter-otlp-proto-http` 38, `google-cloud-bigquery-datatransfer` 34 - exactly the
+dependencies a FastAPI service acquires, every one of them redacted instead of named, defeating the
+report's one job. And 32 is precisely the length of a hex API key, so the bound admitted the whole
+of the commonest fixed-length secret format while excluding real names.
+
+Told the figure was invented, I re-derived it from the longest name pinned in THIS repository
+(`pip-requirements-parser`, 23) and set 24. That is a real measurement of the wrong population: the
+bound would have started redacting real names the first time a dependency arrived.
+
+The reading I should have reached first is that **no length separates the two populations.** Names
+run 3 to 60-odd characters and credentials 20 to 45; they overlap completely. So the length cap is
+now PyPI's own maximum, kept only to bound one log line, and the name echo is documented as a
+RESIDUAL rather than dressed as a control: shape is refused, length is not a secrecy boundary, and a
+name-shaped credential does echo. The test asserts the residual, so closing it later has to be
+deliberate.
+
+**The version echo was unbounded, because deleting the dead pattern took a live bound with it.**
+`SAFE_VERSION` constrains shape and not size, so `pkg==1.<5000 nines>` printed five thousand digits
+to stderr. `MAX_ECHO_LENGTH` had bounded every echo in the file and went out with `redact()`.
+Deleting dead code is right; deleting a live bound because it sat next to dead code is how a fix
+becomes a regression.
+
+**The property test did not reach two of the four echo sites it claimed.** `main()` reports
+unparseable lines and RETURNS before the pin report, so a body containing any unparseable line never
+exercises the version echo or the name echo at all - and four of the eight shapes were unparseable.
+Mutating `describe_version` or `describe_name` to return their input left the test green. It now
+uses two bodies, one of which parses cleanly, and asserts POSITIVELY that both sites were reached,
+so it fails if a future change stops it looking rather than passing because it stopped.
+
+**The magnitude guard, fixed three times in three rounds.** Round one checked `second`. Round two
+widened finiteness to all six arguments and magnitude to year, month and day. Round three left
+`hour=1e308` returning 4.1666666666666665e+306 and `hour=10**400` raising the undocumented
+`OverflowError` from the `day_fraction` arithmetic instead of from `math.floor`. The comment
+directly above it states the rule it broke: widening a guard to the arguments that were REPORTED
+rather than to the whole signature is how a boundary gets fixed twice. One loop over one tuple now.
+
+**And the test for that guard had the same shape as the guard.** With the magnitude bound narrowed
+back to the three date components, the whole physics-times file stayed green, because my
+parametrisation enumerated only the components I had fixed. Thirteen cases now, all six arguments.
+
+**Two dead-prose findings, both in the file whose commit message is about dead code.**
+`requirement_lines` still described `redact()` "neutralising the separator as a second layer" after
+`redact()` had been deleted, and a contract test still asserted the absence of a marker the script
+can no longer emit - an assertion that passes forever and reads as coverage. Both re-pointed at what
+is actually true now: the line number is the diagnosis, and inventing line breaks makes it wrong.
+
+**My own mutation harness left a disabled guard in the working tree.** A shell loop restored each
+file after testing it, timed out mid-iteration, and left `if False:` in place of the node-budget
+check - which the engineering gate found while reviewing, and reported as a MAJOR against an
+uncommitted tree. It never reached a commit, and the reason it did not is that a reviewer looked.
+The deadline test that should have caught it could not: I had measured elapsed time AFTER the call,
+which bounds nothing when the call never returns. It is a subprocess with a real timeout now, and
+it fails in thirty seconds instead of hanging for ever.
+
+Also closed: `versions_equal` letting a plain `ValueError` escape as an uncaught traceback on a
+5,000-digit version; `record`'s docstring listing three refusals when there are four; the curation
+list's stated reasons being wrong for `SGP4_ERRORS`, `TEME_OF_DATE` and `BOUNDARY_REFUSAL`, which
+matters because a curation list is worth exactly what its reasons are worth; four test names still
+describing the deleted control; and the comment reflow damage from the surgical edits.
+
+**Verified.** Loop green under the pinned toolchain: **733 passed, 1 skipped**, coverage
 **99.04%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven
-physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green
-against the version being shipped: **721 passed, 4 skipped**. The count fell from 756 because two
-parametrised redaction tests covering 42 cases against a function that no longer exists were
-replaced by one end-to-end property test over all 29 whitespace characters. Every figure measured
-after the final edit, then again after the documents were written, because writing them edits files
-the contract suite reads.
+physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green against
+the version being shipped: **730 passed, 4 skipped**.
+
+The collected-test count, measured at each commit rather than derived: **757** at the round-two
+head, **725** after the redaction rewrite, **734** now. An earlier version of this row attributed
+the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and
+ignored nine additions - a derived figure presented as a measured one, in the release whose subject
+is exactly that. Every figure here was measured after the final edit, then again after this row was
+written, because writing it edits files the contract suite reads.
 
 ## V0.21 (2026-08-20)
 

@@ -244,6 +244,20 @@ def test_every_date_and_time_component_is_checked_for_finiteness(
         ("day", 1e308),
         ("day", 10**500),
         ("year", -1e308),
+        # The time-of-day half. Narrowing the bound back to the three date components left this
+        # whole file green without these, which is the fault this guard has now had four times:
+        # the arguments that were REPORTED get covered and the rest of the signature does not.
+        # Measured under the narrow bound: `hour=1e308` returned 4.1666666666666665e+306,
+        # `second=1e308` returned 1.1574074074074075e+303, `hour=1e17` returned
+        # 4166666669118211.0, and `hour=10**400` raised the undocumented `OverflowError` the
+        # guard exists to replace.
+        ("hour", 1e308),
+        ("hour", 1e17),
+        ("hour", 10**400),
+        ("minute", 1e308),
+        ("minute", 10**400),
+        ("second", 1e308),
+        ("second", 10**400),
     ],
     ids=[
         "year 1e308",
@@ -252,12 +266,19 @@ def test_every_date_and_time_component_is_checked_for_finiteness(
         "day 1e308",
         "day huge int",
         "year -1e308",
+        "hour 1e308",
+        "hour 1e17",
+        "hour huge int",
+        "minute 1e308",
+        "minute huge int",
+        "second 1e308",
+        "second huge int",
     ],
 )
 def test_a_calendar_component_too_large_to_be_a_date_is_refused(
     component: str, value: float
 ) -> None:
-    """MAGNITUDE, not only finiteness, and the guard was widened twice before reaching this.
+    """MAGNITUDE, not only finiteness, and this guard has now been widened three times.
 
     `1e308` is finite and satisfies `value == int(value)`, so both earlier loops passed it and
     `math.floor(365.25 * (year + 4716))` raised a bare `OverflowError`. An integer `10**400` is
@@ -273,7 +294,14 @@ def test_a_calendar_component_too_large_to_be_a_date_is_refused(
     `greenwich_mean_sidereal_degrees` twenty lines below had applied for this exact reason since
     the day it was written - so the lesson was in the file and was not carried across.
     """
-    arguments: dict[str, float] = {"year": 2000, "month": 1, "day": 1}
+    arguments: dict[str, float] = {
+        "year": 2000,
+        "month": 1,
+        "day": 1,
+        "hour": 12,
+        "minute": 0,
+        "second": 0.0,
+    }
     arguments[component] = value
     with pytest.raises(ValueError, match="Julian Date"):
         julian_date_from_utc(**arguments)  # type: ignore[arg-type]

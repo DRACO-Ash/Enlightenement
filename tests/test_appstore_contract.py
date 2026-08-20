@@ -1264,11 +1264,14 @@ def test_the_lean_lock_file_is_a_version_identical_subset_of_the_installed_one()
 def _environment_check_module() -> Any:
     """Import `scripts/check-environment.py` as a module so its functions can be called directly.
 
-    A hyphen in the filename means it cannot be imported by name, and the alternative - asserting
-    the redaction only through a subprocess - makes a property test over 29 characters times four
-    forms into 116 process launches. Both routes are used: the subprocess cases prove the control
-    is WIRED at the echo sites, and the direct cases prove the function itself holds over a class
-    too large to spawn a process for.
+    A hyphen in the filename means it cannot be imported by name.
+
+    The rationale here originally argued that a subprocess-only property test would cost 116
+    process launches. That argument is obsolete: the property test DOES run end to end through
+    `main()` now, and pays exactly that cost, because a direct call proved nothing about whether a
+    guard was wired - `describe_name` could be deleted from both of its call sites with the suite
+    staying green. Direct calls are kept for the unit-level cases that pin a function's own
+    behaviour, and the property is asserted through the real script.
     """
     spec = importlib.util.spec_from_file_location(
         "enlightenment_check_environment", ROOT / "scripts" / "check-environment.py"
@@ -1363,6 +1366,50 @@ def test_the_environment_check_refuses_an_interpreter_it_cannot_query() -> None:
     assert "could not query" in result.stderr
 
 
+def test_the_probe_failure_report_does_not_echo_the_probe_stderr() -> None:
+    """The last raw echo in the script, and the test that pins its removal.
+
+    The test above uses `/bin/false`, which writes NOTHING to stderr, so it could never see
+    whether that stderr was echoed: reverting the describe-only report to
+    `result.stderr.strip()` left the whole suite green. A control whose only test cannot exercise
+    it is the shape this release keeps finding, so this one uses a stub that writes a distinctive
+    string and fails.
+
+    Worth stating why the content goes at all. It is a traceback from a constant probe script, not
+    a credential, and my first fix was to wrap it in `redact()` - putting arbitrary text back
+    through the one function in this repository that had by then been bypassed six times. The
+    diagnosis is the interpreter path and the exit code; an operator who wants the traceback runs
+    the interpreter themselves and discloses it to nobody.
+    """
+    marker = "DISTINCTIVE-PROBE-STDERR-CONTENT"
+    with tempfile.TemporaryDirectory() as workspace:
+        stub = Path(workspace) / "fake-python"
+        stub.write_text(
+            f'#!/bin/sh\necho "{marker}" >&2\nexit 3\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o700)
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "check-environment.py"),
+                str(stub),
+                str(ROOT / "requirements.txt"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    assert result.returncode != 0
+    assert "could not query" in result.stderr
+    assert marker not in result.stdout + result.stderr, (
+        "the probe's own stderr was echoed into the report, which is the raw-echo path this"
+        " control exists to close"
+    )
+    assert "characters of stderr not echoed" in result.stderr
+    assert "exit 3" in result.stderr, "the exit code is the diagnosis and must survive"
+
+
 def test_the_environment_check_refuses_to_run_with_no_lock_file_named() -> None:
     """Called with no arguments it must print usage and fail, not scan nothing and pass."""
     result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
@@ -1429,15 +1476,15 @@ def test_the_environment_check_bounds_the_interpreter_probe() -> None:
         assert "did not answer within" in result.stderr
 
 
-def test_the_environment_check_redacts_a_credential_before_echoing_a_line() -> None:
+def test_the_unparseable_line_report_describes_rather_than_echoes() -> None:
     """The echo that closed the fail-open branch is itself a disclosure path.
 
     A PEP 440 direct reference is a requirement line, so an unparseable one reaches the report
     and lands in a CI log. A private index legitimately holds a token there.
 
-    The report now describes the line instead of echoing it, which is the fifth revision of this
-    control and the first that does not depend on spotting the bad part of attacker-influenced
-    text. The line number beside it is the diagnosis.
+    The report describes the line instead of echoing it. Six revisions tried to spot the bad part
+    of attacker-influenced text and each was bypassed; this is the first that does not try. The
+    line number beside it is the diagnosis.
     """
     result = _run_environment_check("pkg @ https://alice:s3cr3t-token@example.invalid/pkg.whl\n")
     assert result.returncode != 0
@@ -1539,17 +1586,23 @@ def test_no_credential_form_reaches_stderr(description: str, line: str, secret: 
     ],
     ids=["plain index url", "at-sign in the path", "no userinfo"],
 )
-def test_redaction_does_not_touch_a_url_without_credentials(line: str) -> None:
-    """The control for the test above. A pattern that redacted every URL would pass it.
+def test_the_report_identifies_a_harmless_line_it_will_not_echo(line: str) -> None:
+    """Renamed and re-pointed, because its assertion could no longer fail.
 
-    Over-redaction is not harmless here: the unreadable-line report exists to tell an operator
-    which line to fix, and a report that hides the line fails at its one job.
+    It asserted `"[REDACTED:credential]" not in result.stderr` - a marker the script cannot emit
+    any more, the only two remaining being `unrecognised-version` and `unrecognised-name`. An
+    assertion against a string that can never appear passes forever and reads as coverage, and its
+    docstring argued a premise the next test in this file now contradicts.
+
+    What must survive for an ordinary credential-free line is the DIAGNOSIS: the file and the line
+    number. That is what is asserted now.
     """
     result = _run_environment_check(f"{line}\n")
-    assert "[REDACTED:credential]" not in result.stderr
+    assert ":1:" in result.stderr, "the line number is the diagnosis and must survive"
+    assert "content not echoed" in result.stderr
 
 
-def test_a_credential_inside_an_unevaluable_marker_is_redacted() -> None:
+def test_a_credential_inside_an_unevaluable_marker_is_not_echoed() -> None:
     """The third echo site, which the commit that added it left untested.
 
     A mutation removing `redact()` from the `_marker_applies` note survived the whole suite -
@@ -1565,7 +1618,7 @@ def test_a_credential_inside_an_unevaluable_marker_is_redacted() -> None:
     assert "could not evaluate marker" in result.stderr
 
 
-def test_a_scheme_relative_url_credential_is_redacted() -> None:
+def test_a_scheme_relative_url_credential_is_not_echoed() -> None:
     """RFC 3986 network-path reference. Not a form pip emits, which is why it lands here.
 
     The unreadable-line report exists to echo lines no tool would accept, so a credential in a
@@ -1639,54 +1692,110 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
     assert " " in separators, "the ASCII space must be covered, it was the sixth bypass"
     assert "\t" in separators, "the ASCII tab must be covered, it was the sixth bypass"
 
-    # Every echo site, each reached by a line shaped to trigger it: the unparseable-line report,
-    # the marker note, the version echo on the missing branch, and the name echo.
-    lines = [
+    # **Two bodies, and that is a fix.** `main()` reports unparseable lines and RETURNS before it
+    # reaches the missing-or-wrong report, so a single body containing any unparseable line never
+    # exercises the version echo or the name echo at all. The previous version of this test put all
+    # eight shapes together, four of them unparseable, and therefore covered two of the four echo
+    # sites it claimed: mutating `describe_version` or `describe_name` to return their input left
+    # it green. A green result from a case that never executes is the exact fault this release is
+    # about, so the shapes that need the parsed path get a body with nothing unparseable in it.
+    unparseable_shapes = [
         f"pkg @ https://{token}/pkg.whl",
         f"pkg==1.0 ; https://user{{sep}}x:{token}@host/p",
         f"pkg==1.0 ; {token}",
-        f"pkg=={token}",
-        f"{token}==1.0.0",
         f"pkg @ https://user{{sep}}x:{token}@host/p",
         f"pkg @ //{token}{{sep}}x@host/p",
         f"pkg @ https://host/p?token={token}{{sep}}x",
     ]
+    # These two parse, so they reach the version echo and the name echo respectively.
+    parsed_shapes = [
+        f"pkg=={token}{{sep}}x",
+        f"{token}{{sep}}x==1.0.0",
+    ]
+    # BOTH forms of the needle, and the second one is a fix. The name echo passes the value
+    # through `canonicalise`, which lowercases and folds `_` to `-`, so searching for the raw
+    # token could never match what that site prints: deleting `describe_name` from both of its
+    # call sites left this test - and the whole suite - green while the canonicalised token
+    # printed in full. A property test whose needle is not the string under test asserts nothing,
+    # which is the third time in this release that a guard was installed and its test could not
+    # see it.
+    module = _environment_check_module()
+    needles = (token, module.canonicalise(token))
     leaks = []
     for separator in separators:
-        body = "".join(line.format(sep=separator) + "\n" for line in lines)
-        result = _run_environment_check(body)
-        if token in result.stdout or token in result.stderr:
-            leaks.append(hex(ord(separator)))
-    assert not leaks, f"the token reached output for {len(leaks)} separators: {leaks[:8]}"
+        for shapes in (unparseable_shapes, parsed_shapes):
+            body = "".join(shape.format(sep=separator) + "\n" for shape in shapes)
+            result = _run_environment_check(body)
+            output = result.stdout + result.stderr
+            if any(needle in output for needle in needles):
+                leaks.append((hex(ord(separator)), shapes is parsed_shapes))
+    assert not leaks, f"the token reached output for {len(leaks)} cases: {leaks[:8]}"
+
+    # The parsed path asserted POSITIVELY as well, so this test fails if a future change stops it
+    # reaching those two sites rather than passing because it no longer looks.
+    # Choosing a name for this assertion took two goes, both instructive. A bare canonicalised
+    # token is NOT refused - it is lowercase alphanumeric with hyphens, so it is name-shaped and
+    # `describe_name` echoes it, which is the documented residual asserted directly in
+    # `test_a_credential_in_the_name_position_is_a_stated_residual`; demanding a refusal here was
+    # asking for behaviour the code deliberately does not have. Adding a `/` then made the line
+    # UNPARSEABLE, so `main()` returned before the pin report and the site went unreached again -
+    # the very fault this split exists to fix. A doubled token parses as a pin and exceeds
+    # `MAX_NAME_ECHO`, so it reaches the site and is described there.
+    parsed = _run_environment_check(f"pkg=={token}\n{token}-{token}==1.0.0\n")
+    reached = parsed.stdout + parsed.stderr
+    assert "unrecognised-version" in reached, (
+        "the version echo was never reached, so this test is not covering it: check that no line"
+        " in the parsed body is unparseable, because main() returns before the pin report if one is"
+    )
+    assert "unrecognised-name" in reached, (
+        "the name echo was never reached, so this test is not covering it"
+    )
 
 
-def test_a_credential_in_the_name_position_is_bounded_and_the_bound_is_stated() -> None:
-    """The one echo that cannot be reduced to a length, so its residual is written down.
+def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
+    """The one echo that cannot be reduced to a length, so the residual is asserted as a residual.
 
     The divergence report has to name the distribution - "pinned 0.115.0, NOT INSTALLED" about an
     unnamed package is useless - and a credential in the name position is not structurally
     distinguishable from a name. `canonicalise` lowercases and folds separators, so
     `ghp_S3CRETLIVETOKEN...` comes out looking exactly like one.
 
-    Bounded rather than closed, therefore: a canonical-shaped name up to `MAX_NAME_ECHO`
-    characters echoes, anything else is described. This test pins both halves, including the
-    residual, so nobody reads the bound as a seal.
+    **Two length bounds shipped claiming to close this, and both were wrong.** 32 "admits every
+    real name" was false - `opentelemetry-instrumentation-fastapi` is 37 characters and was
+    redacted - and 32 is exactly a hex API key. Re-deriving it from the longest name in THIS
+    repository gave 24, a real measurement of the wrong population, which would have started
+    redacting real names as soon as a dependency arrived. The populations overlap completely:
+    names run 3 to 60-odd characters, credentials 20 to 45. No length separates them.
+
+    So what is asserted here is the truth: shape is refused, length is not a secrecy boundary, and
+    a name-shaped credential DOES echo. Written down rather than implied away by a number.
     """
     module = _environment_check_module()
     token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
-    described = module.describe_name(module.canonicalise(token))
-    assert token.lower().replace("_", "-") not in described
-    assert "unrecognised-name" in described
 
-    for real in ("fastapi", "uvicorn", "pytest-cov", "typing-extensions", "ruff"):
+    # Shape IS refused: anything carrying a URL separator, uppercase, or an `@` is described.
+    for refused in (f"host/{token}", f"{token}@host", "Not_A_Canonical_Name!", "https://h/x"):
+        assert "unrecognised-name" in module.describe_name(refused)
+
+    # Real names are echoed, INCLUDING the long ones that the 32 and 24 bounds each broke. These
+    # four are real PyPI distributions and the report must be able to name them.
+    for real in (
+        "fastapi",
+        "typing-extensions",
+        "pip-requirements-parser",
+        "opentelemetry-instrumentation-fastapi",
+        "opentelemetry-exporter-otlp-proto-http",
+        "google-cloud-bigquery-datatransfer",
+    ):
         assert module.describe_name(real) == real, (
-            f"{real} is a real distribution name and must be echoed, or the divergence report"
-            " cannot say which package is missing"
+            f"{real} is a real distribution name at {len(real)} characters and must be echoed, or"
+            " the divergence report cannot say which package is missing"
         )
 
-    # The residual, asserted so it is a known bound and not a surprise: a SHORT lowercase secret
-    # in the name position is indistinguishable from a name and does echo.
-    assert module.describe_name("abc123def456") == "abc123def456"
+    # THE RESIDUAL, asserted as such: a canonicalised token is name-shaped and echoes. If a future
+    # change makes this line fail, the residual has been closed and this test should say so - but
+    # it must not be closed by a length bound, which is what the two previous attempts did.
+    assert module.describe_name(module.canonicalise(token)) == module.canonicalise(token)
 
 
 def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
@@ -1707,6 +1816,13 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
     assert "unrecognised-version" in described
     assert str(len(token)) in described, "the length is what lets an operator recognise the line"
 
+    # `\Z`, not `$`: `$` matches before a trailing newline in Python, so a version ending in one
+    # echoed verbatim and broke the divergence report onto a second line in a CI log. Reverting
+    # `\Z` to `$` left the whole suite green until this assertion existed.
+    assert module.describe_version("1.0\n").startswith("[REDACTED"), (
+        "a trailing newline slipped through the version whitelist, so `$` is being used where"
+        " `\\Z` is required"
+    )
     for real in ("0.115.0", "1.0", "2.3.1rc1", "1.2.3.post1", "0.1.dev1", "1.0+local.1"):
         assert module.describe_version(real) == real, (
             f"{real} is a legitimate version and must be echoed verbatim, or the report becomes"
@@ -1738,12 +1854,18 @@ def test_an_unparseable_line_is_described_and_never_echoed() -> None:
     )
 
 
-def test_an_over_long_requirement_line_is_truncated_before_being_echoed() -> None:
-    """Bounded because the authority-scanning pattern backtracks quadratically otherwise.
+def test_an_over_long_requirement_line_is_described_not_echoed() -> None:
+    """Bounded, though no longer for the reason this docstring used to give.
 
-    Measured before the bound: 86KB of crafted `a://` repetitions took 21 seconds inside leg one
-    of the loop. Nothing hostile reaches here, but a leg that can be stalled for twenty seconds
-    by one line is a leg that gets blamed for hanging.
+    The original reason was a quadratically backtracking authority pattern: 86 KB of crafted
+    `a://` repetitions took 21 seconds inside leg one of the loop, and a leg that can be stalled
+    for twenty seconds by one line gets blamed for hanging. That pattern no longer exists, and
+    neither does the truncation pass this test was named after.
+
+    The property still worth asserting, and the reason it is kept: the report's SIZE must not
+    scale with the line's. A 150 KB line produces a report of a few dozen characters, because the
+    line is described rather than echoed - which also means the old stall is gone by construction
+    instead of by a length cap.
     """
     result = _run_environment_check(("a://" * 3_000) + "x" * 150_000 + "\n")
     assert result.returncode != 0
