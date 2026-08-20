@@ -34,8 +34,8 @@ documents lagged. They did fail, which is the guard working: the simulation repo
 ### The stale gate ticks in the submission manifest
 
 The pre-submission checklist carried `[x] engineering-reviewer PASS ... on commit 068b1c4` and the
-same for the security gate, while both gates had returned FAIL at `fa21434`. Eleven commits and
-roughly 1,900 lines separate those two states, so the tick was asserting a property of an ancestor
+same for the security gate, while both gates had returned FAIL at `fa21434`. Measured with `git rev-list --count` and
+`git diff --shortstat`, **18 commits and 8,279 inserted lines** separate those two states, so the tick was asserting a property of an ancestor
 about a descendant. Both are now unticked and both name the FAIL and its commit. A gate verdict is
 evidence about the tree it ran against and nothing else.
 
@@ -89,11 +89,91 @@ load-merge-rename, HTTP 409 on a stale revision, the anti-shrink merge, `Path.re
 that credits a control it wants rather than a control it has is worse than one that admits the gap,
 because the gap is what the conditions exist to close.
 
-**Verified.** Loop green under the pinned toolchain: **661 passed, 1 skipped**,
-coverage **98.97%** against an 80% floor, all three lock files audited clean by `pip-audit`. All
-seven physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green
-against the version being shipped: **658 passed, 4 skipped**. Both figures were taken from runs
-against this tree after the final source edit, which is the whole point of this release.
+### Round two: both gates FAILED the first attempt at this release, and were right
+
+The first commit of V0.22.0 was reviewed and both gates returned FAIL. Recorded here rather than
+quietly fixed, because the pattern in the findings is the same pattern this release is about.
+
+**The engineering gate's BLOCKER was an invented figure inside the paragraph about invented
+figures.** The text above read "eleven commits and roughly 1,900 lines separate those two states".
+Measured, `068b1c4..fa21434` is **18 commits and 8,279 inserted lines**. No derivation produces
+either number I wrote. The argument the sentence supports gets STRONGER with the real figures,
+which is what makes writing them from recollection so hard to defend: there was nothing to gain.
+Corrected in both files, with the commands that produced them named.
+
+**The security gate found the credential control bypassed for a fifth time.** `\s` in the URL
+pattern matches sixteen Unicode space characters the neutraliser's enumeration did not cover -
+NBSP, OGHAM SPACE MARK, the U+2000 to U+200A run, U+202F, U+205F, IDEOGRAPHIC SPACE. One of them
+inside userinfo terminates the authority run before the `@`, and **all sixteen leaked a full token
+to stderr**, measured end to end through `main()`. `pwd`, `auth`, `key`, `sig`, `authorization`,
+`sas` and every `#fragment` form leaked too.
+
+Four revisions of this control have each closed one bypass and left the shape that produced it: a
+pattern that must FIND a delimiter in order to redact. So the shape is gone.
+
+● The URL pass redacts **the whole run** from `//` to the end, terminating at an ASCII space or
+  tab and nowhere else. A class that grows with the Unicode tables cannot be the edge of a
+  security boundary.
+● `NON_PRINTABLE` is now `[^\S \t]`, derived as the complement of what is allowed rather than
+  enumerated. It cannot drift from `\s` again because it IS `\s` minus the two characters an
+  operator types.
+● The version echo is a **whitelist**, strict public PEP 440 or a length. This closes the class no
+  pattern could: a bare token in version position has no context to find, is alphanumeric, and
+  leaked through all 29 whitespace characters while the URL forms leaked none.
+● The unparseable-line report **echoes no content at all**, only a length. `lockfile:number`
+  beside it identifies the line exactly, and the host was never the diagnosis.
+● `DANGLING_AUTHORITY` was deleted. It existed only to repair damage the truncation did to the
+  userinfo pass, and removing the delimiter requirement removed the damage.
+
+The honest part: my own first attempt at that last point echoed a leading distribution name as
+"safe", and the test written in the same change caught it within minutes. `ghp_S3CRETLIVETOKEN...`
+satisfies the PEP 508 name grammar exactly. A credential in the name position of a requirements
+line cannot be distinguished from a name, so the name echo never shipped.
+
+**Both gates found the same forge, one level deeper than the fix.** `Event` was a frozen
+dataclass holding a plain `dict`, so freezing the REFERENCE was mistaken for freezing the payload:
+`log.events[1].payload["outcome"] = "pass"` rewrote history through the public API with no private
+access, and a divergent run was forged back to the genuine fingerprint. Closed three ways -
+`Event.__post_init__` freezes recursively to `MappingProxyType` and tuples, the digest is captured
+at the write so a later mutation can neither change nor break it, and `seed` is a read-only
+property. The `events=` constructor argument, which bypassed every check `record` performed, now
+goes through the same one path.
+
+Two more from my own fix, both caught by tests written alongside it: `_freeze` recursed unbounded
+and ran BEFORE the depth check, turning a guarded `ValueError` back into an unguarded
+`RecursionError`; and adding the bound to `_freeze` made `_check_payload_depth` unreachable, so it
+was deleted rather than left looking live.
+
+**Physics boundaries the release claimed to have closed and had not.** `relative_acceleration_km_s2`
+was added to the public `__all__` with no validation at all while every sibling had one.
+`no_drift_alongtrack_rate_km_s` checked its inputs and not its result, so two finite arguments
+multiplied to `-inf` silently. `julian_date_from_utc` was widened from `second` to the three
+time-of-day arguments and stopped one short of `day`. `propagate_relative` overflowed `n * seconds`
+into a bare `math domain error`. `sub_satellite_longitude_degrees` returned a plausible 79.539
+degrees for a point on the spin axis, because `atan2(0, 0)` is 0 by convention.
+
+And the same silent-multiplication lesson again, for the fourth time: coverage flagged the new
+result guard in `relative_acceleration_km_s2` as unreached, and rather than argue it dead, a sweep
+found **6,084 reaching cases**. `n**2` raises; the multiplication after it overflows in silence.
+
+**Two tests that asserted the opposite of the behaviour they guarded.** The census docstring still
+said "an untracked file is not seen" after the fix made untracked files seen, its name said
+`enumerates_tracked_files`, and two of its four assertions could not fail once the walk was
+restricted to three directories containing neither `.venv` nor a worktree. Renamed, rewritten
+around the staging-independence property, and mutation-killed. Its first version then failed the
+SIMULATION, because the extracted artefact carries no `.git` - the same fault as the no-binaries
+test that died on the platform runner, caught this time by running the simulation before claiming
+anything. The git half is conditional; the half that must hold everywhere needs no git.
+
+Export completeness is now asserted in both directions for both packages, which is what would
+have caught `relative_acceleration_km_s2` being public before a reviewer did.
+
+**Verified.** Loop green under the pinned toolchain: **756 passed, 1 skipped**, coverage
+**99.02%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven
+physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green
+against the version being shipped: **753 passed, 4 skipped**. Every figure measured after the
+final edit, then measured again after the documents were written, because writing them edits files
+the contract suite reads.
 
 ## V0.21 (2026-08-20)
 

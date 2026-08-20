@@ -398,3 +398,103 @@ def test_every_finite_positive_axis_either_raises_or_gives_a_finite_positive_rat
             f"axis 1e{exponent} gave {rate!r}; reinstate the result check in mean_motion_rad_s"
         )
     assert checked > 50, f"only {checked} axes were accepted; the sweep proves too little"
+
+
+# --- boundaries the security gate found open ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("radial_offset_km", "mean_motion"),
+    [(1e300, 1e300), (1.797e308, 2.0), (-1e300, 1e300), (1e200, 1e200)],
+)
+def test_the_no_drift_rate_refuses_a_result_that_overflowed(
+    radial_offset_km: float, mean_motion: float
+) -> None:
+    """Two finite inputs multiply to infinity SILENTLY, and the guard checked only the inputs.
+
+    The function's own docstring argues a NaN here is worse than elsewhere because the value IS an
+    initial velocity written into a scenario's starting conditions. An infinite one lands in
+    exactly the same place, so a guard that catches only the non-finite INPUT catches half the
+    fault. Measured before the fix: (1e300, 1e300) returned -inf.
+    """
+    with pytest.raises(RelativeMotionError):
+        no_drift_alongtrack_rate_km_s(radial_offset_km, mean_motion)
+
+
+@pytest.mark.parametrize(
+    ("mean_motion", "position_km"),
+    [
+        (float("nan"), (1.0, 0.0, 0.0)),
+        (float("inf"), (1.0, 0.0, 0.0)),
+        (1e200, (1.0, 0.0, 0.0)),
+        (0.001, (float("nan"), 0.0, 0.0)),
+        (0.001, (float("inf"), 0.0, 0.0)),
+    ],
+)
+def test_the_acceleration_refuses_what_every_sibling_refuses(
+    mean_motion: float, position_km: tuple[float, float, float]
+) -> None:
+    """This function was EXPORTED with no boundary at all while its siblings all had one.
+
+    Measured on the shipped code: a non-finite mean motion returned a silent `(nan, nan, nan)`,
+    `1e200` raised an undocumented `OverflowError` from the square, and a NaN state component
+    passed straight through. Exporting a function is what makes its boundary a boundary, so the
+    export and the guard belong in the same change - and in that change they did not.
+    """
+    state = RelativeState(position_km=position_km, velocity_km_s=(0.0, 0.0, 0.0))
+    with pytest.raises(RelativeMotionError):
+        relative_acceleration_km_s2(state, mean_motion)
+
+
+@pytest.mark.parametrize(
+    ("position_km", "mean_motion", "seconds"),
+    [
+        ((1.0, 0.0, 0.0), 1e300, 1e300),
+        ((1e100, 0.0, 0.0), 1e-8, 1e300),
+        ((1e308, 0.0, 0.0), 1e-3, 1e5),
+    ],
+)
+def test_propagation_refuses_an_overflow_rather_than_returning_one(
+    position_km: tuple[float, float, float], mean_motion: float, seconds: float
+) -> None:
+    """Two failures, one for each half of the arithmetic.
+
+    `mean_motion * seconds` overflows silently and then `math.sin(inf)` raises a bare
+    `ValueError: math domain error` rather than this module's own error type, so a caller
+    catching `RelativeMotionError` misses it. And separately, finite in-range inputs produce
+    infinite OUTPUTS: n=1e-8 over 1e300 seconds gave an along-track position of -inf, which then
+    propagates into every later step and into whatever is plotted from it.
+    """
+    state = RelativeState(position_km=position_km, velocity_km_s=(0.0, 0.0, 0.0))
+    with pytest.raises(RelativeMotionError):
+        propagate_relative(state, mean_motion, seconds)
+
+
+def test_a_state_that_is_merely_large_still_propagates() -> None:
+    """The control for the test above: the guard must refuse an overflow, not refuse magnitude.
+
+    A boundary that rejects everything satisfies every fail-closed test while being broken, so
+    the case just inside the edge is asserted too. This one returns finite numbers and must be
+    allowed through.
+    """
+    state = RelativeState(position_km=(1e300, 0.0, 0.0), velocity_km_s=(0.0, 0.0, 0.0))
+    result = propagate_relative(state, 1e-4, 1e10)
+    assert all(math.isfinite(component) for component in result.position_km)
+
+
+def test_the_acceleration_refuses_a_result_that_overflowed_silently() -> None:
+    """The RESULT guard, distinct from the input guards, and reachable at 6,084 sweep points.
+
+    `n**2` raises `OverflowError` and is caught, but the MULTIPLICATION that follows overflows
+    silently: mean motion 1.0 against a radial offset of 1e308 gives `3.0 * 1.0 * 1e308`, which is
+    `inf` with no exception at all. Finite inputs, finite intermediate, infinite output.
+
+    This is the fourth time in this project that the difference between `**` raising and `*`
+    overflowing silently has produced a live gap, so it is asserted rather than reasoned about. A
+    coverage report flagged the branch as uncovered and a sweep over mean motion 1e-3 to 1e159
+    against offsets to 1e308 found 6,084 reaching cases - which is how a reachability question
+    gets answered here now.
+    """
+    state = RelativeState(position_km=(1e308, 0.0, 0.0), velocity_km_s=(0.0, 0.0, 0.0))
+    with pytest.raises(RelativeMotionError, match="overflowed to"):
+        relative_acceleration_km_s2(state, 1.0)

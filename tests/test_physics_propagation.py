@@ -35,6 +35,7 @@ import ast
 import math
 import random
 import string
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -747,10 +748,17 @@ def test_the_checksum_gate_is_opted_out_of_in_exactly_three_places() -> None:
     doing its job rather than a nuisance. A fourth existed once with no reason written and was
     removed rather than documented: its test passed without it, which is what proved it surplus.
 
-    Counted over every tracked Python file, so an opt-out added anywhere in the repository is
-    seen, and an untracked file is not. Matches only a literal `False`, so
-    `verify_checksum=not True` or a `**kwargs` splat would evade it - adequate for a self-check
-    on a repository this suite owns, and stated rather than left to look airtight.
+    Counted by WALKING `src`, `tests` and `scripts`, not by asking git, and that distinction is
+    a fix rather than a detail. The census used to enumerate tracked files, so it answered 3
+    before a commit and 4 after: a new file holding a fourth opt-out was untracked, invisible to
+    the census, and the loop went green on a tree that turned red the moment the file was staged.
+    A self-check whose answer depends on the index is not a self-check on the code. An untracked
+    file IS counted now, deliberately, because an opt-out is in the code whether git has heard
+    about it or not.
+
+    Matches only a literal `False`, so `verify_checksum=not True` or a `**kwargs` splat would
+    evade it - adequate for a self-check on a repository this suite owns, and stated rather than
+    left to look airtight.
     """
     opt_outs: list[str] = []
     for path in _repository_python_files():
@@ -770,21 +778,68 @@ def test_the_checksum_gate_is_opted_out_of_in_exactly_three_places() -> None:
     )
 
 
-def test_the_census_enumerates_tracked_files_and_not_the_working_tree() -> None:
-    """The census's own input, asserted, because getting this wrong turned the loop red.
+def test_the_census_answer_does_not_depend_on_what_git_has_been_told() -> None:
+    """The census's own input, asserted on the property that actually broke the loop.
 
-    It must find this file and the physics source, and it must not walk into `.venv` or a
-    linked worktree. Asserted on the property rather than on a count, so adding a module does
-    not need this test edited.
+    Renamed and rewritten. It was called
+    `test_the_census_enumerates_tracked_files_and_not_the_working_tree` and asserted the
+    OPPOSITE of what the census now does, while its two remaining assertions - no `.venv` in the
+    parts, and no path counted twice - could not fail once the walk was restricted to three named
+    directories that contain neither. A test that cannot fail, guarding the property that turned
+    the loop red, is worse than no test: it reads as coverage.
+
+    The property is staging independence. A file placed under one of the walked directories is
+    counted whether git has been told about it or not, so the answer is the same before `git add`,
+    after `git add`, and after a commit. Proved by creating the file and asking, rather than by
+    describing what the implementation does.
     """
     files = _repository_python_files()
     names = {path.name for path in files}
     assert "test_physics_propagation.py" in names
     assert "propagation.py" in names
-    assert not [path for path in files if ".venv" in path.parts], "the census walks into .venv"
-    assert len(files) == len({path.resolve() for path in files}), (
-        "the census counts the same file twice, which is how an untracked worktree broke it"
-    )
+
+    root = Path(__file__).resolve().parent.parent
+    probe = Path(__file__).resolve().parent / "_census_staging_probe.py"
+    assert not probe.exists(), "the probe file is left over from an interrupted run; remove it"
+    try:
+        probe.write_text("# staging-independence probe\n", encoding="utf-8")
+        untracked = {path.resolve() for path in _repository_python_files()}
+        assert probe.resolve() in untracked, (
+            "the census missed an UNTRACKED file under tests/, which is exactly the state that"
+            " let a fourth checksum opt-out hide from the loop until it was staged"
+        )
+        # The `git add` half matters as much: a census keyed on `git ls-files` changes its answer
+        # here, and this is the comparison that catches it in either direction.
+        #
+        # Conditional on a repository being present, and that condition is a fix rather than a
+        # convenience. The platform runs this suite against the EXTRACTED ARCHIVE, which carries
+        # no `.git` at all, so an unconditional `git add` fails there - and failing there is
+        # exactly the mistake this file has already made once, when a no-binaries test asserted
+        # that `git ls-files` succeeded and then died on the platform runner. The assertion above
+        # is the one that must hold everywhere, and it needs no git: an untracked file is counted.
+        if not (root / ".git").exists():
+            return
+        subprocess.run(  # noqa: S603 - a fixed argument vector, no shell, no external input
+            ["git", "add", "--intent-to-add", str(probe)],  # noqa: S607
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        try:
+            staged = {path.resolve() for path in _repository_python_files()}
+        finally:
+            subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
+                ["git", "reset", "--quiet", "--", str(probe)],  # noqa: S607
+                cwd=root,
+                check=False,
+                capture_output=True,
+            )
+        assert untracked == staged, (
+            "the census gives a different answer staged than untracked, so its result depends on"
+            f" the git index: {untracked ^ staged}"
+        )
+    finally:
+        probe.unlink(missing_ok=True)
 
 
 @pytest.mark.parametrize(

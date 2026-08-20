@@ -63,14 +63,31 @@ def julian_date_from_utc(
     does: a NaN here propagates into an Earth-rotation angle and then into a plotted longitude,
     where it is a mark that never appears rather than an error anybody sees.
     """
-    # ALL THREE time-of-day components, not only `second`. The first version checked `second`
-    # alone, so a non-finite hour or minute returned a NaN or an infinite Julian Date silently -
-    # exactly the failure this guard's own docstring says it exists to prevent, one argument
-    # along. `greenwich_mean_sidereal_degrees` would catch it a layer later; a caller that stores
-    # or plots the Julian Date directly would not.
-    for name, value in (("hour", hour), ("minute", minute), ("second", second)):
+    # ALL SIX components, and getting here took two goes. The first version checked `second`
+    # alone, so a non-finite hour or minute returned a NaN or an infinite Julian Date silently.
+    # The second widened it to the three time-of-day arguments and stopped one short of the date:
+    # `day` is declared `int` exactly as `hour` is, and `julian_date_from_utc(2000, 1, nan)`
+    # returned `nan`, `day=inf` returned `inf`. Widening a guard to "the ones that were reported"
+    # rather than to the whole signature is how a boundary gets fixed twice.
+    #
+    # `year` and `month` were not silent - they raised `ValueError` and `OverflowError` from the
+    # integer floor division below - but neither was documented, and an undocumented exception
+    # type is a control a caller cannot handle.
+    for name, value in (
+        ("year", year),
+        ("month", month),
+        ("day", day),
+        ("hour", hour),
+        ("minute", minute),
+        ("second", second),
+    ):
         if not math.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value!r}")
+    for name, value in (("year", year), ("month", month)):
+        # These two index the calendar rather than scaling it, so a fractional value is not a
+        # rounding question, it is a caller who passed the wrong thing.
+        if value != int(value):
+            raise ValueError(f"{name} must be a whole number, got {value!r}")
     if month < MARCH:
         year -= 1
         month += 12
@@ -145,5 +162,15 @@ def sub_satellite_longitude_degrees(
     x, y, _ = position_km
     if not all(math.isfinite(component) for component in position_km):
         raise ValueError(f"position must be finite, got {position_km!r}")
+    # A point on the spin axis has no longitude, and `atan2(0.0, 0.0)` is 0.0 by convention
+    # rather than an error, so this returned a plausible-looking angle - 79.539 degrees at J2000 -
+    # for an input that has none. A plausible wrong answer is the worst kind in a trainer whose
+    # purpose is teaching people to distrust a plotted position. Every sibling in this package
+    # documents or refuses its degenerate case; this one silently had one.
+    if x == 0.0 and y == 0.0:
+        raise ValueError(
+            "a position on the spin axis has no longitude; the equatorial projection of"
+            f" {position_km!r} is zero"
+        )
     right_ascension = math.degrees(math.atan2(y, x))
     return normalise_longitude(right_ascension - greenwich_mean_sidereal_degrees(julian_date_ut1))

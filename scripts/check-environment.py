@@ -205,7 +205,26 @@ def _marker_applies(marker: str | None) -> bool:
 #: The scheme is optional, because `//user:token@host/x` is a network-path reference under
 #: RFC 3986 and carries userinfo just the same. Not a form pip emits, which is precisely why it
 #: reaches a report that exists to echo lines no tool would accept.
-URL_CREDENTIALS = re.compile(r"(?P<scheme>(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)[^/?#\s]+@")
+#:
+#: **Now redacts the WHOLE run, not just the userinfo, and that is the fifth revision of this
+#: control.** The four before it each closed one bypass and left the shape that produced it: a
+#: pattern that must FIND a delimiter (the ``@``, the ``=``, the terminating whitespace) in order
+#: to redact, so anything that removes or moves the delimiter discloses. The bypasses were, in
+#: order: truncating before redacting, requiring a colon in userinfo, `str.splitlines()` tearing
+#: the line, and `\s` matching sixteen Unicode space characters that the neutraliser did not
+#: cover, each of which terminated the authority run before the ``@``. Every one of the sixteen
+#: leaked a full token, measured.
+#:
+#: So the delimiter requirement is gone. From ``//`` to the end of the run, everything goes. The
+#: run ends at an ASCII space or tab and NOWHERE else, deliberately not at ``\s``: that is the
+#: class the fourth bypass used, and a class that grows with the Unicode tables cannot be the
+#: edge of a security boundary.
+#:
+#: The cost is the host, and it is affordable because the report already prints
+#: ``lockfile:number``. That IS the diagnosis. A host name was never what told an operator which
+#: line to fix, so the earlier "over-redaction is not the safe direction" argument was measuring
+#: the wrong thing: it treated the URL as the diagnostic when the line number is.
+URL_CREDENTIALS = re.compile(r"(?P<scheme>(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)[^ \t]*")
 
 #: A credential carried as a query parameter. Some private indexes do this rather than using
 #: userinfo, so a pattern scoped to userinfo alone leaves them in clear.
@@ -216,8 +235,9 @@ URL_CREDENTIALS = re.compile(r"(?P<scheme>(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)[^/?#\
 #: the name to start immediately after ``?`` or ``&``, so ``X-Amz-Signature=`` - the presigned-URL
 #: form, and the one a real object-store direct reference uses - did not match at all.
 QUERY_CREDENTIALS = re.compile(
-    r"(?P<parameter>[?&][^=&\s]*?"
-    r"(?:token|password|passwd|secret|api[-_]?key|signature|credential)=)"
+    r"(?P<parameter>[?&#][^=&\s]*?"
+    r"(?:token|password|passwd|pwd|secret|api[-_]?key|signature|sig|credential|auth|"
+    r"authorization|access[-_]?token|key|sas)=)"
     r"[^&\s]+",
     re.IGNORECASE,
 )
@@ -227,12 +247,68 @@ QUERY_CREDENTIALS = re.compile(
 #: `\s` in the authority pattern matches them: one embedded ``\x0b`` inside userinfo terminated
 #: the run early, the ``@`` was never reached, and the token printed in full. pip would reject
 #: such a line, which is precisely why it reaches the report that exists to echo unusable lines.
-NON_PRINTABLE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+#:
+#: **Defined as the complement of what is allowed, not as a list of what is banned.** The list
+#: version named `\x0b-\x1f`, U+2028 and U+2029 and missed sixteen Unicode space characters that
+#: `\s` matches: NBSP, OGHAM SPACE MARK, the whole U+2000-U+200A run, U+202F, U+205F and
+#: IDEOGRAPHIC SPACE. `[^\S \t]` cannot drift from `\s` again, because it IS `\s` minus the two
+#: characters an operator would actually type. That the enumeration went stale twice is the
+#: argument for deriving it rather than writing it.
+NON_PRINTABLE = re.compile(r"[^\S \t]|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
-#: An authority run left with no terminator by the length cut. Whatever it is - a hostname or
-#: the front of a token - it is redacted, because the two cannot be distinguished after the cut
-#: and only one of the two mistakes discloses a credential.
-DANGLING_AUTHORITY = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//[^/?#\s]*$")
+#: A version this script is willing to echo VERBATIM. Public PEP 440 shape, and strict: a
+#: numeric release, optional pre/post/dev segments, an optional local segment, nothing else.
+#:
+#: This is a whitelist, and it exists because `redact()` cannot close the last disclosure class
+#: by pattern. `redact()` finds credentials by their CONTEXT - the ``//`` of a URL, the ``=`` of a
+#: query parameter. A bare token standing where a version should stand, `pkg==ghp_<48 chars>`,
+#: has no context to find: it is alphanumeric, so every character-class blacklist passes it, and
+#: it echoed in full through the "pinned X, NOT INSTALLED" report. Measured across all 29
+#: whitespace characters, that form leaked the token every time while the URL forms leaked none.
+#:
+#: A blacklist asks "does this look dangerous"; the answer for high-entropy alphanumerics is no.
+#: A whitelist asks "does this look like the one thing I expect", and a credential does not look
+#: like `0.115.0`. Every version pip reports and every version a correct lock file pins matches
+#: this. What fails it is malformed input, which is exactly the path that discloses.
+SAFE_VERSION = re.compile(
+    r"^[0-9]+(?:\.[0-9]+)*"
+    r"(?:(?:a|b|rc|alpha|beta|c|pre|preview)[0-9]+)?"
+    r"(?:\.post[0-9]+)?(?:\.dev[0-9]+)?"
+    r"(?:\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?$"
+)
+
+
+def describe_version(version: str) -> str:
+    """Echo ``version`` if it is shaped like a version, and describe it if it is not.
+
+    Fail closed. An unrecognised value is reported by LENGTH, which is what an operator needs to
+    recognise the line they are looking at, and by nothing else.
+    """
+    if SAFE_VERSION.match(version):
+        return version
+    return f"[REDACTED:unrecognised-version, {len(version)} characters]"
+
+
+def describe_line(text: str) -> str:
+    """Describe an unparseable lock-file line without echoing its content.
+
+    The strongest version of the argument `redact()` only half-makes. `redact()` has now been
+    revised five times, and every revision closed one shape of a credential that reached stderr
+    because the function echoed attacker-influenced text and tried to spot the bad part. This
+    function does not try. It echoes a length and nothing else.
+
+    **It echoed a leading distribution name for about ten minutes, and the test written in the
+    same change caught it.** A PEP 508 name is `[A-Za-z0-9][A-Za-z0-9._-]*`, and
+    `ghp_S3CRETLIVETOKEN...` satisfies that exactly: underscores and alphanumerics, nothing else.
+    A credential standing in the name position of a requirements line is indistinguishable from a
+    name, so "the name is safe to echo" was another guess dressed as a rule - the sixth in this
+    control's history, and the reason it is now the only one not shipped.
+
+    The caller prints ``lockfile:number`` beside this, so the line is identified exactly. An
+    operator fixing a malformed pin opens the file; they do not reconstruct it from the log line.
+    Giving up the content costs nothing that was load-bearing and closes the class completely.
+    """
+    return f"unparseable, {len(text)} characters, content not echoed"
 
 
 def redact(text: str) -> str:
@@ -243,7 +319,9 @@ def redact(text: str) -> str:
     a private-index setup can legitimately hold a token in a direct reference. The report is
     written to stderr, which lands in a CI log, so it is a disclosure path.
 
-    **Four passes, and the order is the correctness argument.**
+    **Three passes, and the order is the correctness argument.** It was four. The fourth existed
+    only to repair damage the second did to the third, and deleting the requirement that a
+    delimiter be FOUND deleted the damage with it.
 
     0. NEUTRALISE non-printable characters. The whitespace class in the authority pattern
        matches the vertical tab and
@@ -255,28 +333,28 @@ def redact(text: str) -> str:
        the loop. Nothing hostile reaches here, but a leg that can be stalled for fourteen seconds
        by one line gets blamed for hanging.
     2. REDACT userinfo, and query-string credentials, which some indexes carry as parameters.
-    3. STRIP THE DANGLING AUTHORITY the cut created. This step is the whole reason for the
-       rewrite. Truncating FIRST can land inside userinfo and remove the ``@`` the pattern
-       anchors on, so the token prefix then printed verbatim. Measured on the documented Google
-       Artifact Registry form, ``https://oauth2accesstoken:ya29.<520 chars>@...``: **463
-       characters of the access token reached stderr**. The truncation added to fix a stall
-       created a credential disclosure, which is worse than the stall.
+    There is no fourth pass any more, and its absence is the point. It used to strip an authority
+    run the length cut had left without a terminator, because truncating FIRST could land inside
+    userinfo and remove the ``@`` the pattern anchored on: measured on the documented Google
+    Artifact Registry form, ``https://oauth2accesstoken:ya29.<520 chars>@...``, **463 characters
+    of the access token reached stderr**. Pass 2 no longer needs a terminator, so a cut cannot
+    create a disclosure for a later pass to clean up.
 
-    Over-redaction is still avoided: an authority run stops at ``/``, ``?`` and ``#``, so an
-    ordinary index URL and an ``@`` in a path, query or fragment are untouched.
+    **What this costs.** An index host no longer appears in the report; ``https://[REDACTED:url]``
+    does. An earlier version of this docstring argued that over-redaction was the unsafe
+    direction, because "a report that hides the line fails at its one job". That argument was
+    measuring the wrong thing. The caller prints ``lockfile:number`` beside every entry, so the
+    line is already identified exactly, and the operator opens the file to fix it either way. The
+    host was never carrying the diagnosis. A credential-shaped string is the only thing that has
+    ever been carried there, five times over.
     """
     text = NON_PRINTABLE.sub("\ufffd", text)
     truncated = len(text) > MAX_ECHO_LENGTH
     if truncated:
         text = text[:MAX_ECHO_LENGTH]
-    text = URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:credential]@", text)
+    text = URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:url]", text)
     text = QUERY_CREDENTIALS.sub(r"\g<parameter>[REDACTED:credential]", text)
     if truncated:
-        # A cut can leave an authority with no terminator, which is either a hostname or the
-        # front of a credential. It cannot be told apart here, so it is redacted either way:
-        # losing a hostname from one over-long line costs a diagnosis, printing a token costs
-        # the credential.
-        text = DANGLING_AUTHORITY.sub("//[REDACTED:credential-partial]", text)
         return f"{text}[...truncated]"
     return text
 
@@ -371,10 +449,13 @@ def scan(lockfiles: list[str], installed: dict[str, str]) -> Divergences:
             # `pkg==https://user:token@host/x` - a one-character typo of the direct-reference
             # form the redaction was written for - printed the credential in full.
             if actual is None:
-                missing.append(f"  {pinned_name}: pinned {redact(pinned_version)}, NOT INSTALLED")
+                missing.append(
+                    f"  {pinned_name}: pinned {describe_version(pinned_version)}, NOT INSTALLED"
+                )
             elif not versions_equal(pinned_version, actual):
                 wrong.append(
-                    f"  {pinned_name}: pinned {redact(pinned_version)}, installed {redact(actual)}"
+                    f"  {pinned_name}: pinned {describe_version(pinned_version)},"
+                    f" installed {describe_version(actual)}"
                 )
     return Divergences(checked, missing, wrong, unreadable)
 
@@ -400,7 +481,7 @@ def main(argv: list[str]) -> int:
         # "all match" with an unmet pin sitting in the file.
         sys.stderr.write("FAIL: lines that should name a pin could not be read\n")
         for entry in found.unreadable:
-            sys.stderr.write(f"  {entry.lockfile}:{entry.number}: {redact(entry.text)}\n")
+            sys.stderr.write(f"  {entry.lockfile}:{entry.number}: {describe_line(entry.text)}\n")
         return EXIT_MISMATCH
 
     if not found.checked:

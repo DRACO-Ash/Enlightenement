@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Final
 
 #: Milliseconds per tick. The scenario clock counts INTEGER ticks and multiplies, so elapsed time
@@ -31,20 +33,56 @@ MAX_PAYLOAD_BYTES: Final = 64 * 1024
 MAX_PAYLOAD_DEPTH: Final = 8
 
 
-def _check_payload_depth(value: Any, depth: int = 0) -> None:
-    """Refuse a payload nested deeper than `MAX_PAYLOAD_DEPTH`, before `json` recurses on it.
+def _freeze(value: Any, depth: int = 0) -> Any:
+    """Return ``value`` with every mapping and sequence in it made immutable, recursively.
 
-    Checked separately rather than left to `json.dumps` raising, because a `RecursionError` is not
-    a `ValueError` and can leave the interpreter close to its stack limit for whatever runs next.
+    **Depth-bounded, and the bound is not decoration.** The first version of this function
+    recursed without one and ran BEFORE `_check_payload_depth`, because freezing happens in
+    `Event.__post_init__` and the depth walk happens in `RunLog._append`. A self-referential
+    payload therefore raised `RecursionError` here instead of `ValueError` there: the freeze had
+    moved a guarded failure back in front of its own guard. Caught by the existing
+    unserialisable-payload test, which is what that test is for.
+
+    Adding the bound here made the separate `_check_payload_depth` walk in `RunLog._append`
+    unreachable - every payload is frozen at `Event` construction, so nothing nested past the
+    limit can survive to reach it - and it was deleted rather than left in place. A guard with no
+    reachable input reads as a live control to the next reader and to a coverage report, which is
+    how a repository accumulates defences nobody can trust. The bound belongs in ONE place, and
+    this is the earliest one.
+
+    Why bound depth at all, kept from the walk that used to carry it: a 200,000-level payload
+    raised an undocumented `RecursionError` from inside `json.dumps`, and a `RecursionError` is
+    not a `ValueError` and can leave the interpreter close to its stack limit for whatever runs
+    next. A scenario event is a flat record of a few fields.
+
+    The fix for a real forge. `Event` was a frozen dataclass, which froze the REFERENCE to the
+    payload and not the payload, so `log.events[1].payload["outcome"] = "pass"` rewrote history
+    through the public API with no private access at all: a divergent run was forged back to the
+    genuine run's fingerprint and `replay_is_identical` returned True. Freezing the reference and
+    calling the object immutable is the same class of error as a shallow copy in a security
+    boundary.
     """
     if depth > MAX_PAYLOAD_DEPTH:
         raise ValueError(f"payload nests deeper than {MAX_PAYLOAD_DEPTH} levels")
-    if isinstance(value, dict):
-        for item in value.values():
-            _check_payload_depth(item, depth + 1)
-    elif isinstance(value, (list, tuple)):
-        for item in value:
-            _check_payload_depth(item, depth + 1)
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item, depth + 1) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item, depth + 1) for item in value)
+    return value
+
+
+def _plain(value: Any) -> Any:
+    """Return ``value`` with the frozen views converted back to what `json` can serialise.
+
+    `json.dumps` handles `dict` and `list`, not `MappingProxyType` and not `tuple` keys, so the
+    freeze needs a matching thaw for the digest path only. The thawed copy is local to
+    `canonical()` and never escapes, so it cannot become a second handle on the stored payload.
+    """
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
 
 
 class SeededRandom:
@@ -144,7 +182,16 @@ class Event:
 
     tick: int
     kind: str
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Freeze the payload, recursively, so the frozen dataclass is actually frozen.
+
+        Done here rather than in `RunLog.record` so that an `Event` constructed anywhere is
+        immutable, including one a test builds directly. `object.__setattr__` is the documented
+        way to assign inside a frozen dataclass and is what `dataclasses` itself uses.
+        """
+        object.__setattr__(self, "payload", _freeze(self.payload))
 
     def canonical(self) -> str:
         """A stable string form. Sorted keys, no whitespace, no non-finite floats.
@@ -154,7 +201,7 @@ class Event:
         nothing at all. It fails loudly here instead.
         """
         return json.dumps(
-            {"tick": self.tick, "kind": self.kind, "payload": self.payload},
+            {"tick": self.tick, "kind": self.kind, "payload": _plain(self.payload)},
             sort_keys=True,
             separators=(",", ":"),
             allow_nan=False,
@@ -169,7 +216,11 @@ class RunLog:
     worked, and a forged log compared equal under `replay_is_identical`. The docstring said "a log
     that can be edited after the fact cannot certify a replay" while permitting exactly that. The
     list is private now and `events` returns a tuple, so there is no remove, no update, and no
-    handle on the underlying storage.
+    handle on the underlying storage - and `Event` freezes its payload recursively, which is the
+    half that was missing. The tuple alone left `log.events[1].payload["outcome"] = "pass"`
+    working, so a divergent run could be forged back to the genuine fingerprint through the public
+    API with no private access. The digest is also taken at the write now, so a payload mutated
+    afterwards can neither change it nor break it.
 
     **What this still is not: tamper-evident.** The fingerprint is an unkeyed digest, so whoever
     can reach the object can recompute it. It detects DIVERGENCE, which is what a replay needs. If
@@ -181,16 +232,64 @@ class RunLog:
     second copy to fall out of step.
     """
 
-    __slots__ = ("_events", "seed")
+    __slots__ = ("_canonicals", "_events", "_seed")
 
     def __init__(self, seed: int, events: tuple[Event, ...] | list[Event] | None = None) -> None:
-        self.seed = seed
-        self._events: list[Event] = list(events or ())
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise TypeError(f"a run log's seed must be an int, got {type(seed).__name__}")
+        self._seed = seed
+        self._events: list[Event] = []
+        self._canonicals: list[str] = []
+        for event in events or ():
+            self._append(event)
+
+    @property
+    def seed(self) -> int:
+        """The seed this run was drawn from. Read-only, and that is a fix.
+
+        `seed` was a plain writable slot, so `log.seed = 999` moved the fingerprint of a finished
+        run after the fact. An append-only log whose seed can be rewritten is not append-only:
+        the seed is part of what the fingerprint attests.
+        """
+        return self._seed
 
     @property
     def events(self) -> tuple[Event, ...]:
-        """The events so far, as an immutable tuple. There is deliberately no setter."""
+        """The events so far, as an immutable tuple of immutable events.
+
+        Both halves are load-bearing and the second was missing. The tuple stopped
+        `log.events[1] = ...`; it did not stop `log.events[1].payload["outcome"] = "pass"`,
+        because the payload was a live dict. `Event.__post_init__` freezes it now.
+        """
         return tuple(self._events)
+
+    def _append(self, event: Event) -> None:
+        """Validate ``event`` and store it with the digest of its canonical form.
+
+        One path, used by `record` and by the `events=` constructor argument alike. The
+        constructor used to bypass every check `record` performs, which meant an out-of-order tick
+        and a NaN payload were both accepted through a public parameter and the second permanently
+        bricked `fingerprint()`. A control with a second door is not a control.
+        """
+        if self._events and event.tick < self._events[-1].tick:
+            raise ValueError(
+                f"event at tick {event.tick} follows tick {self._events[-1].tick};"
+                " a run log is append-only and monotonic"
+            )
+        try:
+            canonical = event.canonical()
+        except (ValueError, TypeError, RecursionError) as unserialisable:
+            raise ValueError(
+                f"event {event.kind!r} at tick {event.tick} cannot be serialised, so it could"
+                f" never be replayed: {unserialisable}"
+            ) from unserialisable
+        if len(canonical) > MAX_PAYLOAD_BYTES:
+            raise ValueError(
+                f"event {event.kind!r} at tick {event.tick} serialises to {len(canonical)} bytes,"
+                f" over the {MAX_PAYLOAD_BYTES} limit"
+            )
+        self._events.append(event)
+        self._canonicals.append(canonical)
 
     def record(self, clock: ScenarioClock, kind: str, **payload: Any) -> None:
         """Append one event at the clock's current tick.
@@ -214,29 +313,12 @@ class RunLog:
         an audit line has a fixed vocabulary, whereas an event log's whole purpose is carrying
         whatever a scenario needs to replay. The controls that matter here are therefore size,
         depth and serialisability. The consequence is that a caller CAN put a credential or a
-        personal detail in a payload, so the scenario engine must not, and the DPIA records that
-        as a design obligation rather than a technical guarantee.
+        personal detail in a payload, so the scenario engine must not. That obligation is recorded
+        in the DPIA at risk R4, and it is a design obligation rather than a technical guarantee.
+        An earlier version of this paragraph cited the DPIA before the DPIA said it, which is the
+        crediting-a-control-that-does-not-exist fault pointing the other way.
         """
-        if self._events and clock.tick < self._events[-1].tick:
-            raise ValueError(
-                f"event at tick {clock.tick} follows tick {self._events[-1].tick};"
-                " a run log is append-only and monotonic"
-            )
-        event = Event(tick=clock.tick, kind=kind, payload=dict(payload))
-        _check_payload_depth(event.payload)
-        try:
-            canonical = event.canonical()
-        except (ValueError, TypeError, RecursionError) as unserialisable:
-            raise ValueError(
-                f"event {kind!r} at tick {clock.tick} cannot be serialised, so it could never be"
-                f" replayed: {unserialisable}"
-            ) from unserialisable
-        if len(canonical) > MAX_PAYLOAD_BYTES:
-            raise ValueError(
-                f"event {kind!r} at tick {clock.tick} serialises to {len(canonical)} bytes,"
-                f" over the {MAX_PAYLOAD_BYTES} limit"
-            )
-        self._events.append(event)
+        self._append(Event(tick=clock.tick, kind=kind, payload=dict(payload)))
 
     def fingerprint(self) -> str:
         """A digest over the seed and every event, in order.
@@ -245,13 +327,24 @@ class RunLog:
         fingerprints match, and the seed is included so two runs that produced no events are not
         trivially equal.
 
-        Cannot fail on a log built through `record`, because everything that could make it fail is
-        refused at the write.
+        **Digested from the canonical form captured AT THE WRITE, never recomputed from the stored
+        event.** That is the second half of the payload-freeze fix and it is defence in depth: even
+        if some future change reintroduces a mutable path into a payload, it cannot alter a digest
+        that was taken before it, and it cannot make this method raise. The previous version
+        recomputed `event.canonical()` here, so a payload mutated afterwards both changed the
+        fingerprint and, with a NaN, made this method raise for ever on a log with no remove.
+
+        **Every field is length-prefixed**, so the digest has domain separation. Without it, the
+        seed and the events were concatenated with no boundary, and `RunLog(1)` digested
+        identically to `RunLog("1")` while a seed could be chosen to imitate an event.
+
+        Cannot fail on any log this class will construct, because everything that could make it
+        fail is refused at the write, through the one path both entrances use.
         """
         digest = hashlib.sha256()
-        digest.update(f"seed:{self.seed}".encode())
-        for event in self._events:
-            digest.update(event.canonical().encode())
+        for field_bytes in (f"seed:{self._seed}".encode(), *(c.encode() for c in self._canonicals)):
+            digest.update(f"{len(field_bytes)}:".encode())
+            digest.update(field_bytes)
         return digest.hexdigest()[:FINGERPRINT_LENGTH]
 
 

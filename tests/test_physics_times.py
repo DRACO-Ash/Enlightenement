@@ -200,3 +200,69 @@ def test_every_time_of_day_component_is_checked_for_finiteness(component: str, b
     arguments[component] = bad
     with pytest.raises(ValueError, match=f"{component} must be finite"):
         julian_date_from_utc(2026, 8, 20, **arguments)  # type: ignore[arg-type]
+
+
+# --- the guard that was widened twice -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "component",
+    ["year", "month", "day", "hour", "minute", "second"],
+)
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_every_date_and_time_component_is_checked_for_finiteness(
+    component: str, bad: float
+) -> None:
+    """ALL SIX arguments, parametrised, because widening this guard took two attempts.
+
+    The first version checked `second` alone. The second widened it to the three time-of-day
+    arguments and stopped one short of the date: `day` is declared `int` exactly as `hour` is, and
+    `julian_date_from_utc(2000, 1, nan)` returned `nan` while `day=inf` returned `inf`. Widening a
+    guard to the arguments that were REPORTED rather than to the whole signature is how a boundary
+    gets fixed twice, so the whole signature is enumerated here and a new argument that is not
+    covered will read as an obvious gap in this list.
+    """
+    arguments: dict[str, float] = {
+        "year": 2000,
+        "month": 1,
+        "day": 1,
+        "hour": 12,
+        "minute": 0,
+        "second": 0.0,
+    }
+    arguments[component] = bad
+    with pytest.raises(ValueError, match=component):
+        julian_date_from_utc(**arguments)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("year", "month"), [(2000.5, 1), (2000, 1.5)])
+def test_the_calendar_indices_refuse_a_fractional_value(year: float, month: float) -> None:
+    """`year` and `month` index the calendar rather than scaling it.
+
+    They previously raised `ValueError` and `OverflowError` from the integer floor division
+    further down, which was not silent but was not documented either, and an undocumented
+    exception type is a control a caller cannot handle. A fractional year is not a rounding
+    question, it is a caller who passed the wrong thing.
+    """
+    with pytest.raises(ValueError, match="whole number"):
+        julian_date_from_utc(year, month, 1)  # type: ignore[arg-type]
+
+
+def test_a_position_on_the_spin_axis_is_refused_rather_than_given_a_longitude() -> None:
+    """`atan2(0.0, 0.0)` is 0.0 by convention, not an error, so this returned a plausible angle.
+
+    Measured before the fix: `(0.0, 0.0, 0.0)` at J2000 returned 79.539 degrees, a number that
+    looks entirely reasonable for a point that has no longitude at all. A plausible wrong answer
+    is the worst kind in a trainer whose whole purpose is teaching people to distrust a plotted
+    position, and every sibling in this package documents or refuses its degenerate case.
+    """
+    with pytest.raises(ValueError, match="spin axis"):
+        sub_satellite_longitude_degrees((0.0, 0.0, 0.0), 2451545.0)
+    with pytest.raises(ValueError, match="spin axis"):
+        sub_satellite_longitude_degrees((0.0, 0.0, 7000.0), 2451545.0)
+
+
+def test_a_position_just_off_the_axis_still_gets_a_longitude() -> None:
+    """The control for the refusal above: it must refuse the degenerate case, not the small one."""
+    longitude = sub_satellite_longitude_degrees((1e-9, 0.0, 7000.0), 2451545.0)
+    assert math.isfinite(longitude)

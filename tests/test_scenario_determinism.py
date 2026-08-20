@@ -12,7 +12,9 @@ to differ, because a harness that returned a constant log would pass the first c
 
 from __future__ import annotations
 
+import importlib
 import json
+from types import ModuleType
 
 import pytest
 
@@ -220,15 +222,40 @@ def test_a_non_finite_payload_value_is_refused_rather_than_serialised() -> None:
         Event(tick=1, kind="measured", payload={"value": float("nan")}).canonical()
 
 
-def test_the_package_exports_what_it_documents() -> None:
-    """The `__all__` is a promise. A name in it that does not resolve is a broken import for a
-    caller and a silent one for this suite, since nothing else here touches `Event` directly.
-    """
-    from enlightenment import scenario
+@pytest.mark.parametrize("package_name", ["scenario", "physics"])
+def test_the_package_exports_what_it_documents(package_name: str) -> None:
+    """The `__all__` is a promise, and it is asserted in BOTH directions now.
 
-    missing = [name for name in scenario.__all__ if not hasattr(scenario, name)]
-    assert not missing, f"exported but absent: {missing}"
-    assert "Event" in scenario.__all__
+    The first version checked one direction only: a name in `__all__` that does not resolve. That
+    catches a typo and misses the fault that actually happened three times in one release, which
+    is a public name the module defines and `__all__` does not list. `MAX_PAYLOAD_BYTES`,
+    `MAX_PAYLOAD_DEPTH` and `relative_acceleration_km_s2` were each added to `__all__` by hand
+    after the fact; the loop never noticed, because nothing asked the reverse question.
+
+    Both packages, because `physics` had no equivalent test at all and it is the larger of the two.
+    A name is public if it does not start with an underscore and is defined in one of the
+    package's own modules - an import of `math` or `Final` is not the package's to export.
+    """
+    package = importlib.import_module(f"enlightenment.{package_name}")
+
+    absent = [name for name in package.__all__ if not hasattr(package, name)]
+    assert not absent, f"exported but absent from enlightenment.{package_name}: {absent}"
+
+    own_prefix = f"enlightenment.{package_name}."
+    unexported = sorted(
+        name
+        for name, value in vars(package).items()
+        if not name.startswith("_")
+        and not isinstance(value, ModuleType)
+        and getattr(value, "__module__", "").startswith(own_prefix)
+        and name not in package.__all__
+    )
+    assert not unexported, (
+        f"enlightenment.{package_name} defines these public names and does not list them in"
+        f" __all__, so a caller cannot rely on them and this suite would not notice their"
+        f" removal: {unexported}"
+    )
+    assert "Event" in importlib.import_module("enlightenment.scenario").__all__
 
 
 def test_the_fingerprint_is_the_documented_length() -> None:
@@ -377,7 +404,12 @@ def test_replay_comparison_rejects_two_logs_with_different_seeds() -> None:
 
 
 #: The fingerprint of `_simulate(20260820)`, measured and pinned.
-GOLDEN_FINGERPRINT = "0ad9d5d62012ddb1"
+#:
+#: Moved from `0ad9d5d62012ddb1` when the digest gained a length prefix per field, which was a
+#: deliberate format change for domain separation: without it the seed and the events were
+#: concatenated with no boundary. Re-measured under `PYTHONHASHSEED` of 0, 1, 12345, 99999 and
+#: `random`, all five agreeing, rather than taken from one run.
+GOLDEN_FINGERPRINT = "8f952d44b09fb117"
 
 
 def test_the_fingerprint_is_stable_across_processes_not_only_within_one() -> None:
@@ -511,3 +543,132 @@ def test_the_depth_check_walks_lists_as_well_as_dicts() -> None:
     shallow: object = ("leaf",)
     log.record(ScenarioClock(tick=1), "shallow", items=shallow)
     assert len(log.events) == 1
+
+
+# --- the forge the tuple did not close ----------------------------------------------------
+
+
+def test_a_payload_cannot_be_rewritten_through_the_events_property() -> None:
+    """THE defeat of the previous append-only claim, asserted so it cannot come back.
+
+    `Event` was a frozen dataclass holding a plain dict, which froze the reference and not the
+    payload. Measured on the shipped code: two runs that genuinely diverged were made to agree by
+    one item assignment through the public `events` property, with no private access, and
+    `replay_is_identical` then returned True. Freezing a container's reference and calling the
+    container immutable is the same class of error as a shallow copy at a security boundary.
+    """
+    genuine = RunLog(seed=1)
+    genuine.record(ScenarioClock(tick=0), "start", outcome="none")
+    genuine.record(ScenarioClock(tick=1), "score", outcome="pass")
+
+    divergent = RunLog(seed=1)
+    divergent.record(ScenarioClock(tick=0), "start", outcome="none")
+    divergent.record(ScenarioClock(tick=1), "score", outcome="fail")
+    assert not replay_is_identical(genuine, divergent)
+
+    with pytest.raises(TypeError):
+        divergent.events[1].payload["outcome"] = "pass"  # type: ignore[index]
+    assert not replay_is_identical(genuine, divergent), "a divergent run was forged into agreement"
+
+
+def test_a_nested_payload_is_frozen_all_the_way_down() -> None:
+    """One level of freezing would leave the same forge one level in.
+
+    `MappingProxyType` over a dict of dicts protects only the outer view, so the freeze has to
+    recurse or it is a speed bump. Lists too: a list inside a payload is an ordered part of what
+    the fingerprint attests.
+    """
+    log = RunLog(seed=1)
+    log.record(ScenarioClock(tick=0), "state", detail={"axis": {"score": 1}, "history": [1, 2]})
+    payload = log.events[0].payload
+    with pytest.raises(TypeError):
+        payload["detail"]["axis"]["score"] = 99  # type: ignore[index]
+    assert isinstance(payload["detail"]["history"], tuple), (
+        "a list inside a payload stayed mutable, so the sequence the fingerprint covers can be"
+        " reordered after the write"
+    )
+
+
+def test_the_fingerprint_is_taken_at_the_write_not_recomputed() -> None:
+    """Defence in depth behind the freeze, and the fix for a permanent brick.
+
+    The digest used to be recomputed from the stored event every time it was asked for, so a
+    payload mutated afterwards changed it, and a NaN placed there made `fingerprint()` raise for
+    ever on a log with no remove. Digesting the canonical form captured at the write means neither
+    is possible even if some later change reintroduces a mutable path.
+    """
+    log = RunLog(seed=1)
+    log.record(ScenarioClock(tick=0), "measured", value=1.0)
+    before = log.fingerprint()
+    stored = log.events[0].payload
+    with pytest.raises(TypeError):
+        stored["value"] = float("nan")  # type: ignore[index]
+    assert log.fingerprint() == before
+    assert log.fingerprint() == before, "the digest is not stable across repeated calls"
+
+
+def test_the_seed_cannot_be_rewritten_after_the_fact() -> None:
+    """The seed is part of what the fingerprint attests, so a writable seed is a rewritable run."""
+    log = RunLog(seed=1)
+    log.record(ScenarioClock(tick=0), "start")
+    before = log.fingerprint()
+    with pytest.raises(AttributeError):
+        log.seed = 999  # type: ignore[misc]
+    assert log.fingerprint() == before
+
+
+@pytest.mark.parametrize("bad_seed", ["1", 1.0, True, None, b"1"])
+def test_a_run_log_refuses_a_seed_that_is_not_an_integer(bad_seed: object) -> None:
+    """Same rule as `SeededRandom`, and it was missing here.
+
+    `bool` is listed because it IS an `int` in Python, so an `isinstance` check alone accepts
+    `RunLog(seed=True)` and digests it as `seed:True`. A seed is drawn from a scenario definition,
+    and `True` there is a mistake, not a seed.
+    """
+    with pytest.raises(TypeError):
+        RunLog(seed=bad_seed)  # type: ignore[arg-type]
+
+
+def test_the_digest_separates_the_seed_from_the_events() -> None:
+    """Concatenation with no boundary let one field imitate another.
+
+    Without a length prefix per field, `seed:1` followed by an event digested identically to a
+    seed chosen to contain the event's own canonical text. The seed type check closes the
+    `RunLog(1)` versus `RunLog("1")` case at the door; the prefix closes the general one.
+    """
+    plain = RunLog(seed=1)
+    plain.record(ScenarioClock(tick=0), "a")
+    imitation = RunLog(seed=1)
+    imitation.record(ScenarioClock(tick=0), "a", extra="b")
+    assert plain.fingerprint() != imitation.fingerprint()
+
+    empty_one = RunLog(seed=11)
+    empty_two = RunLog(seed=1)
+    empty_two_events = RunLog(seed=1)
+    empty_two_events.record(ScenarioClock(tick=0), "1")
+    assert (
+        len({empty_one.fingerprint(), empty_two.fingerprint(), empty_two_events.fingerprint()}) == 3
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "events"),
+    [
+        ("an out-of-order tick", [Event(tick=9, kind="late"), Event(tick=1, kind="early")]),
+        ("a non-finite payload", [Event(tick=0, kind="m", payload={"v": float("nan")})]),
+        ("an unserialisable payload", [Event(tick=0, kind="m", payload={"v": object()})]),
+    ],
+)
+def test_the_constructor_seam_enforces_what_record_enforces(
+    label: str, events: list[Event]
+) -> None:
+    """A control with a second door is not a control.
+
+    The `events=` argument is a public parameter and it bypassed every check `record` performs.
+    Measured: ticks `[9, 1]` accepted out of order, and a NaN payload accepted and then making
+    `fingerprint()` raise for ever - which is the exact defect the write-time validation was
+    introduced to close, still reachable through the other entrance. Both paths go through
+    `_append` now.
+    """
+    with pytest.raises(ValueError, match=r"append-only|serialised"):
+        RunLog(seed=1, events=events)

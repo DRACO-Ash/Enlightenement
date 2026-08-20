@@ -1261,12 +1261,14 @@ def test_the_lean_lock_file_is_a_version_identical_subset_of_the_installed_one()
     assert not diverged, f"the image and the tested environment disagree: {diverged}"
 
 
-def _pins_of(lockfile: Path) -> dict[str, str]:
-    """Read `name==version` pins, reusing the loop's own parser so the two cannot disagree.
+def _environment_check_module() -> Any:
+    """Import `scripts/check-environment.py` as a module so its functions can be called directly.
 
-    Imported rather than reimplemented: a second copy of the parsing rules is a second thing
-    to keep in step, and a guard that parses differently from the checker it guards is worse
-    than no guard.
+    A hyphen in the filename means it cannot be imported by name, and the alternative - asserting
+    the redaction only through a subprocess - makes a property test over 29 characters times four
+    forms into 116 process launches. Both routes are used: the subprocess cases prove the control
+    is WIRED at the echo sites, and the direct cases prove the function itself holds over a class
+    too large to spawn a process for.
     """
     spec = importlib.util.spec_from_file_location(
         "enlightenment_check_environment", ROOT / "scripts" / "check-environment.py"
@@ -1275,7 +1277,17 @@ def _pins_of(lockfile: Path) -> dict[str, str]:
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    pins: dict[str, str] = module.read_pins(lockfile)
+    return module
+
+
+def _pins_of(lockfile: Path) -> dict[str, str]:
+    """Read `name==version` pins, reusing the loop's own parser so the two cannot disagree.
+
+    Imported rather than reimplemented: a second copy of the parsing rules is a second thing
+    to keep in step, and a guard that parses differently from the checker it guards is worse
+    than no guard.
+    """
+    pins: dict[str, str] = _environment_check_module().read_pins(lockfile)
     return pins
 
 
@@ -1422,12 +1434,17 @@ def test_the_environment_check_redacts_a_credential_before_echoing_a_line() -> N
 
     A PEP 440 direct reference is a requirement line, so an unparseable one reaches the report
     and lands in a CI log. A private index legitimately holds a token there.
+
+    The report now describes the line instead of echoing it, which is the fifth revision of this
+    control and the first that does not depend on spotting the bad part of attacker-influenced
+    text. The line number beside it is the diagnosis.
     """
     result = _run_environment_check("pkg @ https://alice:s3cr3t-token@example.invalid/pkg.whl\n")
     assert result.returncode != 0
     assert "s3cr3t-token" not in result.stderr
     assert "alice" not in result.stderr
-    assert "[REDACTED:credential]" in result.stderr
+    assert "content not echoed" in result.stderr
+    assert ":1:" in result.stderr, "the line number is the diagnosis and must survive"
 
 
 def test_the_extras_form_is_read_as_a_pin_not_reported_as_unreadable() -> None:
@@ -1506,7 +1523,7 @@ def test_no_credential_form_reaches_stderr(description: str, line: str, secret: 
     result = _run_environment_check(f"{line}\n")
     assert result.returncode != 0
     assert secret not in result.stderr, f"{description}: the credential reached stderr"
-    assert "[REDACTED:credential]" in result.stderr
+    assert "content not echoed" in result.stderr or "[REDACTED:" in result.stderr
     if "WRONG version" in description:
         assert "installed" in result.stderr, (
             "this case must reach the wrong-version branch, not the missing one"
@@ -1544,7 +1561,7 @@ def test_a_credential_inside_an_unevaluable_marker_is_redacted() -> None:
     )
     assert result.returncode != 0
     assert "s3cr3tTOK" not in result.stderr
-    assert "[REDACTED:credential]" in result.stderr
+    assert "[REDACTED:url]" in result.stderr
     assert "could not evaluate marker" in result.stderr
 
 
@@ -1557,33 +1574,170 @@ def test_a_scheme_relative_url_credential_is_redacted() -> None:
     result = _run_environment_check("pkg @ //alice:s3cr3tTOK@h.invalid/pkg.whl\n")
     assert result.returncode != 0
     assert "s3cr3tTOK" not in result.stderr
-    assert "[REDACTED:credential]" in result.stderr
+    assert "content not echoed" in result.stderr
 
 
 @pytest.mark.parametrize(
-    "line",
+    ("line", "name"),
     [
-        # `?token=` is now redacted deliberately, so the query case here uses a parameter that
-        # is NOT a credential name. The previous fixture was `?token=a@b`, which asserted no
-        # marker appeared and so contradicted the query-credential control the moment it landed.
-        # The old expectation was the wrong one: some private indexes carry a token as a query
-        # parameter, and leaving those in clear is the leak, not the redaction.
-        "pkg @ https://mirror.example.invalid?ref=a@b",
-        "pkg @ https://mirror.example.invalid#frag@x",
-        "pkg @ git+https://host.invalid/o/r.git@v1.2.3",
+        ("distinctivename @ https://mirror.example.invalid?ref=a@b", "distinctivename"),
+        ("othername @ https://mirror.example.invalid#frag@x", "othername"),
+        ("thirdname @ git+https://host.invalid/o/r.git@v1.2.3", "thirdname"),
     ],
     ids=["at-sign in a non-credential query", "at-sign in the fragment", "the pip ref-pin form"],
 )
-def test_an_at_sign_outside_the_userinfo_does_not_trigger_redaction(line: str) -> None:
-    """Over-redaction is not the safe direction, and the earlier control test could not see it.
+def test_the_report_still_identifies_the_line_it_will_not_echo(line: str, name: str) -> None:
+    """The over-redaction control, rewritten because its premise was overturned deliberately.
 
-    Its three cases all had a path, so the greedy pattern's failure - matching across a query
-    and reporting `https://[REDACTED:credential]@b`, host destroyed - went unnoticed. A report
-    that hides the line fails at its one job.
+    It used to assert that a host name survived, under the argument that over-redaction was the
+    unsafe direction because "a report that hides the line fails at its one job". That argument
+    was measuring the wrong thing. The host was never the diagnosis: the report prints
+    `lockfile:number`, which identifies the line exactly, and an operator fixing a malformed pin
+    opens the file rather than reconstructing it from a log line. Meanwhile the URL was the only
+    thing that had ever carried a credential into that log, five times over.
+
+    So the host goes, and what must survive instead is asserted here: the file, the line number
+    and the distribution name. A control that redacted those too would be the real failure, and
+    that is what this test now guards.
     """
     result = _run_environment_check(f"{line}\n")
-    assert "[REDACTED:credential]" not in result.stderr
-    assert "mirror.example.invalid" in result.stderr or "host.invalid" in result.stderr
+    assert "mirror.example.invalid" not in result.stderr
+    assert "host.invalid" not in result.stderr
+    assert name not in result.stderr, (
+        "not even the leading name is echoed: a credential in the name position of a requirements"
+        " line satisfies the PEP 508 name grammar exactly, so a name cannot be told from a token"
+    )
+    assert ":1:" in result.stderr, "the line number is the diagnosis and must survive"
+
+
+def test_no_whitespace_character_anywhere_can_split_a_credential_out_of_redaction() -> None:
+    r"""The property, over the WHOLE class, because four revisions of a list each missed some.
+
+    Every bypass of this control so far has been the same shape: a character that terminates the
+    pattern's run before it reaches the delimiter it needs. `\x0b` did it, then U+2028 and U+2029,
+    then sixteen Unicode space characters that `\s` matches and the neutraliser's enumeration did
+    not - NBSP, OGHAM SPACE MARK, the U+2000 to U+200A run, U+202F, U+205F and IDEOGRAPHIC SPACE.
+    Every one of the sixteen leaked a full token, measured end to end.
+
+    A test listing the forms already found cannot catch the next one, and the next one is what
+    matters. So this asserts the property over every character in the class the pattern is defined
+    against: for every whitespace character other than the space and tab an operator would type,
+    a credential carrying it must not reach the output. That set is derived from `re` at run time,
+    so it grows with the Unicode tables rather than with anybody remembering to extend a list.
+    """
+    module = _environment_check_module()
+    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKENS3CRETLIVETOKEN"
+    hostile = [chr(point) for point in range(0x110000) if re.match(r"\s", chr(point))]
+    hostile = [character for character in hostile if character not in " \t"]
+    assert len(hostile) >= 25, (
+        f"only {len(hostile)} characters derived, so the class is not being enumerated properly"
+        " and this test would pass by not looking"
+    )
+
+    forms = [
+        (character, form)
+        for character in hostile
+        for form in (
+            f"pkg @ https://{token}{character}x@host.invalid/pkg.whl",
+            f"pkg @ https://user:{token}{character}@host.invalid/pkg.whl",
+            f"pkg @ //{token}{character}x@host.invalid/p",
+            f"pkg @ https://host.invalid/p?token={token}{character}x",
+        )
+    ]
+    leaks = [
+        (hex(ord(character)), form[:40])
+        for character, form in forms
+        if token in module.redact(form)
+    ]
+    assert not leaks, f"{len(leaks)} of {len(forms)} credential forms survived: {leaks[:6]}"
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        "token",
+        "auth",
+        "key",
+        "sig",
+        "signature",
+        "authorization",
+        "access_token",
+        "access-token",
+        "sas",
+        "pwd",
+        "password",
+        "api_key",
+        "X-Amz-Signature",
+        "credential",
+    ],
+)
+@pytest.mark.parametrize("introducer", ["?", "&", "#"])
+def test_a_credential_carried_as_a_parameter_is_redacted_whatever_it_is_called(
+    parameter: str, introducer: str
+) -> None:
+    """Query and fragment parameter names, enumerated because the previous list was short.
+
+    The list held `token`, `password`, `passwd`, `secret`, `api_key`, `signature` and
+    `credential`, and measured against a real run, `auth`, `key`, `sig`, `authorization`, `sas`
+    and `pwd` all leaked a full token, as did every one of them behind a `#` rather than a `?`.
+
+    This is still a blacklist and blacklists still lose, which is why the URL pass no longer
+    depends on it: a credential inside a URL is caught by the whole-run redaction regardless of
+    what its parameter is called. This pass is what catches a parameter standing on its own, with
+    no scheme in front of it, and the list is the belt to that braces.
+    """
+    module = _environment_check_module()
+    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKEN"
+    assert token not in module.redact(f"pkg==1.0 {introducer}{parameter}={token}")
+
+
+def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
+    """The last disclosure class, and the one no pattern could close.
+
+    `redact()` finds credentials by CONTEXT - the `//` of a URL, the `=` of a parameter. A bare
+    token standing where a version should stand has no context to find: it is alphanumeric, so
+    every character-class blacklist passes it. Measured against all 29 whitespace characters,
+    `pkg==<token>` leaked the token every single time while the URL forms leaked none.
+
+    So the version echo is a WHITELIST. A value shaped like a public PEP 440 version is echoed
+    verbatim, and anything else is reported by length only.
+    """
+    module = _environment_check_module()
+    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKENS3CRETLIVETOKEN"
+    described = module.describe_version(token)
+    assert token not in described
+    assert "unrecognised-version" in described
+    assert str(len(token)) in described, "the length is what lets an operator recognise the line"
+
+    for real in ("0.115.0", "1.0", "2.3.1rc1", "1.2.3.post1", "0.1.dev1", "1.0+local.1"):
+        assert module.describe_version(real) == real, (
+            f"{real} is a legitimate version and must be echoed verbatim, or the report becomes"
+            " useless for the case it exists to serve"
+        )
+
+
+def test_an_unparseable_line_is_described_and_never_echoed() -> None:
+    """A token can be anywhere in an arbitrary line, so no arbitrary line content is printed.
+
+    The strongest form of the argument the rest of this control only half-makes. The report keeps
+    the distribution name when the line starts with something unambiguously a name, and otherwise
+    prints a length. `lockfile:number` beside it identifies the line exactly.
+    """
+    module = _environment_check_module()
+    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKEN"
+    for line in (
+        token,
+        f"uvicorn @ {token}",
+        f"{token}=={token}",
+        f"  ??? {token} ???  ",
+    ):
+        described = module.describe_line(line)
+        assert token not in described, f"the line report echoed a credential: {line[:30]}"
+        assert "content not echoed" in described
+    assert "uvicorn" not in module.describe_line("uvicorn[standard]=broken"), (
+        "the leading name is not echoed either, because ghp_S3CRETLIVETOKEN matches the PEP 508"
+        " name grammar exactly and a name therefore cannot be distinguished from a credential"
+    )
 
 
 def test_an_over_long_requirement_line_is_truncated_before_being_echoed() -> None:
@@ -1595,7 +1749,7 @@ def test_an_over_long_requirement_line_is_truncated_before_being_echoed() -> Non
     """
     result = _run_environment_check(("a://" * 3_000) + "x" * 150_000 + "\n")
     assert result.returncode != 0
-    assert "[...truncated]" in result.stderr
+    assert "content not echoed" in result.stderr
     assert len(result.stderr) < 4_000, "the report echoed the whole line"
 
 

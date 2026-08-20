@@ -118,6 +118,14 @@ def mean_motion_rad_s(semi_major_axis_km: float) -> float:
     #
     # Third time in this project that I removed a guard on a reachability argument and was wrong.
     # The guard stays, and the sweep is what covers it rather than what replaces it.
+    #
+    # Precisely what the sweep covers, so nobody reads more into it than it proves: the
+    # `isfinite` half, which it reaches at 35 axes in 1.5e-108 to 1e-101. The `rate <= 0.0` half
+    # is unreachable BY CONSTRUCTION here - `sqrt` returns zero only if the division underflows,
+    # which needs a cube above 1e313, and `**` raises before that. It is belt and braces against
+    # a future edit to the arithmetic, not a covered control, and removing that sub-clause alone
+    # leaves the suite green. The identical line in `mean_motion_from_elements` below IS reachable,
+    # because an element set can carry a non-positive mean motion, and that one is mutation-killed.
     try:
         rate = math.sqrt(EARTH_MU_KM3_S2 / semi_major_axis_km**3)
     except (ZeroDivisionError, OverflowError) as exhausted:
@@ -167,7 +175,19 @@ def no_drift_alongtrack_rate_km_s(radial_offset_km: float, mean_motion: float) -
             f"the radial offset and mean motion must both be finite, got"
             f" {radial_offset_km!r} and {mean_motion!r}"
         )
-    return -2.0 * mean_motion * radial_offset_km
+    rate = -2.0 * mean_motion * radial_offset_km
+    # The RESULT, not only the inputs, and this is the lesson from `mean_motion_rad_s` applied one
+    # function along instead of being written down and left there. Two finite inputs multiply to
+    # infinity SILENTLY: (1e300, 1e300) returned -inf, (1.797e308, 2.0) returned -inf. The
+    # docstring above argues that a NaN here is worse than elsewhere because the value IS an
+    # initial velocity written into a scenario's starting conditions. An infinite one lands in
+    # exactly the same place, so the guard that catches only the NaN catches half the fault.
+    if not math.isfinite(rate):
+        raise RelativeMotionError(
+            f"the no-drift rate overflowed to {rate!r} for radial offset {radial_offset_km!r}"
+            f" and mean motion {mean_motion!r}"
+        )
+    return rate
 
 
 def propagate_relative(state: RelativeState, mean_motion: float, seconds: float) -> RelativeState:
@@ -189,6 +209,13 @@ def propagate_relative(state: RelativeState, mean_motion: float, seconds: float)
     dx, dy, dz = state.velocity_km_s
     n = mean_motion
     nt = n * seconds
+    # Two finite factors overflow silently, and then `math.sin(inf)` raises a bare
+    # `ValueError: math domain error` rather than the documented `RelativeMotionError`:
+    # measured at n=1e300, seconds=1e300. Checked here so the boundary raises its own type.
+    if not math.isfinite(nt):
+        raise RelativeMotionError(
+            f"mean motion {n!r} times {seconds!r} seconds overflowed to {nt!r}"
+        )
     sin_nt = math.sin(nt)
     cos_nt = math.cos(nt)
 
@@ -205,6 +232,16 @@ def propagate_relative(state: RelativeState, mean_motion: float, seconds: float)
     next_dy = 6.0 * n * (cos_nt - 1.0) * x - 2.0 * sin_nt * dx + (4.0 * cos_nt - 3.0) * dy
     next_dz = -n * sin_nt * z + cos_nt * dz
 
+    propagated = (next_x, next_y, next_z, next_dx, next_dy, next_dz)
+    # Finite inputs within range still produce infinite outputs: n=1e-8 over 1e300 seconds gave an
+    # along-track position of -inf, and a 1e308 radial offset gave +inf. A state carrying an
+    # infinity propagates it into every later step and into whatever is plotted from it, so it
+    # fails here where the caller can still see which call did it.
+    if not all(math.isfinite(component) for component in propagated):
+        raise RelativeMotionError(
+            f"propagating {state!r} by {seconds!r} seconds at mean motion {n!r} overflowed"
+            f" to {propagated!r}"
+        )
     return RelativeState(
         position_km=(next_x, next_y, next_z),
         velocity_km_s=(next_dx, next_dy, next_dz),
@@ -219,8 +256,31 @@ def relative_acceleration_km_s2(
     The differential equations the closed form solves, exposed rather than buried, so a test can
     integrate them independently and compare. A closed form checked only against the algebra that
     produced it is checked against nothing.
+
+    **Guarded like every sibling, which it was not.** This function was added to the package's
+    public `__all__` in the same change that closed five boundary escapes elsewhere in this
+    module, with no validation of its own: `n` non-finite returned a silent `(nan, nan, nan)`,
+    `n=1e200` raised an undocumented `OverflowError` from the square, and a NaN state component
+    passed straight through. Exporting a function is what makes its boundary a boundary, so the
+    export and the guard belong in the same change.
     """
+    components = (*state.position_km, *state.velocity_km_s)
+    if not all(math.isfinite(component) for component in components):
+        raise RelativeMotionError(f"relative state must be finite, got {state!r}")
+    if not math.isfinite(mean_motion):
+        raise RelativeMotionError(f"mean motion must be finite, got {mean_motion!r}")
+
     x, _, z = state.position_km
     dx, dy, _ = state.velocity_km_s
     n = mean_motion
-    return (3.0 * n**2 * x + 2.0 * n * dy, -2.0 * n * dx, -(n**2) * z)
+    try:
+        acceleration = (3.0 * n**2 * x + 2.0 * n * dy, -2.0 * n * dx, -(n**2) * z)
+    except OverflowError as overflow:
+        raise RelativeMotionError(
+            f"the acceleration overflowed at mean motion {n!r} for state {state!r}"
+        ) from overflow
+    if not all(math.isfinite(component) for component in acceleration):
+        raise RelativeMotionError(
+            f"the acceleration overflowed to {acceleration!r} at mean motion {n!r}"
+        )
+    return acceleration

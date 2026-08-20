@@ -154,7 +154,7 @@ the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 661 passed and 1 skipped, coverage 98.97%
+- [x] Verification loop green (`sh scripts/verify.sh`), 756 passed and 1 skipped, coverage 99.02%
 - [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.22.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
@@ -162,7 +162,8 @@ the volume.
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
 - [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0).** An
       earlier PASS at commit `068b1c4` is not evidence about this tree and the tick claiming it has
-      been removed: eleven commits and roughly 1,900 lines have landed since. Every finding from
+      been removed: 18 commits and 8,279 inserted lines have landed since (measured, not
+      estimated). Every finding from
       that FAIL is closed in this release; the gate re-runs against this head and the tick goes
       back only on the verdict itself.
 - [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0)**, on the
