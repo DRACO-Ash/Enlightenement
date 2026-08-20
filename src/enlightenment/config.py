@@ -38,6 +38,15 @@ LONG_TOKEN_LENGTH = 64
 #: Values that turn the explicit local anonymous-write mode on.
 TRUTHY = frozenset({"1", "true", "yes", "on"})
 
+#: Origins that are refused outright rather than configured.
+#:
+#: ``*`` is the obvious one. ``null`` is the one that was missed: it is the literal Origin a
+#: sandboxed iframe or a ``file://`` page sends, so allowing it grants a named origin to callers
+#: that have none. No privilege follows here today - no cookie credentials, `allow_credentials`
+#: unset, and the token is a custom header a hostile page cannot obtain - but a control that
+#: refuses the wildcard while accepting the anonymous origin is only half a control.
+REFUSED_ORIGINS = frozenset({"*", "null"})
+
 
 class ConfigError(RuntimeError):
     """Raised when configuration is invalid. The app refuses to start rather than guess."""
@@ -161,11 +170,15 @@ def _resolve_host(raw: str, *, auth_required: bool) -> str:
 
 def _validate_access(*, team_token: str, allowed_origin: str, allow_anonymous: bool) -> None:
     """Fail closed on any access posture that cannot be justified."""
-    if allowed_origin == "*":
+    # Case-folded, because `NULL` slipped past the first version of this check. The literal a
+    # browser sends is lowercase, so an uppercase spelling is a configuration mistake rather than
+    # an attack - but a refusal a one-word change defeats is not a refusal.
+    if allowed_origin.strip().casefold() in REFUSED_ORIGINS:
         raise ConfigError(
-            "refusing to start: ALLOWED_ORIGIN is '*'. A wildcard origin lets any web "
-            "page drive this API. Set it to the application's real origin, or leave it "
-            "unset to emit no cross-origin header at all."
+            f"refusing to start: ALLOWED_ORIGIN is {allowed_origin!r}. A wildcard origin lets "
+            "any web page drive this API, and 'null' is the Origin a sandboxed iframe or a "
+            "file:// page sends, so allowing it names no real caller. Set it to the "
+            "application's real origin, or leave it unset to emit no cross-origin header at all."
         )
     if team_token and len(team_token) < MIN_TOKEN_LENGTH:
         raise ConfigError(

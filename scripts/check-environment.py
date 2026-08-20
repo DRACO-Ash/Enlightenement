@@ -86,6 +86,22 @@ class UnparsedLine(NamedTuple):
     text: str
 
 
+def requirement_lines(lockfile: Path) -> list[str]:
+    """Split ``lockfile`` on newlines ONLY, never with `str.splitlines()`.
+
+    `str.splitlines()` also splits on the vertical tab, form feed, the file and group separators,
+    NEL and the Unicode line and paragraph separators. A requirements file has exactly one line
+    terminator that means anything, and treating those others as breaks is a disclosure path: a
+    credential URL containing one is torn into two "lines", NEITHER of which holds the ``@`` the
+    redaction pattern anchors on, so both halves echo in clear. Measured: a token embedded before
+    a ``\\x0b`` printed in full.
+
+    Splitting on ``\\n`` keeps such a line whole, so `redact()` sees the URL it is meant to see -
+    and `redact()` neutralises the separator itself as a second layer.
+    """
+    return [line.rstrip("\r") for line in lockfile.read_text().split("\n")]
+
+
 def read_pins(lockfile: Path) -> dict[str, str]:
     """Return `{canonical name: version}` for every applicable pin in ``lockfile``.
 
@@ -95,7 +111,7 @@ def read_pins(lockfile: Path) -> dict[str, str]:
     this leg.
     """
     pins: dict[str, str] = {}
-    for raw in lockfile.read_text().splitlines():
+    for raw in requirement_lines(lockfile):
         line = raw.strip()
         if not _is_requirement_line(line):
             continue
@@ -116,7 +132,7 @@ def read_unparsed(lockfile: Path) -> list[UnparsedLine]:
     exactly how the extras form went unnoticed.
     """
     unparsed: list[UnparsedLine] = []
-    for number, raw in enumerate(lockfile.read_text().splitlines(), start=1):
+    for number, raw in enumerate(requirement_lines(lockfile), start=1):
         line = raw.strip()
         if not _is_requirement_line(line):
             continue
@@ -191,30 +207,78 @@ def _marker_applies(marker: str | None) -> bool:
 #: reaches a report that exists to echo lines no tool would accept.
 URL_CREDENTIALS = re.compile(r"(?P<scheme>(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)[^/?#\s]+@")
 
+#: A credential carried as a query parameter. Some private indexes do this rather than using
+#: userinfo, so a pattern scoped to userinfo alone leaves them in clear.
+#: A credential carried as a query parameter. Some private indexes do this rather than using
+#: userinfo, so a pattern scoped to userinfo alone leaves them in clear.
+#:
+#: The parameter NAME may carry a prefix, and the first version did not allow one: it required
+#: the name to start immediately after ``?`` or ``&``, so ``X-Amz-Signature=`` - the presigned-URL
+#: form, and the one a real object-store direct reference uses - did not match at all.
+QUERY_CREDENTIALS = re.compile(
+    r"(?P<parameter>[?&][^=&\s]*?"
+    r"(?:token|password|passwd|secret|api[-_]?key|signature|credential)=)"
+    r"[^&\s]+",
+    re.IGNORECASE,
+)
+
+#: Characters that split a line for `str.splitlines()` or terminate `\s` in a pattern, but are
+#: not the ordinary space or tab an operator would type. Neutralised before matching, because
+#: `\s` in the authority pattern matches them: one embedded ``\x0b`` inside userinfo terminated
+#: the run early, the ``@`` was never reached, and the token printed in full. pip would reject
+#: such a line, which is precisely why it reaches the report that exists to echo unusable lines.
+NON_PRINTABLE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+
+#: An authority run left with no terminator by the length cut. Whatever it is - a hostname or
+#: the front of a token - it is redacted, because the two cannot be distinguished after the cut
+#: and only one of the two mistakes discloses a credential.
+DANGLING_AUTHORITY = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*:)?//[^/?#\s]*$")
+
 
 def redact(text: str) -> str:
-    """Return ``text`` with any URL userinfo replaced by a marker, bounded in length.
+    """Return ``text`` with any URL credential replaced by a marker, bounded in length.
 
     This function exists because the fix for a fail-open branch introduced an echo. Reporting
     the lines it cannot parse is what stopped `check-environment.py` silently skipping them, and
     a private-index setup can legitimately hold a token in a direct reference. The report is
     written to stderr, which lands in a CI log, so it is a disclosure path.
 
-    Rendered as the house redaction marker rather than removed, so a reader can see that
-    something was withheld rather than wondering whether the line was truncated.
+    **Four passes, and the order is the correctness argument.**
 
-    **Truncated first, and that is the fix for a real stall rather than tidiness.** The pattern
-    scans an authority run from every `//` in the line, so a crafted line of repeated `a://`
-    followed by a long run backtracks quadratically: 86KB measured at 21s, in leg one of the
-    loop. Nothing hostile reaches here - lock files are developer-supplied and never touch the
-    HTTP edge - but a leg that can be stalled for twenty seconds by one line is a leg that gets
-    blamed for hanging. A requirement line longer than the bound is not something an operator
-    needs echoed in full anyway, and the truncation is marked so the report never looks complete
-    when it is not.
+    0. NEUTRALISE non-printable characters. The whitespace class in the authority pattern
+       matches the vertical tab and
+       friends, so one control character embedded inside userinfo terminated the run early, the
+       ``@`` was never reached, and the token printed in full.
+
+    1. TRUNCATE, because the pattern scans an authority run from every ``//`` and a crafted line
+       of repeated ``a://`` backtracks quadratically: 13.96s on 86KB, measured, inside leg one of
+       the loop. Nothing hostile reaches here, but a leg that can be stalled for fourteen seconds
+       by one line gets blamed for hanging.
+    2. REDACT userinfo, and query-string credentials, which some indexes carry as parameters.
+    3. STRIP THE DANGLING AUTHORITY the cut created. This step is the whole reason for the
+       rewrite. Truncating FIRST can land inside userinfo and remove the ``@`` the pattern
+       anchors on, so the token prefix then printed verbatim. Measured on the documented Google
+       Artifact Registry form, ``https://oauth2accesstoken:ya29.<520 chars>@...``: **463
+       characters of the access token reached stderr**. The truncation added to fix a stall
+       created a credential disclosure, which is worse than the stall.
+
+    Over-redaction is still avoided: an authority run stops at ``/``, ``?`` and ``#``, so an
+    ordinary index URL and an ``@`` in a path, query or fragment are untouched.
     """
-    if len(text) > MAX_ECHO_LENGTH:
-        text = f"{text[:MAX_ECHO_LENGTH]}[...truncated]"
-    return URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:credential]@", text)
+    text = NON_PRINTABLE.sub("\ufffd", text)
+    truncated = len(text) > MAX_ECHO_LENGTH
+    if truncated:
+        text = text[:MAX_ECHO_LENGTH]
+    text = URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:credential]@", text)
+    text = QUERY_CREDENTIALS.sub(r"\g<parameter>[REDACTED:credential]", text)
+    if truncated:
+        # A cut can leave an authority with no terminator, which is either a hostname or the
+        # front of a credential. It cannot be told apart here, so it is redacted either way:
+        # losing a hostname from one over-long line costs a diagnosis, printing a token costs
+        # the credential.
+        text = DANGLING_AUTHORITY.sub("//[REDACTED:credential-partial]", text)
+        return f"{text}[...truncated]"
+    return text
 
 
 def canonicalise(name: str) -> str:

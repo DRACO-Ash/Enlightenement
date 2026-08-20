@@ -2,6 +2,99 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.20 (2026-08-20)
+
+**What.** Both gates FAILED V0.19. The security gate's MAJOR is the one that matters: the
+truncation I added in V0.18 to stop a stall turned the credential control into a credential
+LEAK. The engineering gate then found a BLOCKER of the same shape one layer along - my own fix
+for that leak left the suite red and I had not run the loop after writing it.
+
+### MAJOR: my performance fix disclosed the credential it was protecting
+
+`redact()` truncated BEFORE redacting. A cut landing inside userinfo removes the `@` the pattern
+anchors on, so nothing matches and the token prints. Measured on the documented Google Artifact
+Registry form, `https://oauth2accesstoken:ya29.<520 chars>@...`: **463 characters of the access
+token reached stderr**, which lands in a CI log. Both gates reproduced it independently.
+
+The truncation itself is load-bearing - 13.96s on 86KB of crafted input without it, inside leg
+one of the loop - so the order is now four passes: neutralise non-printables, truncate, redact
+userinfo and query credentials, then **strip the dangling authority the cut created**. That last
+pass is the fix: after a cut, an unterminated authority is either a hostname or the front of a
+token, and the two cannot be distinguished, so it is redacted either way. Losing a hostname from
+one over-long line costs a diagnosis; printing a token costs the credential.
+
+**Two more bypasses in the same control, both found by the gate.**
+
+● **The split, not the pattern.** `str.splitlines()` also breaks on the vertical tab, form feed,
+  NEL and the Unicode line separators, so a credential URL containing one was torn into two
+  "lines" and NEITHER half held the `@`. Fixed at the cause: `requirement_lines()` splits on `\n`
+  only. A requirements file has exactly one line terminator that means anything.
+● **The parameter name may carry a prefix.** `X-Amz-Signature=` - the presigned-URL form, which
+  is what a real object-store direct reference uses - did not match, because the pattern required
+  the credential name to start immediately after `?` or `&`.
+
+Nine credential forms are now parametrised and all nine are clean; five no-credential URLs are
+the control against over-redaction; the pathological input runs in 0.0005s.
+
+### BLOCKER: I wrote the fix and did not run the loop
+
+The engineering gate found the suite RED in my working tree. The new query-credential pattern
+correctly redacts `?token=`, which contradicted an existing case asserting no marker appears for
+`?token=a@b`. The new behaviour was right and the fixture was wrong - some indexes do carry a
+token as a query parameter - so the fixture now uses a non-credential parameter. But the reason
+it reached a reviewer at all is that I ran targeted probes instead of the loop, in the release
+whose subject is running the assertion before writing the sentence about it.
+
+A second failure in the same tree: my "fail loudly on a broken override" change made the three
+deferral tests exit 2 instead of 3, because their helper set the override to a stub that refuses
+`info`. The helper now stubs both engine names on PATH and sets no override, which is the honest
+test of the deferral path - discovery tries `podman` then `docker` BY NAME, and PATH resolves both
+to the stubs whatever the runner has.
+
+### MAJOR: an assertion that cannot fail, in the evidence base
+
+`assert all(...) or True` stood in `tests/test_appstore_contract.py`. Unconditionally true, so
+not a control, in the file every claim in this project rests on. Deleted rather than repaired.
+It also falsified the "no dead code" row in `READINESS.md`, which is corrected there.
+
+### MAJOR: the version guard had zero coverage
+
+`package-appstore.sh` refuses a version that disagrees with `pyproject.toml`. Deleting the whole
+block left the suite green: `_latest_artefact()` always invokes the script WITH the declared
+version, so the refusal branch was unreachable from the suite. Now tested directly - exit 2, the
+diagnostic on stderr, and no archive written.
+
+### Smaller findings, all closed
+
+● **`ALLOWED_ORIGIN=null` was accepted** while `*` was refused. `null` is the literal Origin a
+  sandboxed iframe or a `file://` page sends, so admitting it names no real caller. Both refused
+  now, case-folded, because `NULL` defeated the first fix.
+● **"Physics is unreachable from any HTTP route" was true and unpinned.** Now asserted by
+  building the app in a clean SUBPROCESS and checking what got imported. The first version cleared
+  `sys.modules` in-process and proved nothing - `enlightenment.app` is already cached from earlier
+  tests, so its imports never re-run, and a planted `from enlightenment.physics import ...`
+  SURVIVED it. The subprocess version kills that mutant.
+● **`auth.py` overclaimed.** Its docstring said the comparison "leaks neither the length nor the
+  position of a mismatch". The length guard short-circuits, so length IS distinguishable by
+  timing. Harmless here - the length is not a secret and `/api/v1/diagnostics` publishes a coarse
+  bucket by design - but a crypto claim that overstates itself is worse than none, because it is
+  the comment a reader trusts instead of the code.
+● **A stale count and a stale record.** A docstring said "34 `.pyc` files", already 36 by the
+  next run; it now states the property. And the V0.19 row said run 13 "was heading the same way"
+  when the API had settled it as a failure.
+● **The coverage-artefact guards skip on the platform**, because the artefact deliberately does
+  not carry `coverage.xml`. Their docstring now says so, and names the configuration guard that
+  actually carries the control.
+● **Two build-time seams were undocumented.** `ENLIGHTENMENT_CONTAINER_ENGINE` and
+  `ENLIGHTENMENT_PYTHON` now appear in `docs/DEPLOYMENT.md`, with an explicit note that neither
+  belongs in the platform's environment tab. A changelog entry is a record, not documentation.
+
+**Verified.** Loop green under the pinned toolchain: **558 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
+branch. Pipeline simulation green: **555 passed, 4 skipped**. Every control added or changed here
+is mutation-proved: the redaction at both echo sites and across nine forms, the version guard,
+the import-graph pin, the origin refusal, the explicit-override failure.
+
 ## V0.19 (2026-08-20)
 
 **What.** A flaky test, found by committing a red loop, plus the two App Store skills I had not
@@ -69,8 +162,9 @@ claimed closed.
 ### CI was RED for three commits and I never looked
 
 The readiness skill is explicit: read the ACTUAL run conclusion, because a workflow file
-existing is not evidence it passed. Doing that for the first time: runs 11 and 12 both concluded
-`failure`, and run 13 was heading the same way. I had been reporting "loop green" from this
+existing is not evidence it passed. Doing that for the first time: runs 11, 12 and 13 ALL
+concluded `failure` - 13 was still in progress when I first looked and I recorded it as "heading
+the same way", which the API later settled as a failure. I had been reporting "loop green" from this
 machine while the pipeline was red.
 
 **The cause was my own Podman change, one commit earlier.** Three tests prove

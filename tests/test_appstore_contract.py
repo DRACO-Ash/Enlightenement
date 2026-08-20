@@ -533,12 +533,17 @@ def _run_build_image(tmp_path: Path, stub: str) -> subprocess.CompletedProcess[s
         fake = bin_dir / name
         fake.write_text(stub, encoding="utf-8")
         fake.chmod(0o755)
-    env = {
-        **os.environ,
-        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        # Explicit, so the test does not depend on which engines the runner happens to have.
-        "ENLIGHTENMENT_CONTAINER_ENGINE": str(bin_dir / "podman"),
-    }
+    # PATH stubs only, and no explicit override. Stubbing both names is what makes the deferral
+    # reachable: the discovery loop tries `podman` then `docker` BY NAME, and PATH resolves both
+    # to these stubs, so no real engine is consulted whatever the runner has installed.
+    #
+    # The override is deliberately NOT set here. It now fails loudly (exit 2) when it names an
+    # unusable engine, which is correct - an explicit choice that silently falls back to
+    # discovery would build with something the caller did not ask for - but it is a different
+    # exit code from the deferral this helper's callers assert. Its own behaviour is covered by
+    # `test_the_build_script_honours_an_explicit_engine_override` and
+    # `test_an_unusable_explicit_engine_fails_rather_than_falling_back`.
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
     shell = shutil.which("sh")
     assert shell, "no POSIX shell on PATH"
     return subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script path
@@ -1558,11 +1563,16 @@ def test_a_scheme_relative_url_credential_is_redacted() -> None:
 @pytest.mark.parametrize(
     "line",
     [
-        "pkg @ https://mirror.example.invalid?token=a@b",
+        # `?token=` is now redacted deliberately, so the query case here uses a parameter that
+        # is NOT a credential name. The previous fixture was `?token=a@b`, which asserted no
+        # marker appeared and so contradicted the query-credential control the moment it landed.
+        # The old expectation was the wrong one: some private indexes carry a token as a query
+        # parameter, and leaving those in clear is the leak, not the redaction.
+        "pkg @ https://mirror.example.invalid?ref=a@b",
         "pkg @ https://mirror.example.invalid#frag@x",
         "pkg @ git+https://host.invalid/o/r.git@v1.2.3",
     ],
-    ids=["at-sign in the query", "at-sign in the fragment", "the pip ref-pin form"],
+    ids=["at-sign in a non-credential query", "at-sign in the fragment", "the pip ref-pin form"],
 )
 def test_an_at_sign_outside_the_userinfo_does_not_trigger_redaction(line: str) -> None:
     """Over-redaction is not the safe direction, and the earlier control test could not see it.
@@ -1598,10 +1608,21 @@ def test_an_over_long_requirement_line_is_truncated_before_being_echoed() -> Non
 
 
 def _coverage_report() -> Path:
-    """The Cobertura report at the exact path the platform reads it from."""
+    """The Cobertura report at the exact path the platform reads it from.
+
+    **Where this actually runs, stated because the docstrings around it implied more.** The
+    artefact deliberately does NOT carry `coverage.xml` - the platform generates it - so on the
+    platform runner these two guards SKIP. Locally they read the file `pytest-cov` wrote at the
+    end of the previous session, not this one, because the report is emitted at session end.
+
+    So the load is carried by `test_coverage_is_configured_to_emit_relative_paths`, which reads
+    `pyproject.toml` and cannot skip anywhere. That one is mutation-proved: deleting
+    `relative_files` turns it red. These two are a useful second look at a real report, not the
+    control, and saying otherwise would be the "asserts prose" pattern in a docstring.
+    """
     report = ROOT / "coverage.xml"
     if not report.is_file():
-        pytest.skip("coverage.xml is absent; this asserts the artefact, not the suite")
+        pytest.skip("coverage.xml is absent; the configuration guard carries this control")
     return report
 
 
@@ -1662,8 +1683,9 @@ def test_coverage_is_configured_to_emit_relative_paths() -> None:
 #   ● at least one recognisable source file outside build output.
 #
 # Asserted against the ARTEFACT as well as the repository, because the two differ: this working
-# tree carries 34 .pyc files and four __pycache__ directories from ordinary test runs, none of
-# them tracked and none of them packaged. The upload is what gets judged.
+# tree carries bytecode and __pycache__ directories from ordinary test runs, none of them
+# tracked and none of them packaged. The upload is what gets judged. A COUNT is deliberately not
+# quoted here: the earlier version said "34 .pyc files", which was already 36 by the next run.
 
 #: Extensions the App Store rejects on sight.
 REJECTED_SUFFIXES = (
@@ -1765,9 +1787,13 @@ def test_the_dockerfile_is_at_the_repository_root() -> None:
 
 def test_the_repository_carries_recognisable_source_outside_build_output() -> None:
     """The "empty repo" rejection. Trivially true today, and free to keep true."""
-    sources = list((ROOT / "src").rglob("*.py"))
-    assert sources, "no Python source under src/"
-    assert all("__pycache__" not in path.parts for path in sources) or True
+    # `assert ... or True` stood here, which is unconditionally true and so was not a control at
+    # all - in the file that is this project's whole evidence base. Deleted rather than repaired:
+    # the assertion below is the real check and it satisfies this test's name. What the vacuous
+    # line was reaching for - that no build output sits under src/ - is covered properly by
+    # `test_the_repository_tracks_no_prebuilt_binary_or_build_output`.
+    sources = [path for path in (ROOT / "src").rglob("*.py") if "__pycache__" not in path.parts]
+    assert sources, "no recognisable Python source under src/ outside build output"
 
 
 def test_the_verification_loop_gitignores_what_upload_would_reject() -> None:
@@ -1816,7 +1842,7 @@ def test_the_artefact_carries_nothing_the_upload_would_reject() -> None:
     """The rejection criteria applied to the thing being judged.
 
     The repository test above covers tracked files; this covers the archive, and the two differ.
-    This working tree carries 34 `.pyc` files and four `__pycache__` directories from ordinary
+    This working tree carries bytecode and `__pycache__` directories from ordinary
     test runs. None is tracked and none is packaged, but only the archive assertion proves the
     second half.
     """
@@ -1925,4 +1951,146 @@ def test_the_build_script_prefers_podman_because_the_platform_uses_it() -> None:
     candidates = next(line for line in lines if "for candidate in" in line)
     assert candidates.index("podman") < candidates.index("docker"), (
         f"Docker is tried before Podman, which is not what the platform uses: {candidates}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("description", "line", "secret"),
+    [
+        (
+            "userinfo straddling the length cut",
+            "pkg @ https://oauth2accesstoken:ya29." + "A" * 520 + "@eu.pkg.dev/p/r/pkg.whl",
+            "AAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "a control character breaking the authority run",
+            "pkg @ https://ghp_" + "B" * 40 + "\x0btail@host.invalid/x.whl",
+            "BBBBBBBBBBBBBBBBBBBB",
+        ),
+        (
+            "a unicode line separator doing the same",
+            "pkg @ https://ghp_" + "B" * 40 + "\u2028t@host.invalid/x.whl",
+            "BBBBBBBBBBBBBBBBBBBB",
+        ),
+        (
+            "a credential as a query parameter",
+            "pkg @ https://host.invalid/x.whl?password=ghp_" + "C" * 30,
+            "CCCCCCCCCCCCCCCCCCCC",
+        ),
+        (
+            "a presigned URL signature",
+            "pkg @ https://bucket.s3.invalid/p.whl?X-Amz-Signature=" + "D" * 40,
+            "DDDDDDDDDDDDDDDDDDDD",
+        ),
+    ],
+    ids=["straddles the cut", "control character", "unicode separator", "query param", "presigned"],
+)
+def test_no_credential_survives_the_truncation_or_the_separators(
+    description: str, line: str, secret: str
+) -> None:
+    """The three bypasses the security gate found in the fix for the previous three.
+
+    The straddle case is the serious one and it was MY fix that created it. Truncation was added
+    to stop a fourteen-second stall, and it ran BEFORE redaction, so a cut landing inside
+    userinfo removed the `@` the pattern anchors on. Measured on the documented Google Artifact
+    Registry form: 463 characters of the access token reached stderr, which lands in a CI log.
+    A control whose own performance fix discloses the credential is worse than the stall.
+
+    The separators are the same shape one layer down: `\\s` in the authority pattern matches
+    `\\x0b` and the Unicode line separators, so one embedded control character terminated the run
+    early and the token printed in full. pip rejects such a line, which is exactly why it reaches
+    the report that exists to echo lines no tool would accept.
+    """
+    result = _run_environment_check(f"{line}\n")
+    assert result.returncode != 0
+    assert secret not in result.stderr, f"{description}: the credential reached stderr"
+
+
+def test_an_unusable_explicit_engine_fails_rather_than_falling_back() -> None:
+    """An explicit override that does not work is an error, not a hint.
+
+    Falling through to PATH discovery would build with an engine the caller did not ask for, and
+    a silent fallback on this exact seam is how three tests drifted from the runner they ran on.
+    Exit 2, distinct from the deferral's exit 3, so the two conditions are never confused.
+    """
+    shell = shutil.which("sh")
+    assert shell, "no POSIX shell on PATH"
+    result = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
+        [shell, str(ROOT / "scripts" / "build-image.sh"), "enlightenment:override"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "ENLIGHTENMENT_CONTAINER_ENGINE": "/bin/false"},
+        cwd=str(ROOT),
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 2, (
+        f"expected the explicit-override failure, got {result.returncode}"
+    )
+    assert "not runnable" in result.stderr
+
+
+def test_packaging_refuses_a_version_that_disagrees_with_the_declared_one() -> None:
+    """The guard was load-bearing and had zero coverage: deleting it left the suite green.
+
+    It exists because this repository built an 0.18.0 archive from a tree declaring 0.17.0, and
+    an inspection keyed on the declared version then examined a different file from the one just
+    written and reported it clean. `_latest_artefact()` cannot cover the refusal branch, because
+    it always invokes the script WITH the declared version.
+    """
+    shell = shutil.which("sh")
+    assert shell, "no POSIX shell on PATH"
+    forged = "0.0.0-not-the-declared-version"
+    result = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
+        [shell, str(ROOT / "scripts" / "package-appstore.sh"), forged],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 2, f"the mismatch was accepted: {result.stdout[-300:]}"
+    assert _pyproject()["project"]["version"] in result.stderr
+    assert not (ROOT / "dist" / f"enlightenment-appstore-{forged}.zip").exists(), (
+        "an archive was written for a version the tree does not declare"
+    )
+
+
+def test_the_physics_core_is_unreachable_from_any_http_route() -> None:
+    """An import-graph property, asserted because it was claimed and unpinned.
+
+    Both binding gates verified by inspection that nothing outside `src/enlightenment/physics/`
+    imports the package, so a fabricated state vector or the `sgp4` extension's measured
+    non-determinism cannot be reached from the edge. Nothing STOPPED a future route reaching it.
+
+    Run in a SUBPROCESS, and that is the whole reason this works. The first version cleared
+    `physics` and `sgp4` out of `sys.modules` and re-imported `create_app` in-process, which
+    proves nothing: `enlightenment.app` is already cached from earlier tests, so its import
+    statements never execute again. Mutation-proved - a `from enlightenment.physics import ...`
+    added to `app.py` SURVIVED that version. A clean interpreter cannot be fooled by session
+    state.
+    """
+    probe = (
+        "import sys, tempfile\n"
+        "from enlightenment.app import create_app\n"
+        "from enlightenment.config import load_config\n"
+        "with tempfile.TemporaryDirectory() as d:\n"
+        "    create_app(config=load_config(env={'DATA_DIR': d}))\n"
+        "reached = sorted(n for n in sys.modules if '.physics' in n or n.startswith('sgp4'))\n"
+        "print('\\n'.join(reached))\n"
+    )
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a constant probe
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, f"the probe could not build the app: {result.stderr[-400:]}"
+    reached = [line for line in result.stdout.splitlines() if line.strip()]
+    assert not reached, (
+        "building the application imported the physics core, so it is now reachable from the"
+        f" HTTP edge: {reached}. The boundary needs input validation before that is safe."
     )

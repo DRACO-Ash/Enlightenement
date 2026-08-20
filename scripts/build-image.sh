@@ -14,14 +14,29 @@ TAG="${1:-enlightenment:local}"
 # image names, and on rootless UID mapping. Docker remains the fallback so a developer with only
 # Docker is not blocked, and the engine actually used is echoed so a build log is never
 # ambiguous about which one ran.
-ENGINE=""
-for candidate in "${ENLIGHTENMENT_CONTAINER_ENGINE:-}" podman docker; do
-  [ -n "$candidate" ] || continue
-  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" info >/dev/null 2>&1; then
-    ENGINE="$candidate"
-    break
+# An EXPLICIT override that does not work is an error, not a hint. Falling through to PATH
+# discovery would silently build with an engine the caller did not ask for, and a silent
+# fallback on this exact seam is how three tests drifted from the runner they ran on.
+if [ -n "${ENLIGHTENMENT_CONTAINER_ENGINE:-}" ]; then
+  if command -v "$ENLIGHTENMENT_CONTAINER_ENGINE" >/dev/null 2>&1 \
+    && "$ENLIGHTENMENT_CONTAINER_ENGINE" info >/dev/null 2>&1; then
+    ENGINE="$ENLIGHTENMENT_CONTAINER_ENGINE"
+  else
+    echo "FAIL: ENLIGHTENMENT_CONTAINER_ENGINE is set to" \
+      "'$ENLIGHTENMENT_CONTAINER_ENGINE', which is not runnable." >&2
+    echo "An explicit override that silently falls back to PATH would build with an engine" >&2
+    echo "you did not ask for. Unset it to use discovery, or point it at a working engine." >&2
+    exit 2
   fi
-done
+else
+  ENGINE=""
+  for candidate in podman docker; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" info >/dev/null 2>&1; then
+      ENGINE="$candidate"
+      break
+    fi
+  done
+fi
 
 if [ -z "$ENGINE" ]; then
   cat >&2 <<'BANNER'

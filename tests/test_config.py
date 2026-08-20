@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -187,3 +188,31 @@ def test_auth_required_tracks_the_token(tmp_path: Path) -> None:
     }
     assert Config(team_token="", **base).auth_required is False  # type: ignore[arg-type]
     assert Config(team_token=TOKEN, **base).auth_required is True  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["*", "null", "NULL", " Null ", "nUlL"],
+    ids=["wildcard", "null", "upper", "padded", "mixed case"],
+)
+def test_an_anonymous_or_wildcard_origin_refuses_to_start(origin: str) -> None:
+    """`null` is the Origin a sandboxed iframe or a `file://` page sends.
+
+    The first version of this gate refused `*` and accepted `null`, which grants a named origin
+    to callers that have none. No privilege follows today - no cookie credentials,
+    `allow_credentials` unset, and the token is a custom header a hostile page cannot obtain -
+    but a control that refuses the wildcard while admitting the anonymous origin is half a
+    control. The case-folded spellings are here because `NULL` defeated the fix for `null`.
+    """
+    with (
+        tempfile.TemporaryDirectory() as data_dir,
+        pytest.raises(ConfigError, match="refusing to start"),
+    ):
+        load_config(env={"ALLOWED_ORIGIN": origin, "DATA_DIR": data_dir})
+
+
+def test_a_real_origin_still_starts() -> None:
+    """The control. A gate that refused every origin would satisfy the test above."""
+    with tempfile.TemporaryDirectory() as data_dir:
+        config = load_config(env={"ALLOWED_ORIGIN": ORIGIN, "DATA_DIR": data_dir})
+    assert config.allowed_origin == ORIGIN

@@ -18,7 +18,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Category | Training / Simulation. Owner decision, 2026-08-18. If the console's list uses different wording, pick its nearest equivalent and record the exact string here rather than forcing this one |
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
-| Version | 0.19.0, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.20.0, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -60,9 +60,20 @@ token is a read-only service, never an open one.
 | `STORAGE_MOUNT_PATH` | `[delete]` | Injected by the FILE_STORAGE add-on | Code reads it at request time |
 | `DATA_DIR` | `[delete]` | Optional override | Only to point storage somewhere other than the add-on mount |
 | `ENLIGHTENMENT_TEAM_TOKEN` | **SET.** Generate at least 24 characters, mark the field SECRET | Operator-set secret | Required for this deployment: visibility is private to the team. Under 24 characters the app refuses to start. Never pasted into a comment, a document, or a commit |
-| `ALLOWED_ORIGIN` | `https://enlightenment.apps.bluestaq.com` | Operator-set | Mandatory whenever the token is set. A wildcard refuses to start whether or not a token is set |
+| `ALLOWED_ORIGIN` | `https://enlightenment.apps.bluestaq.com` | Operator-set | Mandatory whenever the token is set. `*` and `null` both refuse to start, in any letter case, whether or not a token is set. `null` is the Origin a sandboxed iframe or a `file://` page sends, so allowing it names no real caller |
 | `ENLIGHTENMENT_ALLOW_ANONYMOUS` | `[delete]` | Operator-set | Local single-user work ONLY. Opens every write route to any caller. Cannot combine with a token: the app refuses to start on the contradiction |
 | `BUILD_ID` | `[delete]` | Optional, stamped by CI | Falls back to the package version |
+
+**Build-time only, never an App Store variable:** `ENLIGHTENMENT_CONTAINER_ENGINE` selects the
+container engine `scripts/build-image.sh` uses. Podman first by default, because that is what the
+platform's containerize stage uses; Docker as a fallback. Set it only to force a specific engine
+on a developer machine. An override naming an engine that is not runnable **fails with exit 2**
+rather than falling back to discovery, because an explicit choice that silently builds with
+something else is worse than no override. It never belongs in the platform's environment tab.
+
+`ENLIGHTENMENT_PYTHON` is the same class: it selects the interpreter `scripts/verify.sh` runs
+every leg through, for a runner that installs into the system environment rather than a virtual
+environment. Build-time only.
 
 ## Access posture (read before configuring the environment tab)
 
@@ -143,8 +154,8 @@ the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 544 passed and 1 skipped, coverage 98.71%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.19.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Verification loop green (`sh scripts/verify.sh`), 558 passed and 1 skipped, coverage 98.71%
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.20.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included

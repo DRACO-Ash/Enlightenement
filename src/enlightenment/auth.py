@@ -17,9 +17,18 @@ def token_ok(given: str | None, expected: str) -> bool:
     """Return True only when ``given`` matches ``expected`` exactly.
 
     Fails closed on an unconfigured expected token: an app with no token configured
-    cannot authorise a privileged call by accident. The comparison is constant time
-    with a length guard, so it leaks neither the length nor the position of a
-    mismatch through timing.
+    cannot authorise a privileged call by accident.
+
+    **What the comparison does and does not hide, stated precisely.** `hmac.compare_digest`
+    takes time independent of WHERE the first differing byte is, so the position of a mismatch is
+    not leaked. The length guard in front of it short-circuits, so a wrong-length token returns
+    early and its length IS distinguishable by timing. That is deliberate and harmless here: the
+    length of the configured token is not treated as a secret, and `/api/v1/diagnostics` already
+    publishes a coarse length bucket unauthenticated by design.
+
+    An earlier version of this docstring claimed the comparison "leaks neither the length nor the
+    position", which is false for the first half. A crypto claim that overstates itself is worse
+    than none, because this is exactly the comment a reader trusts instead of reading the code.
     """
     if not expected:
         return False

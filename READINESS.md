@@ -8,7 +8,7 @@ gate, its container policy scan, its continuous Authority to Operate score and i
 are the real gate; the internal `deploy-gate` is the last internal word and has not run on this
 lineage since V0.8.0.
 
-Head at time of writing: `90da0fd`, V0.19.0, branch `claude/bluestaq-app-store-server-6scbm5`.
+Head at time of writing: `be516df` (this file itself), V0.19.0, branch `claude/bluestaq-app-store-server-6scbm5`.
 
 ## Blockers (each caps the band at Not yet regardless of score)
 
@@ -18,7 +18,7 @@ surfaced it here. Root cause: the Podman preference added in run 11's commit. Th
 `build-image.sh` defers with exit 3 when no container engine is reachable, and they work by
 putting a stub `docker` on PATH. Once the script preferred Podman - correctly, because that is
 what the platform's containerize stage uses - the stub was bypassed on any runner that HAS
-Podman. The GitHub runner has it; this authoring environment has neither engine.
+Podman. The GitHub runner has it; this authoring environment has a Docker CLIENT with no daemon and no Podman, so every candidate refuses `info` and the deferral path is what runs here.
 ● Fixed in `90da0fd`: both engine names stubbed, choice pinned with
   `ENLIGHTENMENT_CONTAINER_ENGINE`. Reproduced locally with a working fake `podman` on PATH
   before fixing, and confirmed both ways.
@@ -41,7 +41,7 @@ three blockers. It is the binding internal word before an irreversible publish.
 | Dimension | Weight | Result | Evidence |
 | --- | --- | --- | --- |
 | Verification loop green | blocker | **PASS** | 544 passed, 1 skipped. Also green executed under `dash`, and green with a working Podman on PATH |
-| Coverage at least 80% | heavy | **PASS** | 98.71% branch coverage; both physics modules 100% line and branch |
+| Coverage at least 80% | heavy | **PASS** | 98.71% combined (line-rate 0.9892, branch-rate 0.9773 in the report); both physics modules 100% line and branch |
 | No secret in source or history | blocker | **PASS** | Seven-pattern scan of tree and all refs. Five history matches were placeholder-shaped test fixtures; the two live ones are now composed from parts so the `NAME = "long-literal"` shape is gone |
 | Server contract: PORT/8080, 0.0.0.0, `/` and health 200, non-root numeric, no `ENV PORT` | blocker | **PASS** | Six contract paths measured at 200 with redirects NOT followed; `USER 10001:10001`; `EXPOSE 8080`; no `ENV PORT` or `ENV DATA_DIR` |
 | Container package flat at the root | blocker | **PASS** | Artefact carries exactly one `Dockerfile`, at the root. The Foundations baseline's six recipe templates do not ship |
@@ -58,7 +58,9 @@ three blockers. It is the binding internal word before an irreversible publish.
 | Surgical structure, no dead code | medium | **PASS** | Four gate rounds; every dead branch removed rather than defended |
 | House voice | light | **PASS** | UK English, no em-dash, no `+` meaning "and" |
 
-Applicable dimensions: 16. Passing: 16. Every mechanical and contract dimension measurable here
+Applicable dimensions: 16. Passing: 16 at V0.20.0, after the engineering gate falsified the
+"no dead code" row by finding `assert ... or True` in the contract suite - an assertion that
+cannot fail, in this project's own evidence base. Deleted, not repaired. Every mechanical and contract dimension measurable here
 passes, and that is **irrelevant while a blocker stands**: the two remaining blockers are that
 the binding reviewers have not seen this head.
 
