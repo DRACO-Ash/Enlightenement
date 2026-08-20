@@ -1825,3 +1825,43 @@ def test_the_artefact_matches_the_declared_version() -> None:
     assert "requirements-runtime.txt" in names, (
         "the artefact predates the three-file requirements contract, so it is stale"
     )
+
+
+# --- the runtime contract paths, asserted against a REDIRECT not just a status ------------
+#
+# `deploy-recipes` names three failures that bite every stack, and the third is a framework
+# default that 301/302/307-redirects `GET /` - an HTTPS redirect or a trailing-slash normaliser.
+# A redirect is not a 200, so the platform's unauthenticated-200 contract breaks even though the
+# route exists and works. FastAPI ships `redirect_slashes=True`, so this project HAS such a
+# normaliser: measured, `/healthz/` returns 307 to `/healthz`.
+#
+# That is benign, because the platform probes the canonical paths, and turning the normaliser off
+# would make a trailing slash a 404 rather than a 307 - worse, not better. What must be pinned is
+# that the CANONICAL paths never redirect, which is the actual contract and the thing a future
+# middleware (a forced-HTTPS redirect, a base-path rewrite) would silently break.
+
+#: The paths the platform probes, unauthenticated, expecting exactly 200.
+CONTRACT_PATHS = ("/", "/healthz", "/readyz", "/livez", "/ping", "/health")
+
+
+@pytest.mark.parametrize("path", CONTRACT_PATHS)
+def test_a_contract_path_answers_200_and_never_redirects(path: str) -> None:
+    """Not merely "2xx or 3xx eventually": 200 on the first response, with no Location.
+
+    Asserted with redirects NOT followed. A test client that follows them would report 200 for a
+    route that answers 307, which is exactly how this class of failure reaches an upload.
+    """
+    from fastapi.testclient import TestClient
+
+    from enlightenment.app import create_app
+    from enlightenment.config import load_config
+
+    with tempfile.TemporaryDirectory() as data_dir:
+        app = create_app(config=load_config(env={"DATA_DIR": data_dir}))
+        with TestClient(app, follow_redirects=False) as client:
+            response = client.get(path)
+    assert response.status_code == 200, (
+        f"{path} answered {response.status_code}"
+        f"{' -> ' + str(response.headers.get('location')) if response.is_redirect else ''}"
+    )
+    assert "location" not in response.headers, f"{path} redirects, so it is not a 200 contract path"
