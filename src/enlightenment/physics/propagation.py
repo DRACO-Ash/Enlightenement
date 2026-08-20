@@ -50,7 +50,7 @@ SGP4_ERRORS: Final[dict[int, str]] = {
     3: "perturbed eccentricity is outside the range 0 to 1",
     4: "semi-latus rectum is less than zero",
     5: "error 5 is no longer in use; it meant the satellite was underground",
-    6: "mean radius is below 1.0, which indicates the satellite has decayed",
+    6: "the orbital radius is below one Earth radius, which indicates the satellite has decayed",
 }
 
 #: An element-set line is exactly this many columns. Anything else is not a TLE.
@@ -129,6 +129,14 @@ def _check_element_line(line: object, position: int) -> str:
     A real element-set line is exactly 69 printable ASCII columns. Checking that here means
     the extension only ever sees input of the shape it documents, and every rejection
     arrives as one exception type. Fail closed at the boundary, as everywhere else.
+
+    **The width check is stricter than the library, deliberately, and the caller must know it.**
+    The 33 line-2 records in `SGP4-VER.TLE` are 103 or 104 columns as they appear in the file:
+    the harness appends start, stop and step values after the checksum. Those are refused here,
+    and the golden-vector suite passes only because its parser truncates to 69 first. Anything
+    reading raw records from that file, or from a similar harness format, must truncate before
+    calling. Correct per the element-set format, and previously unstated at the boundary, which
+    is how a caller learns it from a failure instead of from the docstring.
     """
     if not isinstance(line, str):
         raise PropagationError.from_input(f"element-set line {position} is not text")
@@ -144,40 +152,50 @@ def _check_element_line(line: object, position: int) -> str:
     return stripped
 
 
-def element_line_checksum_ok(line: str) -> bool:
+def element_line_checksum_ok(line: object) -> bool:
     """Return whether ``line`` satisfies the published TLE checksum in column 69.
 
     The rule is part of the element-set format, not something invented here: sum the digits in
     columns 1 to 68, counting a minus sign as 1 and every other character as 0, and the last
     digit is that total modulo ten.
 
-    **This is deliberately NOT a gate inside :func:`load_elements`, and the reason matters.**
-    Five of the sixty-six element-set lines in Vallado's own verification file fail it,
-    including the deliberate error case at satellite 33334. They are synthetic test vectors
-    rather than real element sets, and refusing them would refuse the reference data this
-    module is verified against. A control that rejects the authority is not a control.
+    **Returns False for anything that is not a 69-column string, rather than raising.** The
+    first version indexed column 69 directly, so an empty line raised `IndexError` and a
+    non-string raised `TypeError` - the exact defect class fixed in :func:`load_elements` in the
+    same commit, reintroduced in the function beside it, in the validator nominated as the gate
+    on author-supplied content. Both binding gates found it independently. A predicate that
+    raises is not a predicate, and a validator that raises on the input it exists to reject is
+    the fail-open shape wearing a fail-closed name.
 
-    So it lives here as a function the SCENARIO ENGINE calls in its solvability check, which
-    the flight plan requires before any generated scenario is served. That is the right place:
-    authoring-time content validation, where a wrong checksum means an author made a mistake,
-    rather than propagation time, where it would mean the reference set is wrong.
+    Trailing whitespace is stripped first, so a line read from a file with its line ending
+    intact is handled. Callers holding the raw `SGP4-VER.TLE` records must truncate the harness
+    span columns appended after column 69 themselves; this function judges what it is given.
 
-    It earns its keep because it catches the input class nothing else can. A line of the right
-    width and charset but meaningless fields passes the shape check, and the library then
-    accepts it, reports success, and returns a state built from uninitialised memory - measured
-    below in :func:`propagate_minutes_since_epoch`. Every such line tried failed this checksum.
+    **Enforced by default in :func:`load_elements`, with one documented opt-out.** Five of the
+    sixty-six element-set lines in Vallado's own verification file fail this check, including
+    the deliberate error case at satellite 33334; they are synthetic test vectors rather than
+    real element sets, so the golden-vector suite passes ``verify_checksum=False``. A default
+    that refused the reference data would be a control that refuses its own authority.
+
+    For one commit this function had no call site while a docstring described a scenario-engine
+    caller in the present tense. Both binding gates found that. It is wired now.
     """
+    if not isinstance(line, str):
+        return False
+    stripped = line.rstrip()
+    if len(stripped) != TLE_LINE_LENGTH:
+        return False
     total = 0
-    for character in line[: TLE_LINE_LENGTH - 1]:
+    for character in stripped[: TLE_LINE_LENGTH - 1]:
         if character.isdigit():
             total += int(character)
         elif character == "-":
             total += 1
-    checksum = line[TLE_LINE_LENGTH - 1]
+    checksum = stripped[TLE_LINE_LENGTH - 1]
     return checksum.isdigit() and total % 10 == int(checksum)
 
 
-def load_elements(line1: str, line2: str) -> Satrec:
+def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Satrec:
     """Build a propagator from the two element-set lines.
 
     Kept as its own function so a scenario template can be validated at authoring time
@@ -185,22 +203,40 @@ def load_elements(line1: str, line2: str) -> Satrec:
 
     Raises :class:`PropagationError` for anything the library will not accept, including the
     third-party exception types it would otherwise raise itself.
+
+    ``verify_checksum`` defaults to True because the alternative is a silent hazard. A line of
+    the right width and charset but meaningless fields is accepted by the library, which then
+    reports success and returns a state built from uninitialised memory - measured in
+    :func:`propagate_minutes_since_epoch`. The checksum is the only cheap control that sees it.
+
+    Pass ``verify_checksum=False`` only to load a line that is deliberately not a real element
+    set. Exactly one caller does: the golden-vector suite, because five of the sixty-six lines
+    in Vallado's own verification file fail the checksum, including the deliberate error case at
+    satellite 33334. They are synthetic test vectors, and a default that refused the reference
+    data would be a control that refuses its own authority.
     """
     first = _check_element_line(line1, 1)
     second = _check_element_line(line2, 2)
+    if verify_checksum:
+        for position, line in ((1, first), (2, second)):
+            if not element_line_checksum_ok(line):
+                raise PropagationError.from_input(
+                    f"element-set line {position} fails the TLE checksum in column"
+                    f" {TLE_LINE_LENGTH}"
+                )
     try:
         return Satrec.twoline2rv(first, second)
     except Exception as exc:  # pragma: no cover - see below
-        # No test covers this line, and that is stated rather than papered over. Six
-        # well-shaped but meaningless lines were fed to the library directly and it raised for
-        # none of them: it reads fixed columns and accepts whatever it finds. So with
-        # `_check_element_line` in front, this branch has no known reachable input.
+        # No test covers this line, and that is stated rather than papered over. Sixty thousand
+        # well-shaped printable-ASCII lines were fed to the library directly - thirty thousand
+        # random, thirty thousand structured mutations of a real line - and it raised for none
+        # of them: it reads fixed columns and accepts whatever it finds.
         #
         # It stays anyway, unlike the other dead branch this release removed. The difference is
         # what can be proved. There, the measurement was exhaustive over the input axis. Here,
-        # six samples of a compiled third-party surface are not an enumeration of it, and
-        # claiming otherwise is the error. A caller told to expect PropagationError should get
-        # PropagationError even from a case nobody found.
+        # sixty thousand samples of a compiled third-party surface are not an enumeration of it,
+        # and claiming otherwise is the error. A caller told to expect PropagationError should
+        # get PropagationError even from a case nobody found.
         raise PropagationError.from_input(f"the library refused the element set: {exc}") from exc
 
 
@@ -238,9 +274,12 @@ def propagate_minutes_since_epoch(elements: Satrec, minutes: float) -> StateVect
 
     The finiteness guard here catches the NaN outcome. It cannot catch the plausible one - a
     finite wrong number is indistinguishable from a finite right one at this layer. What
-    catches that is :func:`element_line_checksum_ok`, called by the scenario engine's
-    solvability check at authoring time: every meaningless line tried failed the checksum.
-    Two layers, because neither is sufficient alone, and neither is claimed to be.
+    catches that is the checksum check inside :func:`load_elements`, on by default, so a
+    meaningless element set never reaches this function at all. Two layers, because neither is
+    sufficient alone, and neither is claimed to be.
+
+    That second layer was, for one commit, a function with no call site described in the present
+    tense as though it were wired. Both binding gates found it. It is wired now.
     """
     if not math.isfinite(minutes):
         raise PropagationError.from_input(f"minutes since epoch must be finite, got {minutes!r}")

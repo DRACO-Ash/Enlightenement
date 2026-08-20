@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from hypothesis import example, given
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from enlightenment.physics import (
@@ -26,6 +26,7 @@ from enlightenment.physics import (
     shortest_separation_degrees,
     wrap_to_pi,
 )
+from enlightenment.physics.angles import HALF_TURN_DEGREES
 
 #: Finite, sane angles. Excludes NaN and infinity, which are rejected explicitly elsewhere.
 ANGLES = st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False)
@@ -36,6 +37,20 @@ JUST_BELOW_180 = math.nextafter(180.0, 0.0)
 
 #: Its radian twin.
 JUST_BELOW_PI = math.nextafter(math.pi, 0.0)
+
+#: The smallest representable longitude strictly inside the interval above -180. This is the
+#: value that falsified `test_reversing_a_separation_negates_it`: the separations are exactly
+#: antisymmetric here, and the test's tolerance-gated seam branch demanded they both be -180.
+#: Pinned as an example so the regression is deterministic rather than one-run-in-five.
+JUST_BELOW_MINUS_180_IN_RANGE = math.nextafter(-180.0, 0.0)
+
+#: Example budget for the seam properties, above Hypothesis's default of 100.
+#:
+#: The default found the antisymmetry defect in about one run in five, and I had already
+#: reported the loop green from a run that did not. A property test's verdict is only as strong
+#: as its search, and "green once" is weak evidence for a boundary this narrow. Raising the
+#: budget costs a fraction of a second on a suite that runs in thirteen.
+SEAM_EXAMPLES = 2_000
 
 #: Longitudes inside the canonical interval, to the LAST representable value.
 #:
@@ -237,18 +252,40 @@ def test_normalising_an_already_normalised_longitude_changes_nothing(angle: floa
 
 
 @given(LONGITUDES, LONGITUDES)
+@settings(max_examples=SEAM_EXAMPLES)
+@example(0.0, JUST_BELOW_180)
+@example(0.0, JUST_BELOW_MINUS_180_IN_RANGE)
 def test_separation_never_exceeds_half_a_turn(first: float, second: float) -> None:
     """The defining property: the shortest way round is never more than 180 degrees."""
     assert -180.0 <= shortest_separation_degrees(first, second) < 180.0
 
 
 @given(LONGITUDES, LONGITUDES)
+@settings(max_examples=SEAM_EXAMPLES)
+@example(0.0, JUST_BELOW_MINUS_180_IN_RANGE)
+@example(0.0, -HALF_TURN_DEGREES)
+@example(-HALF_TURN_DEGREES, 0.0)
 def test_reversing_a_separation_negates_it(first: float, second: float) -> None:
-    """Antisymmetry, except at the seam where both directions are exactly 180."""
+    """Antisymmetry, with the seam case gated on EXACT equality rather than a tolerance.
+
+    This test was the defect, not the implementation, and it took the widened `LONGITUDES`
+    domain to expose it: the near-seam band is now sampled, and the failure appeared in about
+    one run in five.
+
+    The seam special case is real. At exactly -180 both directions give -180, because the
+    half-open interval admits only one of the two ends. But the branch was written as
+    `forward == pytest.approx(-180.0)`, and `pytest.approx` defaults to a RELATIVE tolerance of
+    1e-6, so it claimed the special case for a band about 1.8e-4 degrees wide. For
+    `second = -179.99999999999997` the separations are exactly antisymmetric at
+    -179.99999999999997 and +179.99999999999997, and the test demanded the second be -180.
+
+    A tolerance on a BRANCH CONDITION is not the same thing as a tolerance on a comparison.
+    Here it widened an exact special case into a band where the general rule still applies.
+    """
     forward = shortest_separation_degrees(first, second)
     backward = shortest_separation_degrees(second, first)
-    if forward == pytest.approx(-180.0):
-        assert backward == pytest.approx(-180.0)
+    if forward == -HALF_TURN_DEGREES:
+        assert backward == -HALF_TURN_DEGREES
     else:
         assert forward == pytest.approx(-backward)
 

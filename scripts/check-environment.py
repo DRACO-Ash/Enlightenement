@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from packaging.markers import InvalidMarker, Marker
+from packaging.markers import Marker
 from packaging.version import InvalidVersion, Version
 
 EXIT_OK = 0
@@ -126,9 +126,9 @@ def _is_requirement_line(line: str) -> bool:
     Blank lines, comments, pip options, `-r` includes and the `--hash=...` continuation lines
     are all legitimately not pins. Everything else is, and must parse.
     """
-    if not line or line.startswith(("#", "-")):
-        return False
-    return not line.startswith("--hash")
+    # One test, not two: `--hash=...` already starts with `-`, so a separate check for it could
+    # never return False. The earlier version had one, under a docstring implying it did work.
+    return bool(line) and not line.startswith(("#", "-"))
 
 
 def _marker_applies(marker: str | None) -> bool:
@@ -141,8 +141,40 @@ def _marker_applies(marker: str | None) -> bool:
         return True
     try:
         return bool(Marker(marker).evaluate())
-    except InvalidMarker:
+    except Exception:  # deliberately broad; the reason is below
+        # Deliberately broad, and `InvalidMarker` alone was not enough. Measured escapes from
+        # the narrower version: `python_full_version ~= "banana"` raises `UndefinedComparison`,
+        # and `python_version >= "3." + "9" * 100000` raises `ValueError` from CPython's
+        # 4300-digit integer conversion limit. Both left this function as an uncaught traceback,
+        # fail-closed only by the coincidence that Python exits 1 and EXIT_MISMATCH is 1.
+        #
+        # `packaging` parses and evaluates a mini-language over file content, so its failure
+        # surface is not enumerable from the outside. Attacked with eighteen hostile markers it
+        # executes nothing (`__import__("os").system("id")` raises `InvalidMarker`) and does not
+        # backtrack pathologically (5,000 conjunctions in 0.08s), but "no code execution" and
+        # "only ever raises these three types" are different claims and only the first is tested.
         return True
+
+
+#: Credentials embedded in a URL, as `scheme://user:token@host`. A PEP 440 direct reference
+#: (`pkg @ https://user:token@host/pkg.whl`) is a requirement line, so it reaches the unreadable
+#: report and would otherwise be echoed to a log verbatim. Option lines such as `--index-url`
+#: are already skipped, being prefixed with a dash, so this is the one remaining path.
+URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@")
+
+
+def redact(text: str) -> str:
+    """Return ``text`` with any URL userinfo replaced by a marker.
+
+    This function exists because the fix for a fail-open branch introduced an echo. Reporting
+    the lines it cannot parse is what stopped `check-environment.py` silently skipping them, and
+    a private-index setup can legitimately hold a token in a direct reference. The report is
+    written to stderr, which lands in a CI log, so it is a disclosure path.
+
+    Rendered as the house redaction marker rather than removed, so a reader can see that
+    something was withheld rather than wondering whether the line was truncated.
+    """
+    return URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:credential]@", text)
 
 
 def canonicalise(name: str) -> str:
@@ -257,7 +289,7 @@ def main(argv: list[str]) -> int:
         # "all match" with an unmet pin sitting in the file.
         sys.stderr.write("FAIL: lines that should name a pin could not be read\n")
         for entry in found.unreadable:
-            sys.stderr.write(f"  {entry.lockfile}:{entry.number}: {entry.text}\n")
+            sys.stderr.write(f"  {entry.lockfile}:{entry.number}: {redact(entry.text)}\n")
         return EXIT_MISMATCH
 
     if not found.checked:

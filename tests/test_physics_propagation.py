@@ -31,6 +31,7 @@ bound has the less margin and is the one to watch on a new runner.
 
 from __future__ import annotations
 
+import ast
 import math
 from pathlib import Path
 
@@ -153,6 +154,20 @@ ELEMENT_SETS = dict(reversed(ELEMENT_BLOCKS))
 REFERENCE_ROWS = dict(reversed(REFERENCE_BLOCKS))
 
 
+def _reference_propagator(lines: tuple[str, str]) -> Satrec:
+    """Load a REFERENCE element set, with the checksum check deliberately off.
+
+    `load_elements` verifies the TLE checksum by default, and five of the sixty-six lines in
+    `SGP4-VER.TLE` fail it - both lines of satellite 33333 and line 1 of 33334 and 33335. They
+    are synthetic verification vectors, not real element sets, so the default that protects
+    authored content would here refuse the authority the module is measured against.
+
+    Named rather than a bare `verify_checksum=False` at each call site, so the opt-out is one
+    decision with one reason attached, and so a new test cannot inherit it by copy and paste.
+    """
+    return load_elements(*lines, verify_checksum=False)
+
+
 # --- the reference data itself, guarded so a dependency bump cannot quietly weaken this ---
 
 
@@ -231,7 +246,7 @@ def test_propagation_matches_the_vallado_reference_output(index: int) -> None:
     element_satellite, lines = ELEMENT_BLOCKS[index]
     assert element_satellite == satellite, "the two files fell out of step"
 
-    elements = load_elements(*lines)
+    elements = _reference_propagator(lines)
     compared = 0
     for tsince, x, y, z, vx, vy, vz in rows:
         try:
@@ -265,7 +280,7 @@ def test_the_whole_reference_set_is_actually_compared_not_mostly_skipped() -> No
         REFERENCE_BLOCKS, ELEMENT_BLOCKS, strict=True
     ):
         assert element_satellite == satellite
-        elements = load_elements(*lines)
+        elements = _reference_propagator(lines)
         for row in rows:
             try:
                 propagate_minutes_since_epoch(elements, row[0])
@@ -285,7 +300,7 @@ def test_the_error_case_in_the_official_set_raises_instead_of_returning_numbers(
     trainer that scores an operator against a fabricated state is worse than one that refuses
     to run, so the wrapper raises.
     """
-    elements = load_elements(*ELEMENT_SETS[REFUSED_SATELLITE])
+    elements = _reference_propagator(ELEMENT_SETS[REFUSED_SATELLITE])
     tsince = REFERENCE_ROWS[REFUSED_SATELLITE][0][0]
     with pytest.raises(PropagationError) as raised:
         propagate_minutes_since_epoch(elements, tsince)
@@ -341,7 +356,7 @@ def test_a_propagated_state_carries_its_frame_and_the_frame_is_not_j2000() -> No
     The number this produces is plausible, stable, and wrong by an amount nobody notices until
     it is compared against an ephemeris from another source.
     """
-    elements = load_elements(*ELEMENT_SETS[5])
+    elements = _reference_propagator(ELEMENT_SETS[5])
     state = propagate_minutes_since_epoch(elements, 0.0)
     assert state.frame == TEME_OF_DATE
     assert "J2000" not in state.frame
@@ -365,7 +380,7 @@ def test_radius_and_speed_agree_with_the_reference_row() -> None:
     magnitudes follow from them rather than from a figure I would otherwise have to assert.
     """
     _, x, y, z, vx, vy, vz = REFERENCE_ROWS[5][0]
-    state = propagate_minutes_since_epoch(load_elements(*ELEMENT_SETS[5]), 0.0)
+    state = propagate_minutes_since_epoch(_reference_propagator(ELEMENT_SETS[5]), 0.0)
     assert state.radius_km == pytest.approx(math.dist((0.0, 0.0, 0.0), (x, y, z)), abs=1e-6)
     assert state.speed_km_s == pytest.approx(math.dist((0.0, 0.0, 0.0), (vx, vy, vz)), abs=1e-9)
 
@@ -382,7 +397,7 @@ def test_a_propagated_radius_is_in_kilometres_not_metres() -> None:
     of the named unit traps, and it shows as a radius three orders of magnitude out, far
     outside this range in either direction.
     """
-    state = propagate_minutes_since_epoch(load_elements(*ELEMENT_SETS[4632]), 0.0)
+    state = propagate_minutes_since_epoch(_reference_propagator(ELEMENT_SETS[4632]), 0.0)
     assert 6_400.0 < state.radius_km < 100_000.0
     assert 0.5 < state.speed_km_s < 15.0
 
@@ -402,13 +417,16 @@ def test_a_propagated_radius_is_in_kilometres_not_metres() -> None:
 
 def _reference_elements() -> Satrec:
     """A known-good propagator, so a boundary test fails for the reason it names."""
-    return load_elements(*ELEMENT_SETS[5])
+    return _reference_propagator(ELEMENT_SETS[5])
 
 
 @pytest.mark.parametrize("minutes", [float("inf"), float("-inf"), float("nan")])
 def test_a_non_finite_time_is_refused_rather_than_propagated(minutes: float) -> None:
     """The input half of the guard."""
-    with pytest.raises(PropagationError, match="finite"):
+    # Matched on the INPUT guard's own words. `match="finite"` was satisfied by the output
+    # guard's "non-finite state" too, so deleting the input guard left this green: two controls,
+    # one assertion, and the weaker one propping up the test for the stronger.
+    with pytest.raises(PropagationError, match="minutes since epoch must be finite"):
         propagate_minutes_since_epoch(_reference_elements(), minutes)
 
 
@@ -499,7 +517,9 @@ def test_a_meaningless_element_set_is_never_served_as_a_non_finite_state(
     assert len(line) == TLE_LINE_LENGTH, "the fixture must pass the column check to be a test"
     good_second_line = ELEMENT_BLOCKS[0][1][1]
     for _ in range(MEANINGLESS_REPEATS):
-        elements = load_elements(line, good_second_line)  # accepted, which is the point
+        # Checksum off deliberately: this test exercises the layer BELOW it, which is
+        # what has to hold if a line ever reaches the propagator without being checked.
+        elements = load_elements(line, good_second_line, verify_checksum=False)
         try:
             state = propagate_minutes_since_epoch(elements, 0.0)
         except PropagationError:
@@ -628,6 +648,114 @@ def test_a_good_element_line_with_trailing_whitespace_is_still_accepted() -> Non
     would be a fail-closed control that fails on valid data, which is its own defect.
     """
     first, second = ELEMENT_SETS[5]
-    padded = propagate_minutes_since_epoch(load_elements(first + "  \r\n", second + " "), 0.0)
-    plain = propagate_minutes_since_epoch(load_elements(first, second), 0.0)
+    padded = propagate_minutes_since_epoch(
+        load_elements(first + "  \r\n", second + " ", verify_checksum=False), 0.0
+    )
+    plain = propagate_minutes_since_epoch(_reference_propagator((first, second)), 0.0)
     assert padded.position_km == plain.position_km
+
+
+# --- the checksum gate, now that it has a caller ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("description", "line"),
+    WELL_SHAPED_BUT_MEANINGLESS,
+    ids=[d for d, _ in WELL_SHAPED_BUT_MEANINGLESS],
+)
+def test_load_elements_refuses_a_meaningless_line_by_default(description: str, line: str) -> None:
+    """The wiring, asserted. For one commit this control existed with no call site.
+
+    `verify_checksum` defaults to True, so a line of the right width and charset but
+    meaningless fields never reaches the library - which would otherwise accept it, report
+    success, and return a state built from uninitialised memory.
+    """
+    with pytest.raises(PropagationError, match="checksum"):
+        load_elements(line, ELEMENT_BLOCKS[0][1][1])
+
+
+def test_the_checksum_gate_can_be_opted_out_of_and_only_the_reference_suite_does() -> None:
+    """The opt-out exists for the reference data alone, and that is asserted not asserted-about.
+
+    A default-strict control with a widely-copied opt-out beside it is a control in name only,
+    so the number of CALL SITES that switch it off is pinned. There are three: the reference
+    propagator, and two tests that deliberately exercise the layer beneath the gate.
+
+    Counted by parsing the file, not by searching its text. The first version counted the string
+    and found six, because docstrings that discuss the opt-out and the test's own literal all
+    matched. A guard that counts mentions instead of calls measures prose.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    opt_outs = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "verify_checksum"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value is False
+    ]
+    assert len(opt_outs) == 3, (
+        f"{len(opt_outs)} call sites opt out of the checksum gate at lines"
+        f" {[node.lineno for node in opt_outs]}; each one needs a written reason"
+    )
+
+
+@pytest.mark.parametrize(
+    "not_a_line",
+    ["", " ", "1 25544U", "1" * 68, "1" * 70, None, 12345, b"1" * 69],
+    ids=["empty", "one space", "truncated", "68 columns", "70 columns", "none", "int", "bytes"],
+)
+def test_the_checksum_predicate_returns_false_rather_than_raising(not_a_line: object) -> None:
+    """A predicate that raises is not a predicate.
+
+    The first version indexed column 69 directly, so an empty string raised `IndexError` and a
+    non-string raised `TypeError`. Both binding gates found it independently: the same defect
+    class fixed in `load_elements` in that very commit, reintroduced in the validator beside
+    it. This is the input class the function exists to reject, so rejecting it must be the one
+    thing it cannot do by crashing.
+    """
+    assert element_line_checksum_ok(not_a_line) is False
+
+
+def test_the_checksum_predicate_accepts_a_real_element_set_line() -> None:
+    """The control for the test above: a validator that returned False always would pass it."""
+    good = next(
+        line for _, pair in ELEMENT_BLOCKS for line in pair if element_line_checksum_ok(line)
+    )
+    assert element_line_checksum_ok(good) is True
+    assert element_line_checksum_ok(good + "\r\n") is True, "a line ending must not matter"
+
+
+def test_the_checksum_gate_checks_line_two_as_well_as_line_one() -> None:
+    """Both lines, and the second one was an uncovered branch.
+
+    The gate loops over the pair, so a good line 1 with a bad line 2 is the case that only
+    reaches the second iteration. Coverage showed the partial branch; a wrong checksum on
+    line 2 is exactly as likely an authoring mistake as one on line 1.
+    """
+    good_first, good_second = ELEMENT_SETS[5]
+    assert element_line_checksum_ok(good_first), "the fixture's line 1 must be valid"
+
+    # Flip the checksum digit on line 2 only.
+    digit = int(good_second[TLE_LINE_LENGTH - 1])
+    bad_second = good_second[: TLE_LINE_LENGTH - 1] + str((digit + 1) % 10)
+    assert not element_line_checksum_ok(bad_second)
+
+    with pytest.raises(PropagationError, match="line 2 fails the TLE checksum"):
+        load_elements(good_first, bad_second)
+
+
+def test_the_checksum_gate_lets_a_valid_element_set_through() -> None:
+    """The positive control for the gate, and the branch nothing else reached.
+
+    Every other default-checksum call in this suite is expected to RAISE, and the reference
+    propagator opts out, so the path where both lines pass and the loop simply completes was
+    uncovered. A gate proved only by its refusals is a gate that might refuse everything.
+    """
+    first, second = ELEMENT_SETS[5]
+    assert element_line_checksum_ok(first)
+    assert element_line_checksum_ok(second)
+    state = propagate_minutes_since_epoch(load_elements(first, second), 0.0)
+    assert state.frame == TEME_OF_DATE
+    assert 6_000.0 < state.radius_km < 60_000.0

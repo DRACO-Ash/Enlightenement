@@ -2,6 +2,136 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.16 (2026-08-20)
+
+**What.** Both gates returned FAIL on V0.15. The security gate found a BLOCKER: the verification
+loop was RED at the commit I had pushed and reported green. The engineering gate found three
+MAJORs, two of them false statements in the V0.15 changelog itself.
+
+### BLOCKER: I reported the loop green from a run that was luck
+
+`test_reversing_a_separation_negates_it` fails deterministically from a clean Hypothesis
+database in about one run in five. My runs passed; the reviewer's did not. Measured: 1 failure
+in 5 clean-database runs, then reproduced 4 in 12 before the fix.
+
+**The test was the defect, not the implementation.** Its seam branch read
+`if forward == pytest.approx(-180.0)`, and `pytest.approx` defaults to a RELATIVE tolerance of
+1e-6, so it claimed the exact-seam special case for a band about 1.8e-4 degrees wide and then
+demanded the reverse separation also be -180. At `second = -179.99999999999997` the two
+separations are exactly antisymmetric, and the general rule applies. A tolerance on a BRANCH
+CONDITION is not a tolerance on a comparison: it widened an exact special case into a band where
+it does not hold. Gated on exact equality; `angles.py` needed no change.
+
+**Why it surfaced now, and the lesson that outlives it.** V0.15 widened `LONGITUDES` to the last
+representable value below 180, which is what made the near-seam band reachable. The widened
+domain immediately found a defect in the test that guarded it.
+
+The lesson is about my own claim, not the test. **A property test's verdict is only as strong as
+its search, and "green once" is weak evidence for a boundary this narrow.** I asserted a green
+loop from a single run and pushed it. The seam properties now run 2,000 examples instead of the
+default 100, the falsifying value is pinned as an explicit `@example` so the regression is
+deterministic rather than one-run-in-five, and the fix was confirmed over 12 clean-database
+runs. Twelve is still a sample; it is quoted as one.
+
+### MAJOR: two false statements in the V0.15 changelog
+
+Both are corrected in place in the V0.15 entry above, with the correction visible rather than
+edited away.
+
+● It claimed V0.14's record said the output finiteness guard was "removed as dead code,
+  measured over sixteen extreme values". **V0.14's record claimed no such thing** - the guard
+  did not exist in V0.14 and its removal was never recorded anywhere. I fabricated an entry in
+  this project's own audit trail, in the release whose entire subject is audit-trail integrity.
+  The measurement was real and happened in development; the attribution was invented.
+● It claimed the pipeline simulation's extra skip is "the leg that needs the dev toolchain".
+  **Nothing in the suite skips on that.** The real cause is `scripts/simulate-pipeline.sh`
+  setting `GITLAB_CI=true`, which makes `ON_PLATFORM_RUNNER` true and skips the
+  `.gitlab-ci.yml` assertion. Measured with `GITLAB_CI=true pytest -rs`, which names both skips.
+
+The figures in both cases were right and the explanations were invented. That is a specific
+habit worth naming: reaching for a plausible cause rather than the one the tool would have told
+me, in a record whose only value is that its explanations can be trusted.
+
+### MAJOR: a validator that raised on the input it exists to reject
+
+`element_line_checksum_ok("")` raised `IndexError` and a non-string raised `TypeError`. **Both
+binding gates found it independently** - the same defect class fixed in `load_elements` in the
+very commit that introduced this, in the function beside it. A predicate that raises is not a
+predicate. Guarded at entry, returning False for anything that is not a 69-column string, with
+eight rejection cases and a positive control pinned.
+
+### MAJOR: a control described in the present tense with no call site
+
+`element_line_checksum_ok` had zero callers while its docstring said the scenario engine calls
+it in the solvability check. The measured hazard was live: for a well-shaped but meaningless
+element set the public wrapper returns a finite, plausible fabricated state in a majority of
+cold processes, and nothing rejected it.
+
+**Wired.** `load_elements(..., verify_checksum=True)` by default. Exactly three call sites opt
+out: `_reference_propagator`, because five of the sixty-six lines in Vallado's verification file
+fail the checksum and a default that refused the reference data would be a control refusing its
+own authority, plus two tests that deliberately exercise the layer beneath the gate. The count of
+opt-out call sites is asserted **by parsing the file, not searching its text**: the first version
+counted the string and found six, because docstrings discussing the opt-out matched too. A guard
+that counts mentions instead of calls measures prose.
+
+### Controls that survived inversion, now pinned
+
+Four mutations left the previous suite green. Each is now killed:
+
+● `_marker_applies` inverted to fail open. Skipping an unevaluable marker is the same silent
+  fail-open the extras defect demonstrated.
+● `timeout=PROBE_TIMEOUT_SECONDS` deleted. Exercised against a stub interpreter that sleeps.
+● The extras group deleted from the pin pattern. The old test asserted only that "uvicorn" and
+  "9.9.9" appeared in stderr, which the unreadable-line report satisfies by echoing the raw
+  line, so it asserted less than its docstring claimed.
+● The input finiteness guard deleted. `match="finite"` was satisfied by the output guard's
+  "non-finite state" too: two controls, one assertion, the weaker propping up the stronger.
+
+### Smaller corrections
+
+● **`InvalidMarker` was not the only failure mode.** `python_full_version ~= "banana"` raises
+  `UndefinedComparison` and a 100,000-digit version literal raises `ValueError` from CPython's
+  4300-digit conversion limit. Both escaped as uncaught tracebacks, fail-closed only by the
+  coincidence that Python exits 1 and `EXIT_MISMATCH` is 1. Now caught broadly, with the reason
+  written: `packaging` evaluates a mini-language over file content, so its failure surface is
+  not enumerable from outside.
+● **The fix for the fail-open branch introduced a disclosure path.** Echoing unreadable
+  requirement lines is what stopped them being skipped, and a PEP 440 direct reference can
+  legitimately carry a token (`pkg @ https://user:token@host/pkg.whl`). URL userinfo is now
+  rendered as `[REDACTED:credential]` before anything reaches stderr and thence a CI log.
+● **`SGP4_ERRORS[6]` said "mean radius".** The library's `mrt` is the instantaneous geocentric
+  radius in Earth radii, not a mean. Corrected, since the entry above it promises the phrasing
+  is expanded for readability but never for meaning.
+● **A dead condition** in `_is_requirement_line`: a separate `--hash` check could never return
+  False, because the preceding test already excludes every line starting with a dash.
+● **The width check is stricter than the library**, and the docstring now says so: the 33 line-2
+  records in `SGP4-VER.TLE` are 103 or 104 columns as they appear in the file, so a caller
+  reading raw records must truncate to 69 first.
+
+### What the gates confirmed independently
+
+Recorded because these were my claims and they are load-bearing:
+
+● **The `sgp4` non-determinism is real.** Both gates reproduced it. One measured four of six
+  cold processes returning a finite plausible state and two refusing, then consistently all-NaN
+  once warm, with `epochyr=0`, `epochdays=0.0`, `bstar=0.0` after the parse: the line-1 fields
+  are never assigned and the accelerated propagator runs on uninitialised memory. As an
+  information-disclosure primitive it is very weak - the bytes are consumed as orbital elements
+  and pushed through trig and Kepler iteration - and unreachable, since nothing outside the
+  physics package imports it. The determinism breach and the fabricated plausible state are the
+  live risks, and both now have a wired control.
+● **5 of 66 reference lines fail the checksum**, verified against an independent implementation
+  and a published ISS element set.
+● **The `# pragma: no cover` on the library-refusal branch** was justified on six samples; a
+  gate fuzzed 60,000 well-shaped printable-ASCII lines and `twoline2rv` raised for none. The
+  justification stands on better evidence than I gave it.
+
+**Verified.** Loop green under the pinned toolchain: **498 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
+branch coverage. Pipeline simulation green: **497 passed, 2 skipped**. Four mutation tests
+confirm the newly pinned controls fail when inverted.
+
 ## V0.15 (2026-08-20)
 
 **What.** Closing the engineering gate's FAIL on V0.14 and the security gate's five MINORs.
@@ -34,8 +164,13 @@ boundary agrees with you about the interior.
 **Fixed** by folding into `[0, 360)` FIRST and subtracting a whole turn from the upper half, so
 no lossy arithmetic touches the input. Verified over 600,000 random samples plus 4,000
 exhaustive representable steps either side of both ends: zero range violations, whole-turn
-property holds, antisymmetry holds over the widened range. The old implementation fails the new
-assertions on all three counts.
+property holds, antisymmetry holds over the widened range.
+
+Precisely what the old implementation fails, since an earlier draft of this named the wrong
+three properties: it does NOT violate range, the whole-turn property or antisymmetry. It
+returns a DIFFERENT value for an input already inside the interval - 500 of 2,000 measured
+steps - and that is what the three new tests catch: the returned-unchanged assertion and the
+two drift assertions.
 
 **Also fixed:** `LONGITUDES` now runs to the last representable value below 180, and the high
 ends are pinned as explicit examples. And a new test asserts the value is returned UNCHANGED,
@@ -156,16 +291,28 @@ at 33334. They are synthetic vectors, not real element sets, and a control that 
 reference data is not a control. A test pins that count, so if a future wheel ships a corrected
 file the checksum can be promoted.
 
-**A correction against V0.14's own record.** It claimed the output guard was removed as dead
-code, "measured" over sixteen extreme values of `minutes`. That measurement held the element set
-fixed. Varying the element set instead reaches the branch immediately. The guard is back, and the
-docstring now says which axis the first measurement covered.
+**On the output guard, stated accurately this time.** V0.14 shipped without it and recorded no
+reason. The removal happened in development during this release: I added the guard, measured it
+over sixteen extreme values of `minutes` on a good element set, found the branch unreachable,
+and took it out. That measurement held the element set fixed. Varying the element set instead
+reaches the branch immediately, so the guard is back and the docstring names the axis the
+measurement covered.
 
-**Verified.** Loop green under the pinned toolchain: **479 passed, 1 skipped**, coverage 98.68%
-against a 80% floor, all three lock files audited clean. Pipeline simulation green: **478
-passed, 2 skipped**, same coverage. The two runs differ by one deliberately - the simulation
-installs only `requirements.txt`, so the leg that needs the dev toolchain skips there - and both
-figures are quoted because V0.14 quoted a number that came from neither.
+An earlier draft of this entry attributed the "removed as dead code" claim to V0.14's record.
+V0.14 made no such claim. Fabricating an entry in this project's own audit trail, in the release
+whose subject is audit-trail integrity, is worse than the defect it was describing.
+
+**Verified.** Loop green under the pinned toolchain: **498 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean. Pipeline simulation green: **497
+passed, 2 skipped**, same coverage.
+
+Both figures are quoted because V0.14 quoted one that came from neither run. The two differ by
+exactly one skip, and the cause is `scripts/simulate-pipeline.sh` setting `GITLAB_CI=true`,
+which makes `ON_PLATFORM_RUNNER` true and skips
+`test_the_platform_generates_its_own_pipeline_and_we_never_commit_one` - the platform commits
+its own pipeline, so its absence is not assertable on a platform runner. An earlier draft
+attributed the skip to a missing dev toolchain. Nothing in the suite skips on that. Measured
+with `GITLAB_CI=true pytest -rs`, which names both skips directly.
 
 ## V0.14 (2026-08-20)
 

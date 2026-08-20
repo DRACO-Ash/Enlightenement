@@ -1348,3 +1348,81 @@ def test_the_environment_check_refuses_to_run_with_no_lock_file_named() -> None:
     )
     assert result.returncode != 0
     assert "check-environment.py" in result.stderr
+
+
+def test_the_environment_check_treats_an_unevaluable_marker_as_applying() -> None:
+    """Fail closed, and this branch survived inversion with a green suite.
+
+    A marker that cannot be evaluated must not cause the pin to be SKIPPED: skipping is the
+    silent fail-open the extras defect already demonstrated. Inverting `_marker_applies` to
+    return False left the whole suite green, so the control was unasserted.
+    """
+    result = _run_environment_check("this-distribution-does-not-exist==9.9.9 ; not a marker\n")
+    assert result.returncode != 0, "an unevaluable marker caused the pin to be skipped"
+    assert "NOT INSTALLED" in result.stderr
+
+
+def test_the_environment_check_bounds_the_interpreter_probe() -> None:
+    """A wedged interpreter must fail the leg, not hang it. Also unasserted before.
+
+    Deleting `timeout=PROBE_TIMEOUT_SECONDS` left the suite green. Exercised here against a
+    stub interpreter that sleeps, with the bound lowered so the test costs a second rather than
+    a minute.
+    """
+    stub = Path(tempfile.mkdtemp()) / "sleepy-python"
+    stub.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
+    stub.chmod(0o755)
+    try:
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import runpy, sys\n"
+                    "import importlib.util\n"
+                    "spec = importlib.util.spec_from_file_location('ce', sys.argv[1])\n"
+                    "module = importlib.util.module_from_spec(spec)\n"
+                    "spec.loader.exec_module(module)\n"
+                    "module.PROBE_TIMEOUT_SECONDS = 1\n"
+                    "sys.exit(module.main(['ce', sys.argv[2], sys.argv[3]]))\n"
+                ),
+                str(ROOT / "scripts" / "check-environment.py"),
+                str(stub),
+                str(ROOT / "requirements.txt"),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode != 0, "a wedged interpreter did not fail the leg"
+        assert "did not answer within" in result.stderr
+    finally:
+        stub.unlink()
+        stub.parent.rmdir()
+
+
+def test_the_environment_check_redacts_a_credential_before_echoing_a_line() -> None:
+    """The echo that closed the fail-open branch is itself a disclosure path.
+
+    A PEP 440 direct reference is a requirement line, so an unparseable one reaches the report
+    and lands in a CI log. A private index legitimately holds a token there.
+    """
+    result = _run_environment_check("pkg @ https://alice:s3cr3t-token@example.invalid/pkg.whl\n")
+    assert result.returncode != 0
+    assert "s3cr3t-token" not in result.stderr
+    assert "alice" not in result.stderr
+    assert "[REDACTED:credential]" in result.stderr
+
+
+def test_the_extras_form_is_read_as_a_pin_not_reported_as_unreadable() -> None:
+    """The distinction the earlier version of this test could not make.
+
+    It asserted only that "uvicorn" and "9.9.9" appeared in stderr, which the unreadable-line
+    report also satisfies by echoing the raw line. Deleting the extras group from the pattern
+    left it green, so it asserted less than its docstring claimed.
+    """
+    result = _run_environment_check("uvicorn[standard]==9.9.9\n")
+    assert result.returncode != 0
+    assert "could not be read" not in result.stderr
+    assert "pinned 9.9.9, installed" in result.stderr
