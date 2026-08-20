@@ -1,6 +1,17 @@
-# RUNTIME dependencies only. Policy (dependencies skill): no new runtime dependency
-# without a recorded reason. Each reason is below. Exact pins are resolved into the
-# hash-locked requirements.txt by scripts/lock-requirements.sh.
+# RUNTIME plus TEST tooling. This file is what the App Store's generated pipeline installs
+# before it runs pytest, so it MUST carry the test tooling: the pipeline is generated and
+# cannot be edited to add a second file. A runtime-only version of this file failed the
+# platform's Test stage with `pytest: command not found`, exit 127, taking Quality, Container
+# Build and Container Scan down with it.
+#
+# The IMAGE installs requirements-runtime.txt, which is lean. Two files, two jobs:
+#   requirements-runtime.txt  -> the container image
+#   requirements.txt          -> the platform test stage and the local loop
+#   requirements-dev.txt      -> local-only lint, type and audit tooling
+#
+# Policy (dependencies skill): no new runtime dependency without a recorded reason. Each
+# reason is below. Exact pins are resolved into the hash-locked lock files by
+# scripts/lock-requirements.sh.
 #
 # fastapi  - boundary validation. Pydantic models reject a malformed body at the edge
 #            rather than coercing it, which is the fail-closed rule the security gate
@@ -8,6 +19,29 @@
 # uvicorn  - the ASGI server the App Store python recipe's gunicorn worker class needs.
 # gunicorn - the process manager in the reference CMD; gives SIGTERM handling and
 #            worker supervision the platform expects.
+# sgp4     - the propagator the flight plan mandates (MIT), and the ONLY way to score
+#            anything: every scenario, drill item and debrief is measured against
+#            propagated state. It ships the official Vallado AIAA 2006-6753
+#            verification data (SGP4-VER.TLE, tcppver.out), so the golden tests read the
+#            published reference output rather than numbers this project invented.
+#            Hand-writing SGP4 would be a fabrication risk with no upside.
+#
+# DEFERRED, with reasons, so the runtime image stays lean until each is genuinely used:
+#   numpy    - not needed for propagation or the determinism harness, which are scalar.
+#              Add it with the Clohessy-Wiltshire relative-motion work, not before.
+#   skyfield - frames and time. Deferred to the frame-conversion step; it pulls an
+#              ephemeris dependency and the air-gap posture means any data file it wants
+#              has to be vendored deliberately, not discovered at runtime.
 fastapi==0.141.1
 uvicorn==0.52.3
 gunicorn==26.1.0
+sgp4==2.24
+
+# TEST tooling. Present here because the platform's generated test stage installs THIS file
+# and then runs pytest. Kept to what running the suite needs; the lint, type and audit tools
+# stay in requirements-dev.txt because the platform never runs them.
+pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.15.4
+httpx==0.28.1
+hypothesis==6.148.4

@@ -31,7 +31,8 @@ mkdir -p "$STAGE" dist
 
 # Root-level files the platform needs. requirements.txt is the template marker.
 for file in Dockerfile .dockerignore .gitignore .python-version .env.example \
-            requirements.txt requirements-dev.txt requirements.in requirements-dev.in \
+            requirements.txt requirements-dev.txt requirements-runtime.txt \
+            requirements.in requirements-dev.in requirements-runtime.in \
             pyproject.toml sonar-project.properties README.md CLAUDE.md; do
   cp "$file" "$STAGE/$file"
 done

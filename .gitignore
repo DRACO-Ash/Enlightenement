@@ -17,6 +17,7 @@ htmlcov/
 # Tooling caches
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
 __pycache__/
 *.py[cod]
 .venv/

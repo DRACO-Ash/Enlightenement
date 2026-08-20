@@ -2,6 +2,198 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.14 (2026-08-20)
+
+**What.** The physics core of the flight plan's Phase 0, and a defect in the verification loop
+itself that was found while running it.
+
+### The verification loop was running an unpinned toolchain
+
+This one comes first because it changes the standing of earlier entries in this file.
+
+`scripts/verify.sh` invoked `ruff`, `mypy`, `pytest` and `pip-audit` by bare name, so PATH
+decided which versions ran. On this machine PATH held:
+
+| tool | on PATH | pinned |
+| --- | --- | --- |
+| ruff | 0.15.8 | 0.16.3 |
+| mypy | 1.19.1 | 2.3.1 |
+| pytest | an isolated tool environment that cannot import the application's dependencies | 9.1.1 |
+| pip-audit | absent | 2.10.1 |
+
+It surfaced as a FALSE FAILURE: ruff 0.15.8 raised S310 on `healthcheck.py`, a finding the
+pinned 0.16.3 does not raise. That is the lucky direction. The same gap produces a false PASS
+just as readily, and every other claim in this repository rests on this loop's verdict. "The
+loop is green" has to mean "green against the dependency set the container ships and the
+platform installs", or it means nothing.
+
+**Standing of the earlier rows.** Every "loop green" claim in V0.1 to V0.13 was made without a
+control on which analyser ran. The code those rows describe is unchanged and re-verified at
+this release under the pinned toolchain, so the conclusions hold; the METHOD behind them did
+not have the guarantee the rows implied. Recorded rather than quietly corrected.
+
+**Fixed.**
+
+● Every leg now runs as `"$PY" -m <tool>`, where `$PY` is resolved once from
+  `ENLIGHTENMENT_PYTHON`, then `.venv/bin/python`, then `$VIRTUAL_ENV/bin/python`, then
+  `python3`. The interpreter is echoed at the top of every run.
+● New leg one: `scripts/check-environment.py <interpreter> <lockfile>...` asserts that every
+  `name==version` pin is installed at exactly that version, reporting every divergence rather
+  than the first. First because a mismatch means every later leg measures the wrong thing.
+● Six guards in `tests/test_appstore_contract.py`. Three assert the loop's shape: no bare tool
+  name, every tool routed through `$PY`, the environment check ahead of the first analyser.
+  Three EXECUTE the checker: a missing distribution fails, a wrong version fails, a matching
+  pin passes. The last is the control, without which a script that always exited non-zero
+  would satisfy both negative tests.
+● The three shape guards were run against `git show HEAD:scripts/verify.sh` and all three
+  fail on it: five bare invocations, no module routed through `$PY`, no environment check.
+● The executed guards use a SYNTHETIC lock file, not the real `requirements.txt`. Pointing
+  them at the real file would couple the platform's test stage to the platform's install
+  fidelity, so a divergence would fail the suite instead of reporting a mismatch. A
+  self-inflicted pipeline failure is the fault that broke the last upload.
+
+`scripts/package-appstore.sh` also calls `python3`, and that stays: it uses the standard
+library only (`shutil`, `zipfile`, `hashlib`), so no third-party version can drift under it.
+`simulate-pipeline.sh` already used its own temporary environment's paths.
+
+### A real defect in the angle wrappers, found by property testing on its first run
+
+`normalise_degrees(-1.13e-78)` returned `360.0`, outside its documented `[0, 360)`. Floating
+point is the cause: the exact answer is a hair under a full turn, an amount too small to
+represent at that magnitude, so `%` rounds UP to the excluded end. `normalise_longitude` and
+`wrap_to_pi` had the same defect one representable step below their low ends.
+
+This is the module's own subject matter turned on itself. The operational form, measured not
+argued: two samples of a near-antipodal GEO pair where the target moves 1.4e-14 degrees between
+them. The naive arithmetic reports the separation as +180 then -180, so the drift between
+consecutive frames reads as a full 360 degrees. That is the ASTRA 1M artefact class exactly, and
+a trainer whose own maths manufactures it teaches the wrong lesson about competency axis five.
+
+**Fixed** with one `_fold_into_turn(value, turn)` helper all three wrappers share, so the
+guarantee lives in one place. **Verified** three ways: the three inputs are pinned as
+`@example` cases as well as properties, because a property test only rediscovers a corner if
+the search happens to reach it; a parametrised regression asserts each lands inside its
+interval; and the naive expressions were run against all four new assertions, which reject
+3 of 3 interval cases and the drift case.
+
+One correction against myself: the first version of the drift test asserted in its docstring
+that the naive path returned 180 degrees there. It returns 0.0. The docstring certified
+something the measurement disproved, so the test was rewritten around numbers taken from the
+measurement rather than from reasoning.
+
+### SGP4 against Vallado's published output
+
+`tests/test_physics_propagation.py` reads `SGP4-VER.TLE` and `tcppver.out` from inside the
+pinned `sgp4` wheel, the AIAA 2006-6753 verification distribution. 32 element sets, 641
+reference rows, 640 comparable. Worst deviation MEASURED, not chosen: 1.17e-7 km in position
+(about 0.12 mm) and 8.53e-10 km/s in velocity. Tolerances sit two orders above that, loose
+enough to survive a libm difference between platforms and tight enough to catch a regression.
+
+Reading the reference rather than transcribing a handful of vectors is the point: the hard rule
+against inventing a figure applies to test data first.
+
+Two named traps get a witness from the published data rather than a synthetic one.
+
+● **The unchecked error code.** Satellite 33334 in the official set returns SGP4 code 3,
+  instantaneous eccentricity out of range. A wrapper that ignores the code returns floats that
+  read as a position; this one raises. Vallado shipped the trap, which is stronger than an
+  element set I would have built to fail.
+● **TEME is not J2000.** The frame is carried in `StateVector` and asserted. The failure is
+  silent and grows with epoch separation, so the only defence is that it is never implicit.
+
+A guard test recounts all 641 rows independently and asserts 640 comparisons actually happened,
+because a per-satellite loop that swallows exceptions is a green suite that compared nothing.
+
+**Verified.** Loop green under the pinned toolchain: 420 passed, 1 skipped, coverage 98.61%
+against a 80% floor, all three lock files audited clean. Both physics modules at 100% line and
+branch coverage.
+
+**Still open, and needing your decision before Phase 1** (unchanged from V0.13): SQLite on the
+storage volume versus the current JSON snapshot store; the `IdentityProvider` adapter versus
+the shared team token; and a signed Data Protection Impact Assessment (DPIA) before any
+named-individual performance record is written.
+
+## V0.13 (2026-08-19)
+
+**What.** The real cause of the upload failure, read from the platform log rather than inferred,
+plus the first increment of the ENLIGHTENMENT flight plan V1.0.
+
+### The upload failure: `pytest: command not found`, exit 127
+
+The platform's generated test stage runs exactly this:
+
+```
+pip install -r requirements.txt
+pytest --cov --cov-report=xml:coverage.xml
+```
+
+It installs ONE file and knows nothing about a dev file, and the pipeline is GENERATED so it
+cannot be edited to add a second install line. `requirements.txt` held runtime dependencies
+only, so pytest was not there. Four of eight stages passed; Code Quality, Container Build and
+Container Scan were all skipped.
+
+**Two failures of mine, stated plainly.**
+
+1. **The previous release fixed the wrong thing.** `unzip` in an executed script was a real
+   latent defect and it is still worth having fixed, but it was NOT this failure. I diagnosed
+   from the symptom instead of waiting for the log, having said in the same breath that the log
+   should decide. Inference substituted for evidence and cost a cycle.
+2. **The answer was in the document I had just read.** The flight plan states the contract at
+   line 132: "two requirements files (`requirements.txt` carries all test tooling,
+   `requirements-runtime.txt` stays lean)". I read it, noted it was the inverse of the layout in
+   place, and deferred it as a separate concern. It was the fix.
+
+**The three-file contract, now honoured:**
+
+| File | Installed by | Contents |
+|---|---|---|
+| `requirements-runtime.txt` | the container image | lean runtime only |
+| `requirements.txt` | the platform's test stage, and the local loop | runtime plus the test runner |
+| `requirements-dev.txt` | local only | lint, types, vulnerability scan |
+
+**And the reason the simulation missed it, which matters more than the fix.** The simulation
+installed BOTH requirements files, so it was more generous than the platform: it went green while
+the real stage failed. It now installs exactly what the platform installs and nothing more.
+Proved by reverting the defect into a copy: the corrected simulation fails, and so does the local
+loop. A simulation that helps the code along proves nothing about the platform.
+
+Six new tests pin the contract in both directions: the test runner is present in the file the
+platform installs, the image installs the LEAN file with hashes, no test tooling reaches the
+image (asserted per tool), the simulation never installs the dev file, all three lock files are
+audited, and all three are packaged into the artefact.
+
+### Flight plan V1.0, Phase 0 step 2: the physics core
+
+The flight plan is a materially different and much larger application than what is built: an
+orbital warfare trainer with a physics core, a procedure library, a drill engine, a scoring
+engine, a debrief engine, SQLite on the storage volume and a single-file SPA. What ships today is
+a session recorder, roughly five per cent of that, and the `scenario` field is free text. So
+there is no simulation-data generation to alter yet; this is new construction, and it follows the
+plan's own ordering, which puts the physics first because everything scores against it.
+
+● **`physics/angles.py`.** The plus-or-minus-180 seam isolated in one module, because the plan
+  names angle wrapping as a regression trap and the LEARNED register records an ASTRA 1M case
+  where a millisecond epoch gap produced a drift rate of about minus 22,900,000 degrees per day.
+  `shortest_separation_degrees` is the only permitted way to difference two angles here.
+● **`physics/propagation.py`.** SGP4 wrapped so nothing else touches the library. Two of the
+  plan's named traps are closed by construction: the output frame is carried in the type, so TEME
+  cannot be silently treated as J2000; and every non-zero SGP4 return code becomes an exception,
+  because an unchecked code is a fabricated state vector and scoring an operator against one is
+  worse than refusing to run.
+
+`sgp4` is pinned with a recorded reason. `numpy` and `skyfield` are deliberately NOT added yet,
+with reasons recorded in `requirements.in`: propagation and the determinism harness are scalar, and
+skyfield's ephemeris dependency needs a deliberate vendoring decision under the air-gap posture.
+
+**How verified.** Loop green, ruff and mypy strict clean over 15 modules, `pip-audit` clean over
+all three lock files. Masked simulation green with the platform's exact install. The mypy override
+for the untyped `sgp4` surface is narrowed to that one module, so no untyped value escapes the
+wrapper.
+
+**Not yet done, and deliberately not started:** the Vallado golden vectors (the data ships inside
+the `sgp4` package as `SGP4-VER.TLE` and `tcppver.out`, so the tests will read the published
+reference output rather than invented numbers), the determinism harness, and everything in Phase 1.
+
 ## V0.12 (2026-08-19)
 
 **What.** The first real upload FAILED at the platform's Test stage: four of eight stages passed,

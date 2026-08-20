@@ -1,8 +1,8 @@
-# DEVELOPMENT and verification-loop dependencies. Never installed into the runtime image.
-pytest==9.1.1
-pytest-cov==7.1.0
-coverage==7.15.4
-httpx==0.28.1
+# LOCAL-ONLY tooling: lint, types and the vulnerability scan. The platform never runs any of
+# these, so they stay out of requirements.txt to keep its test-stage install small.
+#
+# The test RUNNER and its libraries are deliberately NOT here: they live in requirements.txt,
+# because that is the file the App Store's generated pipeline installs before running pytest.
 ruff==0.16.3
 mypy==2.3.1
 pip-audit==2.10.1

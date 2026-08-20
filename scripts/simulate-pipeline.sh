@@ -34,8 +34,11 @@ fi
 
 echo "== simulated install stage ($PINNED) =="
 "$PINNED" -m venv "$SIM/.venv"
+# ONLY requirements.txt, because that is ONLY what the platform's generated pipeline installs
+# before it runs pytest. Installing the dev file here too is what made this simulation more
+# generous than the platform: it went green while the real Test stage failed with
+# `pytest: command not found`, exit 127. A simulation that helps the code along proves nothing.
 "$SIM/.venv/bin/pip" install --quiet --require-hashes --no-deps -r "$SIM/requirements.txt"
-"$SIM/.venv/bin/pip" install --quiet --require-hashes --no-deps -r "$SIM/requirements-dev.txt"
 
 # Mask the tools a stock `python:3.12-slim` image does NOT ship, so the suite runs here the way
 # it runs there. This leg exists because a real upload failed at the Test stage on `unzip`: the

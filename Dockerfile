@@ -23,8 +23,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-COPY requirements.txt ./
-RUN pip install --require-hashes --no-deps -r requirements.txt
+# The LEAN file, deliberately not requirements.txt. requirements.txt carries the test tooling
+# because the platform's generated pipeline installs it before running pytest; shipping pytest,
+# coverage and httpx in the runtime image would add CVE surface the container never executes.
+COPY requirements-runtime.txt ./
+RUN pip install --require-hashes --no-deps -r requirements-runtime.txt
 
 # ---- prep: hygiene only; nothing may follow the suid sweep --------------------------
 FROM python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS prep

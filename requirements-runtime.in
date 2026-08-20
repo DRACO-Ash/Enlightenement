@@ -1,0 +1,17 @@
+# The LEAN RUNTIME set. This is what the container image installs, and nothing else.
+#
+# Why this file exists, and why requirements.txt is NOT the lean one: the App Store's
+# generated pipeline installs `requirements.txt` and then runs `pytest`. It does not know
+# about a dev file, and the pipeline is generated so it cannot be edited to add one. A
+# runtime-only requirements.txt therefore fails the Test stage with
+# `pytest: command not found` and exit 127, which is exactly what happened on the first real
+# upload: four of eight stages passed and Quality, Container Build and Container Scan were
+# all skipped. The flight plan states this contract (requirements.txt carries the test
+# tooling, requirements-runtime.txt stays lean) and it is now honoured.
+#
+# Policy (dependencies skill): no new runtime dependency without a recorded reason. The
+# reasons live in requirements.in alongside the same pins, so there is one place to read them.
+fastapi==0.141.1
+uvicorn==0.52.3
+gunicorn==26.1.0
+sgp4==2.24

@@ -13,8 +13,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 import zipfile
+from importlib.metadata import version as installed_version
 from pathlib import Path
 from typing import Any
 
@@ -958,3 +960,218 @@ def test_no_script_the_suite_executes_needs_an_unusual_tool() -> None:
         )
     ]
     assert offenders == [], f"a script the suite executes needs an unusual tool: {offenders}"
+
+
+# --- the requirements contract that a real upload failure taught us ---------------------
+
+
+def test_the_file_the_platform_installs_carries_the_test_runner() -> None:
+    """THE assertion this project did not have, and a real upload paid for.
+
+    The App Store's generated pipeline runs, in the test stage:
+
+        pip install -r requirements.txt
+        pytest --cov --cov-report=xml:coverage.xml
+
+    It installs ONE file and it does not know about a dev file. The pipeline is GENERATED, so
+    it cannot be edited to add a second install line. With a runtime-only requirements.txt the
+    stage died on `pytest: command not found`, exit 127, and Code Quality, Container Build and
+    Container Scan were all skipped: four of eight stages passed.
+
+    The flight plan states this contract explicitly ("requirements.txt carries all test
+    tooling, requirements-runtime.txt stays lean"). It was read, noted as the inverse of the
+    layout in place, and deferred. Hence a test rather than a note.
+    """
+    installed = "\n".join(_live_lines(ROOT / "requirements.txt"))
+    for needed in ("pytest==", "pytest-cov==", "coverage=="):
+        assert needed in installed, (
+            f"requirements.txt does not pin {needed.rstrip('=')}, so the platform's test stage "
+            "will fail with `pytest: command not found`"
+        )
+
+
+def test_the_image_installs_the_lean_file_not_the_test_one() -> None:
+    """The other half of the contract. The image must not ship the test tooling.
+
+    If the Dockerfile installed requirements.txt it would work, which is the trap: the
+    container would carry pytest, coverage and httpx, adding CVE surface the runtime never
+    executes, and the container scan judges what SHIPS.
+    """
+    assert "requirements-runtime.txt" in DOCKER_INSTRUCTIONS, (
+        "the image does not install the lean requirements file"
+    )
+    install_lines = [
+        line
+        for line in DOCKER_INSTRUCTIONS.splitlines()
+        if "pip install" in line and "requirements" in line
+    ]
+    assert install_lines, "the image has no requirements install line"
+    for line in install_lines:
+        assert "requirements-runtime.txt" in line, f"the image installs the wrong file: {line}"
+        assert "--require-hashes" in line, f"the image install is not hash-locked: {line}"
+
+
+@pytest.mark.parametrize("tool", ["pytest", "pytest-cov", "coverage", "httpx", "hypothesis"])
+def test_no_test_tooling_reaches_the_runtime_image(tool: str) -> None:
+    """The lean file stays lean, asserted per tool so one slipping in is caught by name."""
+    lean = "\n".join(_live_lines(ROOT / "requirements-runtime.txt"))
+    assert f"{tool}==" not in lean, f"{tool} is pinned in the runtime image's requirements"
+
+
+def test_the_simulation_installs_exactly_what_the_platform_installs() -> None:
+    """The simulation must not be more generous than the platform.
+
+    It installed BOTH requirements files, so it went green while the real Test stage failed on
+    a missing pytest. A simulation that helps the code along proves nothing about the platform.
+    """
+    simulation = "\n".join(_live_lines(ROOT / "scripts" / "simulate-pipeline.sh"))
+    installs = [line for line in simulation.splitlines() if "pip" in line and "install" in line]
+    assert installs, "the simulation installs nothing"
+    for line in installs:
+        assert "requirements-dev.txt" not in line, (
+            f"the simulation installs the dev file, which the platform does not: {line}"
+        )
+
+
+def test_every_lock_file_is_audited_by_the_loop() -> None:
+    """Three lock files now exist, so all three must be scanned. The runtime one is the
+    only one that ships, and it would be the easy one to forget."""
+    verify = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
+    for lockfile in ("requirements.txt", "requirements-dev.txt", "requirements-runtime.txt"):
+        assert f"audit_lockfile {lockfile}" in verify, f"{lockfile} is never audited"
+
+
+@pytest.mark.parametrize(
+    "lockfile", ["requirements.txt", "requirements-dev.txt", "requirements-runtime.txt"]
+)
+def test_the_artefact_carries_every_requirements_file(lockfile: str) -> None:
+    """The platform installs from the uploaded tree, so a missing lock file is a dead stage."""
+    packaging = "\n".join(_live_lines(ROOT / "scripts" / "package-appstore.sh"))
+    assert lockfile in packaging, f"{lockfile} is not packaged into the artefact"
+
+
+# --- the loop must run the LOCKED toolchain, not whatever PATH holds ----------------------
+#
+# This block exists because the loop was found running an unpinned toolchain. `verify.sh`
+# invoked `ruff`, `mypy`, `pytest` and `pip-audit` by bare name, so PATH decided the
+# versions. On the machine where it surfaced, PATH held ruff 0.15.8 against a pinned 0.16.3,
+# mypy 1.19.1 against a pinned 2.3.1, and a `pytest` inside an isolated tool environment that
+# could not import the application's own dependencies. It showed up as a FALSE FAILURE, which
+# is the lucky direction; the same gap yields a false pass just as readily. Every claim in
+# this repository rests on the loop's verdict, so the loop's own inputs are now asserted.
+
+#: The tool names that must never appear as a bare command in the loop.
+UNPINNED_TOOL_NAMES = ("ruff", "mypy", "pytest", "pip-audit", "pip_audit", "pip")
+
+
+def test_the_loop_never_invokes_a_tool_by_bare_name() -> None:
+    """A bare tool name lets PATH choose the analyser version. That is the whole defect."""
+    for line in _live_lines(ROOT / "scripts" / "verify.sh"):
+        first = line.strip().split(" ", 1)[0]
+        assert first not in UNPINNED_TOOL_NAMES, (
+            f"verify.sh invokes {first} by bare name, so PATH picks the version: {line.strip()}"
+        )
+
+
+def test_the_loop_routes_every_tool_through_one_resolved_interpreter() -> None:
+    """`python -m <tool>` is what guarantees the analyser and the code share an environment."""
+    verify = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
+    for module in ("ruff format", "ruff check", "mypy", "pytest", "pip_audit"):
+        assert f'"$PY" -m {module}' in verify, f"{module} is not run through the resolved $PY"
+
+
+def test_the_environment_check_is_the_first_leg_of_the_loop() -> None:
+    """Ordering is the point: a mismatch means every later leg measures the wrong thing.
+
+    Asserted as "before the first analyser", not as a line number, so reordering the analyser
+    legs stays free while moving the environment check after one of them does not.
+    """
+    lines = _live_lines(ROOT / "scripts" / "verify.sh")
+    check_at = next(i for i, line in enumerate(lines) if "check-environment.py" in line)
+    first_analyser = next(i for i, line in enumerate(lines) if '"$PY" -m ruff' in line)
+    assert check_at < first_analyser, "the environment check must run before any analyser"
+
+
+def test_the_environment_check_covers_the_files_the_loop_depends_on() -> None:
+    """The loop needs the test runner and the analysers, so both lock files are in scope."""
+    verify = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
+    invocation = next(line for line in verify.splitlines() if "check-environment.py" in line)
+    for lockfile in ("requirements.txt", "requirements-dev.txt"):
+        assert lockfile in invocation, f"{lockfile} is not checked against the environment"
+
+
+def _run_environment_check(pins: str) -> subprocess.CompletedProcess[str]:
+    """Run `check-environment.py` against a synthetic lock file holding exactly ``pins``.
+
+    Synthetic on purpose. Pointing these tests at the real `requirements.txt` would couple the
+    platform's test stage to the platform's install fidelity: any divergence between what the
+    runner installed and what the file pins would fail the SUITE rather than reporting a
+    mismatch, and a self-inflicted pipeline failure is precisely the fault that broke the last
+    upload. The behaviour under test is the script's, so the input is the script's alone.
+    """
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
+        handle.write(pins)
+        forged = handle.name
+    try:
+        return subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "check-environment.py"),
+                sys.executable,
+                forged,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        Path(forged).unlink()
+
+
+def test_the_environment_check_fails_on_a_missing_distribution() -> None:
+    """Executed, not grepped. A pin that cannot possibly be installed must exit non-zero."""
+    result = _run_environment_check("this-distribution-does-not-exist==9.9.9\n")
+    assert result.returncode != 0, "a missing distribution was reported as a match"
+    assert "NOT INSTALLED" in result.stderr
+
+
+def test_the_environment_check_fails_on_a_version_mismatch() -> None:
+    """The other half of the defect, and the half that produced the false failure.
+
+    A distribution that IS installed but at the wrong version is the case that let the loop
+    run ruff 0.15.8 against a pinned 0.16.3. A check that only noticed absence would have
+    missed it entirely.
+    """
+    result = _run_environment_check(f"pytest==0.0.0.not-{installed_version('pytest')}\n")
+    assert result.returncode != 0, "a wrong version was reported as a match"
+    assert "installed" in result.stderr
+
+
+def test_the_environment_check_passes_when_the_pin_matches() -> None:
+    """The control for the two tests above, and it has to be here.
+
+    Without it a script that exited non-zero unconditionally would satisfy both negative tests
+    and block every run, which is a different way of verifying nothing. The pin is read from
+    the running environment, so this holds on any runner.
+    """
+    result = _run_environment_check(f"pytest=={installed_version('pytest')}\n")
+    assert result.returncode == 0, f"a matching pin was reported as a mismatch: {result.stderr}"
+    assert "1 pins checked, all match" in result.stdout
+
+
+def test_the_environment_check_refuses_a_lock_file_with_no_pins() -> None:
+    """An empty or malformed lock file must not read as "nothing to check, therefore fine"."""
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:
+        handle.write("# only a comment\n")
+        empty = handle.name
+    try:
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [sys.executable, str(ROOT / "scripts" / "check-environment.py"), sys.executable, empty],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "no pins at all" in result.stderr
+    finally:
+        Path(empty).unlink()

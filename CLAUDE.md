@@ -43,6 +43,7 @@ python3.12 -m venv .venv                                    create the environme
 .venv/bin/pip install --require-hashes --no-deps \
   -r requirements.txt -r requirements-dev.txt               install, reproducibly
 sh scripts/verify.sh                                        THE VERIFICATION LOOP
+python3 scripts/check-environment.py <python> <lockfile>...  assert installed == pinned
 python -m enlightenment                                     run locally (loopback, auth off)
 sh scripts/simulate-pipeline.sh <version>                   simulate the platform pipeline
 sh scripts/package-appstore.sh <version>                    build the upload artefact
@@ -50,9 +51,18 @@ sh scripts/build-image.sh enlightenment:<version>           build the container 
 sh scripts/lock-requirements.sh                             re-lock after a dependency change
 ```
 
-The loop runs cheapest-first: `ruff format --check`, `ruff check`, `mypy` strict, `pytest`
+The loop runs cheapest-first, six legs: `scripts/check-environment.py` (installed versions
+must equal the lock-file pins), `ruff format --check`, `ruff check`, `mypy` strict, `pytest`
 with Cobertura coverage to `coverage.xml` at 80% or more, then `pip-audit`. A leg that
 cannot run locally exits non-zero with a "deferred to CI" banner; it is never a green pass.
+
+**Every leg runs through one resolved interpreter, never a bare tool name.** `verify.sh`
+resolves `$PY` (`ENLIGHTENMENT_PYTHON`, then `.venv/bin/python`, then `$VIRTUAL_ENV`, then
+`python3`) and calls `"$PY" -m ruff`, `"$PY" -m mypy`, and so on. Bare names let PATH choose
+the analyser: the loop was once found running ruff 0.15.8 against a pinned 0.16.3 and mypy
+1.19.1 against a pinned 2.3.1, which produced a finding the pinned toolchain does not raise.
+A loop whose own inputs are unpinned cannot certify anything, so the environment check is
+leg one, before any analyser.
 
 Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 
