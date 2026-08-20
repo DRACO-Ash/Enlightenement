@@ -881,7 +881,18 @@ def test_building_an_app_spawns_no_thread_however_the_pool_is_created(
     apps = [create_app(config=config, store=store, probe=ok_probe) for _ in range(5)]
     assert apps
     gc.collect()
-    assert probe_threads() == before, "building apps spawned probe threads"
+    # SUBTRACTION, not equality, and this was a real flake. Equality fails whenever a probe
+    # thread from an EARLIER test exits between the two snapshots - no new thread required, and
+    # nothing this test is about. Demonstrated directly: start a `probe_`-named thread, snapshot,
+    # let it exit, snapshot again; `after == before` is False while `after - before` is empty.
+    #
+    # It failed once in a full loop run and then not in 15 bare runs plus 8 loop runs, which is
+    # the worst shape a failure can have: rare enough to look like noise, and certain to appear
+    # eventually in the platform's test stage, where a red suite skips every later gate.
+    #
+    # Subtraction asserts exactly the property claimed - no NEW probe thread - and is immune to
+    # an unrelated one exiting.
+    assert probe_threads() - before == set(), "building apps spawned probe threads"
 
 
 def test_repeated_probes_hold_exactly_one_probe_thread(

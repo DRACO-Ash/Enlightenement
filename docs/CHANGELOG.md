@@ -2,6 +2,74 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.19 (2026-08-20)
+
+**What.** A flaky test, found by committing a red loop, plus the two App Store skills I had not
+loaded.
+
+### I pushed a red loop, and the failure was a flake
+
+Running the loop before committing, I grepped its output for the lines I wanted and missed
+`1 failed, 541 passed`. The commit and the push went out over a red suite. That is exactly the
+"run the assertion before writing the sentence about it" discipline this release series exists to
+build, failed at the last step, and it is worth recording plainly rather than as a fixed defect.
+
+**The failure was `test_building_an_app_spawns_no_thread_however_the_pool_is_created`, and it was
+a real flake with the worst possible shape:** it failed once, then not in 15 bare runs and 8 full
+loops. Rare enough to look like noise, and certain to appear eventually in the platform's test
+stage, where a red suite SKIPS every later gate.
+
+Root cause: the assertion compared a live thread set for EQUALITY. It fails whenever a probe
+thread from an earlier test exits between the two snapshots - no new thread required, and nothing
+the test is about. Demonstrated directly rather than inferred: start a `probe_`-named thread,
+snapshot, let it exit, snapshot again; `after == before` is False while `after - before` is empty.
+
+**Fixed** to subtraction, which asserts exactly the property claimed - no NEW probe thread - and
+is immune to an unrelated one exiting. Swept the file: every other thread assertion already used
+subtraction. Ten consecutive loop runs green after the change.
+
+### appstore-gate-compliance and deploy-recipes, which I had not used
+
+Both were in the original skill list and I had not loaded either. That cost real cycles: I
+discovered the `pytest: command not found` failure and the coverage-path problem the expensive
+way, and both are what those skills exist to pre-empt.
+
+Checked against both catalogues, **verified not assumed**: Dockerfile flat at the root with
+`EXPOSE 8080`, `USER 10001:10001`, no `ENV PORT` or `ENV DATA_DIR`, `FROM scratch` with exactly
+one `COPY`, suid/sgid sweep as the last mutation before the flatten; `coverage.xml` in Cobertura
+at the path `sonar.python.coverage.reportPaths` reads; `pip-audit` over all three lock files;
+pinned base digest; `--require-hashes`; `exec` in the CMD so SIGTERM reaches gunicorn; the
+simulation adds the platform's own `.gitlab-ci.yml` and sets `GITLAB_CI=true`.
+
+**Newly verified rather than assumed:** every shipped script is syntax-clean under `dash`, and
+the loop EXECUTES under `dash` - so the platform's minimal shell cannot produce
+`sh: bash: not found` at build time. That check existed as a checklist line and had never been
+run here.
+
+**One pitfall closed.** `deploy-recipes` names a framework redirect on `GET /` as one of three
+failures that bite every stack. FastAPI ships `redirect_slashes=True`, so this project does have
+such a normaliser: `/healthz/` answers 307. Benign, because the platform probes canonical paths,
+and disabling it would make a trailing slash a 404 rather than a 307 - worse. What was unpinned is
+that the CANONICAL paths never redirect, which is what a future forced-HTTPS middleware or
+base-path rewrite would silently break. Six contract paths are now asserted at 200 with redirects
+NOT followed and no `Location` header; a client that follows redirects reports 200 for a route
+answering 307, which is how this class reaches an upload. Mutation-proved.
+
+### The structural risk this release cannot fix
+
+`appstore-gate-compliance` says: ship often, so the new-code window stays small. **Nothing has
+ever shipped.** SonarQube scores NEW code against a zero-violations bar, and with no shipped
+baseline the entire codebase is new code: 831 source statements plus the whole suite, judged at
+once. The skill's own mitigation for stacked work is to run the local analyser over the WHOLE
+accumulated range rather than the latest diff, which this loop already does - `ruff` runs over the
+full tree every time, never a diff. That is the right mitigation and it is in place; the residual
+risk is any Sonar rule class the local profile cannot express, and that is recorded rather than
+claimed closed.
+
+**Verified.** Loop green under the pinned toolchain: **542 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
+branch. Ten consecutive loop runs green. Loop also green executed under `dash`.
+
 ## V0.18 (2026-08-20)
 
 **What.** The project owner supplied the App Store's full pre-submission and pipeline check
