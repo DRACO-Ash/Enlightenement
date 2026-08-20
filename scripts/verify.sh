@@ -36,7 +36,13 @@ echo "interpreter: $PY ($("$PY" --version 2>&1))"
 green "1/6 environment matches the lock files"
 # First, and deliberately so: a mismatch here means every leg below is measuring something
 # other than what ships. Cheapest leg and the one that gives the rest their meaning.
-"$PY" scripts/check-environment.py "$PY" requirements.txt requirements-dev.txt
+# All THREE lock files, including the lean one the image installs. Its pins are currently a
+# version-identical subset of requirements.txt, so checking it is incidentally satisfied
+# today - but incidental is exactly the false confidence this leg exists to remove. If a
+# shared pin ever diverged, the image would ship a version the analysed environment never
+# contained, which is this commit's own defect one level up.
+"$PY" scripts/check-environment.py "$PY" \
+  requirements-runtime.txt requirements.txt requirements-dev.txt
 
 green "2/6 format (ruff format --check)"
 "$PY" -m ruff format --check .

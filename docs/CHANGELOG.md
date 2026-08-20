@@ -2,6 +2,171 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.15 (2026-08-20)
+
+**What.** Closing the engineering gate's FAIL on V0.14 and the security gate's five MINORs.
+Five MAJORs, and three of them were claims V0.14 certified as true that were not.
+
+**The pattern across all three, because it is the same mistake.** In each case I measured one
+axis, found nothing, and wrote the conclusion down as if I had measured the space. Property
+testing found the angle defect and I fixed the end it reported. The reference file has two
+identifying columns and I keyed on one. A measurement over `minutes` on a good element set
+found no non-finite result, so I called the guard dead code. The fix is not "measure more"; it
+is to state which axis was measured, in the record, so the gap is visible to the next reader.
+
+### MAJOR: the angle fix closed one end of the interval and opened the other
+
+V0.14 certified the plus-or-minus-180 seam as closed. It was closed at the low end only.
+
+`normalise_longitude` added half a turn, folded, and subtracted it back. The ADDITION loses the
+precision before the shared helper ever sees it: `179.99999999999997 + 180.0` rounds to
+`360.0`, the fold correctly maps that to `0.0`, and subtracting half a turn returns `-180.0`
+for an input that was already in range. Two frames one representable step apart then reported a
+drift of **-359.99999999999994** degrees for 2.8e-14 degrees of real motion. `wrap_to_pi` had
+the twin at plus pi, and `shortest_separation_degrees` inherited both.
+
+So the fix for the artefact reintroduced the artefact, at the other end, and the changelog said
+otherwise. Worse, the suite could not see it: the `LONGITUDES` strategy capped at `179.999`, so
+the entire failing band sat outside the domain of the idempotence, separation and antisymmetry
+properties. A property test is only as good as its domain, and a domain that stops short of the
+boundary agrees with you about the interior.
+
+**Fixed** by folding into `[0, 360)` FIRST and subtracting a whole turn from the upper half, so
+no lossy arithmetic touches the input. Verified over 600,000 random samples plus 4,000
+exhaustive representable steps either side of both ends: zero range violations, whole-turn
+property holds, antisymmetry holds over the widened range. The old implementation fails the new
+assertions on all three counts.
+
+**Also fixed:** `LONGITUDES` now runs to the last representable value below 180, and the high
+ends are pinned as explicit examples. And a new test asserts the value is returned UNCHANGED,
+not merely in range - the half-fix satisfied "in range" and that is how it passed.
+
+**One thing that is not a defect, now stated as a rule.** Any half-open interval has a
+discontinuity at its seam, so subtracting two normalised values across it gives about a whole
+turn no matter how correct the normalisation. Chasing that is what produced the half-fix. A
+drift must be computed as `shortest_separation_degrees(first_sample, second_sample)` on the raw
+values, never as the difference of two separations measured against a third point. Both the
+right and the wrong calculation are now asserted, because a rule without its counter-example is
+a rule nobody follows.
+
+### MAJOR: 26 published reference rows were never compared
+
+Satellite 20413 appears TWICE in `SGP4-VER.TLE`: identical elements, two time spans of 26 and
+70 rows. Both parsers keyed by satellite number, so the second occurrence overwrote the first
+and 26 rows of an e=0.786 deep-space case were silently dropped. `EXPECTED_ELEMENT_SETS = 32`
+and `EXPECTED_REFERENCE_ROWS = 641` then enshrined the loss, under a docstring reading "the
+counts the pinned wheel actually ships" and a test named for catching a shrinking set. The
+guard was measuring the shrunk total.
+
+**Fixed** with occurrence-ordered lists instead of dicts. A dict keyed by a value the source
+does not guarantee unique is a silent drop by construction. Now 33 blocks, 667 rows, 666
+comparisons. **Verified**: a new test counts the file's data lines independently of the parser,
+so a constant can no longer be updated to match a bug; another asserts the repeated number is
+still present twice; another asserts the two files stay in the same order, since the golden
+comparison pairs them by position. Worst deviations over all 666 rows are unchanged, so both
+tolerances still hold.
+
+### MAJOR: an invented cause in a diagnostic
+
+`SGP4_ERRORS[5]` read "epoch element set was a sub-orbital trajectory". The pinned library says
+"(error 5 no longer in use; it meant the satellite was underground)". I wrote a plausible cause
+instead of reading the one that shipped, under a comment claiming the table came from the
+library's own documentation. That is the hard rule against inventing a fact, broken inside a
+diagnostic, in a trainer whose purpose is teaching diagnosis. Entry 3 also used my word
+("instantaneous") where the library says "perturbed".
+
+The existing test asserted only that each cause was non-empty and echoed in the message, so it
+certified the invented text against itself.
+
+**Fixed:** all six entries are now faithful renderings, expanded for readability (`nm` to "mean
+motion") but never for meaning. A parity test asserts the key sets match the library's, so a
+dependency bump that adds or retires a code fails the suite instead of leaving the table quietly
+wrong. A second test pins code 5 specifically, since "no longer in use" reads oddly enough that
+a future reader might tidy it into something that sounds like an orbital fault.
+
+### MAJOR: a fail-open branch in the control everything else now rests on
+
+`check-environment.py` required `==` immediately after the distribution name, so
+`uvicorn[standard]==9.9.9` did not match, was skipped in silence, and the run printed "1 pins
+checked, all match" with an unmet pin sitting in the file. The extras form is the ordinary way
+to pin uvicorn. A control that silently ignores what it cannot parse is fail-open, and this is
+the leg the rest of the loop's meaning depends on.
+
+**Fixed:** the pattern accepts extras and markers; every requirement line the pattern rejects
+is reported by file and line rather than dropped; a pin whose environment marker does not apply
+is skipped deliberately, so a Windows-only pin is not a false failure on Linux; and versions
+compare by PEP 440, so `9.1.1.0` and `9.1.1` are one release rather than a mismatch that
+teaches people to skip the leg.
+
+**Declined, with the reason recorded:** the check stays one-directional. Asserting that nothing
+is installed BEYOND the lock files would fail on every runner, because `pip`, `setuptools` and
+`wheel` come from the interpreter's own environment and are not all pinned here. A leg that
+fails on a correct environment costs more than the latent hole it closes.
+
+### MAJOR: the submission manifest named the wrong version
+
+The V0.14 diff set both code files to 0.14.0 and, in the same diff, left
+`docs/DEPLOYMENT.md` reading "0.13.0, matching `pyproject.toml` and
+`src/enlightenment/__init__.py`". False as written, in the row a human copies into the App Store
+console. The checklist still certified 307 tests and 98.72% coverage, and a simulation of
+0.13.0.
+
+Two code files were guarded by a test and the document a human actually reads was not, which is
+the wrong way round: a mismatch between two code files fails a test, a mismatch between the code
+and the manifest ships. **Fixed**, and two new guards now assert the manifest's Version row and
+the checklist's simulation command both name the version in `pyproject.toml`.
+
+### The security gate's five MINORs, and one finding underneath them
+
+None were reachable from the HTTP edge; the physics core is imported nowhere outside itself and
+its tests.
+
+● **A non-finite time produced a fabricated state vector.** `sgp4_tsince(float("inf"))` returns
+  code **0** with an all-NaN state, so the exact thing the wrapper exists to prevent arrived
+  THROUGH the code check rather than around it. Input now guarded.
+● **Three third-party exception types escaped the module's stated contract:** `ValueError` for
+  an embedded NUL, `UnicodeEncodeError` for a lone surrogate, `TypeError` for a non-string. A
+  caller cannot fail closed on an exception it was never told about. Element-set lines are now
+  validated for width and charset at the boundary, and everything arrives as
+  `PropagationError`. Nine hostile inputs are pinned, with a control test proving the library
+  does not refuse them all by itself.
+● **Leg one omitted `requirements-runtime.txt`,** the only lock file that ships. Now checked,
+  plus an invariant asserting the lean file is a version-identical subset of the tested one,
+  since the loop only catches divergence when both files' pins happen to be installed together.
+● **A bare suppression and an unbounded subprocess** in `check-environment.py`: justification
+  written, `timeout=60` added, and a timeout reported as a mismatch rather than raised, because
+  a failure to check is never a pass.
+
+**And the finding that came out of investigating them, which is the most serious thing in this
+release.** The pinned `sgp4` extension is **not dependably deterministic** for a well-shaped but
+meaningless element set. Three identical consecutive calls in one process returned an all-NaN
+state, then a finite and entirely plausible one, then all-NaN again: `twoline2rv` leaves the
+object partially initialised and the propagated values come from whatever was in memory. This
+trainer's determinism requirement is that the same seed yields an identical event log twice, so
+such an element set cannot be allowed near a scenario.
+
+Two layers, neither claimed sufficient alone. The output finiteness guard catches the NaN
+outcome. The plausible outcome is invisible at that layer - a finite wrong number looks like a
+finite right one - so `element_line_checksum_ok` implements the published TLE checksum for the
+scenario engine's authoring-time solvability check. Every meaningless line tried fails it.
+
+It is deliberately **not** a gate inside `load_elements`: five of the sixty-six element-set
+lines in Vallado's own verification file fail the checksum, including the deliberate error case
+at 33334. They are synthetic vectors, not real element sets, and a control that refuses the
+reference data is not a control. A test pins that count, so if a future wheel ships a corrected
+file the checksum can be promoted.
+
+**A correction against V0.14's own record.** It claimed the output guard was removed as dead
+code, "measured" over sixteen extreme values of `minutes`. That measurement held the element set
+fixed. Varying the element set instead reaches the branch immediately. The guard is back, and the
+docstring now says which axis the first measurement covered.
+
+**Verified.** Loop green under the pinned toolchain: **479 passed, 1 skipped**, coverage 98.68%
+against a 80% floor, all three lock files audited clean. Pipeline simulation green: **478
+passed, 2 skipped**, same coverage. The two runs differ by one deliberately - the simulation
+installs only `requirements.txt`, so the leg that needs the dev toolchain skips there - and both
+figures are quoted because V0.14 quoted a number that came from neither.
+
 ## V0.14 (2026-08-20)
 
 **What.** The physics core of the flight plan's Phase 0, and a defect in the verification loop
@@ -84,10 +249,15 @@ measurement rather than from reasoning.
 ### SGP4 against Vallado's published output
 
 `tests/test_physics_propagation.py` reads `SGP4-VER.TLE` and `tcppver.out` from inside the
-pinned `sgp4` wheel, the AIAA 2006-6753 verification distribution. 32 element sets, 641
-reference rows, 640 comparable. Worst deviation MEASURED, not chosen: 1.17e-7 km in position
-(about 0.12 mm) and 8.53e-10 km/s in velocity. Tolerances sit two orders above that, loose
-enough to survive a libm difference between platforms and tight enough to catch a regression.
+pinned `sgp4` wheel, the AIAA 2006-6753 verification distribution. Worst deviation MEASURED,
+not chosen: 1.17e-7 km in position (about 0.12 mm) and 8.53e-10 km/s in velocity.
+
+**Superseded by V0.15.** This entry said "32 element sets, 641 reference rows, 640 comparable".
+The published file holds 33 blocks and 667 rows; keying the parser by satellite number dropped
+26 of them. It also said the tolerances sit "two orders above" the measurement, which is true
+of position (85 times) and not of velocity (12 times). Left in place with the correction rather
+than edited away, because a record that quietly repairs itself is worth less than one that shows
+where it was wrong.
 
 Reading the reference rather than transcribing a handful of vectors is the point: the hard rule
 against inventing a figure applies to test data first.
@@ -95,18 +265,21 @@ against inventing a figure applies to test data first.
 Two named traps get a witness from the published data rather than a synthetic one.
 
 ● **The unchecked error code.** Satellite 33334 in the official set returns SGP4 code 3,
-  instantaneous eccentricity out of range. A wrapper that ignores the code returns floats that
+  perturbed eccentricity out of range. A wrapper that ignores the code returns floats that
   read as a position; this one raises. Vallado shipped the trap, which is stronger than an
   element set I would have built to fail.
 ● **TEME is not J2000.** The frame is carried in `StateVector` and asserted. The failure is
   silent and grows with epoch separation, so the only defence is that it is never implicit.
 
-A guard test recounts all 641 rows independently and asserts 640 comparisons actually happened,
-because a per-satellite loop that swallows exceptions is a green suite that compared nothing.
+A guard test recounts the rows independently and asserts the comparisons actually happened,
+because a per-block loop that swallows exceptions is a green suite that compared nothing. The
+counts it asserted were wrong; see V0.15.
 
-**Verified.** Loop green under the pinned toolchain: 420 passed, 1 skipped, coverage 98.61%
-against a 80% floor, all three lock files audited clean. Both physics modules at 100% line and
-branch coverage.
+**Verified.** Loop green under the pinned toolchain. The figure recorded here was "420 passed,
+1 skipped, coverage 98.61%"; the loop's own output at the time was 421 passed and 1 skipped,
+and 420 passed with 2 skipped was the PIPELINE SIMULATION. The certified number mixed two runs.
+Corrected here rather than silently: a release record whose headline figure came from neither
+run is the kind of small inaccuracy that makes the rest of it worth less.
 
 **Still open, and needing your decision before Phase 1** (unchanged from V0.13): SQLite on the
 storage volume versus the current JSON snapshot store; the `IdentityProvider` adapter versus

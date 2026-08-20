@@ -8,6 +8,7 @@ guaranteed-false on the machine that gates the deploy.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shutil
@@ -292,6 +293,48 @@ def test_the_release_version_matches_across_the_manifest_and_the_package() -> No
     assert package is not None, "the package declares no __version__"
     assert manifest == package.group(1), (
         f"pyproject says {manifest}, the package says {package.group(1)}"
+    )
+
+
+def test_the_submission_manifest_names_the_version_being_shipped() -> None:
+    """THE row a human copies into the App Store console, so a stale value is a wrong upload.
+
+    This guard was missing and the omission bit immediately: the release that bumped both code
+    files to 0.14.0 left `docs/DEPLOYMENT.md` reading "0.14.0, matching pyproject.toml" while
+    the file still said 0.13.0. The claim was false in the same diff that made it.
+
+    Two code files were guarded and the document a human actually reads was not, which is the
+    wrong way round: a mismatch between two code files fails a test, a mismatch between the
+    code and the manifest ships.
+    """
+    version = _pyproject()["project"]["version"]
+    row = next(
+        (
+            line
+            for line in _live_lines(ROOT / "docs" / "DEPLOYMENT.md")
+            if line.startswith("| Version")
+        ),
+        None,
+    )
+    assert row is not None, "the submission manifest has no Version row"
+    assert version in row, f"the manifest says {row.strip()}, pyproject says {version}"
+
+
+def test_the_deploy_checklist_names_the_version_it_simulates() -> None:
+    """`simulate-pipeline.sh` with no argument defaults to 0.1.0 and simulates the wrong zip.
+
+    The checklist spells the version out for that reason, so it is the other place a stale
+    number does real damage.
+    """
+    version = _pyproject()["project"]["version"]
+    lines = [
+        line
+        for line in _live_lines(ROOT / "docs" / "DEPLOYMENT.md")
+        if "simulate-pipeline.sh" in line and "checklist" not in line.lower()
+    ]
+    assert lines, "the checklist no longer names the simulation command"
+    assert any(f"simulate-pipeline.sh {version}" in line for line in lines), (
+        f"the checklist simulates a version other than {version}: {lines}"
     )
 
 
@@ -1092,11 +1135,20 @@ def test_the_environment_check_is_the_first_leg_of_the_loop() -> None:
     assert check_at < first_analyser, "the environment check must run before any analyser"
 
 
-def test_the_environment_check_covers_the_files_the_loop_depends_on() -> None:
-    """The loop needs the test runner and the analysers, so both lock files are in scope."""
-    verify = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
-    invocation = next(line for line in verify.splitlines() if "check-environment.py" in line)
-    for lockfile in ("requirements.txt", "requirements-dev.txt"):
+def test_the_environment_check_covers_every_lock_file() -> None:
+    """All three, including the lean file the container image installs.
+
+    Reads the LOGICAL line, following backslash continuations, because the invocation spans
+    two physical lines. A guard that reads only the first line of a wrapped command is a guard
+    that passes when the arguments it checks for have moved to the second.
+    """
+    lines = _live_lines(ROOT / "scripts" / "verify.sh")
+    start = next(i for i, line in enumerate(lines) if "check-environment.py" in line)
+    invocation = lines[start]
+    while invocation.rstrip().endswith("\\") and start + 1 < len(lines):
+        start += 1
+        invocation = invocation.rstrip().removesuffix("\\") + " " + lines[start]
+    for lockfile in ("requirements-runtime.txt", "requirements.txt", "requirements-dev.txt"):
         assert lockfile in invocation, f"{lockfile} is not checked against the environment"
 
 
@@ -1175,3 +1227,124 @@ def test_the_environment_check_refuses_a_lock_file_with_no_pins() -> None:
         assert "no pins at all" in result.stderr
     finally:
         Path(empty).unlink()
+
+
+def test_the_lean_lock_file_is_a_version_identical_subset_of_the_installed_one() -> None:
+    """The image installs `requirements-runtime.txt`; the platform installs `requirements.txt`.
+
+    If a shared pin ever diverged between them, the container would ship a version that the
+    analysed and tested environment never contained. That is this release's own defect one
+    level up: a verdict measured against something other than what runs.
+
+    Asserted as an invariant rather than left to leg one of the loop, because the loop only
+    catches it when both files' pins happen to be installed in the same environment.
+    """
+    lean = _pins_of(ROOT / "requirements-runtime.txt")
+    full = _pins_of(ROOT / "requirements.txt")
+    assert lean, "the lean lock file holds no pins at all"
+    missing = sorted(name for name in lean if name not in full)
+    assert not missing, f"pinned in the image but not in the tested file: {missing}"
+    diverged = {name: (lean[name], full[name]) for name in lean if lean[name] != full[name]}
+    assert not diverged, f"the image and the tested environment disagree: {diverged}"
+
+
+def _pins_of(lockfile: Path) -> dict[str, str]:
+    """Read `name==version` pins, reusing the loop's own parser so the two cannot disagree.
+
+    Imported rather than reimplemented: a second copy of the parsing rules is a second thing
+    to keep in step, and a guard that parses differently from the checker it guards is worse
+    than no guard.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "enlightenment_check_environment", ROOT / "scripts" / "check-environment.py"
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    pins: dict[str, str] = module.read_pins(lockfile)
+    return pins
+
+
+def test_the_environment_check_reports_an_unreadable_pin_line_rather_than_skipping_it() -> None:
+    """The fail-OPEN branch the security and engineering gates both landed on.
+
+    `uvicorn[standard]==9.9.9` did not match the pin pattern, so it was skipped in silence and
+    the run printed "all match" with an unmet pin sitting in the file. The extras form is the
+    ordinary way to pin uvicorn, so this was never hypothetical. Now the extras form parses,
+    and anything that still does not parse is reported by file and line.
+    """
+    result = _run_environment_check("this is not a requirement line at all\n")
+    assert result.returncode != 0
+    assert "could not be read" in result.stderr
+
+
+def test_the_environment_check_reads_the_extras_form_as_a_real_pin() -> None:
+    """Not merely "does not crash" - the pin must be CHECKED and found wanting."""
+    result = _run_environment_check("uvicorn[standard]==9.9.9\n")
+    assert result.returncode != 0
+    assert "uvicorn" in result.stderr
+    assert "9.9.9" in result.stderr
+
+
+def test_the_environment_check_skips_a_pin_whose_marker_does_not_apply() -> None:
+    """A Windows-only pin on a Linux runner is not a mismatch, and reporting it as one is how a
+    leg earns a reputation for crying wolf.
+    """
+    result = _run_environment_check(
+        f'pywin32==306 ; sys_platform == "win32"\npytest=={installed_version("pytest")}\n'
+    )
+    assert result.returncode == 0, result.stderr
+    assert "1 pins checked" in result.stdout
+
+
+def test_the_environment_check_compares_versions_by_pep_440_not_as_strings() -> None:
+    """`9.1.1.0` and `9.1.1` are the same release. A string comparison calls them different."""
+    result = _run_environment_check(f"pytest=={installed_version('pytest')}.0\n")
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_environment_check_refuses_a_lock_file_that_does_not_exist() -> None:
+    """A named file that is absent must not read as zero divergences."""
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "check-environment.py"),
+            sys.executable,
+            "no-such-lock-file.txt",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "does not exist" in result.stderr
+
+
+def test_the_environment_check_refuses_an_interpreter_it_cannot_query() -> None:
+    """`ENLIGHTENMENT_PYTHON` pointing at something that is not a Python must fail the leg."""
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "check-environment.py"),
+            "/bin/false",
+            str(ROOT / "requirements.txt"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "could not query" in result.stderr
+
+
+def test_the_environment_check_refuses_to_run_with_no_lock_file_named() -> None:
+    """Called with no arguments it must print usage and fail, not scan nothing and pass."""
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [sys.executable, str(ROOT / "scripts" / "check-environment.py")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "check-environment.py" in result.stderr

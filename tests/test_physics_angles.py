@@ -30,8 +30,23 @@ from enlightenment.physics import (
 #: Finite, sane angles. Excludes NaN and infinity, which are rejected explicitly elsewhere.
 ANGLES = st.floats(min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False)
 
-#: Longitudes inside the canonical interval.
-LONGITUDES = st.floats(min_value=-180.0, max_value=179.999, allow_nan=False, allow_infinity=False)
+#: The largest representable longitude inside ``[-180, 180)``, and the input that exposed the
+#: half-fix: the first `_fold_into_turn` version reported it at ``-180.0``.
+JUST_BELOW_180 = math.nextafter(180.0, 0.0)
+
+#: Its radian twin.
+JUST_BELOW_PI = math.nextafter(math.pi, 0.0)
+
+#: Longitudes inside the canonical interval, to the LAST representable value.
+#:
+#: This bound was `179.999`, and that cap is why the suite certified a defect as closed. The
+#: whole failing band - every value between `179.999` and `180.0` - sat outside the strategy,
+#: so the idempotence, separation and antisymmetry properties never saw it. A property test is
+#: only as good as its domain, and a domain that stops short of the boundary is a property test
+#: that agrees with you about the interior.
+LONGITUDES = st.floats(
+    min_value=-180.0, max_value=JUST_BELOW_180, allow_nan=False, allow_infinity=False
+)
 
 #: The value Hypothesis found on the first run of this module. ``x % 360.0`` returns ``360.0``
 #: for it: the exact answer is a hair under a full turn, unrepresentable at this magnitude, so
@@ -85,12 +100,46 @@ def test_a_geo_object_crossing_the_seam_reports_a_plausible_drift_rate() -> None
 
 
 @given(ANGLES)
+@example(JUST_BELOW_180)
+@example(JUST_BELOW_MINUS_180)
 def test_a_normalised_longitude_always_lands_in_the_half_open_interval(angle: float) -> None:
     """Half-open on purpose: 180 and -180 are the same meridian, and admitting both lets one
     physical location compare unequal to itself.
     """
     normalised = normalise_longitude(angle)
     assert -180.0 <= normalised < 180.0
+
+
+@pytest.mark.parametrize(
+    ("function", "argument"),
+    [(normalise_longitude, JUST_BELOW_180), (wrap_to_pi, JUST_BELOW_PI)],
+    ids=["longitude", "radians"],
+)
+def test_a_value_already_inside_the_interval_is_returned_unchanged(
+    function: object, argument: float
+) -> None:
+    """The half-fix, pinned. Not merely "in range" - UNCHANGED.
+
+    The first `_fold_into_turn` version returned `-180.0` for `179.99999999999997`, an input
+    already in range, because it added half a turn before folding and the addition rounded to
+    a full turn. In-range was true; correct was not. Asserting equality is what distinguishes
+    the two, and asserting only the range is how the defect passed the suite the first time.
+    """
+    assert function(argument) == argument  # type: ignore[operator]
+
+
+def test_two_frames_one_step_apart_near_the_high_end_report_no_drift() -> None:
+    """The operational form of the half-fix, in the units an operator reads.
+
+    Measured against the pre-fix implementation: these two frames, 2.8e-14 degrees apart,
+    reported a drift of -359.99999999999994 degrees per frame. A whole turn of fabricated
+    motion at the OTHER end of the interval from the one the first fix closed.
+    """
+    earlier = math.nextafter(JUST_BELOW_180, 0.0)
+    later = JUST_BELOW_180
+    assert abs(later - earlier) < 1e-13, "the frames must be adjacent for this to be a test"
+    assert shortest_separation_degrees(earlier, later) == pytest.approx(0.0, abs=1e-9)
+    assert normalise_longitude(later) - normalise_longitude(earlier) == pytest.approx(0.0, abs=1e-9)
 
 
 @given(ANGLES)
@@ -108,6 +157,7 @@ def test_normalising_a_bearing_always_lands_in_zero_to_a_full_turn(angle: float)
 
 @given(ANGLES)
 @example(JUST_BELOW_MINUS_PI)
+@example(JUST_BELOW_PI)
 def test_wrapping_radians_always_lands_in_minus_pi_to_pi(angle: float) -> None:
     wrapped = wrap_to_pi(angle)
     assert -math.pi <= wrapped < math.pi
@@ -142,34 +192,41 @@ def test_a_value_a_hair_below_the_interval_does_not_land_on_the_excluded_end(
     assert low <= result < high, f"{argument!r} landed on the excluded end: {result!r}"
 
 
-def test_the_seam_rounding_bug_reads_as_a_whole_turn_of_false_drift() -> None:
-    """The operational statement of the same defect, in the units an operator reads.
+def test_a_drift_is_the_separation_of_two_samples_never_the_difference_of_two_separations() -> None:
+    """The usage rule the seam actually implies, and it is not a defect to be fixed.
 
-    A near-antipodal pair in the GEO belt, sampled twice. The target moves by 1.4e-14 degrees
-    between the two samples, which is nothing. The naive arithmetic reports the separation as
-    plus 180 on the first sample and minus 180 on the second, so the DRIFT between consecutive
-    frames comes out as a full 360 degrees. That is the ASTRA 1M artefact class exactly: a
-    whole turn of fabricated motion for a body that did not move.
+    ANY half-open interval has a discontinuity at its seam: two longitudes a representable
+    step either side of the antimeridian map to opposite ends by definition, so subtracting
+    their normalised values gives about a whole turn. No implementation removes that, and
+    chasing it is how the first fix here reintroduced the artefact at the other end.
 
-    The numbers below are measured against the naive expression, not asserted from reasoning.
+    What removes it is computing the drift the right way round. `shortest_separation_degrees`
+    takes the two RAW samples and returns the short way between them. Differencing two
+    separations already measured against a third point straddles the seam whenever that third
+    point is near their antipode, and then the answer is a whole turn no matter how correct
+    the normalisation is.
+
+    Both numbers below are measured, and the wrong one is measured too, because a rule stated
+    without its counter-example is a rule nobody follows.
     """
     observer = 90.0
-    first_sample = -90.00000000000003
-    second_sample = math.nextafter(first_sample, 0.0)
-
-    physical_move = abs(second_sample - first_sample)
+    earlier = -90.00000000000003
+    later = math.nextafter(earlier, 0.0)
+    physical_move = abs(later - earlier)
     assert physical_move < 1e-13, "the target must barely move between samples"
 
-    reported = [
-        shortest_separation_degrees(observer, first_sample),
-        shortest_separation_degrees(observer, second_sample),
-    ]
-    assert reported[1] - reported[0] == pytest.approx(0.0, abs=1e-9), (
-        f"a body that moved {physical_move!r} degrees was reported as drifting "
-        f"{reported[1] - reported[0]!r} degrees"
+    # RIGHT: the separation of the two samples.
+    assert shortest_separation_degrees(earlier, later) == pytest.approx(0.0, abs=1e-9)
+
+    # WRONG, and asserted as wrong: two separations from an observer near their antipode.
+    against_observer = (
+        shortest_separation_degrees(observer, earlier),
+        shortest_separation_degrees(observer, later),
     )
-    # Both samples resolve to the WESTWARD end of the half-open interval, not one of each.
-    assert reported == [-180.0, -180.0]
+    fabricated = against_observer[1] - against_observer[0]
+    assert abs(fabricated) > 300.0, (
+        "the seam discontinuity has moved; the rule this test states may need restating"
+    )
 
 
 @given(LONGITUDES)

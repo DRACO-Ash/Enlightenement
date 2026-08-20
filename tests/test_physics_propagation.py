@@ -20,10 +20,13 @@ Two named traps get a live witness here rather than a hypothetical one.
   what SGP4 actually produces. The failure mode is silent and grows with epoch separation, so
   the only defence is that the frame is never implicit.
 
-Tolerance is MEASURED, not chosen. Across 640 comparable rows the worst position deviation is
-1.17e-7 km (about 0.12 mm) and the worst velocity deviation 8.53e-10 km/s. The bounds below sit
-roughly two orders of magnitude above that: loose enough to survive a libm difference between
-platforms, tight enough that any real regression in the propagation path fails the suite.
+Tolerance is MEASURED, not chosen. Across 666 comparable rows the worst position deviation is
+1.17e-7 km (about 0.12 mm) and the worst velocity deviation 8.53e-10 km/s. The two margins are
+NOT the same and are stated separately rather than rounded into one claim: the position bound
+of 1e-5 km sits about 85 times above its measurement, the velocity bound of 1e-8 km/s about 12
+times above its own. Both are loose enough to survive a libm difference between platforms and
+tight enough that a real regression in the propagation path fails the suite; the velocity
+bound has the less margin and is the one to watch on a new runner.
 """
 
 from __future__ import annotations
@@ -33,29 +36,51 @@ from pathlib import Path
 
 import pytest
 import sgp4
+from sgp4.api import SGP4_ERRORS as LIBRARY_SGP4_ERRORS
+from sgp4.api import Satrec
 
 from enlightenment.physics import (
     PropagationError,
     StateVector,
+    element_line_checksum_ok,
     load_elements,
     propagate_minutes_since_epoch,
 )
-from enlightenment.physics.propagation import SGP4_ERRORS, TEME_OF_DATE
+from enlightenment.physics.propagation import (
+    BOUNDARY_REFUSAL,
+    SGP4_ERRORS,
+    TEME_OF_DATE,
+    TLE_LINE_LENGTH,
+)
 
-#: A TLE line is 69 characters. `SGP4-VER.TLE` appends start, stop and step values after the
-#: checksum on line 2, so the line is truncated rather than passed through whole.
-TLE_LINE_LENGTH = 69
+#: `TLE_LINE_LENGTH` is imported from the module under test rather than restated here.
+#: `SGP4-VER.TLE` appends start, stop and step values after the checksum on line 2, so the
+#: line is truncated to that width rather than passed through whole.
 
-#: Measured worst-case deviation was 1.17e-7 km. See the module docstring for the measurement.
+#: Measured worst-case deviation 1.17e-7 km, at satellite 20413, t=1844335.0. This bound is
+#: about 85 times that.
 POSITION_TOLERANCE_KM = 1e-5
 
-#: Measured worst-case deviation was 8.53e-10 km/s.
+#: Measured worst-case deviation 8.53e-10 km/s, at satellite 9880, t=840.0. This bound is about
+#: 12 times that, the tighter of the two margins.
 VELOCITY_TOLERANCE_KM_S = 1e-8
 
-#: The counts the pinned wheel actually ships. Asserted so a dependency bump that silently
-#: shrinks the reference set fails loudly instead of leaving a suite that proves less.
-EXPECTED_ELEMENT_SETS = 32
-EXPECTED_REFERENCE_ROWS = 641
+#: The counts the pinned wheel actually ships, in OCCURRENCE order.
+#:
+#: These were 32 and 641, and the difference is a defect this suite reported as thoroughness.
+#: Satellite 20413 appears TWICE in `SGP4-VER.TLE` - identical elements, two different time
+#: spans of 26 and 70 rows. Both parsers keyed by satellite number, so the second occurrence
+#: overwrote the first and 26 published rows of an e=0.786 deep-space case were never
+#: compared. The guard written to catch a shrinking reference set was asserting the shrunk
+#: total, under a docstring that called it the full set.
+#:
+#: Occurrence-ordered lists, not dicts, is the fix. A dict keyed by a value the source does not
+#: guarantee unique is a silent drop by construction.
+EXPECTED_ELEMENT_BLOCKS = 33
+EXPECTED_REFERENCE_ROWS = 667
+
+#: The one row in the whole set that SGP4 legitimately refuses, so 666 are comparable.
+EXPECTED_COMPARISONS = 666
 
 #: The one satellite in the verification set that SGP4 refuses, and the code it refuses with.
 REFUSED_SATELLITE = 33334
@@ -78,9 +103,13 @@ def _reference_directory() -> Path:
     return directory
 
 
-def _load_element_sets() -> dict[int, tuple[str, str]]:
-    """Parse `SGP4-VER.TLE` into element-set pairs keyed by satellite number."""
-    sets: dict[int, tuple[str, str]] = {}
+def _load_element_blocks() -> list[tuple[int, tuple[str, str]]]:
+    """Parse `SGP4-VER.TLE` into `(satellite, (line1, line2))` in FILE order.
+
+    A list, not a dict: satellite number is not unique in this file and keying by it drops
+    data without a word.
+    """
+    blocks: list[tuple[int, tuple[str, str]]] = []
     first: str | None = None
     for raw in (_reference_directory() / "SGP4-VER.TLE").read_text().splitlines():
         line = raw.rstrip()
@@ -89,64 +118,122 @@ def _load_element_sets() -> dict[int, tuple[str, str]]:
         if line.startswith("1 "):
             first = line[:TLE_LINE_LENGTH]
         elif line.startswith("2 ") and first is not None:
-            sets[int(line[2:7])] = (first, line[:TLE_LINE_LENGTH])
+            blocks.append((int(line[2:7]), (first, line[:TLE_LINE_LENGTH])))
             first = None
-    return sets
+    return blocks
 
 
-def _load_reference_rows() -> dict[int, list[tuple[float, ...]]]:
-    """Parse `tcppver.out` into rows of (tsince, x, y, z, vx, vy, vz) keyed by satellite.
+def _load_reference_blocks() -> list[tuple[int, list[tuple[float, ...]]]]:
+    """Parse `tcppver.out` into `(satellite, rows)` in FILE order.
 
-    The file marks each satellite with a `"<number> xx"` header, then one row per timestep.
-    Rows carry trailing orbital-element diagnostics which are read past, not parsed: this
-    module verifies the state vector, and asserting on columns nothing consumes would be
-    coverage of the reference file rather than of the propagator.
+    The file marks each block with a `"<number> xx"` header, then one row per timestep of
+    (tsince, x, y, z, vx, vy, vz). Rows carry trailing orbital-element diagnostics which are
+    read past, not parsed: this module verifies the state vector, and asserting on columns
+    nothing consumes would be coverage of the reference file rather than of the propagator.
     """
-    rows: dict[int, list[tuple[float, ...]]] = {}
-    satellite: int | None = None
+    blocks: list[tuple[int, list[tuple[float, ...]]]] = []
+    current: list[tuple[float, ...]] | None = None
     for raw in (_reference_directory() / "tcppver.out").read_text().splitlines():
         fields = raw.split()
         if len(fields) == 2 and fields[1] == "xx":
-            satellite = int(fields[0])
-            rows[satellite] = []
-        elif satellite is not None and len(fields) >= REFERENCE_COLUMNS:
-            rows[satellite].append(tuple(float(f) for f in fields[:REFERENCE_COLUMNS]))
-    return rows
+            current = []
+            blocks.append((int(fields[0]), current))
+        elif current is not None and len(fields) >= REFERENCE_COLUMNS:
+            current.append(tuple(float(f) for f in fields[:REFERENCE_COLUMNS]))
+    return blocks
 
 
-ELEMENT_SETS = _load_element_sets()
-REFERENCE_ROWS = _load_reference_rows()
+ELEMENT_BLOCKS = _load_element_blocks()
+REFERENCE_BLOCKS = _load_reference_blocks()
+
+#: A by-number lookup for the handful of spot tests that name one orbit. First occurrence
+#: wins, which is harmless HERE because no spot test names the duplicated satellite - but it
+#: is deliberately not what the golden comparison uses.
+ELEMENT_SETS = dict(reversed(ELEMENT_BLOCKS))
+REFERENCE_ROWS = dict(reversed(REFERENCE_BLOCKS))
 
 
 # --- the reference data itself, guarded so a dependency bump cannot quietly weaken this ---
 
 
 def test_the_reference_data_ships_the_full_verification_set() -> None:
-    """A shrinking reference set is a suite that proves less while still reporting green."""
-    assert len(ELEMENT_SETS) == EXPECTED_ELEMENT_SETS
-    assert sum(len(r) for r in REFERENCE_ROWS.values()) == EXPECTED_REFERENCE_ROWS
+    """A shrinking reference set is a suite that proves less while still reporting green.
+
+    Counted over occurrence-ordered lists, so a repeated satellite number cannot hide inside
+    the total the way it did when these were dicts.
+    """
+    assert len(ELEMENT_BLOCKS) == EXPECTED_ELEMENT_BLOCKS
+    assert len(REFERENCE_BLOCKS) == EXPECTED_ELEMENT_BLOCKS
+    assert sum(len(rows) for _, rows in REFERENCE_BLOCKS) == EXPECTED_REFERENCE_ROWS
 
 
-def test_every_satellite_in_the_reference_output_has_an_element_set() -> None:
-    """Otherwise a row could be skipped silently and the suite would still pass."""
-    assert not set(REFERENCE_ROWS) - set(ELEMENT_SETS)
+def test_the_parsed_row_count_equals_the_data_lines_in_the_file() -> None:
+    """Counted independently of the parser, so a parser that silently drops a row is caught.
+
+    The assertion above compares the parser's output to a number I wrote down. This one
+    compares it to the FILE, by counting every line whose first field parses as a float. A
+    constant can be updated to match a bug; the file cannot.
+    """
+    data_lines = 0
+    for raw in (_reference_directory() / "tcppver.out").read_text().splitlines():
+        fields = raw.split()
+        if len(fields) < REFERENCE_COLUMNS:
+            continue
+        try:
+            float(fields[0])
+        except ValueError:
+            continue
+        data_lines += 1
+    assert sum(len(rows) for _, rows in REFERENCE_BLOCKS) == data_lines
 
 
-# --- the golden vectors, one case per satellite so a failure names the orbit ---------------
+def test_the_duplicated_satellite_number_is_still_present_twice() -> None:
+    """The specific loss, pinned so it cannot recur silently.
+
+    Satellite 20413 carries two time spans under one number. If a future refactor keys by
+    satellite again, this fails and names the reason.
+    """
+    numbers = [satellite for satellite, _ in ELEMENT_BLOCKS]
+    repeated = {n for n in numbers if numbers.count(n) > 1}
+    assert repeated, "the reference set no longer repeats a satellite number; simplify above"
+    for number in repeated:
+        assert numbers.count(number) == [s for s, _ in REFERENCE_BLOCKS].count(number)
 
 
-@pytest.mark.parametrize("satellite", sorted(REFERENCE_ROWS))
-def test_propagation_matches_the_vallado_reference_output(satellite: int) -> None:
+def test_the_two_files_list_the_same_satellites_in_the_same_order() -> None:
+    """The golden comparison pairs the two files by POSITION, so the order is load-bearing."""
+    assert [s for s, _ in ELEMENT_BLOCKS] == [s for s, _ in REFERENCE_BLOCKS]
+
+
+# --- the golden vectors, one case per BLOCK so a failure names the orbit and the span -----
+
+
+@pytest.mark.parametrize(
+    "index",
+    range(len(REFERENCE_BLOCKS)),
+    ids=[
+        f"{satellite}#{[s for s, _ in REFERENCE_BLOCKS][:i].count(satellite)}"
+        for i, (satellite, _) in enumerate(REFERENCE_BLOCKS)
+    ],
+)
+def test_propagation_matches_the_vallado_reference_output(index: int) -> None:
     """Every published row, to the measured tolerance.
 
-    Parametrised per satellite rather than as one loop because the verification set is chosen
-    to span regimes: deep-space resonance, near-earth drag, high eccentricity, the Lyddane
-    fix. A failure that names the satellite names the regime, which is the difference between
-    a diagnosis and a rerun.
+    Parametrised per BLOCK rather than per satellite number, and that distinction is the point:
+    satellite 20413 contributes two blocks, and keying on the number dropped one of them.
+
+    Split per block rather than as one loop because the verification set is chosen to span
+    regimes: deep-space resonance, near-earth drag, high eccentricity, the Lyddane fix. A
+    failure that names the block names the regime, which is the difference between a diagnosis
+    and a rerun.
     """
-    elements = load_elements(*ELEMENT_SETS[satellite])
+    satellite, rows = REFERENCE_BLOCKS[index]
+    element_satellite, lines = ELEMENT_BLOCKS[index]
+    assert element_satellite == satellite, "the two files fell out of step"
+
+    elements = load_elements(*lines)
     compared = 0
-    for tsince, x, y, z, vx, vy, vz in REFERENCE_ROWS[satellite]:
+    for tsince, x, y, z, vx, vy, vz in rows:
         try:
             state = propagate_minutes_since_epoch(elements, tsince)
         except PropagationError:
@@ -163,26 +250,29 @@ def test_propagation_matches_the_vallado_reference_output(satellite: int) -> Non
         )
         compared += 1
     if satellite != REFUSED_SATELLITE:
-        assert compared > 0, f"satellite {satellite} contributed no comparison at all"
+        assert compared > 0, f"block {index} (satellite {satellite}) compared nothing at all"
 
 
 def test_the_whole_reference_set_is_actually_compared_not_mostly_skipped() -> None:
     """The guard against a green suite that compared nothing.
 
-    An earlier version of this file could have passed with every row skipped by an exception,
-    which is the failure mode a per-satellite loop invites. The total is asserted against the
-    reference count minus the one row SGP4 legitimately refuses.
+    A per-block loop that swallows exceptions can pass with every row skipped, which is the
+    failure mode this shape invites. The total is asserted against the file's own row count
+    minus the one row SGP4 legitimately refuses.
     """
     compared = 0
-    for satellite, rows in REFERENCE_ROWS.items():
-        elements = load_elements(*ELEMENT_SETS[satellite])
+    for (satellite, rows), (element_satellite, lines) in zip(
+        REFERENCE_BLOCKS, ELEMENT_BLOCKS, strict=True
+    ):
+        assert element_satellite == satellite
+        elements = load_elements(*lines)
         for row in rows:
             try:
                 propagate_minutes_since_epoch(elements, row[0])
             except PropagationError:
                 continue
             compared += 1
-    assert compared == EXPECTED_REFERENCE_ROWS - 1
+    assert compared == EXPECTED_COMPARISONS
 
 
 # --- the unchecked-error-code trap, with a witness from the published data ------------------
@@ -209,6 +299,32 @@ def test_every_sgp4_error_code_names_a_readable_cause() -> None:
     for code, cause in SGP4_ERRORS.items():
         assert cause.strip(), f"code {code} has no cause"
         assert str(PropagationError(code)).endswith(cause)
+
+
+def test_the_local_error_table_covers_exactly_the_codes_the_library_defines() -> None:
+    """Parity with the pinned library, because the previous version of this test did not check.
+
+    It asserted only that each cause was non-empty and echoed in the message, so it happily
+    certified entry 5 as "epoch element set was a sub-orbital trajectory" - a cause I invented,
+    where the library says the code is no longer in use. A test that checks a string against
+    itself proves the string exists, not that it is true.
+
+    Keys, not values: the phrasing here is deliberately more readable than the library's
+    (`nm`, `mrt`), so asserting equal text would force a choice between accuracy and clarity.
+    Asserting equal key sets catches the thing that actually goes stale - a code added or
+    retired by a dependency bump.
+    """
+    assert set(SGP4_ERRORS) == set(LIBRARY_SGP4_ERRORS)
+
+
+def test_no_local_cause_contradicts_the_library_on_the_retired_code() -> None:
+    """Code 5 specifically, because it is the one that was wrong and the one that reads oddest.
+
+    A future reader seeing "no longer in use" may be tempted to tidy it into something that
+    sounds like an orbital fault. It is not one, and this test says so.
+    """
+    assert "no longer in use" in SGP4_ERRORS[5]
+    assert "no longer in use" in LIBRARY_SGP4_ERRORS[5]
 
 
 def test_an_unknown_error_code_is_reported_rather_than_swallowed() -> None:
@@ -254,11 +370,264 @@ def test_radius_and_speed_agree_with_the_reference_row() -> None:
     assert state.speed_km_s == pytest.approx(math.dist((0.0, 0.0, 0.0), (vx, vy, vz)), abs=1e-9)
 
 
-def test_a_geostationary_reference_orbit_sits_at_a_plausible_radius() -> None:
-    """A units check with teeth: kilometres against metres is one of the named traps, and it
-    shows up as a radius three orders of magnitude wrong. Satellite 4632 is the highly
-    eccentric case from the set, so the bound is stated as an envelope, not a point.
+def test_a_propagated_radius_is_in_kilometres_not_metres() -> None:
+    """A units check, named for what it actually asserts.
+
+    This was called `test_a_geostationary_reference_orbit_sits_at_a_plausible_radius`, and it
+    made no GEO assertion: satellite 4632 is the highly eccentric case from the set, so the
+    bound is an envelope spanning low orbit to well past the belt. A test name that promises
+    more than the body delivers is how a reader concludes something is covered when it is not.
+
+    The envelope still has teeth for the trap it is aimed at. Kilometres against metres is one
+    of the named unit traps, and it shows as a radius three orders of magnitude out, far
+    outside this range in either direction.
     """
     state = propagate_minutes_since_epoch(load_elements(*ELEMENT_SETS[4632]), 0.0)
     assert 6_400.0 < state.radius_km < 100_000.0
     assert 0.5 < state.speed_km_s < 15.0
+
+
+# --- the boundary, hardened after the security gate ---------------------------------------
+#
+# Five findings came out of the security review of this module. Two are here, and both are the
+# same class: a refusal that did not happen, or happened as the wrong exception type.
+#
+# The first is the sharper one. `sgp4_tsince(float("inf"))` returns error code **0** with an
+# all-NaN state, so the exact thing this wrapper exists to prevent - a fabricated state vector
+# passing an unchecked success code - arrives THROUGH the code check rather than around it.
+# Checking the code was necessary and not sufficient, and the module's own docstring claimed
+# otherwise. Nothing reaches this from an HTTP route yet; the guard goes in before anything
+# does, because a NaN in a scored run is a plot with no marks and a score with no reason.
+
+
+def _reference_elements() -> Satrec:
+    """A known-good propagator, so a boundary test fails for the reason it names."""
+    return load_elements(*ELEMENT_SETS[5])
+
+
+@pytest.mark.parametrize("minutes", [float("inf"), float("-inf"), float("nan")])
+def test_a_non_finite_time_is_refused_rather_than_propagated(minutes: float) -> None:
+    """The input half of the guard."""
+    with pytest.raises(PropagationError, match="finite"):
+        propagate_minutes_since_epoch(_reference_elements(), minutes)
+
+
+def test_the_library_really_does_report_success_for_a_non_finite_time() -> None:
+    """The fact the input guard exists for, asserted against the LIBRARY not the wrapper.
+
+    `sgp4_tsince(inf)` returns code 0 with an all-NaN state. Stating that here means the guard
+    reads as a response to measured behaviour rather than as caution, and if a future version
+    starts refusing it properly this test fails and says so.
+    """
+    code, position, velocity = _reference_elements().sgp4_tsince(float("inf"))
+    assert code == 0, "the library now refuses this itself; the input guard may be redundant"
+    assert all(math.isnan(component) for component in (*position, *velocity))
+
+
+#: Extreme but FINITE times, spanning both signs up to the edge of the double range.
+EXTREME_FINITE_MINUTES = [
+    1e6,
+    1e9,
+    1e12,
+    1e15,
+    1e18,
+    1e20,
+    1e25,
+    1e30,
+    1e50,
+    1e100,
+    1e200,
+    1e300,
+    1.7e308,
+    -1e12,
+    -1e100,
+    -1e300,
+    -1.7e308,
+]
+
+
+@pytest.mark.parametrize("minutes", EXTREME_FINITE_MINUTES)
+def test_an_extreme_finite_time_yields_either_a_refusal_or_a_finite_state(minutes: float) -> None:
+    """No fabricated state at any magnitude of time, on a GOOD element set.
+
+    This test alone is why the output guard was briefly removed as dead code: varying `minutes`
+    on a good element set finds nothing, because every non-finite result here already carries a
+    non-zero code. It kept only one axis fixed, which is the mistake. The element-set axis is
+    covered by the test below, and that one does reach the guard.
+    """
+    try:
+        state = propagate_minutes_since_epoch(_reference_elements(), minutes)
+    except PropagationError:
+        return  # a refusal is the correct outcome and needs nothing further
+    components = (*state.position_km, *state.velocity_km_s)
+    assert all(math.isfinite(component) for component in components)
+
+
+#: Element-set lines that PASS the column and charset check and still mean nothing. This is
+#: what a content author produces by accident, and it is the axis the first measurement missed.
+WELL_SHAPED_BUT_MEANINGLESS = [
+    ("every column an X", "1" + "X" * 68),
+    ("every column a nine", "1 " + "9" * 67),
+    (
+        "an alphabetic epoch",
+        "1 00005U 58002B   ABCDE.ABCDEFGH  .00000023  00000-0  28098-4 0  4753",
+    ),
+]
+
+#: How many times to repeat a call that is known not to be dependably deterministic.
+MEANINGLESS_REPEATS = 16
+
+
+@pytest.mark.parametrize(
+    ("description", "line"),
+    WELL_SHAPED_BUT_MEANINGLESS,
+    ids=[d for d, _ in WELL_SHAPED_BUT_MEANINGLESS],
+)
+def test_a_meaningless_element_set_is_never_served_as_a_non_finite_state(
+    description: str, line: str
+) -> None:
+    """Whatever the library does, the wrapper never hands back a non-finite state.
+
+    Written to repeat, because the library is NOT dependably deterministic here: three
+    identical consecutive calls in one process returned all-NaN, then a finite plausible
+    state, then all-NaN. A single-shot assertion on either outcome would be flaky, and a
+    flaky test on a determinism hazard is worse than none.
+
+    So the assertion is the invariant that holds under both outcomes: either the wrapper
+    refuses, or what it returns is finite. Never a NaN dressed as a position.
+    """
+    assert len(line) == TLE_LINE_LENGTH, "the fixture must pass the column check to be a test"
+    good_second_line = ELEMENT_BLOCKS[0][1][1]
+    for _ in range(MEANINGLESS_REPEATS):
+        elements = load_elements(line, good_second_line)  # accepted, which is the point
+        try:
+            state = propagate_minutes_since_epoch(elements, 0.0)
+        except PropagationError:
+            continue
+        components = (*state.position_km, *state.velocity_km_s)
+        assert all(math.isfinite(component) for component in components), (
+            "a non-finite state escaped the output guard"
+        )
+
+
+@pytest.mark.parametrize(
+    ("description", "line"),
+    WELL_SHAPED_BUT_MEANINGLESS,
+    ids=[d for d, _ in WELL_SHAPED_BUT_MEANINGLESS],
+)
+def test_the_checksum_catches_what_the_shape_check_and_the_guards_cannot(
+    description: str, line: str
+) -> None:
+    """The layer that actually rejects these, and why it is not at propagation time.
+
+    A finite wrong number is indistinguishable from a finite right one inside
+    `propagate_minutes_since_epoch`, so the output guard cannot be the whole answer. The
+    published TLE checksum can tell, and every meaningless line here fails it.
+
+    It is not a gate in `load_elements` because five of the sixty-six lines in Vallado's own
+    verification file fail it too - they are synthetic vectors, not real element sets - and a
+    control that refuses the reference data is not a control. It belongs in the scenario
+    engine's solvability check, at authoring time.
+    """
+    assert not element_line_checksum_ok(line)
+
+
+def test_the_checksum_accepts_most_of_the_reference_set_but_not_all_of_it() -> None:
+    """The measurement behind that decision, asserted rather than asserted-about.
+
+    If a future wheel ships a corrected verification file, this fails and says the checksum
+    could be promoted to a hard gate in `load_elements`.
+    """
+    lines = [line for _, pair in ELEMENT_BLOCKS for line in pair]
+    failing = [line for line in lines if not element_line_checksum_ok(line)]
+    assert len(lines) == 66
+    assert len(failing) == 5, (
+        "the reference set's checksum failures have changed; revisit whether"
+        " element_line_checksum_ok can become a hard gate in load_elements"
+    )
+    assert any(line.startswith(f"1 {REFUSED_SATELLITE}") for line in failing)
+
+
+def test_a_boundary_refusal_is_distinguishable_from_a_library_code() -> None:
+    """`code` is what a caller switches on, so a boundary refusal must not look like code 3."""
+    with pytest.raises(PropagationError) as raised:
+        propagate_minutes_since_epoch(_reference_elements(), float("nan"))
+    assert raised.value.code == BOUNDARY_REFUSAL
+    assert raised.value.code not in SGP4_ERRORS
+
+
+#: Element-set lines the library would otherwise fail on with its OWN exception type. The
+#: first three were found by the security review attacking `twoline2rv` directly: a NUL raised
+#: `ValueError: embedded null character`, a lone surrogate raised `UnicodeEncodeError`, and a
+#: non-string raised `TypeError`. A caller told to expect `PropagationError` got none of them.
+HOSTILE_ELEMENT_LINES: list[tuple[str, object]] = [
+    ("an embedded NUL", "1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  47\x005"),
+    (
+        "a lone surrogate",
+        "1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  47\ud80053",
+    ),
+    ("not text at all", 12345),
+    ("empty", ""),
+    ("truncated", "1 00005U 58002B   00179.78495062"),
+    ("far too long", "1" * 100_000),
+    (
+        "a newline in the middle",
+        "1 00005U 58002B   00179.78495062\n.00000023  00000-0  28098-4 0  4",
+    ),
+    (
+        "a tab substituted for a space",
+        "1\t00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0 475",
+    ),
+    (
+        "a four-byte emoji",
+        "1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4\U0001f680",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("description", "line"), HOSTILE_ELEMENT_LINES, ids=[d for d, _ in HOSTILE_ELEMENT_LINES]
+)
+def test_a_malformed_element_line_is_refused_as_one_exception_type(
+    description: str, line: object
+) -> None:
+    """One type out, whatever went in. A caller cannot fail closed on an exception it was
+    never told about, and three of these previously escaped the module's stated contract.
+    """
+    good = ELEMENT_SETS[5][1]
+    with pytest.raises(PropagationError):
+        load_elements(line, good)  # type: ignore[arg-type]
+    with pytest.raises(PropagationError):
+        load_elements(ELEMENT_SETS[5][0], line)  # type: ignore[arg-type]
+
+
+def test_the_hostile_lines_would_not_all_be_refused_by_the_library_alone() -> None:
+    """The control: prove at least one hostile line escapes `PropagationError` WITHOUT the
+    boundary check, so this block is testing the guard rather than the library.
+
+    Without this, a library that happened to reject everything already would leave the
+    parametrised test above green and meaningless.
+    """
+    escaped: list[str] = []
+    for description, line in HOSTILE_ELEMENT_LINES:
+        try:
+            Satrec.twoline2rv(line, ELEMENT_SETS[5][1])  # type: ignore[arg-type]
+        except PropagationError:  # pragma: no cover - the raw library never raises ours
+            continue
+        except Exception:  # measuring the library's raw failure surface, whatever it is
+            escaped.append(description)
+        else:
+            escaped.append(f"{description} (accepted silently)")
+    assert escaped, "the library refuses everything itself; the boundary check proves nothing"
+
+
+def test_a_good_element_line_with_trailing_whitespace_is_still_accepted() -> None:
+    """The boundary must reject malformed input without rejecting real-world formatting.
+
+    Element-set files routinely carry trailing whitespace or a line ending. Refusing those
+    would be a fail-closed control that fails on valid data, which is its own defect.
+    """
+    first, second = ELEMENT_SETS[5]
+    padded = propagate_minutes_since_epoch(load_elements(first + "  \r\n", second + " "), 0.0)
+    plain = propagate_minutes_since_epoch(load_elements(first, second), 0.0)
+    assert padded.position_km == plain.position_km

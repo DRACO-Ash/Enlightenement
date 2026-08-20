@@ -17,6 +17,7 @@ from enlightenment.physics.angles import (
 from enlightenment.physics.propagation import (
     PropagationError,
     StateVector,
+    element_line_checksum_ok,
     load_elements,
     propagate_minutes_since_epoch,
 )
@@ -24,6 +25,7 @@ from enlightenment.physics.propagation import (
 __all__ = [
     "PropagationError",
     "StateVector",
+    "element_line_checksum_ok",
     "load_elements",
     "normalise_degrees",
     "normalise_longitude",
