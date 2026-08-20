@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from enlightenment.scenario.determinism import (
     FINGERPRINT_LENGTH,
+    MAX_PAYLOAD_BYTES,
+    MAX_PAYLOAD_DEPTH,
     TICK_MILLISECONDS,
     Event,
     RunLog,
@@ -38,6 +40,8 @@ from enlightenment.scenario.determinism import (
 
 __all__ = [
     "FINGERPRINT_LENGTH",
+    "MAX_PAYLOAD_BYTES",
+    "MAX_PAYLOAD_DEPTH",
     "TICK_MILLISECONDS",
     "Event",
     "RunLog",

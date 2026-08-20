@@ -250,7 +250,10 @@ def test_the_element_set_path_and_the_radius_path_agree_for_a_circular_orbit() -
         for line in (root / "SGP4-VER.TLE").read_text().splitlines()
         if line.startswith(("1 ", "2 "))
     ]
-    elements = load_elements(lines[0], lines[1], verify_checksum=False)
+    # Checksum gate ON. Satellite 5's two lines both pass it, so the opt-out this line first
+    # carried was unnecessary - and it took the opt-out census over its limit and turned the loop
+    # red, which is how it was found. An unnecessary opt-out is not free.
+    elements = load_elements(lines[0], lines[1])
     from_elements = mean_motion_from_elements(elements)
     assert from_elements > 0.0
     # Semi-major axis implied by that mean motion, then back again. A round trip through the
@@ -331,3 +334,67 @@ def test_an_element_set_with_no_usable_mean_motion_is_refused() -> None:
 
     with pytest.raises(RelativeMotionError, match="non-usable mean motion"):
         mean_motion_from_elements(_NoRate())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_the_no_drift_rate_refuses_a_non_finite_input(bad: float) -> None:
+    """It returns an initial VELOCITY, so a NaN here lands in a scenario's starting conditions
+    rather than surfacing at a boundary. It accepted one silently until now.
+    """
+    with pytest.raises(RelativeMotionError, match="must both be finite"):
+        no_drift_alongtrack_rate_km_s(bad, 0.001)
+    with pytest.raises(RelativeMotionError, match="must both be finite"):
+        no_drift_alongtrack_rate_km_s(1.0, bad)
+
+
+@pytest.mark.parametrize(
+    ("description", "axis"),
+    [
+        ("underflows the cube to zero", 1e-200),
+        ("overflows the division", 1e300),
+        ("overflows the square root", 1e-300),
+    ],
+)
+def test_an_axis_that_is_finite_but_unrepresentable_is_refused(
+    description: str, axis: float
+) -> None:
+    """Finite and positive was not sufficient, and these three proved it.
+
+    `1e-200` cubes to zero and raised `ZeroDivisionError`; `1e300` raised `OverflowError`. Both
+    escaped the documented `RelativeMotionError`, so a caller failing closed on the documented
+    type caught neither. The RESULT is checked now, not just the input, which avoids having to
+    invent and defend a physical range.
+    """
+    with pytest.raises(RelativeMotionError, match=r"outside the range|unusable mean motion"):
+        mean_motion_rad_s(axis)
+
+
+def test_every_finite_positive_axis_either_raises_or_gives_a_finite_positive_rate() -> None:
+    """THE test that caught me removing a guard I had argued was unreachable.
+
+    Coverage showed the result check in `mean_motion_rad_s` uncovered, so I removed it with a
+    written argument that the division could not underflow to zero while the cube stayed finite.
+    That argument was true and beside the point: the failure mode is OVERFLOW, and float division
+    overflows silently to infinity rather than raising the way `**` does. This sweep found it on
+    its first run at an axis of 1e-105, which cubes to a subnormal.
+
+    So the sweep is not a replacement for the guard, it is what covers it. Across a logarithmic
+    range from 1e-300 to 1e300, every finite positive axis must either raise
+    `RelativeMotionError` or return a finite positive rate. Nothing may return zero, a NaN or an
+    infinity.
+    """
+    checked = 0
+    for exponent in range(-300, 301, 3):
+        axis = 10.0**exponent
+        try:
+            rate = mean_motion_rad_s(axis)
+        except RelativeMotionError:
+            continue
+        checked += 1
+        assert math.isfinite(rate), (
+            f"axis 1e{exponent} gave {rate!r}; reinstate the result check in mean_motion_rad_s"
+        )
+        assert rate > 0.0, (
+            f"axis 1e{exponent} gave {rate!r}; reinstate the result check in mean_motion_rad_s"
+        )
+    assert checked > 50, f"only {checked} axes were accepted; the sweep proves too little"

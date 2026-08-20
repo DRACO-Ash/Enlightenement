@@ -104,7 +104,32 @@ def mean_motion_rad_s(semi_major_axis_km: float) -> float:
         raise RelativeMotionError(
             f"semi-major axis must be finite and positive, got {semi_major_axis_km!r}"
         )
-    return math.sqrt(EARTH_MU_KM3_S2 / semi_major_axis_km**3)
+    # Finite and positive is not sufficient, so the ARITHMETIC is guarded rather than the range:
+    # 1e-200 cubes to zero and raised `ZeroDivisionError`, and 1e300 raised `OverflowError`. Both
+    # escaped the documented `RelativeMotionError`, so a caller failing closed on the documented
+    # type caught neither. Guarding the arithmetic avoids inventing a physical range to defend.
+    #
+    # The RESULT is checked as well, and the reason is a mistake worth recording. Coverage showed
+    # that check dead, so I removed it, writing an argument that the division could not underflow
+    # to zero while the cube stayed finite. That argument was true and irrelevant: the failure is
+    # OVERFLOW, not underflow, and float division overflows SILENTLY to infinity rather than
+    # raising the way `**` does. A logarithmic sweep found it on the first run - an axis of 1e-105
+    # cubes to a subnormal, the division returns `inf`, and `math.sqrt(inf)` is `inf`.
+    #
+    # Third time in this project that I removed a guard on a reachability argument and was wrong.
+    # The guard stays, and the sweep is what covers it rather than what replaces it.
+    try:
+        rate = math.sqrt(EARTH_MU_KM3_S2 / semi_major_axis_km**3)
+    except (ZeroDivisionError, OverflowError) as exhausted:
+        raise RelativeMotionError(
+            f"semi-major axis {semi_major_axis_km!r} is finite but outside the range floating"
+            f" point can express a mean motion for: {exhausted}"
+        ) from exhausted
+    if not math.isfinite(rate) or rate <= 0.0:
+        raise RelativeMotionError(
+            f"semi-major axis {semi_major_axis_km!r} gives an unusable mean motion {rate!r}"
+        )
+    return rate
 
 
 def mean_motion_from_elements(elements: Satrec) -> float:
@@ -132,7 +157,16 @@ def no_drift_alongtrack_rate_km_s(radial_offset_km: float, mean_motion: float) -
     Minus twice the mean motion times the radial offset. Provided as a named function rather than
     left as a comment, because it is the one number an RPO scenario author most needs and most
     easily gets the sign of wrong.
+
+    Guarded like every sibling in this module. It accepted a non-finite input silently and returned
+    NaN, which is worse here than elsewhere: the output IS an initial velocity, so the NaN would
+    have been written into a scenario's starting conditions rather than surfacing at a boundary.
     """
+    if not math.isfinite(radial_offset_km) or not math.isfinite(mean_motion):
+        raise RelativeMotionError(
+            f"the radial offset and mean motion must both be finite, got"
+            f" {radial_offset_km!r} and {mean_motion!r}"
+        )
     return -2.0 * mean_motion * radial_offset_km
 
 

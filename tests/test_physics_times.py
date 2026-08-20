@@ -18,6 +18,7 @@ import math
 import pytest
 from sgp4.propagation import gstime
 
+from enlightenment.physics.angles import shortest_separation_degrees
 from enlightenment.physics.times import (
     J2000_JULIAN_DATE,
     greenwich_mean_sidereal_degrees,
@@ -126,26 +127,48 @@ def test_a_sub_satellite_longitude_lands_in_the_geo_belt_convention() -> None:
         assert -180.0 <= longitude < 180.0
 
 
-def test_a_geostationary_object_holds_its_longitude_over_a_day() -> None:
-    """The property that proves the Earth-rotation term is applied with the right sign.
+#: One sidereal day in days. Earth turns once relative to the stars in this time, not in a solar
+#: day, which is the distinction the whole module rests on.
+SIDEREAL_DAY_DAYS = 0.99726957
 
-    A geostationary object's inertial right ascension advances at the same rate as Earth rotation,
-    so its longitude below is constant. Get the sign wrong and it appears to travel twice round
-    the planet in a day, which is the sort of artefact this whole module exists to avoid
+
+@pytest.mark.parametrize(
+    ("label", "day_fraction", "inertial_advance_degrees"),
+    [
+        ("a quarter sidereal day", 0.25, 90.0),
+        ("half a sidereal day", 0.5, 180.0),
+        ("a full sidereal day", 1.0, 360.0),
+    ],
+)
+def test_a_geostationary_object_holds_its_longitude(
+    label: str, day_fraction: float, inertial_advance_degrees: float
+) -> None:
+    """The sign of the Earth-rotation term, and the first version of this test did not test it.
+
+    A geostationary object's inertial right ascension advances at exactly Earth's rotation rate,
+    so its longitude below is constant. Get the sign wrong and it appears to travel round the
+    planet twice a day, which is the 131-degree class of error this whole module exists to avoid
     manufacturing.
-    """
-    from enlightenment.physics.angles import shortest_separation_degrees
 
-    start = julian_date_from_utc(2026, 8, 20, 0, 0, 0.0)
+    **Why the fraction is parametrised.** The original test used a FULL sidereal day and an
+    inertial advance of 2*pi, so both operands returned to their starting values and the
+    subtraction was symmetric: measured, the correct sign gives -0.0000 degrees of drift and the
+    inverted sign also gives 0.0000. Inverting the operator left the entire suite green. The
+    quarter-day case is the discriminating one: correct gives -0.0000, inverted gives -180.0000.
+    The full day is kept because it is the physically meaningful statement, and it is now labelled
+    as the case that does not discriminate rather than trusted as the one that does.
+    """
+    start = julian_date_from_utc(2026, 8, 20)
     radius = 42164.0
-    sidereal_day = 0.99726957
-    first = sub_satellite_longitude_degrees((radius, 0.0, 0.0), start)
-    # One sidereal day later, the object has gone exactly once round in inertial space.
-    angle = 2.0 * math.pi
+    angle = math.radians(inertial_advance_degrees)
     later_position = (radius * math.cos(angle), radius * math.sin(angle), 0.0)
-    second = sub_satellite_longitude_degrees(later_position, start + sidereal_day)
+
+    first = sub_satellite_longitude_degrees((radius, 0.0, 0.0), start)
+    second = sub_satellite_longitude_degrees(
+        later_position, start + SIDEREAL_DAY_DAYS * day_fraction
+    )
     drift = shortest_separation_degrees(first, second)
-    assert abs(drift) < 0.05, f"a geostationary object drifted {drift:.4f} deg in a sidereal day"
+    assert abs(drift) < 0.05, f"{label}: a geostationary object drifted {drift:.4f} degrees"
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
@@ -153,3 +176,27 @@ def test_a_non_finite_position_is_refused_by_the_longitude_conversion(bad: float
     """Fail closed at the boundary, as everywhere else in this package."""
     with pytest.raises(ValueError, match="position must be finite"):
         sub_satellite_longitude_degrees((bad, 0.0, 0.0), J2000_JULIAN_DATE)
+
+
+@pytest.mark.parametrize("julian_date", [1e308, -1e308, 1e11, -1e11])
+def test_a_julian_date_that_is_finite_but_absurd_is_refused(julian_date: float) -> None:
+    """Finite was not sufficient: the cubic term overflows well inside the float range.
+
+    `1e308` raised an undocumented `OverflowError` straight past the documented contract. The
+    bound is roughly plus or minus 27 million years, absurdly generous for a trainer and small
+    enough that the polynomial cannot overflow.
+    """
+    with pytest.raises(ValueError, match="outside the range"):
+        greenwich_mean_sidereal_degrees(julian_date)
+
+
+@pytest.mark.parametrize("component", ["hour", "minute", "second"])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_every_time_of_day_component_is_checked_for_finiteness(component: str, bad: float) -> None:
+    """The first version checked `second` alone, so a non-finite hour or minute returned a NaN
+    Julian Date silently: exactly the failure the guard exists to prevent, one argument along.
+    """
+    arguments = {"hour": 0, "minute": 0, "second": 0.0}
+    arguments[component] = bad
+    with pytest.raises(ValueError, match=f"{component} must be finite"):
+        julian_date_from_utc(2026, 8, 20, **arguments)  # type: ignore[arg-type]

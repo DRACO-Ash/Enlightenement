@@ -18,7 +18,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Category | Training / Simulation. Owner decision, 2026-08-18. If the console's list uses different wording, pick its nearest equivalent and record the exact string here rather than forcing this one |
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
-| Version | 0.21.0, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.22.0, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -154,14 +154,20 @@ the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 634 passed and 1 skipped, coverage 98.93%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.21.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Verification loop green (`sh scripts/verify.sh`), 661 passed and 1 skipped, coverage 98.97%
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.22.0`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [x] `engineering-reviewer` PASS at round 7 on commit 068b1c4, after four FAILed rounds (one BLOCKER and four MAJORs; two MAJORs; one BLOCKER and one MAJOR; one MAJOR against the release record). Its six MINORs are closed in V0.8, so a confirmation review is running against the current tree.
-- [x] `security-reviewer` PASS at rounds 4, 5 and 7, most recently on commit 068b1c4. Its five MINORs, including one real 500 on an unparsable `If-Match`, are closed in V0.8, so a confirmation review is running against the current tree.
+- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0).** An
+      earlier PASS at commit `068b1c4` is not evidence about this tree and the tick claiming it has
+      been removed: eleven commits and roughly 1,900 lines have landed since. Every finding from
+      that FAIL is closed in this release; the gate re-runs against this head and the tick goes
+      back only on the verdict itself.
+- [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0)**, on the
+      undocumented exception escapes and the `RunLog` append-only claim. Both are closed here. Same
+      rule: the tick returns on a verdict against this head, not on a verdict against an ancestor.
 - [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
       the application: five undefined submission fields, an unset resource budget, and a container
       contract that could not be confirmed because the CI `image` job named as its binding check

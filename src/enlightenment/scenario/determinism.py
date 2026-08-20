@@ -22,6 +22,30 @@ TICK_MILLISECONDS: Final = 100
 #: divergence and short enough to appear in a log line an operator can read back.
 FINGERPRINT_LENGTH: Final = 16
 
+#: Longest serialised event accepted. A 50 MB payload was accepted by the first version, which is
+#: neither replayable in any useful sense nor something a scenario legitimately needs.
+MAX_PAYLOAD_BYTES: Final = 64 * 1024
+
+#: Deepest nesting accepted in a payload. 200,000 levels raised an undocumented `RecursionError`
+#: from inside `json.dumps`; a scenario event is a flat record of a few fields.
+MAX_PAYLOAD_DEPTH: Final = 8
+
+
+def _check_payload_depth(value: Any, depth: int = 0) -> None:
+    """Refuse a payload nested deeper than `MAX_PAYLOAD_DEPTH`, before `json` recurses on it.
+
+    Checked separately rather than left to `json.dumps` raising, because a `RecursionError` is not
+    a `ValueError` and can leave the interpreter close to its stack limit for whatever runs next.
+    """
+    if depth > MAX_PAYLOAD_DEPTH:
+        raise ValueError(f"payload nests deeper than {MAX_PAYLOAD_DEPTH} levels")
+    if isinstance(value, dict):
+        for item in value.values():
+            _check_payload_depth(item, depth + 1)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _check_payload_depth(item, depth + 1)
+
 
 class SeededRandom:
     """The only source of randomness a scenario may use.
@@ -137,30 +161,82 @@ class Event:
         )
 
 
-@dataclass(slots=True)
 class RunLog:
     """The append-only record that IS the run.
 
-    Append-only is the design: there is no `remove` and no `update`, because a log that can be
-    edited after the fact cannot certify a replay. State is derived from the log by folding over
-    it, never stored beside it, so there is no second copy to fall out of step.
+    **Append-only is now enforced, not merely intended.** The first version exposed `events` as a
+    public list, so `log.events[1] = ...`, `log.events.clear()` and wholesale replacement all
+    worked, and a forged log compared equal under `replay_is_identical`. The docstring said "a log
+    that can be edited after the fact cannot certify a replay" while permitting exactly that. The
+    list is private now and `events` returns a tuple, so there is no remove, no update, and no
+    handle on the underlying storage.
+
+    **What this still is not: tamper-evident.** The fingerprint is an unkeyed digest, so whoever
+    can reach the object can recompute it. It detects DIVERGENCE, which is what a replay needs. If
+    a run artefact ever has to withstand a motivated editor, that needs a keyed Message
+    Authentication Code and a signing key, and that is a different control with a different
+    threat model. Stated here so nobody reads this one as the other.
+
+    State is derived from the log by folding over it, never stored beside it, so there is no
+    second copy to fall out of step.
     """
 
-    seed: int
-    events: list[Event] = field(default_factory=list)
+    __slots__ = ("_events", "seed")
+
+    def __init__(self, seed: int, events: tuple[Event, ...] | list[Event] | None = None) -> None:
+        self.seed = seed
+        self._events: list[Event] = list(events or ())
+
+    @property
+    def events(self) -> tuple[Event, ...]:
+        """The events so far, as an immutable tuple. There is deliberately no setter."""
+        return tuple(self._events)
 
     def record(self, clock: ScenarioClock, kind: str, **payload: Any) -> None:
         """Append one event at the clock's current tick.
 
-        Refuses an out-of-order tick. A log whose ticks do not increase monotonically cannot be
-        replayed forwards, and the cheapest place to catch that is where it would be written.
+        Every check happens HERE rather than at fingerprint time, and that placement is the fix
+        for a real defect: a non-finite payload value used to be accepted and then made
+        `fingerprint()` raise, so an append-only log with no remove could be permanently deprived
+        of a fingerprint by one bad write. Failing at the write is the only boundary at which the
+        caller can still do something about it.
+
+        Refuses:
+
+        ● an out-of-order tick, because a log whose ticks do not increase cannot be replayed
+          forwards;
+        ● a payload that will not serialise, including a non-finite float at any depth;
+        ● a payload over `MAX_PAYLOAD_BYTES`, or nested past `MAX_PAYLOAD_DEPTH`, because a
+          50 MB event and a 200,000-deep dict were both accepted, the second raising an
+          undocumented `RecursionError`.
+
+        **Not whitelisted by field name**, unlike `audit.py`, and that is a deliberate difference:
+        an audit line has a fixed vocabulary, whereas an event log's whole purpose is carrying
+        whatever a scenario needs to replay. The controls that matter here are therefore size,
+        depth and serialisability. The consequence is that a caller CAN put a credential or a
+        personal detail in a payload, so the scenario engine must not, and the DPIA records that
+        as a design obligation rather than a technical guarantee.
         """
-        if self.events and clock.tick < self.events[-1].tick:
+        if self._events and clock.tick < self._events[-1].tick:
             raise ValueError(
-                f"event at tick {clock.tick} follows tick {self.events[-1].tick};"
+                f"event at tick {clock.tick} follows tick {self._events[-1].tick};"
                 " a run log is append-only and monotonic"
             )
-        self.events.append(Event(tick=clock.tick, kind=kind, payload=dict(payload)))
+        event = Event(tick=clock.tick, kind=kind, payload=dict(payload))
+        _check_payload_depth(event.payload)
+        try:
+            canonical = event.canonical()
+        except (ValueError, TypeError, RecursionError) as unserialisable:
+            raise ValueError(
+                f"event {kind!r} at tick {clock.tick} cannot be serialised, so it could never be"
+                f" replayed: {unserialisable}"
+            ) from unserialisable
+        if len(canonical) > MAX_PAYLOAD_BYTES:
+            raise ValueError(
+                f"event {kind!r} at tick {clock.tick} serialises to {len(canonical)} bytes,"
+                f" over the {MAX_PAYLOAD_BYTES} limit"
+            )
+        self._events.append(event)
 
     def fingerprint(self) -> str:
         """A digest over the seed and every event, in order.
@@ -168,10 +244,13 @@ class RunLog:
         The comparison a determinism test actually makes. Two runs are identical when their
         fingerprints match, and the seed is included so two runs that produced no events are not
         trivially equal.
+
+        Cannot fail on a log built through `record`, because everything that could make it fail is
+        refused at the write.
         """
         digest = hashlib.sha256()
         digest.update(f"seed:{self.seed}".encode())
-        for event in self.events:
+        for event in self._events:
             digest.update(event.canonical().encode())
         return digest.hexdigest()[:FINGERPRINT_LENGTH]
 

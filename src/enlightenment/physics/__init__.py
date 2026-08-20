@@ -30,6 +30,7 @@ from enlightenment.physics.relative import (
     mean_motion_rad_s,
     no_drift_alongtrack_rate_km_s,
     propagate_relative,
+    relative_acceleration_km_s2,
 )
 from enlightenment.physics.times import (
     J2000_JULIAN_DATE,
@@ -57,6 +58,7 @@ __all__ = [
     "normalise_longitude",
     "propagate_minutes_since_epoch",
     "propagate_relative",
+    "relative_acceleration_km_s2",
     "shortest_separation_degrees",
     "sub_satellite_longitude_degrees",
     "wrap_to_pi",

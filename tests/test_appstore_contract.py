@@ -2076,7 +2076,14 @@ def test_the_physics_core_is_unreachable_from_any_http_route() -> None:
         "from enlightenment.config import load_config\n"
         "with tempfile.TemporaryDirectory() as d:\n"
         "    create_app(config=load_config(env={'DATA_DIR': d}))\n"
-        "reached = sorted(n for n in sys.modules if '.physics' in n or n.startswith('sgp4'))\n"
+        # `.scenario` is checked as well as `.physics`. The determinism substrate is unreachable
+        # from the edge today, and nothing pinned that: the census pattern named only the physics
+        # package, so a route reaching the scenario engine would have gone unnoticed by the very
+        # test written to notice it.
+        "reached = sorted(\n"
+        "    n for n in sys.modules\n"
+        "    if '.physics' in n or '.scenario' in n or n.startswith('sgp4')\n"
+        ")\n"
         "print('\\n'.join(reached))\n"
     )
     result = subprocess.run(  # noqa: S603 - a resolved interpreter and a constant probe

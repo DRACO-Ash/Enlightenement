@@ -36,6 +36,12 @@ J2000_JULIAN_DATE: Final = 2451545.0
 #: Days in a Julian century, the unit the Earth-rotation polynomial is expressed in.
 DAYS_PER_JULIAN_CENTURY: Final = 36525.0
 
+#: The widest Julian Date this polynomial is evaluated over. Roughly plus or minus 27 million
+#: years, which is absurdly generous for a trainer and far below the magnitude at which the cubic
+#: term overflows a double. A bound is needed because "finite" was not sufficient: 1e308 raised an
+#: undocumented `OverflowError` straight past the documented contract.
+MAX_JULIAN_DATE: Final = 1e10
+
 #: Seconds in a day, and the seconds-of-time to degrees-of-arc factor (86400 / 360).
 SECONDS_PER_DAY: Final = 86400.0
 SECONDS_PER_DEGREE: Final = 240.0
@@ -57,8 +63,14 @@ def julian_date_from_utc(
     does: a NaN here propagates into an Earth-rotation angle and then into a plotted longitude,
     where it is a mark that never appears rather than an error anybody sees.
     """
-    if not math.isfinite(second):
-        raise ValueError(f"second must be finite, got {second!r}")
+    # ALL THREE time-of-day components, not only `second`. The first version checked `second`
+    # alone, so a non-finite hour or minute returned a NaN or an infinite Julian Date silently -
+    # exactly the failure this guard's own docstring says it exists to prevent, one argument
+    # along. `greenwich_mean_sidereal_degrees` would catch it a layer later; a caller that stores
+    # or plots the Julian Date directly would not.
+    for name, value in (("hour", hour), ("minute", minute), ("second", second)):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value!r}")
     if month < MARCH:
         year -= 1
         month += 12
@@ -79,7 +91,7 @@ def greenwich_mean_sidereal_degrees(julian_date_ut1: float) -> float:
     """Return Greenwich Mean Sidereal Time in degrees, in ``[0, 360)``.
 
     The IAU 1982 polynomial, which is the form SGP4's own deep-space model uses. Verified against
-    `sgp4.propagation.gstime` in the pinned wheel across four epochs spanning 46 years, agreeing
+    `sgp4.propagation.gstime` in the pinned wheel across five epochs spanning 46 years, agreeing
     to 1.6e-10 degrees, and separately sanity-checked against an almanac: sidereal time at 0h UT
     on 1 August 1992 comes out at 20h 39m, and the almanac says about 20h 40m.
 
@@ -92,6 +104,14 @@ def greenwich_mean_sidereal_degrees(julian_date_ut1: float) -> float:
     """
     if not math.isfinite(julian_date_ut1):
         raise ValueError(f"julian date must be finite, got {julian_date_ut1!r}")
+    if abs(julian_date_ut1) > MAX_JULIAN_DATE:
+        # Finite is not sufficient: the cubic term overflows well inside the float range, and
+        # 1e308 raised an undocumented `OverflowError`. The bound is enormous compared with any
+        # date a trainer will see and small enough that the polynomial cannot overflow.
+        raise ValueError(
+            f"julian date {julian_date_ut1!r} is outside the range this polynomial is defined"
+            f" over (plus or minus {MAX_JULIAN_DATE:g})"
+        )
     centuries = (julian_date_ut1 - J2000_JULIAN_DATE) / DAYS_PER_JULIAN_CENTURY
     seconds_of_time = (
         67310.54841

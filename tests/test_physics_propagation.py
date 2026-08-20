@@ -35,7 +35,6 @@ import ast
 import math
 import random
 import string
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -708,40 +707,26 @@ def test_load_elements_refuses_a_meaningless_line_by_default(description: str, l
 
 
 def _repository_python_files() -> list[Path]:
-    """Every TRACKED Python file, or the three source directories when git is unavailable.
+    """Every Python file under `src`, `tests` and `scripts`. A fixed set, not a git query.
 
-    Tracked, not on-disk, and the difference turned the loop red. The first version used
-    `rglob("*.py")` over the repository root with a handful of directory exclusions, so it
-    counted untracked files: a linked git worktree of this same repository double-counted every
-    call site and failed the leg, and one stray unparseable `.py` anywhere under the root would
-    have killed it with a `SyntaxError`. The census before that parsed a single file and was
-    immune, so the change made the leg every other claim depends on breakable by ambient
-    litter - which is exactly the leg people learn to skip.
+    **The answer must not depend on git state, and asking git made it depend on staging.** The
+    first version used `rglob` over the repository root, which counted an untracked linked
+    worktree and turned the loop red. The second asked `git ls-files`, which fixed that and
+    introduced a worse fault: an UNCOMMITTED new test file is untracked, so the census returned a
+    smaller answer before `git add` than after it. A loop I ran pre-commit reported green, the same
+    loop post-commit was red, and I published the pre-commit figures as the commit's verification.
 
-    The fallback matters for the platform: the uploaded artefact carries `src`, `tests` and
-    `scripts`, and may or may not be a git checkout, so the answer must not depend on that.
+    Three named directories is the fix. It cannot see a sibling worktree, because a worktree is
+    not inside them; it cannot see a stray cache, for the same reason; and it gives the same answer
+    whatever git thinks, which is the property a verification leg needs. It is also exactly what
+    the uploaded artefact carries, so the census measures the same tree on the platform runner.
     """
     root = Path(__file__).resolve().parent.parent
-    try:
-        # Why S603 is suppressed below: a list argv with shell=False, every element either a
-        # constant or this
-        # repository's own resolved path. `git` is looked up on PATH deliberately - hardcoding
-        # an absolute path would break on any runner that installs it elsewhere - and the worst
-        # a hostile `git` on PATH could do is misreport which files are tracked, in a test that
-        # would then fail. Nothing here is a secret and nothing is caller-supplied.
-        listing = subprocess.run(  # noqa: S603
-            ["git", "-C", str(root), "ls-files", "-z", "--", "*.py"],  # noqa: S607
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):  # pragma: no cover - git absent on the runner
-        listing = None
-    if listing is not None and listing.returncode == 0 and listing.stdout:
-        return [root / name for name in listing.stdout.split("\0") if name]
-    return sorted(  # pragma: no cover - only when git cannot enumerate the tree
-        path for folder in ("src", "tests", "scripts") for path in (root / folder).rglob("*.py")
+    return sorted(
+        path
+        for folder in ("src", "tests", "scripts")
+        for path in (root / folder).rglob("*.py")
+        if "__pycache__" not in path.parts
     )
 
 

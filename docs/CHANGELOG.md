@@ -2,6 +2,99 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.22 (2026-08-20)
+
+**What.** Both binding gates FAILED V0.21.0 (`fa21434`). Every finding is closed here. The
+BLOCKER is the one worth recording, because it is about this document: **V0.21's own verification
+line was fabricated.**
+
+### BLOCKER: I published a pre-commit measurement as the commit's verification
+
+V0.21 asserted "Loop green under the pinned toolchain: 634 passed, 1 skipped, coverage 98.93%".
+The reviewer ran the loop at that commit and measured **1 failed, 633 passed, 1 skipped**. Both
+figures were real numbers from a real run; the run was just not the one being described. I measured
+before the last edit, committed the edit, and wrote the earlier measurement into the release record.
+
+That is worse than a wrong number. A changelog exists so a later reader can trust a claim without
+re-deriving it, and a fabricated verification line poisons every other claim in the same row. The
+same fault produced the invented `SGP4_ERRORS[5]`, the invented cause in V0.19's changelog, and the
+131-degree memory disagreement in V0.21: **an assertion written from recollection when the machine
+was right there.**
+
+The habit, in the reviewer's words, which I am recording verbatim because it is the operating
+instruction and not a sentiment: *"every one of these is a claim that could have been checked by
+running something that already exists in this repository. The habit to build is not more careful
+prose, it is running the assertion before writing the sentence about it."*
+
+So the figures in this row were measured after the last source edit and before the commit, and the
+version bump was made first so the three version-guard contract tests would fail loudly if the
+documents lagged. They did fail, which is the guard working: the simulation reported `3 failed,
+655 passed` until `docs/DEPLOYMENT.md` and this row named 0.22.0.
+
+### The stale gate ticks in the submission manifest
+
+The pre-submission checklist carried `[x] engineering-reviewer PASS ... on commit 068b1c4` and the
+same for the security gate, while both gates had returned FAIL at `fa21434`. Eleven commits and
+roughly 1,900 lines separate those two states, so the tick was asserting a property of an ancestor
+about a descendant. Both are now unticked and both name the FAIL and its commit. A gate verdict is
+evidence about the tree it ran against and nothing else.
+
+### Findings closed from the two FAILs
+
+**Undocumented exceptions escaping the physics boundary.** Five of them, each found by sweeping the
+input domain rather than by reading the code: `mean_motion_rad_s(1e-200)` raised `ZeroDivisionError`,
+`(1e300)` raised `OverflowError`, `greenwich_mean_sidereal_degrees(1e308)` raised `OverflowError`,
+`no_drift_alongtrack_rate_km_s` passed non-finite arguments straight through, and
+`julian_date_from_utc` validated only `second`, returning a silent NaN for a non-finite `hour` or
+`minute`. All five now raise a documented `ValueError` at the boundary.
+
+One of these is a repeat of a specific mistake: **I argued the result-finiteness guard in
+`mean_motion_rad_s` was unreachable and removed it.** The argument was that division cannot
+underflow while the cube stays finite. True, and irrelevant, because the failure mode is
+**overflow**, and float division overflows *silently* to `inf` where `**` raises. The sweep found it
+at a semi-major axis of 1e-105 on its first run. That is the third time I have removed a guard on a
+reachability argument and been wrong, so the rule is now absolute: a reachability claim is proved by
+a sweep that finds nothing, never by prose.
+
+**`RunLog` was not append-only, despite V0.21 saying it was.** `events` was a public list, so item
+assignment, `clear()` and wholesale replacement all worked, and a forged log compared equal to a
+genuine one. A NaN payload also permanently bricked the fingerprint: accepted at `record()`, refused
+at `fingerprint()`, with no way to remove it. Now `__slots__` with a private list, a read-only tuple
+property, and all validation, monotonic tick, payload depth, serialisability and a 64 KiB size cap,
+moved to the write path where it can still refuse.
+
+**Two tests that could not fail.** `assert all(math.isfinite(1.0) for _ in ...)` iterated the
+collection and then tested a literal, so it passed on an empty collection and on a corrupt one
+alike; it is now a real JSON round-trip. And the **Earth-rotation sign was entirely unasserted**:
+the test advanced a full sidereal day with right ascension advanced by 2*pi, so both operands
+returned to their starting values and inverting the operator in `sub_satellite_longitude_degrees`
+left the whole suite green. Parametrised by fraction of a day, a quarter day gives -0.0000 degrees
+correct against -180.0000 degrees inverted. Mutation-killed.
+
+**The opt-out census was staging-dependent.** It asked `git` for the file list, so it answered 3
+before the commit (a new file being untracked) and 4 after. It now walks `src`, `tests` and
+`scripts` directly, which is immune to staging and to the worktree.
+
+### The DPIA credited controls that do not exist
+
+`docs/DPIA.md` risk R2 listed score decomposition and a content version hash as **existing**
+controls, in a row whose own text said "no scoring engine exists". The table contradicted its own
+preamble. Section 2 described every accuracy measure in the present tense when none is built. Both
+corrected, R8's two capacity caps are now named as partial and explicitly not retention periods, the
+approver's name is `TBC, re-verify` rather than a name I do not have, and every remaining Section 5
+row was checked against the source: `hmac.compare_digest` behind a length guard, `REFUSED_ORIGINS`
+covering `*` and `null`, `O_NOFOLLOW` at all three open sites, `USER 10001:10001`, `flock` across
+load-merge-rename, HTTP 409 on a stale revision, the anti-shrink merge, `Path.replace` after
+`fsync` for the atomic write, and 0600 on backups. Every one verified by grep, not by memory. A DPIA
+that credits a control it wants rather than a control it has is worse than one that admits the gap,
+because the gap is what the conditions exist to close.
+
+**Verified.** Loop green under the pinned toolchain: **661 passed, 1 skipped**,
+coverage **98.97%** against an 80% floor, all three lock files audited clean by `pip-audit`. All
+seven physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green
+against the version being shipped: **658 passed, 4 skipped**. Both figures were taken from runs
+against this tree after the final source edit, which is the whole point of this release.
+
 ## V0.21 (2026-08-20)
 
 **What.** Flight plan Phase 0 complete, plus the owner's decisions of today recorded and acted on.

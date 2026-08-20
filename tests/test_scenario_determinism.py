@@ -12,13 +12,16 @@ to differ, because a harness that returned a constant log would pass the first c
 
 from __future__ import annotations
 
-import math
+import json
 
 import pytest
 
 from enlightenment.scenario import (
     FINGERPRINT_LENGTH,
+    MAX_PAYLOAD_BYTES,
+    MAX_PAYLOAD_DEPTH,
     TICK_MILLISECONDS,
+    Event,
     RunLog,
     ScenarioClock,
     SeededRandom,
@@ -202,15 +205,19 @@ def test_the_fingerprint_does_not_depend_on_the_order_keys_were_added() -> None:
 
 
 def test_a_non_finite_payload_value_is_refused_rather_than_serialised() -> None:
-    """A NaN compares unequal to itself, so it would make a fingerprint depend on nothing.
+    """The check that stops a fingerprint depending on a value unequal to itself.
 
-    `json.dumps(..., allow_nan=False)` is what stops it, and it fails at the point the event is
-    canonicalised rather than at the point a replay mysteriously stops matching.
+    A NaN compares unequal to itself, so it would make a run's digest depend on nothing.
+    `json.dumps(..., allow_nan=False)` is what refuses it.
+
+    **This test used to record the NaN and then expect `fingerprint()` to raise.** That was the
+    defect the security gate found, not the test: in an append-only log with no remove, one bad
+    write permanently deprived the run of a fingerprint. The refusal moved to `record()`, so the
+    assertion moved with it, and `Event.canonical()` is exercised directly here to keep the
+    serialisation-level check as well as the write-level one.
     """
-    log = RunLog(seed=1)
-    log.record(ScenarioClock(tick=1), "measured", value=float("nan"))
     with pytest.raises(ValueError, match="Out of range float"):
-        log.fingerprint()
+        Event(tick=1, kind="measured", payload={"value": float("nan")}).canonical()
 
 
 def test_the_package_exports_what_it_documents() -> None:
@@ -336,7 +343,10 @@ def test_a_derived_physical_quantity_replays_identically() -> None:
 
     assert run(20260820) == run(20260820)
     assert run(20260820) != run(20260821)
-    assert all(math.isfinite(1.0) for _ in run(20260820))  # the log is serialisable at all
+    # Every event round-trips through JSON. The line here was
+    # `all(math.isfinite(1.0) for _ in run(...))`, whose predicate ignores the loop variable and
+    # is therefore a tautology, labelled as though it checked serialisability. It did not.
+    assert all(json.loads(event) for event in run(20260820))
 
 
 def test_replay_comparison_rejects_two_logs_of_equal_length_that_differ() -> None:
@@ -364,3 +374,140 @@ def test_replay_comparison_rejects_two_logs_with_different_seeds() -> None:
     for log in (first, second):
         log.record(ScenarioClock(tick=1), "moved", longitude=10.0)
     assert not replay_is_identical(first, second)
+
+
+#: The fingerprint of `_simulate(20260820)`, measured and pinned.
+GOLDEN_FINGERPRINT = "0ad9d5d62012ddb1"
+
+
+def test_the_fingerprint_is_stable_across_processes_not_only_within_one() -> None:
+    """A golden value, because every other determinism test compares two runs in ONE interpreter.
+
+    The module claims a replay months later runs in a different process, and that string hashing
+    is randomised per process so set iteration order cannot be relied on. That claim was true when
+    measured, under `PYTHONHASHSEED` of 0, 1, 12345, 99999 and `random`, but nothing pinned it: a
+    future change that made the fingerprint process-dependent would have stayed green, because
+    both halves of every comparison would have moved together.
+
+    A literal is the only assertion that catches that. If this fails after a deliberate change to
+    the log format, update it; if it fails without one, something has become process-dependent.
+    """
+    assert _simulate(20260820).fingerprint() == GOLDEN_FINGERPRINT
+
+
+# --- the log's boundary, hardened after the security gate ---------------------------------
+
+
+def test_the_log_is_genuinely_append_only_not_only_documented_as_such() -> None:
+    """`events` used to be a public list, so the docstring's promise was a convention.
+
+    Measured before the fix: `log.events[1] = Event(...)` rewrote history, `log.events.clear()`
+    emptied the log, and a forged log compared equal under `replay_is_identical`. The list is
+    private now and this returns a tuple, so there is no remove, no update and no handle on the
+    storage.
+
+    What this still is not is tamper-evident: the fingerprint is unkeyed, so whoever reaches the
+    object can recompute it. It detects divergence, which is what a replay needs.
+    """
+    log = RunLog(seed=1)
+    log.record(ScenarioClock(tick=1), "first")
+    log.record(ScenarioClock(tick=2), "second")
+
+    assert isinstance(log.events, tuple)
+    with pytest.raises((AttributeError, TypeError)):
+        log.events[0] = Event(tick=0, kind="forged")  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        log.events.clear()  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        log.events = ()  # type: ignore[misc]
+    assert [event.kind for event in log.events] == ["first", "second"]
+
+
+def test_a_non_finite_payload_is_refused_at_the_write_not_at_the_fingerprint() -> None:
+    """The placement is the fix, not the check.
+
+    A NaN used to be accepted and then made `fingerprint()` raise. In an append-only log with no
+    remove, that permanently deprived the run of a fingerprint: the bad event could not be taken
+    out. Failing at the write is the only boundary where the caller can still do something.
+    """
+    log = RunLog(seed=1)
+    with pytest.raises(ValueError, match="cannot be serialised"):
+        log.record(ScenarioClock(tick=1), "measured", value=float("nan"))
+    assert log.events == (), "the refused event must not have been appended"
+    # And the log is still usable afterwards, which is the whole point.
+    log.record(ScenarioClock(tick=1), "measured", value=1.0)
+    assert len(log.fingerprint()) == FINGERPRINT_LENGTH
+
+
+def test_an_unserialisable_payload_is_refused_as_one_exception_type() -> None:
+    """Bytes, a set, a cyclic structure: all refused, all as `ValueError`."""
+    log = RunLog(seed=1)
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+    for description, payload in (
+        ("bytes", {"raw": b"\x00"}),
+        ("a set", {"options": {1, 2}}),
+        ("a cyclic structure", {"loop": cyclic}),
+        ("an arbitrary object", {"thing": object()}),
+    ):
+        with pytest.raises(ValueError, match=r"cannot be serialised|nests deeper"):
+            log.record(ScenarioClock(tick=1), "event", **payload)  # type: ignore[arg-type]
+        assert log.events == (), f"{description} was appended before it was refused"
+
+
+def test_an_over_large_payload_is_refused() -> None:
+    """A 50 MB event was accepted. It is neither replayable in any useful sense nor needed."""
+    log = RunLog(seed=1)
+    with pytest.raises(ValueError, match="over the"):
+        log.record(ScenarioClock(tick=1), "bulk", blob="x" * (MAX_PAYLOAD_BYTES + 1))
+    assert log.events == ()
+    # Just under the limit is accepted, so the bound is a bound and not a ban.
+    log.record(ScenarioClock(tick=1), "bulk", blob="x" * (MAX_PAYLOAD_BYTES - 200))
+    assert len(log.events) == 1
+
+
+def test_a_deeply_nested_payload_is_refused_before_json_recurses() -> None:
+    """200,000 levels raised a `RecursionError` from inside `json.dumps`.
+
+    That is not a `ValueError`, and it leaves the interpreter near its stack limit for whatever
+    runs next, so the depth is checked before serialisation rather than after it fails.
+    """
+    log = RunLog(seed=1)
+    nested: dict[str, object] = {"leaf": 1}
+    for _ in range(MAX_PAYLOAD_DEPTH + 2):
+        nested = {"deeper": nested}
+    with pytest.raises(ValueError, match="nests deeper"):
+        log.record(ScenarioClock(tick=1), "nested", **nested)
+    assert log.events == ()
+
+
+def test_a_newline_in_a_payload_cannot_forge_a_log_line() -> None:
+    """`json.dumps` escapes it, so log-line injection is structurally closed rather than filtered.
+
+    Asserted rather than assumed, because the audit module elsewhere strips control characters
+    explicitly and a reader could reasonably expect this one to do the same.
+    """
+    log = RunLog(seed=1)
+    log.record(ScenarioClock(tick=1), "note", text="a\nb\rFAKE_EVENT")
+    canonical = log.events[0].canonical()
+    assert "\n" not in canonical
+    assert "\\n" in canonical
+
+
+def test_the_depth_check_walks_lists_as_well_as_dicts() -> None:
+    """Nesting can be built out of lists too, and the recursive walk must follow both.
+
+    Coverage found the list branch unexercised: every earlier nesting fixture was dicts all the
+    way down, so a depth guard that only descended into dicts would have passed them all.
+    """
+    log = RunLog(seed=1)
+    nested: object = "leaf"
+    for _ in range(MAX_PAYLOAD_DEPTH + 2):
+        nested = [nested]
+    with pytest.raises(ValueError, match="nests deeper"):
+        log.record(ScenarioClock(tick=1), "nested", items=nested)
+    assert log.events == ()
+    # A tuple is the same case, and `json` serialises it as an array.
+    shallow: object = ("leaf",)
+    log.record(ScenarioClock(tick=1), "shallow", items=shallow)
+    assert len(log.events) == 1
