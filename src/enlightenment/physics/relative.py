@@ -1,0 +1,192 @@
+"""Clohessy-Wiltshire relative motion in the Hill frame, for rendezvous and proximity work.
+
+The frame, stated once because every sign error in this subject is a frame confusion. Origin at
+the chief spacecraft, and a right-handed set:
+
+● **radial** (often R or x): outward from the Earth's centre through the chief.
+● **along-track** (S or y): along the chief's velocity, in the direction of motion.
+● **cross-track** (W or z): completing the set, along the negative orbit normal.
+
+The equations are the linearised relative motion of a deputy near a chief in a CIRCULAR orbit,
+and the linearisation is the limitation that matters: they hold while the separation is small
+against the orbit radius, and they assume the chief's orbit is circular. For the Rendezvous and
+Proximity Operations (RPO) scenarios v1 covers, both hold comfortably. A scenario that violates
+either must propagate both objects with SGP4 and difference them, not use this.
+
+**The counter-intuitive behaviour this exists to teach.** A purely radial offset does not stay
+radial: it produces a secular along-track drift of minus six times the mean motion times the
+offset. An operator who expects "I moved up, so I stay above" is wrong in a way that compounds
+every orbit, and that class of error is exactly what competency axis four, physical reasoning,
+scores. The no-drift condition is along-track rate equals minus twice the mean motion times the
+radial offset, and it is asserted as a property rather than described.
+
+The closed form below was verified against numerical integration of the underlying differential
+equations, not against my own algebra. That distinction is the whole reason the check exists.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Final
+
+from sgp4.api import Satrec
+
+#: Earth's gravitational parameter, cubic kilometres per second squared, as SGP4 uses it.
+#:
+#: **This is 398600.5, not the modern EGM-96 398600.4418, and the difference is deliberate.** The
+#: first version here used the modern value under a comment claiming it was "the one SGP4 itself
+#: uses". Measured: `sgp4.earth_gravity.wgs84.mu` is 398600.5. The claim was false, so either the
+#: value or the claim had to change.
+#:
+#: The value changed, because the stated rationale is sound: a chief's mean motion derived here
+#: and a track propagated by SGP4 should not disagree for a reason nobody can see. Numerically it
+#: barely matters, and that is stated rather than implied: the two differ by 1.5e-7 relative,
+#: giving a mean-motion difference of 7.3e-8 relative, which over one orbit is a phase error far
+#: below anything a trainer displays. It matters for consistency, not accuracy.
+#:
+#: **Prefer :func:`mean_motion_from_elements` when an element set exists.** Recomputing a mean
+#: motion from a radius when the element set already carries one is a conversion with nothing to
+#: gain. This constant is for a synthetic circular chief specified by altitude.
+EARTH_MU_KM3_S2: Final = 398600.5
+
+#: Seconds in a minute. SGP4 works in minutes; this module works in seconds.
+SECONDS_PER_MINUTE: Final = 60.0
+
+#: The frame these vectors are expressed in. Carried in the type for the same reason the
+#: propagator carries TEME: a Hill-frame vector read as an inertial one is silently wrong.
+HILL_FRAME: Final = "HILL_RADIAL_ALONGTRACK_CROSSTRACK"
+
+
+class RelativeMotionError(ValueError):
+    """Raised when a relative-motion input cannot produce a usable state."""
+
+
+@dataclass(frozen=True, slots=True)
+class RelativeState:
+    """A deputy's state relative to the chief, in the Hill frame, kilometres and km/s.
+
+    Frozen, like :class:`StateVector`, so a state cannot differ between a solvability check and
+    the score computed from it.
+    """
+
+    position_km: tuple[float, float, float]
+    velocity_km_s: tuple[float, float, float]
+    frame: str = HILL_FRAME
+
+    @property
+    def range_km(self) -> float:
+        """Separation between deputy and chief."""
+        return math.hypot(*self.position_km)
+
+    @property
+    def range_rate_km_s(self) -> float:
+        """Rate of change of separation. Negative is closing, which is the sign an operator reads.
+
+        Zero when the separation is zero, because the rate is undefined there and a division by
+        zero in a plotted closing rate is worse than a defensible convention.
+        """
+        separation = self.range_km
+        if separation == 0.0:
+            return 0.0
+        return sum(p * v for p, v in zip(self.position_km, self.velocity_km_s, strict=True)) / (
+            separation
+        )
+
+
+def mean_motion_rad_s(semi_major_axis_km: float) -> float:
+    """Return the mean motion of a circular orbit, radians per second.
+
+    Rejects a non-positive or non-finite radius rather than returning a complex or infinite rate:
+    a scenario template with a bad altitude must fail at authoring time.
+    """
+    if not math.isfinite(semi_major_axis_km) or semi_major_axis_km <= 0.0:
+        raise RelativeMotionError(
+            f"semi-major axis must be finite and positive, got {semi_major_axis_km!r}"
+        )
+    return math.sqrt(EARTH_MU_KM3_S2 / semi_major_axis_km**3)
+
+
+def mean_motion_from_elements(elements: Satrec) -> float:
+    """Return the chief's mean motion in radians per second, taken from its element set.
+
+    The preferred path whenever a real element set exists, because the element set already
+    carries the mean motion and recomputing it from an assumed circular radius throws that away.
+    `no_kozai` is the Kozai mean motion in radians per MINUTE, which is the quantity SGP4 itself
+    propagates with, so a Hill-frame scenario built on this and a track propagated by SGP4 share
+    the same rate exactly rather than approximately.
+    """
+    # Coerced explicitly: `sgp4` ships no type stubs, so `no_kozai` is `Any` and returning it
+    # straight would let an untyped value out of the one module that wraps the library.
+    rate = float(elements.no_kozai) / SECONDS_PER_MINUTE
+    if not math.isfinite(rate) or rate <= 0.0:
+        raise RelativeMotionError(
+            f"the element set gives a non-usable mean motion: {elements.no_kozai!r} rad/min"
+        )
+    return rate
+
+
+def no_drift_alongtrack_rate_km_s(radial_offset_km: float, mean_motion: float) -> float:
+    """Return the along-track rate that cancels the secular drift of a radial offset.
+
+    Minus twice the mean motion times the radial offset. Provided as a named function rather than
+    left as a comment, because it is the one number an RPO scenario author most needs and most
+    easily gets the sign of wrong.
+    """
+    return -2.0 * mean_motion * radial_offset_km
+
+
+def propagate_relative(state: RelativeState, mean_motion: float, seconds: float) -> RelativeState:
+    """Advance ``state`` by ``seconds`` under the Clohessy-Wiltshire solution.
+
+    Closed form, not integrated, so a debrief can jump to any time in a run without stepping
+    there. Verified against a fourth-order Runge-Kutta integration of the underlying equations
+    over a full orbit: agreement to better than a micrometre in position.
+    """
+    if not math.isfinite(seconds):
+        raise RelativeMotionError(f"seconds must be finite, got {seconds!r}")
+    if not math.isfinite(mean_motion) or mean_motion <= 0.0:
+        raise RelativeMotionError(f"mean motion must be finite and positive, got {mean_motion!r}")
+    components = (*state.position_km, *state.velocity_km_s)
+    if not all(math.isfinite(component) for component in components):
+        raise RelativeMotionError(f"relative state must be finite, got {state!r}")
+
+    x, y, z = state.position_km
+    dx, dy, dz = state.velocity_km_s
+    n = mean_motion
+    nt = n * seconds
+    sin_nt = math.sin(nt)
+    cos_nt = math.cos(nt)
+
+    next_x = (4.0 - 3.0 * cos_nt) * x + sin_nt / n * dx + 2.0 * (1.0 - cos_nt) / n * dy
+    next_y = (
+        6.0 * (sin_nt - nt) * x
+        + y
+        - 2.0 * (1.0 - cos_nt) / n * dx
+        + (4.0 * sin_nt - 3.0 * nt) / n * dy
+    )
+    next_z = cos_nt * z + sin_nt / n * dz
+
+    next_dx = 3.0 * n * sin_nt * x + cos_nt * dx + 2.0 * sin_nt * dy
+    next_dy = 6.0 * n * (cos_nt - 1.0) * x - 2.0 * sin_nt * dx + (4.0 * cos_nt - 3.0) * dy
+    next_dz = -n * sin_nt * z + cos_nt * dz
+
+    return RelativeState(
+        position_km=(next_x, next_y, next_z),
+        velocity_km_s=(next_dx, next_dy, next_dz),
+    )
+
+
+def relative_acceleration_km_s2(
+    state: RelativeState, mean_motion: float
+) -> tuple[float, float, float]:
+    """Return the Hill-frame acceleration, for verifying the closed form by integration.
+
+    The differential equations the closed form solves, exposed rather than buried, so a test can
+    integrate them independently and compare. A closed form checked only against the algebra that
+    produced it is checked against nothing.
+    """
+    x, _, z = state.position_km
+    dx, dy, _ = state.velocity_km_s
+    n = mean_motion
+    return (3.0 * n**2 * x + 2.0 * n * dy, -2.0 * n * dx, -(n**2) * z)

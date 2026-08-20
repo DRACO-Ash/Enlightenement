@@ -2,6 +2,128 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.21 (2026-08-20)
+
+**What.** Flight plan Phase 0 complete, plus the owner's decisions of today recorded and acted on.
+Slug `enlightenment` confirmed available. A Data Protection Impact Assessment (DPIA) drafted.
+
+**Sequencing, stated because it interprets an instruction.** The owner asked to build Phase 0 and
+upload, and separately to implement all recommendations. Two of those recommendations, the SQLite
+store and the identity adapter, are Phase 1 work, and putting them in before the upload would
+roughly triple the code the SonarQube gate scans as NEW on a first submission where nothing has
+ever shipped. So Phase 0 ships first and those two follow the upload. The reading is stated rather
+than assumed silently.
+
+### The lesson this release turns on: I validated against my own memory
+
+The first version of `greenwich_mean_sidereal_degrees` was checked against a textbook reference
+value **recalled rather than read**, and disagreed with it by 131 degrees. The implementation was
+right and the remembered number was wrong.
+
+That is the same failure as inventing `SGP4_ERRORS[5]`, and it would have been far worse here: a
+"corrected" Earth-rotation angle would have put every plotted longitude wrong by a third of the
+planet, consistently, in a trainer whose purpose is teaching people to spot exactly that.
+
+So the golden source is now `sgp4.propagation.gstime` in the pinned wheel, which the machine
+produces on demand: agreement to **1.6e-10 degrees** across five epochs spanning 46 years. Plus one
+independent almanac cross-check a human can verify without trusting the library either, sidereal
+time at 0h Universal Time on 1 August 1992 coming out at 20h 39m against the almanac's "about 20h
+40m". Two sources beat one.
+
+### Phase 0 step 2 completed: time, Earth rotation, and relative motion
+
+**`physics/times.py`.** Julian Date, Greenwich Mean Sidereal Time, and sub-satellite longitude.
+Two named traps documented at the boundary: **UT1 is not UTC** (they differ by up to 0.9 seconds,
+which is 0.0037 degrees of longitude, small until it is compared against another source and read
+as real), and **a TLE epoch is not a calendar time**. No leap-second table ships, deliberately: a
+table goes stale, a stale table is worse than none, and v1 serves synthetic data with no real epoch
+to reconcile.
+
+**`physics/relative.py`.** Clohessy-Wiltshire relative motion in the Hill frame, closed form.
+**Verified against fourth-order Runge-Kutta integration of its own differential equations over a
+full orbit**, agreeing to better than a micrometre. That check is the point: a closed form verified
+only against the algebra that produced it is verified against nothing, and it caught two errors.
+
+● **My test expectation was wrong, not the code.** I asserted the one-orbit drift of a 1 km radial
+  offset as -6*pi km. The secular term is 6(sin(nt) - nt)x0, so over one period it is -12*pi*x0,
+  about 37.7 km. The drift RATE is -6*n*x0; multiplying by the period 2*pi/n gives twice what I
+  wrote. Now derived in writing in the test rather than asserted from arithmetic done in my head.
+● **A false claim in a constant's own comment.** `EARTH_MU_KM3_S2` was 398600.4418 under a comment
+  saying it was "the one SGP4 itself uses". Measured, `sgp4.earth_gravity.wgs84.mu` is 398600.5.
+  The value changed to match, because the stated rationale is sound: a chief's mean motion derived
+  here and a track propagated by SGP4 should not disagree for a reason nobody can see. The
+  numerical difference is 1.5e-7 relative and matters for consistency, not accuracy, and that is
+  stated rather than implied. `mean_motion_from_elements` was added as the preferred path, since an
+  element set already carries the rate.
+
+The counter-intuitive behaviour the module exists to teach is asserted as a property: a purely
+radial offset does not stay radial, and the no-drift condition is along-track rate equals minus
+twice mean motion times radial offset. An operator who expects "I moved up, so I stay above" is
+wrong in a way that compounds every orbit, and that is what competency axis four scores.
+
+**`skyfield` and `numpy` remain deferred, with the reason now measured rather than asserted.** v1's
+three procedures need Earth rotation for a GEO belt plot and small-matrix arithmetic for Hill-frame
+motion. Neither needs precession, nutation, or arrays. What is NOT done is stated in
+`sub_satellite_longitude_degrees`: this is TEME-of-date longitude, not J2000 and not geodetic, and
+anything needing those takes a validated library rather than an implementation written from memory
+here.
+
+### Phase 0 step 3: the determinism harness
+
+The flight plan calls it a gate, not a task: *"Prove by test that the same seed yields an identical
+event log twice."* `src/enlightenment/scenario/` is the substrate, holding no content and no
+physics so that it can be proved.
+
+● **`SeededRandom`** wraps `random.Random` per run rather than the module-level functions, which
+  share one global state: two scenarios in one process would draw from each other's stream, and a
+  replay would depend on what else the process had done. `choice` takes a LIST, and that signature
+  is the control - set iteration order depends on hash values, which are randomised per process, so
+  choosing from a set is non-deterministic across processes even with the same seed, and a replay
+  months later runs in a different process.
+● **`ScenarioClock`** counts integer ticks and multiplies. Asserted against float accumulation:
+  adding 0.1 a thousand times does not give 100.0, and two replays that grouped the additions
+  differently would drift differently.
+● **`RunLog`** is append-only with no remove and no update, refuses a non-monotonic tick, and
+  fingerprints the seed and every event with sorted keys and `allow_nan=False`. Sorted keys stop
+  two logically identical events digesting differently because a dict was built in another order;
+  refusing NaN stops a fingerprint depending on a value that compares unequal to itself.
+
+**Verified.** The same seed replays identically; twenty seeds each replay identically; a run
+replays identically after other runs have happened in the same process, which is what detects a
+shared global; and a different seed produces a different log, which is the control that separates
+"deterministic" from "always the same". A test drives the real angle wrapper and the real
+relative-motion propagator on seeded initial conditions, because a harness that only proves itself
+deterministic proves nothing about a run.
+
+### A trap worth recording: an edit that silently deleted five tests
+
+`sed -n '/start/,/end/p'` prints to **end of file** when the end pattern never matches, and `ruff
+format` had reflowed the line I was matching on. The extracted "anchor" therefore ran to EOF, and
+replacing it dropped the five tests after the target function. `verified-edit.py` checks an anchor
+is present and unique; it cannot know the range was wider than intended. Restored, and the habit
+that catches it is checking an anchor's line count before using it.
+
+### The DPIA
+
+`docs/DPIA.md`. **Screening decision: MANDATORY**, on Article 35(3)(a) of the United Kingdom
+General Data Protection Regulation: systematic and extensive evaluation of personal aspects based
+on automated processing, including profiling. Article 4(4) names "performance at work" explicitly,
+and that is precisely what six competency axes, an Elo rating, a Brier score and per-item
+scheduling state constitute.
+
+Drafted to the Article 35(7) structure. **Recommendation: proceed with conditions**, no Article 36
+prior consultation with the Information Commissioner's Office required on the current facts. Nine
+risks assessed, and the assessment does not credit a control that does not exist: the supervisor
+access audit, the retention mechanism and the scorer validation are all named as **not built**, and
+two of them are binding conditions. Four questions are the owner's to answer, and two of them
+change the assessment: whether readiness output will inform shift assignment (which engages Article
+22), and whether anyone outside the United Kingdom can reach the storage volume (which makes it a
+restricted transfer).
+
+**Verified.** Loop green under the pinned toolchain: **634 passed, 1 skipped**, coverage 98.93%
+against a 80% floor, all three lock files audited clean. **All seven physics and scenario modules
+at 100% line and branch coverage.** Pipeline simulation green: **630 passed, 4 skipped**.
+
 ## V0.20 (2026-08-20)
 
 **What.** Both gates FAILED V0.19. The security gate's MAJOR is the one that matters: the

@@ -69,6 +69,12 @@ Every change runs the verification loop, then passes the `engineering-reviewer` 
 ## Directory layout
 
 ```
+src/enlightenment/physics/  the physics core: angles, SGP4 propagation, time and Earth rotation,
+                            Clohessy-Wiltshire relative motion. Pure functions, no input or
+                            output, no state. Flight plan Phase 0 step 2.
+src/enlightenment/scenario/ the determinism substrate: seeded randomness, an integer-tick clock,
+                            an append-only run log. Flight plan Phase 0 step 3, and a gate: the
+                            same seed must yield an identical event log twice.
 src/enlightenment/          the application source. Sources live under src/ deliberately:
                             the platform forces sonar.sources=src, so this placement and the
                             committed sonar-project.properties agree instead of racing.

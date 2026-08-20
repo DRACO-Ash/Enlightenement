@@ -1,0 +1,155 @@
+"""Time and Earth-rotation conversions, validated against the pinned library, not against memory.
+
+The lesson this module was written around. The first version of `greenwich_mean_sidereal_degrees`
+was checked against a reference value I recalled from a textbook example, and disagreed with it by
+131 degrees. The implementation was right and the remembered number was wrong. So the golden
+source here is `sgp4.propagation.gstime` in the pinned wheel, which is a validated implementation
+the machine can produce on demand, plus one independent almanac sanity check that a human can
+verify without trusting either.
+
+That is the same pattern as the Vallado vectors: the authority is something shipped and checkable,
+never a figure written from recollection.
+"""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+from sgp4.propagation import gstime
+
+from enlightenment.physics.times import (
+    J2000_JULIAN_DATE,
+    greenwich_mean_sidereal_degrees,
+    julian_date_from_utc,
+    sub_satellite_longitude_degrees,
+)
+
+#: Epochs spanning 46 years, including the J2000 epoch itself and a leap year, so the polynomial
+#: is exercised either side of its own reference point rather than only near it.
+EPOCHS = [
+    (1980, 1, 1, 0, 0, 0.0),
+    (1992, 8, 1, 22, 14, 0.0),
+    (2000, 1, 1, 12, 0, 0.0),
+    (2016, 2, 29, 6, 30, 30.0),
+    (2026, 8, 20, 0, 0, 0.0),
+]
+
+#: Measured worst disagreement with the library across the epochs above: 1.6e-10 degrees. This
+#: bound is three orders above that, which is loose enough to survive a libm difference and far
+#: tighter than anything that could matter to a plot.
+GMST_TOLERANCE_DEGREES = 1e-7
+
+
+@pytest.mark.parametrize("epoch", EPOCHS, ids=lambda e: f"{e[0]}-{e[1]:02d}-{e[2]:02d}")
+def test_sidereal_time_agrees_with_the_pinned_library(epoch: tuple[int, ...]) -> None:
+    """The golden check. The library is the authority; this module is what the trainer calls."""
+    julian_date = julian_date_from_utc(*epoch)  # type: ignore[arg-type]
+    mine = greenwich_mean_sidereal_degrees(julian_date)
+    theirs = math.degrees(gstime(julian_date)) % 360.0
+    difference = abs(((mine - theirs + 180.0) % 360.0) - 180.0)
+    assert difference < GMST_TOLERANCE_DEGREES, (
+        f"{epoch}: {mine:.9f} against the library's {theirs:.9f}, off by {difference:.3e} deg"
+    )
+
+
+def test_sidereal_time_matches_an_almanac_by_hand() -> None:
+    """One check a human can verify without trusting the library either.
+
+    Sidereal time at 0h Universal Time on 1 August 1992 is about 20h 40m in an almanac. This
+    computes 20h 39m, which agrees. It is here because the failure mode that started this module
+    was trusting a remembered number, and two independent sources beat one.
+    """
+    hours = greenwich_mean_sidereal_degrees(julian_date_from_utc(1992, 8, 1)) / 15.0
+    assert 20.6 < hours < 20.7, f"got {hours:.3f} h, almanac says about 20h 40m"
+
+
+def test_the_j2000_epoch_is_the_julian_date_it_claims_to_be() -> None:
+    """2000 January 1 at 12:00 is Julian Date 2451545.0, by definition of the epoch."""
+    assert julian_date_from_utc(2000, 1, 1, 12, 0, 0.0) == J2000_JULIAN_DATE
+
+
+@pytest.mark.parametrize(
+    ("earlier", "later"),
+    [
+        ((2026, 1, 1), (2026, 1, 2)),
+        ((2026, 2, 28), (2026, 3, 1)),
+        ((2024, 2, 28), (2024, 2, 29)),
+        ((1999, 12, 31), (2000, 1, 1)),
+    ],
+    ids=["consecutive days", "non-leap February", "leap day", "century boundary"],
+)
+def test_the_julian_date_increases_by_a_day_across_a_calendar_boundary(
+    earlier: tuple[int, int, int], later: tuple[int, int, int]
+) -> None:
+    """The January-and-February shift in the algorithm is where a date bug would hide.
+
+    2026 is not a leap year, so 28 February to 1 March is one day; 2024 is, so 28 to 29 February
+    is one day as well. Both are asserted, because an algorithm that got the leap rule backwards
+    would pass one and fail the other.
+    """
+    span = julian_date_from_utc(*later) - julian_date_from_utc(*earlier)
+    assert span == pytest.approx(1.0)
+
+
+def test_sidereal_time_advances_by_a_sidereal_day_not_a_solar_one() -> None:
+    """The distinction that names the quantity. A solar day is 360 degrees of the Sun; a sidereal
+    day is 360 degrees of the stars, so Earth rotation advances about 360.9856 degrees per solar
+    day. A test that only checked "it increases" would pass on a solar-day implementation.
+    """
+    start = julian_date_from_utc(2026, 8, 20)
+    advance = greenwich_mean_sidereal_degrees(start + 1.0) - greenwich_mean_sidereal_degrees(start)
+    assert advance % 360.0 == pytest.approx(360.9856 % 360.0, abs=1e-3)
+
+
+def test_sidereal_time_stays_inside_the_half_open_interval() -> None:
+    """It is folded through `normalise_degrees`, so the same rounding seam is closed here too."""
+    for day in range(0, 4000, 37):
+        angle = greenwich_mean_sidereal_degrees(J2000_JULIAN_DATE + day)
+        assert 0.0 <= angle < 360.0
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_time_is_refused_rather_than_producing_an_angle(bad: float) -> None:
+    """A NaN here becomes a plotted longitude with no mark, which nobody reads as an error."""
+    with pytest.raises(ValueError, match="must be finite"):
+        greenwich_mean_sidereal_degrees(bad)
+    with pytest.raises(ValueError, match="second must be finite"):
+        julian_date_from_utc(2026, 8, 20, 0, 0, bad)
+
+
+def test_a_sub_satellite_longitude_lands_in_the_geo_belt_convention() -> None:
+    """The one frame conversion v1 needs, and it must produce the interval a belt plot uses."""
+    julian_date = julian_date_from_utc(2026, 8, 20, 12, 0, 0.0)
+    for x, y in ((42164.0, 0.0), (0.0, 42164.0), (-42164.0, 0.0), (0.0, -42164.0)):
+        longitude = sub_satellite_longitude_degrees((x, y, 0.0), julian_date)
+        assert -180.0 <= longitude < 180.0
+
+
+def test_a_geostationary_object_holds_its_longitude_over_a_day() -> None:
+    """The property that proves the Earth-rotation term is applied with the right sign.
+
+    A geostationary object's inertial right ascension advances at the same rate as Earth rotation,
+    so its longitude below is constant. Get the sign wrong and it appears to travel twice round
+    the planet in a day, which is the sort of artefact this whole module exists to avoid
+    manufacturing.
+    """
+    from enlightenment.physics.angles import shortest_separation_degrees
+
+    start = julian_date_from_utc(2026, 8, 20, 0, 0, 0.0)
+    radius = 42164.0
+    sidereal_day = 0.99726957
+    first = sub_satellite_longitude_degrees((radius, 0.0, 0.0), start)
+    # One sidereal day later, the object has gone exactly once round in inertial space.
+    angle = 2.0 * math.pi
+    later_position = (radius * math.cos(angle), radius * math.sin(angle), 0.0)
+    second = sub_satellite_longitude_degrees(later_position, start + sidereal_day)
+    drift = shortest_separation_degrees(first, second)
+    assert abs(drift) < 0.05, f"a geostationary object drifted {drift:.4f} deg in a sidereal day"
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_a_non_finite_position_is_refused_by_the_longitude_conversion(bad: float) -> None:
+    """Fail closed at the boundary, as everywhere else in this package."""
+    with pytest.raises(ValueError, match="position must be finite"):
+        sub_satellite_longitude_degrees((bad, 0.0, 0.0), J2000_JULIAN_DATE)
