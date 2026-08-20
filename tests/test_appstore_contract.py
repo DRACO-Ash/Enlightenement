@@ -1561,7 +1561,7 @@ def test_a_credential_inside_an_unevaluable_marker_is_redacted() -> None:
     )
     assert result.returncode != 0
     assert "s3cr3tTOK" not in result.stderr
-    assert "[REDACTED:url]" in result.stderr
+    assert "content not echoed" in result.stderr
     assert "could not evaluate marker" in result.stderr
 
 
@@ -1610,85 +1610,83 @@ def test_the_report_still_identifies_the_line_it_will_not_echo(line: str, name: 
     assert ":1:" in result.stderr, "the line number is the diagnosis and must survive"
 
 
-def test_no_whitespace_character_anywhere_can_split_a_credential_out_of_redaction() -> None:
-    r"""The property, over the WHOLE class, because four revisions of a list each missed some.
+def test_no_echo_site_emits_a_credential_in_any_form() -> None:
+    r"""The property, end to end through the real script, over the WHOLE whitespace class.
 
-    Every bypass of this control so far has been the same shape: a character that terminates the
-    pattern's run before it reaches the delimiter it needs. `\x0b` did it, then U+2028 and U+2029,
-    then sixteen Unicode space characters that `\s` matches and the neutraliser's enumeration did
-    not - NBSP, OGHAM SPACE MARK, the U+2000 to U+200A run, U+202F, U+205F and IDEOGRAPHIC SPACE.
-    Every one of the sixteen leaked a full token, measured end to end.
+    **Seven versions of this control, and the previous six each narrowed a class instead of
+    closing it.** `\x0b` split a credential out of the pattern, then U+2028 and U+2029, then
+    sixteen Unicode space characters `\s` matches that the neutraliser did not cover, then a bare
+    token in version position with no context to find - and finally the plain ASCII SPACE and TAB,
+    which the whole-run rewrite still treated as run terminators.
 
-    A test listing the forms already found cannot catch the next one, and the next one is what
-    matters. So this asserts the property over every character in the class the pattern is defined
-    against: for every whitespace character other than the space and tab an operator would type,
-    a credential carrying it must not reach the output. That set is derived from `re` at run time,
-    so it grows with the Unicode tables rather than with anybody remembering to extend a list.
+    That last one is why this test looks the way it does. Its predecessor asserted the property
+    over `\s` MINUS space and tab, which excluded precisely the two characters that still leaked:
+    a test scoped to the part of the class already fixed, passing while the open part stayed open.
+
+    So the exclusions are gone, the assertion runs through `main()` rather than against one
+    function, and it covers every echo site rather than the one a fixture happened to reach. There
+    is no redaction function left to test: every site describes its input, so there is nothing for
+    a character to split.
     """
-    module = _environment_check_module()
-    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKENS3CRETLIVETOKEN"
-    hostile = [chr(point) for point in range(0x110000) if re.match(r"\s", chr(point))]
-    hostile = [character for character in hostile if character not in " \t"]
-    assert len(hostile) >= 25, (
-        f"only {len(hostile)} characters derived, so the class is not being enumerated properly"
-        " and this test would pass by not looking"
+    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    separators = [chr(point) for point in range(0x110000) if re.match(r"\s", chr(point))]
+    assert len(separators) == 29, (
+        f"{len(separators)} whitespace characters derived, expected 29; the class is not being"
+        " enumerated and this test would pass by not looking"
     )
+    # Space and tab must be INSIDE the class under test. They were excluded once, and they were
+    # the two characters still leaking when they were.
+    assert " " in separators, "the ASCII space must be covered, it was the sixth bypass"
+    assert "\t" in separators, "the ASCII tab must be covered, it was the sixth bypass"
 
-    forms = [
-        (character, form)
-        for character in hostile
-        for form in (
-            f"pkg @ https://{token}{character}x@host.invalid/pkg.whl",
-            f"pkg @ https://user:{token}{character}@host.invalid/pkg.whl",
-            f"pkg @ //{token}{character}x@host.invalid/p",
-            f"pkg @ https://host.invalid/p?token={token}{character}x",
-        )
+    # Every echo site, each reached by a line shaped to trigger it: the unparseable-line report,
+    # the marker note, the version echo on the missing branch, and the name echo.
+    lines = [
+        f"pkg @ https://{token}/pkg.whl",
+        f"pkg==1.0 ; https://user{{sep}}x:{token}@host/p",
+        f"pkg==1.0 ; {token}",
+        f"pkg=={token}",
+        f"{token}==1.0.0",
+        f"pkg @ https://user{{sep}}x:{token}@host/p",
+        f"pkg @ //{token}{{sep}}x@host/p",
+        f"pkg @ https://host/p?token={token}{{sep}}x",
     ]
-    leaks = [
-        (hex(ord(character)), form[:40])
-        for character, form in forms
-        if token in module.redact(form)
-    ]
-    assert not leaks, f"{len(leaks)} of {len(forms)} credential forms survived: {leaks[:6]}"
+    leaks = []
+    for separator in separators:
+        body = "".join(line.format(sep=separator) + "\n" for line in lines)
+        result = _run_environment_check(body)
+        if token in result.stdout or token in result.stderr:
+            leaks.append(hex(ord(separator)))
+    assert not leaks, f"the token reached output for {len(leaks)} separators: {leaks[:8]}"
 
 
-@pytest.mark.parametrize(
-    "parameter",
-    [
-        "token",
-        "auth",
-        "key",
-        "sig",
-        "signature",
-        "authorization",
-        "access_token",
-        "access-token",
-        "sas",
-        "pwd",
-        "password",
-        "api_key",
-        "X-Amz-Signature",
-        "credential",
-    ],
-)
-@pytest.mark.parametrize("introducer", ["?", "&", "#"])
-def test_a_credential_carried_as_a_parameter_is_redacted_whatever_it_is_called(
-    parameter: str, introducer: str
-) -> None:
-    """Query and fragment parameter names, enumerated because the previous list was short.
+def test_a_credential_in_the_name_position_is_bounded_and_the_bound_is_stated() -> None:
+    """The one echo that cannot be reduced to a length, so its residual is written down.
 
-    The list held `token`, `password`, `passwd`, `secret`, `api_key`, `signature` and
-    `credential`, and measured against a real run, `auth`, `key`, `sig`, `authorization`, `sas`
-    and `pwd` all leaked a full token, as did every one of them behind a `#` rather than a `?`.
+    The divergence report has to name the distribution - "pinned 0.115.0, NOT INSTALLED" about an
+    unnamed package is useless - and a credential in the name position is not structurally
+    distinguishable from a name. `canonicalise` lowercases and folds separators, so
+    `ghp_S3CRETLIVETOKEN...` comes out looking exactly like one.
 
-    This is still a blacklist and blacklists still lose, which is why the URL pass no longer
-    depends on it: a credential inside a URL is caught by the whole-run redaction regardless of
-    what its parameter is called. This pass is what catches a parameter standing on its own, with
-    no scheme in front of it, and the list is the belt to that braces.
+    Bounded rather than closed, therefore: a canonical-shaped name up to `MAX_NAME_ECHO`
+    characters echoes, anything else is described. This test pins both halves, including the
+    residual, so nobody reads the bound as a seal.
     """
     module = _environment_check_module()
-    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKEN"
-    assert token not in module.redact(f"pkg==1.0 {introducer}{parameter}={token}")
+    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    described = module.describe_name(module.canonicalise(token))
+    assert token.lower().replace("_", "-") not in described
+    assert "unrecognised-name" in described
+
+    for real in ("fastapi", "uvicorn", "pytest-cov", "typing-extensions", "ruff"):
+        assert module.describe_name(real) == real, (
+            f"{real} is a real distribution name and must be echoed, or the divergence report"
+            " cannot say which package is missing"
+        )
+
+    # The residual, asserted so it is a known bound and not a surprise: a SHORT lowercase secret
+    # in the name position is indistinguishable from a name and does echo.
+    assert module.describe_name("abc123def456") == "abc123def456"
 
 
 def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:

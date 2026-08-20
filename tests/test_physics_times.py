@@ -235,6 +235,62 @@ def test_every_date_and_time_component_is_checked_for_finiteness(
         julian_date_from_utc(**arguments)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("component", "value"),
+    [
+        ("year", 1e308),
+        ("year", 10**400),
+        ("month", 10**400),
+        ("day", 1e308),
+        ("day", 10**500),
+        ("year", -1e308),
+    ],
+    ids=[
+        "year 1e308",
+        "year huge int",
+        "month huge int",
+        "day 1e308",
+        "day huge int",
+        "year -1e308",
+    ],
+)
+def test_a_calendar_component_too_large_to_be_a_date_is_refused(
+    component: str, value: float
+) -> None:
+    """MAGNITUDE, not only finiteness, and the guard was widened twice before reaching this.
+
+    `1e308` is finite and satisfies `value == int(value)`, so both earlier loops passed it and
+    `math.floor(365.25 * (year + 4716))` raised a bare `OverflowError`. An integer `10**400` is
+    worse: `math.isfinite` ITSELF raises `OverflowError: int too large to convert to float` on it,
+    so the guard written to prevent an undocumented exception was throwing one, before the
+    magnitude check could see the value. Integers skip the finiteness test now, being finite by
+    construction.
+
+    And the silent direction, which is worse than either: `year=1e300, month=3` returned
+    3.652425e+302 and `day=1e308` returned 1e+308. Finite numbers that are not dates, handed back
+    without complaint, into a function whose whole purpose is that a bad time never reaches a
+    plotted longitude. The bound is derived from `MAX_JULIAN_DATE`, which
+    `greenwich_mean_sidereal_degrees` twenty lines below had applied for this exact reason since
+    the day it was written - so the lesson was in the file and was not carried across.
+    """
+    arguments: dict[str, float] = {"year": 2000, "month": 1, "day": 1}
+    arguments[component] = value
+    with pytest.raises(ValueError, match="Julian Date"):
+        julian_date_from_utc(**arguments)  # type: ignore[arg-type]
+
+
+def test_a_real_calendar_date_is_still_accepted() -> None:
+    """The control: the bound must refuse a non-date, not refuse a date.
+
+    Both ends of anything this trainer will see, plus the Julian Date epoch itself, because a
+    magnitude guard that clipped the useful range would satisfy every test above while being
+    broken.
+    """
+    assert julian_date_from_utc(2000, 1, 1, 12, 0, 0.0) == 2451545.0
+    for year in (-4712, 1957, 2026, 9999):
+        assert math.isfinite(julian_date_from_utc(year, 1, 1))
+
+
 @pytest.mark.parametrize(("year", "month"), [(2000.5, 1), (2000, 1.5)])
 def test_the_calendar_indices_refuse_a_fractional_value(year: float, month: float) -> None:
     """`year` and `month` index the calendar rather than scaling it.

@@ -42,6 +42,18 @@ DAYS_PER_JULIAN_CENTURY: Final = 36525.0
 #: undocumented `OverflowError` straight past the documented contract.
 MAX_JULIAN_DATE: Final = 1e10
 
+#: Largest magnitude accepted for a calendar year, month or day. Derived from `MAX_JULIAN_DATE`
+#: rather than chosen: a year contributes roughly 365.25 days, so anything past this cannot land
+#: inside the Julian Date range the sidereal-time polynomial will accept, and the two bounds
+#: therefore cannot disagree. Comfortably past every real epoch - 27 million years either side of
+#: the present - and short of the magnitudes that made `math.floor` raise an undocumented
+#: `OverflowError` or, worse, return a finite number that was not a date.
+MAX_CALENDAR_COMPONENT: Final = MAX_JULIAN_DATE / 365.25
+
+#: How much of an out-of-range component an error message may repeat. An integer has no width
+#: limit, so the message needs one.
+MAX_SHOWN_COMPONENT: Final = 24
+
 #: Seconds in a day, and the seconds-of-time to degrees-of-arc factor (86400 / 360).
 SECONDS_PER_DAY: Final = 86400.0
 SECONDS_PER_DEGREE: Final = 240.0
@@ -81,10 +93,37 @@ def julian_date_from_utc(
         ("minute", minute),
         ("second", second),
     ):
-        if not math.isfinite(value):
+        # `math.isfinite` is asked only about floats, because it RAISES on an integer too large
+        # to convert - `math.isfinite(10**400)` gives `OverflowError: int too large to convert to
+        # float`, so the guard meant to stop an undocumented exception was raising one itself, and
+        # before the magnitude bound below could see the value. An `int` is finite by
+        # construction, so skipping it is not a relaxation.
+        if not isinstance(value, int) and not math.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value!r}")
-    for name, value in (("year", year), ("month", month)):
-        # These two index the calendar rather than scaling it, so a fractional value is not a
+    for name, value in (("year", year), ("month", month), ("day", day)):
+        # MAGNITUDE, not only finiteness, and this bound was missing while the lesson sat twenty
+        # lines below in `greenwich_mean_sidereal_degrees`: "finite is not sufficient". Measured
+        # before it: `year=1e308` raised a bare `OverflowError` from `math.floor`, an int `10**400`
+        # raised `OverflowError: int too large to convert to float`, and - the silent direction,
+        # which is worse - `year=1e300, month=3` returned 3.652425e+302 and `day=1e308` returned
+        # 1e+308. Those are finite values that are not dates, handed back with no complaint, and
+        # the whole point of this guard is that a bad time never reaches a plotted longitude.
+        #
+        # Bounded by what can produce a Julian Date this package will accept, so the two guards
+        # agree instead of one of them being decorative.
+        if abs(value) > MAX_CALENDAR_COMPONENT:
+            # Bounded by TRUNCATION, not by formatting. `value!r` put four hundred digits in the
+            # message for `10**400`, and the obvious fix, `float(value):.6g`, raises the very
+            # `OverflowError: int too large to convert to float` this guard exists to replace.
+            # Converting an out-of-range value in order to complain about it is the trap.
+            shown = repr(value)
+            if len(shown) > MAX_SHOWN_COMPONENT:
+                shown = f"{shown[:MAX_SHOWN_COMPONENT]}... ({len(shown)} digits)"
+            raise ValueError(
+                f"{name} of {shown} cannot produce a Julian Date within plus or minus"
+                f" {MAX_JULIAN_DATE:g}"
+            )
+        # These index the calendar rather than scaling it, so a fractional value is not a
         # rounding question, it is a caller who passed the wrong thing.
         if value != int(value):
             raise ValueError(f"{name} must be a whole number, got {value!r}")

@@ -222,6 +222,38 @@ def test_a_non_finite_payload_value_is_refused_rather_than_serialised() -> None:
         Event(tick=1, kind="measured", payload={"value": float("nan")}).canonical()
 
 
+#: Public names a package's submodules define and the package deliberately does NOT re-export,
+#: each one a tuning constant or an internal bound rather than API surface. A curated list with a
+#: written reason, in the same idiom as the checksum opt-out census: a NEW public name must either
+#: be exported or be added here on purpose, so the reverse check cannot be satisfied by drift.
+#:
+#: These are legitimately internal. `MARCH` and `SECONDS_PER_DAY` are arithmetic constants inside
+#: one function's derivation; `PRINTABLE_ASCII_LOW/HIGH` and `TLE_LINE_LENGTH` bound one
+#: validator; `SGP4_ERRORS` and `TEME_OF_DATE` are looked up through the functions that use them;
+#: `MAX_*` are bounds a caller reads from the error message, not from the package.
+DELIBERATELY_NOT_RE_EXPORTED: dict[str, frozenset[str]] = {
+    "scenario": frozenset(),
+    "physics": frozenset(
+        {
+            "BOUNDARY_REFUSAL",
+            "DAYS_PER_JULIAN_CENTURY",
+            "MARCH",
+            "MAX_CALENDAR_COMPONENT",
+            "MAX_JULIAN_DATE",
+            "MAX_SHOWN_COMPONENT",
+            "PRINTABLE_ASCII_HIGH",
+            "PRINTABLE_ASCII_LOW",
+            "SECONDS_PER_DAY",
+            "SECONDS_PER_DEGREE",
+            "SECONDS_PER_MINUTE",
+            "SGP4_ERRORS",
+            "TEME_OF_DATE",
+            "TLE_LINE_LENGTH",
+        }
+    ),
+}
+
+
 @pytest.mark.parametrize("package_name", ["scenario", "physics"])
 def test_the_package_exports_what_it_documents(package_name: str) -> None:
     """The `__all__` is a promise, and it is asserted in BOTH directions now.
@@ -241,19 +273,38 @@ def test_the_package_exports_what_it_documents(package_name: str) -> None:
     absent = [name for name in package.__all__ if not hasattr(package, name)]
     assert not absent, f"exported but absent from enlightenment.{package_name}: {absent}"
 
-    own_prefix = f"enlightenment.{package_name}."
-    unexported = sorted(
-        name
-        for name, value in vars(package).items()
-        if not name.startswith("_")
-        and not isinstance(value, ModuleType)
-        and getattr(value, "__module__", "").startswith(own_prefix)
-        and name not in package.__all__
-    )
+    # Public names are derived from each SUBMODULE's namespace, not from `__module__` on the
+    # value, and that is a fix rather than a style choice. `__module__` exists on a class or a
+    # function and not on an `int`, `float` or `str`, so the first version of this check was blind
+    # to every exported CONSTANT - while its own docstring named `MAX_PAYLOAD_BYTES` and
+    # `MAX_PAYLOAD_DEPTH`, both constants, as two of the three faults it was written to catch.
+    # Proved: dropping `MAX_PAYLOAD_BYTES` from `__all__` left it green.
+    unexported: set[str] = set()
+    for module_name, submodule in vars(package).items():
+        if not isinstance(submodule, ModuleType) or module_name.startswith("_"):
+            continue
+        if not getattr(submodule, "__name__", "").startswith(f"enlightenment.{package_name}."):
+            continue
+        annotations = getattr(submodule, "__annotations__", {})
+        unexported |= {
+            name
+            for name in vars(submodule)
+            if not name.startswith("_")
+            and name not in package.__all__
+            # Defined HERE, not imported into it: a `Final` annotation marks this module's own
+            # constant, and a `__module__` pointing back at this package marks its own class or
+            # function. An imported `math` or `Any` has neither.
+            and (
+                name in annotations
+                or getattr(vars(submodule)[name], "__module__", "") == submodule.__name__
+            )
+            and not isinstance(vars(submodule)[name], ModuleType)
+        }
+    unexported -= DELIBERATELY_NOT_RE_EXPORTED[package_name]
     assert not unexported, (
         f"enlightenment.{package_name} defines these public names and does not list them in"
         f" __all__, so a caller cannot rely on them and this suite would not notice their"
-        f" removal: {unexported}"
+        f" removal: {sorted(unexported)}"
     )
     assert "Event" in importlib.import_module("enlightenment.scenario").__all__
 
@@ -672,3 +723,45 @@ def test_the_constructor_seam_enforces_what_record_enforces(
     """
     with pytest.raises(ValueError, match=r"append-only|serialised"):
         RunLog(seed=1, events=events)
+
+
+def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
+    """A three-hundred-byte payload that the depth and size caps could not stop.
+
+    `v = "z" * 10` then `v = [v] * 40` six times is a few hundred bytes of live objects, depth 7
+    (inside the depth-8 cap), and logically 40**6 = 4.1 billion elements because every reference is
+    the same list. The freeze allocates a distinct tuple per reference, so `len(canonical)` - the
+    thing the size cap measures - is never computed at all. The write does not fail; it does not
+    RETURN. Measured before the fix: still allocating at a sixty-second timeout under a 2 GiB
+    address-space limit.
+
+    Depth and serialised size both bound the RESULT of a write. Neither bounds its COST, and this
+    is the case that showed the difference. A node budget bounds the work, so the refusal arrives
+    in milliseconds instead of never.
+    """
+    payload: object = "z" * 10
+    for _ in range(6):
+        payload = [payload] * 40
+
+    log = RunLog(seed=1)
+    with pytest.raises(ValueError, match="nodes"):
+        log.record(ScenarioClock(tick=0), "shared references", v=payload)
+    assert log.events == (), "a refused write must append nothing"
+
+
+def test_an_ordinary_nested_payload_is_still_well_within_the_node_budget() -> None:
+    """The control: the budget must refuse an expansion, not refuse structure.
+
+    A guard that rejected everything would satisfy the test above while being broken, so a payload
+    of the shape a real scenario event carries is asserted to pass.
+    """
+    log = RunLog(seed=1)
+    log.record(
+        ScenarioClock(tick=0),
+        "scored",
+        axes={"detection": 0.8, "custody": 0.6},
+        history=[1, 2, 3, 4, 5],
+        detail={"procedure": "geo-belt", "version": {"content": "v1"}},
+    )
+    assert len(log.events) == 1
+    assert len(log.fingerprint()) == FINGERPRINT_LENGTH

@@ -119,10 +119,20 @@ def mean_motion_rad_s(semi_major_axis_km: float) -> float:
     # Third time in this project that I removed a guard on a reachability argument and was wrong.
     # The guard stays, and the sweep is what covers it rather than what replaces it.
     #
-    # Precisely what the sweep covers, so nobody reads more into it than it proves: the
-    # `isfinite` half, which it reaches at 35 axes in 1.5e-108 to 1e-101. The `rate <= 0.0` half
-    # is unreachable BY CONSTRUCTION here - `sqrt` returns zero only if the division underflows,
-    # which needs a cube above 1e313, and `**` raises before that. It is belt and braces against
+    # Precisely what the sweep covers, so nobody reads more into it than it proves. The `isfinite`
+    # half is reached, and the honest attribution of the count matters: an ad-hoc grid over
+    # mantissas {1, 1.5, 2, 3, 5} found 35 reaching axes between 1.5e-108 and 1e-101, while the
+    # COMMITTED sweep in the test suite steps decades three at a time and reaches the branch at 2
+    # axes, never evaluating 1.5e-108 at all. Both numbers are real measurements of different
+    # grids, and citing the wider one as though the suite ran it is the fault this release is
+    # about, so both are named.
+    #
+    # The `rate <= 0.0` half is unreachable BY CONSTRUCTION here - `sqrt` returns zero only if the
+    # division underflows to zero, and since `EARTH_MU_KM3_S2 / 5e-324` itself overflows, NO finite
+    # double cube can drive the quotient to zero. (An earlier version of this comment said "needs a
+    # cube above 1e313", which is roughly the subnormal threshold rather than the zero threshold;
+    # the conclusion was right and conservative, the reason was imprecise.) It is belt and braces
+    # against
     # a future edit to the arithmetic, not a covered control, and removing that sub-clause alone
     # leaves the suite green. The identical line in `mean_motion_from_elements` below IS reachable,
     # because an element set can carry a non-positive mean motion, and that one is mutation-killed.

@@ -32,8 +32,43 @@ MAX_PAYLOAD_BYTES: Final = 64 * 1024
 #: from inside `json.dumps`; a scenario event is a flat record of a few fields.
 MAX_PAYLOAD_DEPTH: Final = 8
 
+#: Most nodes a payload may EXPAND to while being frozen. Depth and serialised size both bound the
+#: RESULT of a write; this bounds its COST, and without it neither of the other two was reached.
+#:
+#: A payload built from shared references defeats them both with a few hundred bytes of live
+#: objects: `v = "z"*10` then `v = [v]*40` six times is depth 7, inside the depth cap, and expands
+#: to 40**6 = 4.1 billion elements because the freeze allocates a distinct tuple per reference. The
+#: size cap measures `len(canonical)`, which is never reached, so the write does not fail - it
+#: does not return. Measured: still allocating at a 60 second timeout under a 2 GiB limit.
+#:
+#: 100,000 is far past any real scenario event and reached in milliseconds, so the refusal is a
+#: refusal rather than a stall.
+MAX_PAYLOAD_NODES: Final = 100_000
 
-def _freeze(value: Any, depth: int = 0) -> Any:
+
+class _Budget:
+    """A mutable node counter shared across one recursive walk.
+
+    Passed rather than returned, because the walk builds a value and cannot also thread a count
+    back out of a comprehension.
+    """
+
+    __slots__ = ("remaining",)
+
+    def __init__(self, remaining: int) -> None:
+        self.remaining = remaining
+
+    def spend(self) -> None:
+        """Charge one node, refusing when the budget is gone."""
+        self.remaining -= 1
+        if self.remaining < 0:
+            raise ValueError(
+                f"payload expands past {MAX_PAYLOAD_NODES} nodes, so the cost of accepting it is"
+                " not bounded by its size"
+            )
+
+
+def _freeze(value: Any, depth: int = 0, budget: _Budget | None = None) -> Any:
     """Return ``value`` with every mapping and sequence in it made immutable, recursively.
 
     **Depth-bounded, and the bound is not decoration.** The first version of this function
@@ -64,10 +99,14 @@ def _freeze(value: Any, depth: int = 0) -> Any:
     """
     if depth > MAX_PAYLOAD_DEPTH:
         raise ValueError(f"payload nests deeper than {MAX_PAYLOAD_DEPTH} levels")
+    budget = _Budget(MAX_PAYLOAD_NODES) if budget is None else budget
+    budget.spend()
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze(item, depth + 1) for key, item in value.items()})
+        return MappingProxyType(
+            {key: _freeze(item, depth + 1, budget) for key, item in value.items()}
+        )
     if isinstance(value, (list, tuple)):
-        return tuple(_freeze(item, depth + 1) for item in value)
+        return tuple(_freeze(item, depth + 1, budget) for item in value)
     return value
 
 
@@ -215,12 +254,21 @@ class RunLog:
     public list, so `log.events[1] = ...`, `log.events.clear()` and wholesale replacement all
     worked, and a forged log compared equal under `replay_is_identical`. The docstring said "a log
     that can be edited after the fact cannot certify a replay" while permitting exactly that. The
-    list is private now and `events` returns a tuple, so there is no remove, no update, and no
-    handle on the underlying storage - and `Event` freezes its payload recursively, which is the
+    list is private now and `events` returns a tuple, so through the PUBLIC API there is no
+    remove, no update and no handle on the storage - and `Event` freezes its payload recursively,
+    which is the
     half that was missing. The tuple alone left `log.events[1].payload["outcome"] = "pass"`
     working, so a divergent run could be forged back to the genuine fingerprint through the public
     API with no private access. The digest is also taken at the write now, so a payload mutated
     afterwards can neither change it nor break it.
+
+    **"Through the public API" is doing real work in that sentence.** `gc.get_referents()` on a
+    `MappingProxyType` hands back the live dictionary behind it, and mutating through that route
+    succeeds. It is harmless HERE only because of the second half of the fix: the canonical form is
+    captured at the write, so the fingerprint does not move, and `replay_is_identical` recomputes
+    `canonical()` and therefore reports divergence rather than a false match. Recorded rather than
+    left as an absolute claim, because an absolute claim about immutability in Python is almost
+    always wrong and the reader deserves to know which door is shut and which is merely useless.
 
     **What this still is not: tamper-evident.** The fingerprint is an unkeyed digest, so whoever
     can reach the object can recompute it. It detects DIVERGENCE, which is what a replay needs. If
@@ -255,7 +303,12 @@ class RunLog:
 
     @property
     def events(self) -> tuple[Event, ...]:
-        """The events so far, as an immutable tuple of immutable events.
+        """The events so far, as a tuple of events immutable through the public API.
+
+        "Immutable" without that qualifier would be too strong: `MappingProxyType` is a read-only
+        VIEW, and `gc.get_referents()` reaches the dictionary behind it. What makes that harmless
+        is the write-time digest, not the proxy.
+
 
         Both halves are load-bearing and the second was missing. The tuple stopped
         `log.events[1] = ...`; it did not stop `log.events[1].payload["outcome"] = "pass"`,
@@ -340,6 +393,12 @@ class RunLog:
 
         Cannot fail on any log this class will construct, because everything that could make it
         fail is refused at the write, through the one path both entrances use.
+
+        **One forge remains and it is outside the threat model.** An `Event` SUBCLASS overriding
+        `canonical()` can return a genuine run's string while storing a divergent payload, and the
+        fingerprint then matches. Anyone able to define that class can build the log outright, so
+        this is no more than the unkeyed digest already concedes above. Named rather than left for
+        a reader to discover and mistake for a hole.
         """
         digest = hashlib.sha256()
         for field_bytes in (f"seed:{self._seed}".encode(), *(c.encode() for c in self._canonicals)):

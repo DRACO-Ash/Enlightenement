@@ -168,11 +168,81 @@ anything. The git half is conditional; the half that must hold everywhere needs 
 Export completeness is now asserted in both directions for both packages, which is what would
 have caught `relative_acceleration_km_s2` being public before a reviewer did.
 
-**Verified.** Loop green under the pinned toolchain: **756 passed, 1 skipped**, coverage
-**99.02%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven
+### Round three: the sixth bypass, and deleting the control rather than revising it again
+
+Both gates FAILED round two as well. The engineering gate's BLOCKER and the security gate's first
+MAJOR were the same defect: **a sixth bypass of the credential redaction**, in three forms.
+
+● An ASCII **space or tab** inside userinfo splits the credential out, because the whole-run
+  rewrite still terminated the run at those two characters and the neutraliser deliberately spared
+  them. Sixteen Unicode spaces narrowed to two, not removed.
+● A **bare token in marker position**, which has no surrounding context to find at all.
+● The **distribution name**, echoed raw on the parsed path: `<token>==1.0.0` printed the
+  canonicalised token in full, because `canonicalise` lowercases and folds separators so a token
+  comes out looking exactly like a name.
+
+And the test written to prevent exactly this excluded the two characters that were leaking:
+`hostile = [c for c in hostile if c not in " \t"]`. A property test scoped to the part of the class
+already fixed, passing while the open part stayed open.
+
+**So `redact()` is deleted.** Every revision had narrowed the class - 29 characters, then 16, then
+2 - which felt like progress and was a function converging on a limit above zero. The shape was
+always the same: a pattern that must FIND a delimiter before it can hide anything. No pattern finds
+a secret in arbitrary text, so the answer was never a better pattern. It was to stop echoing
+arbitrary text.
+
+Every echo site now describes its input. `describe_version` is a strict PEP 440 whitelist,
+`describe_line` and the marker note emit a length only, and the interpreter-probe failure reports
+an exit code. `redact()`, `URL_CREDENTIALS`, `QUERY_CREDENTIALS`, `NON_PRINTABLE` and
+`MAX_ECHO_LENGTH` went with it, because a control with no caller is one the next reader trusts.
+Measured end to end across all 29 whitespace characters against eight line shapes covering every
+echo site: **zero occurrences of the token in stdout or stderr.**
+
+One echo cannot be reduced to a length: the divergence report has to name the distribution, or
+"pinned 0.115.0, NOT INSTALLED" names nothing. That one is **bounded rather than closed** - a
+canonical-shaped name up to 32 characters echoes, anything longer or oddly shaped is described - and
+the residual is written into `describe_name` and asserted in its test, including the case that still
+echoes. A bounded gap an operator can reason about beats a completeness claim a seventh bypass
+would embarrass.
+
+**Two more findings of my own making, both from round two's fixes.** My first attempt at the
+probe-stderr echo wrapped it in `redact()`, putting arbitrary text back through the function I was
+in the middle of proving unsound. And `_freeze` bounded depth but not COST: `v = "z"*10` then
+`v = [v]*40` six times is a few hundred bytes, depth 7, inside the depth cap, and expands to 4.1
+billion elements because every reference is the same list. The size cap measures `len(canonical)`,
+which is never computed, so the write did not fail - it did not return, still allocating at a
+sixty-second timeout under a 2 GiB limit. A node budget bounds the work; the refusal now takes
+0.064 seconds.
+
+**The magnitude bound the module had already learned.** `julian_date_from_utc(1e308, 1, 1)` is
+finite and integral, passed both new loops, and raised a bare `OverflowError` from `math.floor`.
+Worse silently: `year=1e300, month=3` returned 3.652425e+302 and `day=1e308` returned 1e+308 -
+finite numbers that are not dates. `greenwich_mean_sidereal_degrees`, twenty lines below, had
+applied `MAX_JULIAN_DATE` for this exact reason since the day it was written. An integer `10**400`
+was worse again: `math.isfinite` itself raises on it, so the guard against undocumented exceptions
+was throwing one.
+
+**A test that could not see what its own docstring claimed.** The reverse export check filtered on
+`__module__`, which an `int`, `float` or `str` does not have, so it was blind to every exported
+CONSTANT while citing `MAX_PAYLOAD_BYTES` and `MAX_PAYLOAD_DEPTH` as two of the three faults it
+caught. It caught neither: dropping `MAX_PAYLOAD_BYTES` from `__all__` left it green. Now derived
+from each submodule's namespace with a written curation list, and it immediately caught
+`MAX_PAYLOAD_NODES`, a constant added twenty minutes earlier in this same round.
+
+Wording corrected where it overstated: `events` is immutable *through the public API*, because
+`gc.get_referents()` reaches the dictionary behind a `MappingProxyType` - harmless only because the
+digest is captured at the write, which is the half doing the real work. An `Event` subclass
+overriding `canonical()` can still forge a fingerprint, named as outside the threat model rather
+than left to be discovered. And "35 axes" was a real measurement of an ad-hoc grid, not of the
+committed sweep, which reaches that branch at 2; both are now stated.
+
+**Verified.** Loop green under the pinned toolchain: **724 passed, 1 skipped**, coverage
+**99.04%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven
 physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green
-against the version being shipped: **753 passed, 4 skipped**. Every figure measured after the
-final edit, then measured again after the documents were written, because writing them edits files
+against the version being shipped: **721 passed, 4 skipped**. The count fell from 756 because two
+parametrised redaction tests covering 42 cases against a function that no longer exists were
+replaced by one end-to-end property test over all 29 whitespace characters. Every figure measured
+after the final edit, then again after the documents were written, because writing them edits files
 the contract suite reads.
 
 ## V0.21 (2026-08-20)
