@@ -23,6 +23,21 @@ set -eu
 cd "$(dirname "$0")/.."
 
 VERSION="${1:?usage: package-appstore.sh <version>}"
+
+# The argument MUST equal the declared version. Nothing enforced that, and the gap is not
+# theoretical: this repository built an 0.18.0 archive from a tree declaring 0.17.0, so an
+# inspection keyed on the declared version examined a different file from the one just written
+# and reported it clean. Either half of that pair can be the stale one. Refusing the mismatch
+# means the archive name and the code inside it can never disagree.
+DECLARED=$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')
+if [ "$VERSION" != "$DECLARED" ]; then
+  echo "FAIL: asked to package $VERSION but pyproject.toml declares $DECLARED." >&2
+  echo "Bump the version by path in pyproject.toml and src/enlightenment/__init__.py," >&2
+  echo "or pass the declared version. An archive whose name disagrees with the code" >&2
+  echo "inside it is how a stale upload gets certified as clean." >&2
+  exit 2
+fi
+
 OUT="dist/enlightenment-appstore-${VERSION}.zip"
 STAGE="dist/stage"
 

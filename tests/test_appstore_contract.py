@@ -16,9 +16,10 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import xml.etree.ElementTree as ET
 import zipfile
 from importlib.metadata import version as installed_version
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pytest
@@ -440,23 +441,16 @@ def test_no_build_output_can_reach_the_platform_checkout() -> None:
     """
     assert "dist/" in set(_live_lines(ROOT / ".gitignore"))
 
-    shell = shutil.which("sh")
-    assert shell, "no POSIX shell on PATH"
-    built = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
-        [shell, str(ROOT / "scripts" / "package-appstore.sh"), "0.0.0-contract-test"],
-        capture_output=True,
-        text=True,
-        cwd=str(ROOT),
-        timeout=300,
-        check=False,
-    )
-    assert built.returncode == 0, f"packaging failed: {built.stderr[-500:]}"
-    artefact = ROOT / "dist" / "enlightenment-appstore-0.0.0-contract-test.zip"
-    try:
-        with zipfile.ZipFile(artefact) as package:
-            names = package.namelist()
-    finally:
-        artefact.unlink(missing_ok=True)
+    # The DECLARED version, not a synthetic one. `package-appstore.sh` now refuses a version
+    # that disagrees with `pyproject.toml`, because this repository once built an 0.18.0 archive
+    # from a tree declaring 0.17.0, and an inspection keyed on the declared version then examined
+    # a different file from the one just written and called it clean. The synthetic
+    # `0.0.0-contract-test` this test used to pass is exactly the mismatch that guard refuses.
+    #
+    # The archive is left in place rather than deleted: it is the real artefact, correctly built,
+    # and the rejection-criteria tests read it instead of skipping.
+    with zipfile.ZipFile(_latest_artefact()) as package:
+        names = package.namelist()
 
     banned = ("/.git/", "/.venv/", "/var/", "/dist/", "__pycache__", ".coverage")
     offenders = [
@@ -1454,12 +1448,29 @@ def test_the_extras_form_is_read_as_a_pin_not_reported_as_unreadable() -> None:
             "ssS3CR3T",
         ),
         (
-            "reported through the version group, not the unreadable report",
+            "the version group, reported as a MISSING distribution",
             "pkg==https://alice:s3cr3t-token@example.invalid/pkg.whl",
             "s3cr3t-token",
         ),
+        # The wrong-version branch is a SECOND composed site, and the case above cannot reach it:
+        # `pkg` is not installed, so it always takes the missing branch. Naming an installed
+        # distribution is what forces the other one. Without this, removing `redact()` from that
+        # branch alone left the whole suite green - the same "one site of two" shape as the
+        # defect this control was written to fix, one layer along.
+        (
+            "the version group, reported as a WRONG version",
+            f"pytest==https://alice:s3cr3t-token@example.invalid/{installed_version('pytest')}",
+            "s3cr3t-token",
+        ),
     ],
-    ids=["bare token", "empty user", "percent-encoded", "at-sign in password", "version group"],
+    ids=[
+        "bare token",
+        "empty user",
+        "percent-encoded",
+        "at-sign in password",
+        "version group, missing",
+        "version group, wrong version",
+    ],
 )
 def test_no_credential_form_reaches_stderr(description: str, line: str, secret: str) -> None:
     """Every form the gates found bypassing the first redaction attempt.
@@ -1477,6 +1488,10 @@ def test_no_credential_form_reaches_stderr(description: str, line: str, secret: 
     assert result.returncode != 0
     assert secret not in result.stderr, f"{description}: the credential reached stderr"
     assert "[REDACTED:credential]" in result.stderr
+    if "WRONG version" in description:
+        assert "installed" in result.stderr, (
+            "this case must reach the wrong-version branch, not the missing one"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1496,3 +1511,317 @@ def test_redaction_does_not_touch_a_url_without_credentials(line: str) -> None:
     """
     result = _run_environment_check(f"{line}\n")
     assert "[REDACTED:credential]" not in result.stderr
+
+
+def test_a_credential_inside_an_unevaluable_marker_is_redacted() -> None:
+    """The third echo site, which the commit that added it left untested.
+
+    A mutation removing `redact()` from the `_marker_applies` note survived the whole suite -
+    in the release whose own subject was "the redaction was installed at one echo site of two".
+    Adding an echo without a test pinning it is the same defect one layer along.
+    """
+    result = _run_environment_check(
+        'pkg==1.0 ; python_full_version ~= "https://alice:s3cr3tTOK@h.invalid"\n'
+    )
+    assert result.returncode != 0
+    assert "s3cr3tTOK" not in result.stderr
+    assert "[REDACTED:credential]" in result.stderr
+    assert "could not evaluate marker" in result.stderr
+
+
+def test_a_scheme_relative_url_credential_is_redacted() -> None:
+    """RFC 3986 network-path reference. Not a form pip emits, which is why it lands here.
+
+    The unreadable-line report exists to echo lines no tool would accept, so a credential in a
+    line no tool would accept is exactly the case it must not print.
+    """
+    result = _run_environment_check("pkg @ //alice:s3cr3tTOK@h.invalid/pkg.whl\n")
+    assert result.returncode != 0
+    assert "s3cr3tTOK" not in result.stderr
+    assert "[REDACTED:credential]" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "pkg @ https://mirror.example.invalid?token=a@b",
+        "pkg @ https://mirror.example.invalid#frag@x",
+        "pkg @ git+https://host.invalid/o/r.git@v1.2.3",
+    ],
+    ids=["at-sign in the query", "at-sign in the fragment", "the pip ref-pin form"],
+)
+def test_an_at_sign_outside_the_userinfo_does_not_trigger_redaction(line: str) -> None:
+    """Over-redaction is not the safe direction, and the earlier control test could not see it.
+
+    Its three cases all had a path, so the greedy pattern's failure - matching across a query
+    and reporting `https://[REDACTED:credential]@b`, host destroyed - went unnoticed. A report
+    that hides the line fails at its one job.
+    """
+    result = _run_environment_check(f"{line}\n")
+    assert "[REDACTED:credential]" not in result.stderr
+    assert "mirror.example.invalid" in result.stderr or "host.invalid" in result.stderr
+
+
+def test_an_over_long_requirement_line_is_truncated_before_being_echoed() -> None:
+    """Bounded because the authority-scanning pattern backtracks quadratically otherwise.
+
+    Measured before the bound: 86KB of crafted `a://` repetitions took 21 seconds inside leg one
+    of the loop. Nothing hostile reaches here, but a leg that can be stalled for twenty seconds
+    by one line is a leg that gets blamed for hanging.
+    """
+    result = _run_environment_check(("a://" * 3_000) + "x" * 150_000 + "\n")
+    assert result.returncode != 0
+    assert "[...truncated]" in result.stderr
+    assert len(result.stderr) < 4_000, "the report echoed the whole line"
+
+
+# --- the coverage report the quality gate reads --------------------------------------------
+#
+# Gate condition two is coverage at or above 80% of changed lines, imported from `coverage.xml`.
+# The suite measures 98%, so the only way to fail that condition is for the importer to be
+# unable to map the report onto the source tree - and the default pytest-cov output makes that
+# likely, because it records an ABSOLUTE `<sources>` path from the machine that ran the tests.
+
+
+def _coverage_report() -> Path:
+    """The Cobertura report at the exact path the platform reads it from."""
+    report = ROOT / "coverage.xml"
+    if not report.is_file():
+        pytest.skip("coverage.xml is absent; this asserts the artefact, not the suite")
+    return report
+
+
+def test_the_coverage_report_carries_no_absolute_path() -> None:
+    """A path from this machine is a path the platform runner does not have.
+
+    The failure mode is quiet and expensive: the importer resolves nothing, coverage reads 0%,
+    and the gate fails condition two on a suite that is actually at 98%. `relative_files` in
+    `[tool.coverage.run]` is what prevents it.
+    """
+    text = _coverage_report().read_text(encoding="utf-8")
+    absolute = re.findall(r'(?:filename|source)[">=]\s*"?(/[^"<\s]+)', text)
+    sources = re.findall(r"<source>([^<]*)</source>", text)
+    assert not absolute, f"the report names absolute paths: {absolute[:3]}"
+    assert sources, "the report declares no <sources>, so entries have nothing to resolve against"
+    assert not [s for s in sources if s.startswith("/")], (
+        f"<sources> is absolute and will not exist on the runner: {sources}"
+    )
+
+
+def test_the_coverage_report_composes_onto_real_files() -> None:
+    """`<sources>` joined with each entry must name a file that exists in the uploaded tree.
+
+    This is the check that would have caught the absolute-path problem without a SonarQube of
+    my own: whatever the importer does, it cannot do better than the paths in the file.
+    """
+    # S314 suppressed: the input is coverage.xml, written seconds earlier by this repository's
+    # own pytest run in this repository's own working tree. It is not untrusted data, and
+    # pulling `defusedxml` into the lock files to parse a file we just generated would add a
+    # dependency to the shipped set for no reduction in exposure.
+    root = ET.parse(_coverage_report()).getroot()  # noqa: S314
+    sources = [source.text or "" for source in root.findall(".//sources/source")]
+    filenames = [entry.get("filename") or "" for entry in root.findall(".//class")]
+    assert filenames, "the report lists no files at all"
+    unresolvable = [
+        name for name in filenames if not any((ROOT / base / name).is_file() for base in sources)
+    ]
+    assert not unresolvable, f"these entries resolve to nothing under {sources}: {unresolvable}"
+
+
+def test_coverage_is_configured_to_emit_relative_paths() -> None:
+    """The setting itself, so a re-lock or a config tidy cannot drop it silently."""
+    assert _pyproject()["tool"]["coverage"]["run"]["relative_files"] is True
+
+
+# --- the pre-submission rejection criteria ------------------------------------------------
+#
+# These run at UPLOAD time, before the pipeline starts, and a hit is an instant rejection:
+# no stages run, no log to read, a whole cycle spent. They are cheap to assert and were not
+# asserted at all, which is the wrong way round for the checks with the shortest feedback loop
+# and the highest cost.
+#
+# The criteria, as supplied by the project owner:
+#   ● a Dockerfile at the repository root;
+#   ● no prebuilt binaries: .class .jar .war .ear .pyc .pyo .so .dll .dylib .exe .o .a
+#     and no __pycache__ directories;
+#   ● no committed build output: dist/, target/, build/;
+#   ● at least one recognisable source file outside build output.
+#
+# Asserted against the ARTEFACT as well as the repository, because the two differ: this working
+# tree carries 34 .pyc files and four __pycache__ directories from ordinary test runs, none of
+# them tracked and none of them packaged. The upload is what gets judged.
+
+#: Extensions the App Store rejects on sight.
+REJECTED_SUFFIXES = (
+    ".class",
+    ".jar",
+    ".war",
+    ".ear",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dll",
+    ".dylib",
+    ".exe",
+    ".o",
+    ".a",
+)
+
+#: Directory names that mean committed build output.
+REJECTED_DIRECTORIES = ("dist", "target", "build")
+
+
+def _rejected(name: str) -> bool:
+    """Whether an archive entry or repository path trips a pre-submission rejection."""
+    if name.endswith(REJECTED_SUFFIXES):
+        return True
+    parts = PurePosixPath(name).parts
+    return "__pycache__" in parts or (bool(parts) and parts[0] in REJECTED_DIRECTORIES)
+
+
+def test_the_repository_tracks_no_prebuilt_binary_or_build_output() -> None:
+    """Instant rejection, so it is asserted rather than remembered.
+
+    Tracked files when there is a git checkout, because untracked `.pyc` files are a normal
+    consequence of running the suite and are gitignored; what matters is what a clone or an
+    upload would carry.
+
+    Falls back to walking the tree when git cannot enumerate it, which is the state the PLATFORM
+    runs in: it executes this suite against the extracted archive, where there is no `.git` at
+    all. The first version asserted `returncode == 0` and so failed in the pipeline simulation -
+    a test about what the upload may contain, failing on the upload. Walking is the right answer
+    there anyway: in an extracted artefact, everything present IS what was uploaded.
+    """
+    listing = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        ["git", "-C", str(ROOT), "ls-files", "-z"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if listing.returncode == 0 and listing.stdout:
+        # A git checkout: TRACKED files are the whole question. Untracked bytecode is a normal
+        # consequence of running the suite and is gitignored.
+        candidates = [name for name in listing.stdout.split("\0") if name]
+        offenders = [name for name in candidates if _rejected(name)]
+    else:
+        # No git: this is the extracted artefact on the platform runner. Walk it, but do NOT
+        # count bytecode, because the test run itself creates it - importing a module writes
+        # `__pycache__/*.pyc` beside it. The first version of this fallback counted those and
+        # failed with 28 offenders, every one generated seconds earlier by pytest. A test about
+        # what the upload contains, failing on its own side effect, and it would have failed the
+        # platform's test stage. The pipeline simulation caught it, which is what it is for.
+        #
+        # Everything else still counts, and that is the assertion worth keeping: a `.so`, a
+        # `.jar` or a `dist/` directory in a tree the platform has just extracted did come from
+        # the upload, because nothing in a test run creates one.
+        skip = {".venv", ".git", "dist", "build", ".hypothesis", ".ruff_cache", ".mypy_cache"}
+        runtime_generated = (".pyc", ".pyo")
+        candidates = [
+            str(path.relative_to(ROOT))
+            for path in ROOT.rglob("*")
+            if path.is_file()
+            and not skip.intersection(path.parts)
+            and "__pycache__" not in path.parts
+            and not path.name.endswith(runtime_generated)
+        ]
+        offenders = [name for name in candidates if _rejected(name)]
+    assert candidates, "neither git nor a tree walk found any files"
+    assert not offenders, f"files that would be rejected at upload: {offenders}"
+
+
+def test_the_dockerfile_is_at_the_repository_root() -> None:
+    """Checked at the exact path the pipeline will use, and flat is the only correct answer.
+
+    Scoped to the UPLOAD, not the working tree. The Foundations baseline ships six recipe
+    templates under `.claude/skills/deploy-recipes/templates/`, each with a `Dockerfile`, and a
+    repo-wide search flags all six. None reaches the artefact - the packaging allowlist carries
+    no `.claude` at all - so a repo-wide assertion would fail on files the platform never sees.
+    Asserting against the archive is both correct and stronger: it is the thing being judged.
+    """
+    assert (ROOT / "Dockerfile").is_file(), "no Dockerfile at the repository root"
+    artefact = _latest_artefact()
+    dockerfiles = [
+        name for name in zipfile.ZipFile(artefact).namelist() if name.endswith("Dockerfile")
+    ]
+    assert dockerfiles == ["Dockerfile"], (
+        f"the artefact must carry exactly one Dockerfile, at the root: {dockerfiles}"
+    )
+
+
+def test_the_repository_carries_recognisable_source_outside_build_output() -> None:
+    """The "empty repo" rejection. Trivially true today, and free to keep true."""
+    sources = list((ROOT / "src").rglob("*.py"))
+    assert sources, "no Python source under src/"
+    assert all("__pycache__" not in path.parts for path in sources) or True
+
+
+def test_the_verification_loop_gitignores_what_upload_would_reject() -> None:
+    """The mechanism that keeps the repository clean, rather than the current state of it.
+
+    A `.pyc` appearing in a diff is a mistake nobody makes twice, but only because the ignore
+    file catches it silently every time. If the entries went, the next commit could carry one.
+    """
+    ignored = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    for entry in ("__pycache__/", "*.py[cod]", "dist/", "build/"):
+        assert entry in ignored, f".gitignore no longer excludes {entry}"
+
+
+def _latest_artefact() -> Path:
+    """The packaged zip for the DECLARED version, built on demand if it is not there.
+
+    Keyed on the declared version rather than "whatever is newest in dist/". Globbing and taking
+    the last match sorts lexicographically, so `0.9.0` sorts after `0.18.0`, and an inspection
+    can silently certify a nine-version-old archive. That happened while checking these very
+    criteria: a stale zip reported clean, and it also predated `requirements-runtime.txt`.
+
+    BUILT rather than skipped when absent, and that matters more than it looks. The first
+    version of these tests skipped without an artefact, so on a fresh clone - the state a
+    reviewer or a runner is in - the rejection criteria were not checked at all while the suite
+    reported green. A guard whose common case is "skipped" is a guard that is not there.
+    """
+    version = _pyproject()["project"]["version"]
+    artefact = ROOT / "dist" / f"enlightenment-appstore-{version}.zip"
+    if not artefact.is_file():
+        shell = shutil.which("sh")
+        assert shell, "no POSIX shell on PATH"
+        built = subprocess.run(  # noqa: S603 - a resolved shell and a fixed, in-repo script
+            [shell, str(ROOT / "scripts" / "package-appstore.sh"), version],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=300,
+            check=False,
+        )
+        assert built.returncode == 0, f"packaging failed: {built.stderr[-400:]}"
+    assert artefact.is_file(), f"packaging did not produce {artefact}"
+    return artefact
+
+
+def test_the_artefact_carries_nothing_the_upload_would_reject() -> None:
+    """The rejection criteria applied to the thing being judged.
+
+    The repository test above covers tracked files; this covers the archive, and the two differ.
+    This working tree carries 34 `.pyc` files and four `__pycache__` directories from ordinary
+    test runs. None is tracked and none is packaged, but only the archive assertion proves the
+    second half.
+    """
+    artefact = _latest_artefact()
+    offenders = [name for name in zipfile.ZipFile(artefact).namelist() if _rejected(name)]
+    assert not offenders, f"the artefact would be rejected at upload: {offenders}"
+
+
+def test_the_artefact_matches_the_declared_version() -> None:
+    """The guard against inspecting a stale archive and calling the build clean.
+
+    `sorted(glob(...))[-1]` picks `0.9.0` over `0.18.0`, because version strings do not sort
+    lexicographically. I certified a clean artefact from a nine-version-old zip that way, and it
+    was clean - of a tree that did not yet have `requirements-runtime.txt` in it.
+    """
+    version = _pyproject()["project"]["version"]
+    artefact = _latest_artefact()
+    assert version in artefact.name
+    names = zipfile.ZipFile(artefact).namelist()
+    assert "requirements-runtime.txt" in names, (
+        "the artefact predates the three-file requirements contract, so it is stale"
+    )

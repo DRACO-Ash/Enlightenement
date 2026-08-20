@@ -171,7 +171,7 @@ def element_line_checksum_ok(line: object) -> bool:
     intact is handled. Callers holding the raw `SGP4-VER.TLE` records must truncate the harness
     span columns appended after column 69 themselves; this function judges what it is given.
 
-    **Enforced by default in :func:`load_elements`, with two documented opt-outs, both in the
+    **Enforced by default in :func:`load_elements`, with three documented opt-outs, all in the
     test suite.** Five of the sixty-six element-set lines in Vallado's own verification file
     fail this check - both lines of satellites 33333 and 33335, and line 1 of 33334 - so the
     golden-vector suite passes ``verify_checksum=False``. A default that refused the reference
@@ -188,12 +188,18 @@ def element_line_checksum_ok(line: object) -> bool:
         return False
     total = 0
     for character in stripped[: TLE_LINE_LENGTH - 1]:
-        if character.isdigit():
+        # `isascii()` before `isdigit()`, in BOTH loops. `str.isdigit()` is True for characters
+        # like the superscript two, and `int()` then raises `ValueError` - so the predicate
+        # documented above as returning False rather than raising did exactly that, from either
+        # the body or the checksum column. Latent, because `_check_element_line` screens to
+        # printable ASCII first, but the docstring's promise is made to DIRECT callers, and this
+        # function is the one nominated as the authoring-time content gate.
+        if character.isascii() and character.isdigit():
             total += int(character)
         elif character == "-":
             total += 1
     checksum = stripped[TLE_LINE_LENGTH - 1]
-    return checksum.isdigit() and total % 10 == int(checksum)
+    return checksum.isascii() and checksum.isdigit() and total % 10 == int(checksum)
 
 
 def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Satrec:
@@ -211,8 +217,8 @@ def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Sa
     :func:`propagate_minutes_since_epoch`. The checksum is the only cheap control that sees it.
 
     Pass ``verify_checksum=False`` only to load a line that is deliberately not a real element
-    set. Two callers do, both in the test suite, and the count is asserted repo-wide so it
-    cannot grow unnoticed:
+    set. Three callers do, all in the test suite, and the count is asserted over every tracked
+    Python file so it cannot grow unnoticed:
 
     ● the golden-vector propagator, because five of the sixty-six lines in Vallado's own
       verification file fail the checksum - both lines of satellites 33333 and 33335, and line 1
@@ -220,6 +226,8 @@ def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Sa
       would be a control that refuses its own authority.
     ● the meaningless-element-set test, which exercises the layer BELOW this gate and so has to
       get past it.
+    ● the control for the fail-closed test, which proves a literal ``False`` DOES disable the
+      gate - without it, a gate that refused every value would look correct.
 
     An earlier version of this paragraph said "exactly one caller" while the test asserted three
     and the changelog said three. The function was telling a maintainer the wrong thing about

@@ -8,25 +8,41 @@ set -eu
 cd "$(dirname "$0")/.."
 TAG="${1:-enlightenment:local}"
 
-if ! docker info >/dev/null 2>&1; then
+# PODMAN FIRST, because that is what the platform's containerize stage uses. Building locally
+# with a different engine than the one that will build the submission is a difference the local
+# loop cannot see: the two disagree on default build backends, on how they resolve unqualified
+# image names, and on rootless UID mapping. Docker remains the fallback so a developer with only
+# Docker is not blocked, and the engine actually used is echoed so a build log is never
+# ambiguous about which one ran.
+ENGINE=""
+for candidate in "${ENLIGHTENMENT_CONTAINER_ENGINE:-}" podman docker; do
+  [ -n "$candidate" ] || continue
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" info >/dev/null 2>&1; then
+    ENGINE="$candidate"
+    break
+  fi
+done
+
+if [ -z "$ENGINE" ]; then
   cat >&2 <<'BANNER'
 ################################################################################
 # IMAGE BUILD DEFERRED TO CI - THIS IS NOT A PASS                              #
 #                                                                              #
-# No Docker daemon is reachable, so the container build and the image policy    #
-# posture could not be verified here. The `image` job in the CI workflow is the #
-# binding check. Do not treat this run as green, and do not submit to the App   #
-# Store until that job has passed.                                             #
+# Neither Podman nor Docker is reachable, so the container build and the image  #
+# policy posture could not be verified here. The platform builds with PODMAN;   #
+# the `image` job in the CI workflow is the binding check. Do not treat this    #
+# run as green, and do not submit to the App Store until that job has passed.   #
 ################################################################################
 BANNER
   exit 3
 fi
+echo "container engine: $ENGINE ($("$ENGINE" --version 2>&1 | head -1))"
 
 log=$(mktemp)
 # Redirect, never pipe. In POSIX sh a pipeline's status is the LAST command's status, so
-# `docker build | tee` reports tee's success and a failed build reads as a pass. That is a
+# `<engine> build | tee` reports tee's success and a failed build reads as a pass. That is a
 # fail-open, and this is the exact line where it would live.
-if docker build -t "$TAG" . >"$log" 2>&1; then
+if "$ENGINE" build -t "$TAG" . >"$log" 2>&1; then
   cat "$log"
   rm -f "$log"
   echo "IMAGE BUILD: PASS ($TAG)"

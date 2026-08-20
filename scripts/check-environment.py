@@ -57,6 +57,11 @@ PROBE_TIMEOUT_SECONDS = 60
 #: The script name, an interpreter, and at least one lock file.
 MINIMUM_ARGUMENTS = 3
 
+#: Longest requirement line echoed to stderr. Generous for a real pin plus a direct reference,
+#: and short enough that the authority-scanning pattern in `redact()` cannot be made to
+#: backtrack for seconds on a crafted line.
+MAX_ECHO_LENGTH = 500
+
 #: A pin line: distribution name, optional extras in brackets, `==`, version, then optionally
 #: an environment marker after `;` and a trailing ` \` introducing the hash block.
 #:
@@ -175,13 +180,20 @@ def _marker_applies(marker: str | None) -> bool:
 #: form the control could not see. It also leaked the tail of any password containing a raw
 #: `@`, since userinfo runs to the LAST `@` before the authority.
 #:
-#: Greedy `[^/\s]+` anchors on that last `@` and cannot cross a `/`, so a plain URL with an
-#: `@` in its path (`https://host/path@x`) and an ordinary index URL are left alone.
-URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s]+@")
+#: The authority run stops at `/`, `?` and `#`, so an `@` outside the userinfo is not treated as
+#: one. `[^/\s]+` was too greedy: `https://mirror.invalid?token=a@b` matched across the query and
+#: reported `https://[REDACTED:credential]@b`, destroying the host. Over-redaction is not the
+#: safe direction here - the unreadable-line report exists to tell an operator WHICH line to
+#: fix, and a report that hides the line fails at its one job.
+#:
+#: The scheme is optional, because `//user:token@host/x` is a network-path reference under
+#: RFC 3986 and carries userinfo just the same. Not a form pip emits, which is precisely why it
+#: reaches a report that exists to echo lines no tool would accept.
+URL_CREDENTIALS = re.compile(r"(?P<scheme>(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)[^/?#\s]+@")
 
 
 def redact(text: str) -> str:
-    """Return ``text`` with any URL userinfo replaced by a marker.
+    """Return ``text`` with any URL userinfo replaced by a marker, bounded in length.
 
     This function exists because the fix for a fail-open branch introduced an echo. Reporting
     the lines it cannot parse is what stopped `check-environment.py` silently skipping them, and
@@ -190,7 +202,18 @@ def redact(text: str) -> str:
 
     Rendered as the house redaction marker rather than removed, so a reader can see that
     something was withheld rather than wondering whether the line was truncated.
+
+    **Truncated first, and that is the fix for a real stall rather than tidiness.** The pattern
+    scans an authority run from every `//` in the line, so a crafted line of repeated `a://`
+    followed by a long run backtracks quadratically: 86KB measured at 21s, in leg one of the
+    loop. Nothing hostile reaches here - lock files are developer-supplied and never touch the
+    HTTP edge - but a leg that can be stalled for twenty seconds by one line is a leg that gets
+    blamed for hanging. A requirement line longer than the bound is not something an operator
+    needs echoed in full anyway, and the truncation is marked so the report never looks complete
+    when it is not.
     """
+    if len(text) > MAX_ECHO_LENGTH:
+        text = f"{text[:MAX_ECHO_LENGTH]}[...truncated]"
     return URL_CREDENTIALS.sub(r"\g<scheme>[REDACTED:credential]@", text)
 
 

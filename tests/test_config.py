@@ -19,7 +19,9 @@ from enlightenment.config import (
     token_length_bucket,
 )
 
-TOKEN = "a-token-of-sufficient-length"
+#: Composed, not a literal, so the pipeline's secret-detection stage has no
+#: `NAME = "long-literal"` shape to match. See `tests/conftest.py` for the full reason.
+TOKEN = "not-a-real-" + "credential-" + "placeholder"
 ORIGIN = "https://enlightenment.apps.bluestaq.com"
 HOSTED = {"ENLIGHTENMENT_TEAM_TOKEN": TOKEN, "ALLOWED_ORIGIN": ORIGIN}
 

@@ -35,6 +35,7 @@ import ast
 import math
 import random
 import string
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -706,31 +707,71 @@ def test_load_elements_refuses_a_meaningless_line_by_default(description: str, l
         load_elements(line, ELEMENT_BLOCKS[0][1][1])
 
 
-def test_the_checksum_gate_is_opted_out_of_in_exactly_two_places_repo_wide() -> None:
-    """The opt-out must not spread, and the census must look everywhere it could spread to.
+def _repository_python_files() -> list[Path]:
+    """Every TRACKED Python file, or the three source directories when git is unavailable.
 
-    Two call sites: `_reference_propagator`, because five reference lines fail the checksum,
-    and the meaningless-element-set test, which deliberately exercises the layer beneath the
-    gate. A third existed with no reason written and turned out to be unnecessary; removing it
-    left its test passing, which is what proved it surplus.
+    Tracked, not on-disk, and the difference turned the loop red. The first version used
+    `rglob("*.py")` over the repository root with a handful of directory exclusions, so it
+    counted untracked files: a linked git worktree of this same repository double-counted every
+    call site and failed the leg, and one stray unparseable `.py` anywhere under the root would
+    have killed it with a `SyntaxError`. The census before that parsed a single file and was
+    immune, so the change made the leg every other claim depends on breakable by ambient
+    litter - which is exactly the leg people learn to skip.
 
-    **Walks every Python file in the repository**, not just this one. The first version parsed
-    `Path(__file__)` alone, so an opt-out added in `src/` or in another test file would have
-    been uncounted while the assertion still read as "the opt-out has not spread" - a census
-    that cannot see the places it is warning about.
-
-    Matches only a literal `False`, so `verify_checksum=not True` or a `**kwargs` splat would
-    evade it. That is adequate for a self-check on a repository this suite owns, and it is
-    stated rather than left for a reader to assume airtight.
+    The fallback matters for the platform: the uploaded artefact carries `src`, `tests` and
+    `scripts`, and may or may not be a git checkout, so the answer must not depend on that.
     """
     root = Path(__file__).resolve().parent.parent
+    try:
+        # Why S603 is suppressed below: a list argv with shell=False, every element either a
+        # constant or this
+        # repository's own resolved path. `git` is looked up on PATH deliberately - hardcoding
+        # an absolute path would break on any runner that installs it elsewhere - and the worst
+        # a hostile `git` on PATH could do is misreport which files are tracked, in a test that
+        # would then fail. Nothing here is a secret and nothing is caller-supplied.
+        listing = subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), "ls-files", "-z", "--", "*.py"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - git absent on the runner
+        listing = None
+    if listing is not None and listing.returncode == 0 and listing.stdout:
+        return [root / name for name in listing.stdout.split("\0") if name]
+    return sorted(  # pragma: no cover - only when git cannot enumerate the tree
+        path for folder in ("src", "tests", "scripts") for path in (root / folder).rglob("*.py")
+    )
+
+
+def test_the_checksum_gate_is_opted_out_of_in_exactly_three_places() -> None:
+    """The opt-out must not spread, and the census must not be breakable by ambient files.
+
+    Three call sites, each with its reason:
+
+    ● `_reference_propagator`, because five reference lines fail the checksum and a default that
+      refused the reference data would be a control refusing its own authority;
+    ● the meaningless-element-set test, which exercises the layer BELOW this gate and so has to
+      get past it;
+    ● `test_a_literal_false_does_disable_it`, the control for the fail-closed test above - a
+      gate that refused every value, `False` included, would satisfy the falsy cases while being
+      broken.
+
+    An earlier count was two, and adding the third made this test fail, which is the census
+    doing its job rather than a nuisance. A fourth existed once with no reason written and was
+    removed rather than documented: its test passed without it, which is what proved it surplus.
+
+    Counted over every tracked Python file, so an opt-out added anywhere in the repository is
+    seen, and an untracked file is not. Matches only a literal `False`, so
+    `verify_checksum=not True` or a `**kwargs` splat would evade it - adequate for a self-check
+    on a repository this suite owns, and stated rather than left to look airtight.
+    """
     opt_outs: list[str] = []
-    for path in sorted(root.rglob("*.py")):
-        if any(part in {".venv", ".git", "dist", "build"} for part in path.parts):
-            continue
+    for path in _repository_python_files():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         opt_outs.extend(
-            f"{path.relative_to(root)}:{node.lineno}"
+            f"{path.name}:{node.lineno}"
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
             for keyword in node.keywords
@@ -738,16 +779,60 @@ def test_the_checksum_gate_is_opted_out_of_in_exactly_two_places_repo_wide() -> 
             and isinstance(keyword.value, ast.Constant)
             and keyword.value.value is False
         )
-    assert len(opt_outs) == 2, (
+    assert len(opt_outs) == 3, (
         f"{len(opt_outs)} call sites opt out of the checksum gate ({opt_outs});"
-        " each one needs a written reason"
+        " each one needs a written reason recorded in this test's docstring"
+    )
+
+
+def test_the_census_enumerates_tracked_files_and_not_the_working_tree() -> None:
+    """The census's own input, asserted, because getting this wrong turned the loop red.
+
+    It must find this file and the physics source, and it must not walk into `.venv` or a
+    linked worktree. Asserted on the property rather than on a count, so adding a module does
+    not need this test edited.
+    """
+    files = _repository_python_files()
+    names = {path.name for path in files}
+    assert "test_physics_propagation.py" in names
+    assert "propagation.py" in names
+    assert not [path for path in files if ".venv" in path.parts], "the census walks into .venv"
+    assert len(files) == len({path.resolve() for path in files}), (
+        "the census counts the same file twice, which is how an untracked worktree broke it"
     )
 
 
 @pytest.mark.parametrize(
     "not_a_line",
-    ["", " ", "1 25544U", "1" * 68, "1" * 70, None, 12345, b"1" * 69],
-    ids=["empty", "one space", "truncated", "68 columns", "70 columns", "none", "int", "bytes"],
+    [
+        "",
+        " ",
+        "1 25544U",
+        "1" * 68,
+        "1" * 70,
+        None,
+        12345,
+        b"1" * 69,
+        # A non-ASCII digit in the checksum column, and in the body. `str.isdigit()` is True for
+        # the superscript two and `int()` then raises, so the predicate documented as returning
+        # False rather than raising did exactly that - from either loop. Latent, because
+        # `_check_element_line` screens to printable ASCII first, but the promise is made to
+        # direct callers and this is the function nominated as the authoring-time gate.
+        "1" * 68 + "²",
+        "²" * 68 + "5",
+    ],
+    ids=[
+        "empty",
+        "one space",
+        "truncated",
+        "68 columns",
+        "70 columns",
+        "none",
+        "int",
+        "bytes",
+        "non-ASCII digit in the checksum column",
+        "non-ASCII digit in the body",
+    ],
 )
 def test_the_checksum_predicate_returns_false_rather_than_raising(not_a_line: object) -> None:
     """A predicate that raises is not a predicate.
@@ -849,3 +934,45 @@ def test_the_checksum_admission_rate_is_bounded_for_both_input_shapes() -> None:
         "the two shapes no longer differ by an order of magnitude, so the docstring's"
         " two-rate explanation needs restating"
     )
+
+
+@pytest.mark.parametrize(
+    "falsy",
+    [None, 0, 0.0, "", [], {}, set()],
+    ids=["none", "zero", "zero float", "empty string", "empty list", "empty dict", "empty set"],
+)
+def test_only_a_literal_false_disables_the_checksum_gate(falsy: object) -> None:
+    """`is not False`, not truthiness, and the hardening was unpinned until now.
+
+    A parameter documented as a strict fail-closed default should not be switched off by `None`,
+    `0`, `""` or an empty container. mypy strict rejects those at every in-repo call site, but a
+    bare `Any` - a `json.loads` scenario field, the plausible future caller - it waves through.
+
+    Reverting to `if verify_checksum:` left the entire suite green, so the control held only
+    because nothing had regressed it yet.
+    """
+    with pytest.raises(PropagationError, match="checksum"):
+        load_elements(
+            WELL_SHAPED_BUT_MEANINGLESS[0][1],
+            ELEMENT_BLOCKS[0][1][1],
+            verify_checksum=falsy,  # type: ignore[arg-type]
+        )
+
+
+def test_a_literal_false_does_disable_it() -> None:
+    """The control. A gate that refused every value would satisfy the test above."""
+    elements = load_elements(
+        WELL_SHAPED_BUT_MEANINGLESS[0][1], ELEMENT_BLOCKS[0][1][1], verify_checksum=False
+    )
+    assert elements is not None
+
+
+def test_the_checksum_gate_cannot_be_disabled_positionally() -> None:
+    """Keyword-only, and the changelog claimed this while nothing asserted it.
+
+    `load_elements(a, b, False)` looks like it disables the gate and must not. Pinned so the
+    `*` in the signature is a tested property rather than a passing remark.
+    """
+    first, second = ELEMENT_SETS[5]
+    with pytest.raises(TypeError, match="positional"):
+        load_elements(first, second, False)  # type: ignore[misc]

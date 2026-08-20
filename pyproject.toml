@@ -1,6 +1,6 @@
 [project]
 name = "enlightenment"
-version = "0.17.0"
+version = "0.18.0"
 description = "Orbital warfare training application for the Bluestaq App Store."
 requires-python = ">=3.12,<3.13"
 
@@ -14,6 +14,18 @@ pythonpath = ["src"]
 
 [tool.coverage.run]
 branch = true
+# relative_files makes the Cobertura report MACHINE-INDEPENDENT, which the SonarQube gate
+# needs and the default does not give. Without it the report's <sources> element is an
+# absolute path from whichever machine ran pytest - measured here as
+# /home/user/Enlightenement/src - while the per-file entries are src-relative
+# ("enlightenment/app.py"). On the platform runner that absolute path does not exist, so the
+# importer has nothing to resolve the entries against, coverage reads 0%, and gate condition
+# two (coverage at or above 80% of changed lines) fails on a suite that is actually at 98%.
+#
+# With it, <sources> is "src" and the entries stay src-relative, so the pair composes to
+# src/enlightenment/app.py from any working directory. What is asserted locally is the
+# machine-independence; SonarQube's own resolution cannot be run here and is not claimed.
+relative_files = true
 source = ["src"]
 
 [tool.coverage.report]

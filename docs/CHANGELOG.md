@@ -2,6 +2,135 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.18 (2026-08-20)
+
+**What.** The project owner supplied the App Store's full pre-submission and pipeline check
+list. Four of its requirements were unverified here, and checking them found one likely upload
+failure, one near-miss that had already fooled me, and a test of my own that would have failed
+the platform's test stage. Plus round four of the gate findings.
+
+### The likely upload failure: the coverage report was machine-dependent
+
+Gate condition two is coverage at or above 80% of changed lines, imported from `coverage.xml`.
+The suite measures 98.71%, so the only way to fail that condition is for the importer to be
+unable to map the report onto the source tree. The default `pytest-cov` output makes that
+likely: measured, `<sources>` held the absolute path `/home/user/Enlightenement/src`, from THIS
+machine, while the per-file entries were src-relative (`enlightenment/app.py`). On the platform
+runner that absolute path does not exist, so the entries have nothing to resolve against,
+coverage reads 0%, and a 98% suite fails the gate.
+
+**Fixed** with `relative_files = true` in `[tool.coverage.run]`: `<sources>` becomes `src` and
+the pair composes to `src/enlightenment/app.py` from any working directory.
+
+Three guards, and one of them is the check that would have caught this without a SonarQube of my
+own: `<sources>` joined with every entry must name a file that EXISTS. Whatever the importer
+does, it cannot do better than the paths in the file. Removing `relative_files` turns two of
+them red. What is asserted is the machine-independence; SonarQube's own resolution cannot be run
+here and is not claimed.
+
+### The near-miss: I certified a clean artefact from a nine-version-old zip
+
+Checking the "no prebuilt binaries" criterion, I inspected `sorted(dist/*.zip)[-1]`. Version
+strings do not sort lexicographically, so `0.9.0` sorts after `0.18.0`, and the archive I
+declared clean was nine versions old and predated `requirements-runtime.txt` entirely.
+
+Then, worse, the same class again: the tree declared 0.17.0 while I packaged 0.18.0 by argument,
+so an inspection keyed on the declared version examined a different file from the one just
+written. A mutation test planted a `.pyc` in one and asserted against the other, and reported
+the guard SURVIVING. The guard was correct; the measurement was aimed at the wrong file.
+
+**Fixed twice over.** `package-appstore.sh` now refuses a version argument that disagrees with
+`pyproject.toml`, exit 2 with the reason - an archive whose name disagrees with the code inside
+it is how a stale upload gets certified. And the artefact tests key on the declared version and
+BUILD it when absent rather than skipping: a guard whose common case is "skipped" is not there,
+and on a fresh clone - a reviewer's state, a runner's state - the rejection criteria were being
+skipped while the suite reported green.
+
+### A test of mine that would have failed the platform's test stage
+
+The new "no prebuilt binaries" repository check used `git ls-files`, and asserted the call
+succeeded. The platform runs the suite against the EXTRACTED ARCHIVE, where there is no `.git`,
+so it failed in the pipeline simulation. Falling back to a tree walk then failed differently and
+worse: 28 offenders, every one a `__pycache__/*.pyc` written by pytest seconds earlier. A test
+about what the upload contains, failing on its own side effect.
+
+Now: tracked files in a checkout, and in a non-git tree a walk that excludes runtime-generated
+bytecode while still counting everything else - a `.so`, a `.jar`, a `dist/` in a freshly
+extracted tree did come from the upload, because nothing in a test run creates one. The
+simulation caught both versions, which is exactly what it is for.
+
+### The rest of the checklist, verified item by item
+
+Measured, not assumed. Pre-submission: `Dockerfile` at the root, present and the ONLY one in the
+artefact (the Foundations baseline ships six recipe templates under `.claude/`, and the packaging
+allowlist carries no `.claude` at all, so none of them ship). No tracked binary or build output.
+The 0.18.0 archive: 62 entries, zero matching any rejected extension, zero `__pycache__`, zero
+`dist/`, `coverage.xml` correctly absent since the platform generates it.
+
+Stage 1, secret detection: a seven-pattern scan of the working tree and every ref found nothing
+real, but five history matches on the `NAME = "long-literal"` shape - test fixtures with
+self-describing placeholder values. A scanner cannot tell that from the shape, and a stage-1 hit
+is a hard fail before any test runs. The two live fixtures are now COMPOSED from parts, so the
+shape is gone and the intent stays legible. History retains them and cannot be rewritten on a
+pushed branch; whether the platform scans history or the checkout is not something I can verify
+from here.
+
+Stage 4, the test command: `pytest --cov` run verbatim produces Cobertura `coverage.xml` at the
+repository root, because `addopts` in `pyproject.toml` owns the flags rather than relying on the
+invocation.
+
+Stage 6, container build: **the platform uses Podman and `build-image.sh` used Docker**. Now
+Podman first, Docker as fallback, `ENLIGHTENMENT_CONTAINER_ENGINE` to override, and the engine
+actually used is echoed so a build log is never ambiguous. With neither reachable it still exits
+3 behind the "THIS IS NOT A PASS" banner, verified.
+
+Not verifiable here, and stated rather than glossed: the Anchore container scan, SonarQube's own
+duplication measurement and coverage import, and whether stage 1 scans history or the checkout.
+
+### Round four of the gate findings
+
+● **The predicate still raised.** `element_line_checksum_ok("1"*68 + "²")` threw `ValueError`,
+  because `str.isdigit()` is True for the superscript two and `int()` then fails - from EITHER
+  loop, not just the checksum column. The function whose docstring says "a predicate that raises
+  is not a predicate" was raising, three commits after that sentence was written. `isascii()`
+  now guards both loops, and two non-ASCII cases join the parametrisation.
+● **The wrong-version redaction branch was unasserted.** The existing case used a distribution
+  that is not installed, so it always took the MISSING branch; the wrong-version branch is a
+  second composed site and removing its `redact()` left the suite green. Same "one site of two"
+  shape as the defect the control was written to fix. Now a case names an installed
+  distribution and asserts the branch it reached.
+● **`is not False` was unpinned.** Reverting it to truthiness left the suite green. Seven falsy
+  values are now parametrised, plus the control that a literal `False` does disable the gate,
+  plus the keyword-only property the changelog claimed and nothing asserted.
+● **The repo-wide census was breakable by ambient files.** `rglob` over the root counted
+  untracked ones: a linked worktree of this same repository double-counted every call site and
+  turned the loop red, and one stray unparseable `.py` would have killed the leg with a
+  `SyntaxError`. It now enumerates TRACKED files, with a `src`/`tests`/`scripts` fallback for the
+  packaged tree. Reproduced the failure, fixed it, and confirmed green with the worktree still
+  present.
+● **Redaction bypasses.** Scheme-relative userinfo (`//user:token@host`) was not matched, and the
+  authority run crossed a query string, so `https://host.invalid?token=a@b` reported
+  `https://[REDACTED:credential]@b` with the host destroyed - over-redaction is not the safe
+  direction when the report exists to say WHICH line to fix. The pattern now makes the scheme
+  optional and stops the authority at `/`, `?` or `#`. Fifteen forms measured: eight must-redact
+  all redact, seven must-not-touch all untouched.
+● **`redact()` could be stalled.** My own optional-scheme change took the pathological case from
+  6s to **21s** on 86KB, in leg one of the loop. Lock files are developer-supplied and never
+  reach the HTTP edge, but a leg that can be stalled for twenty seconds by one line gets blamed
+  for hanging. Echoed lines are now truncated at 500 characters with a visible marker: 21s to
+  0.0001s, flat at 16MB.
+● **A third echo site added without a test.** The `_marker_applies` note was redacted but
+  unasserted, so removing the redaction survived - in the release whose subject was a redaction
+  installed at one echo site of two. Pinned.
+● **Two figures for one quantity in one commit:** the module said 19.4s under the loop, the
+  changelog 22.2s. The module now records only the DELTA, because an absolute goes stale every
+  time a test is added and had already been wrong twice.
+
+**Verified.** Loop green under the pinned toolchain: **536 passed, 1 skipped**, coverage 98.71%
+against a 80% floor, all three lock files audited clean, both physics modules at 100% line and
+branch. Pipeline simulation green: **533 passed, 4 skipped**. Fourteen mutation tests across the
+release, each killed by a named test. Artefact: 62 entries, nothing the upload would reject.
+
 ## V0.17 (2026-08-20)
 
 **What.** Both gates returned FAIL on V0.16. Two MAJORs in the credential redaction that V0.16
@@ -100,10 +229,10 @@ against something spreading has to do.
 ● `TemporaryDirectory` instead of `mkdtemp`: the timeout test created a directory and wrote an
   executable stub into it outside the `try`, so a write failure would have left both behind.
 ● An unused `import runpy` inside an inline `-c` script, where ruff cannot see it.
-● Stale timing figures. Measured: this file is 3.4s at 2,000 examples against 1.1s at the
-  default 100, so the budget costs about 2.3s, on a full suite of 15.4s without coverage and
-  22.2s under the loop. The earlier note said "a fraction of a second on a suite that runs in
-  thirteen", which was neither figure.
+● Stale timing figures. Measured: this file is about 3.5s at 2,000 examples against 1.2s at the
+  default 100, so the budget costs roughly 2.3s. The earlier note said "a fraction of a second
+  on a suite that runs in thirteen", which was neither figure. See V0.18: the replacement then
+  disagreed with the changelog by three seconds, so the module now records only the delta.
 
 ### What the gates confirmed, recorded because they were my claims
 

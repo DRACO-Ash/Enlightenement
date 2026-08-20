@@ -50,10 +50,11 @@ JUST_BELOW_MINUS_180_IN_RANGE = math.nextafter(-180.0, 0.0)
 #: reported the loop green from a run that did not. A property test's verdict is only as strong
 #: as its search, and "green once" is weak evidence for a boundary this narrow.
 #:
-#: Measured cost: this file takes 3.4s at 2,000 examples against 1.1s at the default 100, so the
-#: budget costs about 2.3s, on a full suite of 15.4s without coverage and 19.4s under the loop.
-#: Worth paying. An earlier version of this note said "a fraction of a second on a suite that
-#: runs in thirteen", which was neither figure.
+#: Measured cost, as a DELTA rather than an absolute, because the absolute goes stale every time
+#: a test is added and has now been wrong twice: this file takes about 3.5s at 2,000 examples
+#: against 1.2s at the default 100, so the budget costs roughly 2.3s. Worth paying. The
+#: changelog carries the whole-suite figure for the release it describes; a per-run total does
+#: not belong in a module constant that nobody re-measures.
 SEAM_EXAMPLES = 2_000
 
 #: Longitudes inside the canonical interval, to the LAST representable value.
