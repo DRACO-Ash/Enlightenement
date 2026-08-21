@@ -64,19 +64,40 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
 
 
 def test_no_module_compares_a_token_with_plain_equality() -> None:
-    """A grep over the class, not one named line. States its blind spot: it matches on
-    identifier names, so a token held in a differently named variable would pass unseen.
+    """A census over the class, not one named line, and it had two undeclared holes.
+
+    `glob("*.py")` scanned the package root only, so `physics/` and `scenario/` were never read -
+    a package census that skipped two packages. `rglob` now.
+
+    The other was the exclusion. `"len(" not in rendered` was there to permit the legitimate
+    length guard, and it permitted a great deal more: `token == expected and len(x) > 0` renders
+    with `len(` in it and passed unseen. The test now asks the structural question instead - is a
+    token VALUE an operand of this comparison - so `len(token) != len(reference)` is allowed
+    because neither operand is the value, while `token == expected` is caught however the rest of
+    the expression is written.
+
+    The declared blind spot that REMAINS: this matches on identifier names, so a token held in a
+    differently named variable passes unseen. Measured by the security gate, which rewrote
+    `auth.py` to `return supplied == reference` and found this test green - the sibling
+    `test_the_token_comparison_uses_the_constant_time_primitive` is what caught that one. Two
+    checks, two different weaknesses, which is why both are cited.
     """
+
+    def is_token_value(operand: ast.expr) -> bool:
+        """A bare reference to a token, as opposed to a `len()` of one."""
+        if isinstance(operand, ast.Call):
+            return False
+        return "token" in ast.unparse(operand).lower()
+
     root = Path(auth.__file__).parent
     offenders: list[str] = []
-    for module in sorted(root.glob("*.py")):
+    for module in sorted(root.rglob("*.py")):
         tree = ast.parse(module.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Compare):
                 continue
             if not any(isinstance(op, ast.Eq | ast.NotEq) for op in node.ops):
                 continue
-            rendered = ast.unparse(node)
-            if "token" in rendered.lower() and "len(" not in rendered:
-                offenders.append(f"{module.name}: {rendered}")
+            if any(is_token_value(operand) for operand in [node.left, *node.comparators]):
+                offenders.append(f"{module.name}: {ast.unparse(node)}")
     assert offenders == [], f"a token is compared with plain equality: {offenders}"

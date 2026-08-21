@@ -22,7 +22,8 @@ state-changing route.
 | No configured token cannot authorise (fail closed) | `auth.py` | `test_no_configured_token_cannot_authorise` |
 | Every cost-incurring and state-changing route gated | `app.py` | `test_a_write_without_a_token_is_refused...` |
 | **Writes CLOSED by default**: no token and no opt-in means 401 | `config.py`, `app.py` | `test_writes_are_refused_by_default_with_no_token_configured` |
-| Anonymous writes need an explicit opt-in, and cannot combine with a token | `config.py` | `test_anonymous_writes_require_the_explicit_opt_in` |
+| Anonymous writes need an explicit opt-in | `config.py` | `test_anonymous_writes_require_the_explicit_opt_in` |
+| A token alongside the anonymous opt-in refuses to start; the two cannot combine | `config.py` | `test_a_token_alongside_anonymous_writes_refuses_to_start` |
 | A token below the minimum length refuses to start | `config.py` | `test_a_token_shorter_than_the_minimum_refuses_to_start` |
 | A token without an allowed origin refuses to start | `config.py` | `test_a_token_without_an_allowed_origin_refuses_to_start` |
 | Health paths public, and nothing else | `app.py` | `test_health_paths_stay_public_when_a_token_is_configured` |
@@ -40,6 +41,7 @@ state-changing route.
 | The image script defers rather than passing, proved by EXECUTING it | `scripts/build-image.sh` | `test_no_reachable_daemon_defers_with_a_banner_and_a_non_zero_exit` |
 | An unserved app holds no probe thread, and the lifespan releases the one it made | `app.py` | `test_building_an_app_spawns_no_thread_however_the_pool_is_created`, `test_the_lifespan_releases_the_probe_thread_it_created` |
 | A declared length is not trusted when a transfer-encoding is present | `middleware.py` | `test_a_declared_length_is_not_trusted_when_a_transfer_encoding_is_present` |
+| An honest oversize declaration is refused WITHOUT reading the body | `middleware.py` | `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` |
 | A probe path is never drained, so it cannot be parked unmetered | `middleware.py`, `app.py` | `test_a_probe_path_is_never_drained_even_for_a_body_method`, `test_the_apps_body_cap_exempts_the_probe_paths` |
 | The probe runs on its own pool, so a burst cannot starve store work | `app.py` | `test_the_probe_runs_on_its_own_dedicated_thread_pool` |
 | The probe pool SERIALISES its work, which is what orders publication | `app.py` | `test_the_probe_pool_serialises_its_work` |
@@ -51,6 +53,7 @@ state-changing route.
 | Two-tier rate limiting, 429 in both tiers | `ratelimit.py`, `app.py` | `test_the_coarse_tier...`, `test_the_strict_tier...` |
 | Probe paths never rate-limited | `app.py` | `test_probe_paths_are_never_rate_limited` |
 | A wildcard origin refuses to start, unconditionally | `config.py` | `test_a_wildcard_origin_always_refuses_to_start_even_without_a_token` |
+| And so does `null`, whatever its case or padding, which is what a sandboxed iframe and a `file://` page send | `config.py` | `test_an_anonymous_or_wildcard_origin_refuses_to_start` |
 | Every exposed method survives a preflight | `app.py` | `test_every_exposed_method_survives_a_preflight_from_the_allowed_origin` |
 | A 413 or 429 still carries the cross-origin header | `app.py` | `test_a_rate_limited_response_still_carries_the_cross_origin_header`, `test_an_oversize_response_still_carries_the_cross_origin_header` |
 | `X-Content-Type-Options: nosniff` on every user-stack response | `middleware.py` | `test_every_user_stack_response_carries_nosniff`, `test_nosniff_is_appended_when_absent`, `test_nosniff_does_not_override_a_handler_that_set_it` |
@@ -60,12 +63,15 @@ state-changing route.
 | Writes serialised by an exclusive lock; no lost update across processes | `storage.py` | `test_two_processes_writing_at_once_lose_no_record` |
 | A stale revision is a 409, never a silent overwrite | `storage.py`, `app.py` | `test_a_stale_expected_revision_is_refused...`, `test_a_stale_if_match_is_a_409...` |
 | Backup before a destructive write, pruned to retention | `storage.py` | `test_a_backup_is_taken_before_an_overwrite...` |
+| The session collection is capped, newest kept, so the snapshot cannot grow without bound | `storage.py` | `test_the_cap_boundary_holds_in_both_directions`, `test_the_cap_keeps_the_newest_and_never_drops_the_fresh_entry` |
 | The backup copy is not taken through a symlink either | `storage.py` | `test_a_symlinked_snapshot_cannot_be_copied_into_a_backup` |
-| Log injection blocked; actor sanitised and capped | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
+| Log injection blocked; actor sanitised | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
+| Actor and every reflected value LENGTH-CAPPED, so a flood cannot be written through a log line | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
 | No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length`, `test_nothing_on_app_state_exposes_the_configuration` |
 | Operator values normalised before use | `config.py` | `test_clean_strips_quotes_whitespace_and_control_characters` |
+| An oversize operator value is REJECTED, never truncated into a different value | `config.py` | `test_an_over_long_value_is_rejected_not_truncated` |
 | Storage proved by a REAL write, never an existence check | `storage.py` | `test_probe_writable_reports_the_errno_when_the_write_is_refused`. NOTE: skipped when the suite runs as root, because root bypasses directory permissions, so this control is proved on the CI runner rather than locally. The file-not-a-directory case runs on every uid but does NOT kill an existence-check mutant, since it never reaches the write; citing that one here was wrong |
 | Probe cannot hang; hard timeout shorter than the platform's | `app.py` | `test_a_hanging_probe_times_out...` |
 | Probe cost bounded by TIME and by CONCURRENCY (single-flight) | `app.py` | `test_a_readiness_flood_causes_one_real_write...`, `test_concurrent_readiness_requests_run_one_probe_between_them` |
@@ -79,6 +85,11 @@ state-changing route.
 | A storage fault leaves the app unready, never unstartable | `app.py` | `test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt` |
 | The rate-limit key table fails CLOSED when full | `ratelimit.py` | `test_a_full_table_refuses_a_new_caller_rather_than_evicting_a_tracked_one` |
 | The HEALTHCHECK port is validated, never interpolated raw | `healthcheck.py` | `test_a_hostile_port_is_refused_rather_than_interpolated` |
+| A malformed port reads UNHEALTHY, never a silent fallback that probes a different port | `healthcheck.py` | `test_a_hostile_port_never_reaches_a_url` |
+| A non-200 liveness answer is UNHEALTHY | `healthcheck.py` | `test_any_non_200_liveness_response_is_unhealthy` |
+| A transport failure is UNHEALTHY, never a pass | `healthcheck.py` | `test_any_transport_failure_is_unhealthy_never_a_pass` |
+| The container probe targets `/livez`, so a storage outage cannot restart a healthy container | `healthcheck.py` | `test_the_probe_targets_the_liveness_path_not_readiness` |
+| The probe timeout is shorter than the platform's probe window | `healthcheck.py` | `test_the_timeout_is_shorter_than_a_platform_probe_window` |
 | Store input and output runs off the event loop | `app.py` | `test_no_store_call_runs_on_the_event_loop` |
 | Non-root numeric user, no suid or sgid bits, flat image | `Dockerfile` | `tests/test_appstore_contract.py` |
 
@@ -112,6 +123,7 @@ the code, and killed it:
 | 10 | 5 run, 5 killed | 3 MAJORs, 5 MINORs (eng, all documents); **`security-reviewer` PASS** on the exact head |
 | 11 | 2 run, 2 killed | the ordering claim `_install_cors` had carried since it was written; the round's own changelog said "three", withdrawn to this figure |
 | 12 | 8 run, 8 killed | 1 BLOCKER in the round-eleven completeness check itself (both gates): it matched `def test_` and so could not see `async def`, missing 17 of 20 tests in the one suite that motivated it |
+| 13 | 19 run, 19 killed | 3 MAJORs from each gate on the SAME check: `tests/test_appstore_contract.py:624` read `tree.body`, so a class-nested test was invisible while the docstring claimed class nesting was survived; the cited-suite guard read FILE references only, so `test_healthcheck.py` and its three fail-closed branches were unswept; and four exemption REASONS asserted a mutation relationship that mutation disproved |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -136,7 +148,10 @@ Survivors that remain, each with the reason it is or is not load-bearing:
   earlier version of this ledger said it was, which was wrong in the safe direction:
   `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` passes a `receive`
   that raises, so disabling the refusal fails that test. Listed here because a ledger that
-  under-reports its own coverage is still a ledger that is wrong.
+  under-reports its own coverage is still a ledger that is wrong. **And this paragraph was for one
+  release the ONLY place that test was named**, which let it read as a cited control to a sweep
+  that scanned the whole document. It has a control-table row now, and the sweep reads rows only:
+  a mention in prose is a note, not a promise that something fails if it regresses.
 
 Closed after surviving: the `asyncio.to_thread` offload, the dedicated probe pool, the quoted
 bind address in the launch command, the dev-lockfile audit leg, the snapshot symlink defence,

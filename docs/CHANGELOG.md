@@ -788,8 +788,82 @@ mentions and the check correctly passed, because the suite was still cited. That
 mutation, not a survivor, and the difference between those two is the whole reason a mutation must be
 confirmed applied before its result is read.
 
+### Round thirteen: the exemption reason became the hiding place
+
+**Both gates FAILED again, both with a MAJOR on the same check, and both were right.** Round twelve
+fixed the `async def` blind spot and asserted in the same docstring that the AST walk "survives
+decorators, reflowing and **class nesting**". The first two were true and measured. The third was
+false: `_test_names_in` iterated `tree.body`, so a test inside a `class Test...` was invisible.
+Both gates planted one, pytest collected it, the sweep passed. `ast.walk` now, and measured at the
+time of the fix: `ast.walk` and `tree.body` yielded the identical 435 names, so the hole was open
+rather than occupied. That is the only reason this was a MAJOR and not a live gap - and it is the
+third recorded instance of one fault: **a completeness check whose docstring claims more than its
+matcher can see.**
+
+**The suite-shaped hole, which WAS occupied.** The accounting guard derived cited suites from
+`tests/(test_\w+\.py)` file references, so a suite the register cites by TEST NAME was neither
+swept nor flagged. `docs/SECURITY.md` cites `test_a_hostile_port_is_refused_rather_than_interpolated`,
+which lives in `tests/test_healthcheck.py`: twelve tests invisible, and three fail-closed branches in
+`healthcheck.py` whose only killer was among them - a malformed `PORT` reading UNHEALTHY rather than
+falling back to a different port, a non-200 liveness answer reading UNHEALTHY, and a transport
+failure reading UNHEALTHY rather than a pass. All three have rows now, as do the `/livez` target and
+the probe timeout. The guard no longer derives anything: every file matching `tests/test_*.py` must
+appear in exactly one of `SWEPT_SECURITY_SUITES`, `UNSWEPT_CITED_SUITES` or a new
+`NON_SECURITY_SUITES`, so adding a suite forces the same decision adding a test does. A suite
+declared to hold no security property must also not be where a cited control lives.
+
+**And the finding that matters most, because it is the class moving again.** Four register rows
+asserted a property, cited a test that did not assert it, and the EXEMPTION REASON for the test that
+did assert it said the property was "one behaviour" of the cited row. The reason was prose asserting
+a mutation relationship, and nothing tested the assertion. The security gate tested it:
+
+● `SECURITY.md` claimed the actor was "sanitised **and capped**". Delete `[:limit]` from
+  `audit.py`, or raise either bound: every CITED test stayed green.
+● It claimed a wildcard origin refuses to start "unconditionally", citing only the `*`-without-a-
+  token case. Reduce `REFUSED_ORIGINS` to `{"*"}`, or drop `.casefold()`: every cited test stayed
+  green. `null` is what a sandboxed iframe and a `file://` page send.
+● It claimed anonymous writes "cannot combine with a token". Disable that refusal: the cited test
+  stayed green.
+● Reject-rather-than-truncate on an oversize operator value had no row at all, and the session
+  collection cap was credited to the BACKUP retention row, a different control that survives
+  disabling it.
+
+Seven tests moved from exemption to citation, and each was then re-mutated against **its own cited
+test alone** rather than against its suite, because "the suite went red" does not prove the row.
+Fixing a row by writing a better reason for not citing it is the same mistake in a new position, and
+this round is the one where that became clear.
+
+**Also closed.** Citations are read from control-table ROWS only, not the whole document - one name
+(`test_an_honest_oversize_declaration_is_refused_without_reading_the_body`) was cited nowhere but a
+sentence in the surviving-mutant prose, and now has a row. `test_every_test_named_in_the_security_
+policy_exists` uses `_all_test_names()` instead of the line scan its sibling had just withdrawn. The
+dead-name and stray-name assertions are disjoint, so each message is reachable. And the `==` census
+in `test_auth.py` had two undeclared holes: a non-recursive `glob` that skipped `physics/` and
+`scenario/`, and a `"len(" not in rendered` exclusion that let `token == expected and len(x) > 0`
+pass. It asks the structural question now - is a token VALUE an operand - and the identifier-name
+blind spot that remains is declared, with the measurement showing which sibling test catches it.
+
+**Numbers, measured after the final edit.** Sweep: 8 suites, **180** tests, up from 7 and 168.
+Control-table citations **77 to 89**; control rows **78**. Exemptions **100 to 99** (7 promoted to
+citations, 6 healthcheck case-level tests added). Loop: **769 passed, 1 skipped**, coverage
+**99.06%**, 77 pins matched, three lock files clean.
+
+**Mutations: 19 run, 19 killed.** Three against the sweep's structure (class-nested plant,
+module-level plant, a citation moved from a row into prose), two more against its accounting (a
+brand-new suite holding an uncited control, a cited control in a suite declared non-security),
+twelve against the promoted controls, and two against the census holes. Each was confirmed applied
+before its result was read and restored against a recorded SHA-256 digest.
+
+**One error of my own, recorded because the tree is the evidence.** Mid-battery I reverted a mutant
+with `git checkout docs/SECURITY.md` on a file carrying seven uncommitted register edits, and
+discarded all seven. Caught immediately by a grep for one of the new rows, and re-applied from the
+same script that wrote them. `git checkout` is not a revert mechanism on a dirty file; the
+digest-backed restore the harness uses everywhere else is, and it is what the harness should have
+been used for there too.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** now. That last figure was left at 734 through one
+head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** now (unchanged
+across round thirteen, which moved names between two lists rather than adding tests). That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

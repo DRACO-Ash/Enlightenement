@@ -612,16 +612,28 @@ def test_a_successful_build_reports_a_pass(tmp_path: Path) -> None:
 
 
 def _test_names_in(path: Path) -> set[str]:
-    """Every module-level test name in ``path``, both `def` and `async def`.
+    """Every test name in ``path``, at any nesting depth, both `def` and `async def`.
 
     An AST walk rather than a line scan. The line scan missed `async def` entirely, and would also
     have missed a decorated definition split across lines, or one reflowed by the formatter. The
     parser knows what a function is; a prefix match guesses.
+
+    **`ast.walk`, not `tree.body`, and that distinction was itself a survivor.** The first AST
+    version read module level only while its docstring claimed the walk survived class nesting.
+    Both gates planted `class TestNested:` with a test inside, pytest collected it under the
+    default `Test*` prefix, and the sweep passed. Measured at the time: `ast.walk` and `tree.body`
+    yielded the identical 435 names, so nothing was hidden that day - the hole was open, not
+    occupied, which is the only reason this is the third recorded instance of the same fault
+    rather than a live gap.
+
+    Walking everything also picks up a `test_`-prefixed function nested inside another function.
+    Nothing does that here, and if something ever does it fails SAFE: the name arrives needing a
+    citation or an exemption, which is a decision, not a silence.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return {
         node.name
-        for node in tree.body
+        for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name.startswith("test_")
     }
@@ -635,6 +647,19 @@ def _all_test_names() -> set[str]:
     return names
 
 
+def _suite_of(name: str) -> str | None:
+    """Which suite defines ``name``, or ``None`` if nothing does."""
+    for suite in sorted((ROOT / "tests").glob("test_*.py")):
+        if name in _test_names_in(suite):
+            return suite.name
+    return None
+
+
+#: How a citation is spelled, in one place, because three checks read them and they drifted apart
+#: once already. `(?![a-z0-9_])` ends the token so a name cannot match inside a longer one, and
+#: `(?!\.py\b)` drops file stems so `tests/test_auth.py` contributes no bare `test_auth`.
+CITATION_TOKEN = r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)"
+
 #: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
 #: and `test_audit.py` were missing while the sweep read only four: the register cites the
 #: 500-header test, the middleware-order test, the symlink refusals, the atomic write, the
@@ -644,10 +669,30 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     "test_audit.py",
     "test_auth.py",
     "test_config.py",
+    "test_healthcheck.py",
     "test_http.py",
     "test_middleware.py",
     "test_ratelimit.py",
     "test_storage.py",
+)
+
+#: Suites holding no security property, so nothing in them needs a register row. Recorded rather
+#: than left implicit, because `SWEPT_SECURITY_SUITES` on its own is only closed against suites
+#: that already exist: a NEW suite holding an uncited control was invisible until somebody happened
+#: to cite it. Every file matching `tests/test_*.py` must appear in exactly one of these three
+#: sets, so adding a suite forces the same decision that adding a test does.
+NON_SECURITY_SUITES: frozenset[str] = frozenset(
+    {
+        # The physics core and the determinism substrate: pure functions over numbers, no input or
+        # output, no state, no untrusted value. Their boundary guards are correctness bounds, not
+        # access controls, and `docs/SECURITY.md` carries no row for them by design.
+        "test_entrypoint.py",
+        "test_physics_angles.py",
+        "test_physics_propagation.py",
+        "test_physics_relative.py",
+        "test_physics_times.py",
+        "test_scenario_determinism.py",
+    }
 )
 
 #: Suites the register cites at FILE granularity and this sweep deliberately does NOT walk.
@@ -705,21 +750,19 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         # shrank a name to `test_an` and found it inside an unrelated citation, so
         # these read as cited when nothing cited them. Same reason as the rest - unit
         # cases of controls the register carries at source granularity.
-        "test_a_token_alongside_anonymous_writes_refuses_to_start",
         "test_a_token_at_the_minimum_is_accepted",
-        "test_an_anonymous_or_wildcard_origin_refuses_to_start",
-        "test_an_over_long_value_is_rejected_not_truncated",
         "test_auth_required_tracks_the_token",
         "test_build_id_falls_back_to_the_package_version",
         "test_the_key_table_never_exceeds_its_bound_under_a_flood",
         "test_the_limit_is_reported",
         "test_the_token_band_never_exposes_an_exact_length",
         "test_writes_are_closed_by_default_with_no_token_and_no_opt_in",
-        # --- test_audit.py: cases of the two `audit.py` rows, the log-injection block and
-        # "EVERY reflected log value sanitised, lines emitted as JSON". Length bounding, actor
-        # defaulting and the JSON line shape are each one behaviour of that one sanitiser.
-        "test_a_reflected_value_is_length_bounded",
-        "test_actor_is_length_bounded",
+        # --- test_audit.py: cases of the two `audit.py` sanitiser rows, the log-injection block
+        # and "EVERY reflected log value sanitised, lines emitted as JSON". Actor defaulting and
+        # the JSON line shape are each one behaviour of that one sanitiser. The two LENGTH-cap
+        # tests were exempted under this reason and no longer are: the security gate deleted
+        # `[:limit]` from `audit.py` and raised both bounds, and every cited test stayed green,
+        # which disproved the reason rather than the control. The cap has its own row now.
         "test_an_empty_reflected_value_stays_empty_rather_than_becoming_anonymous",
         "test_an_event_line_leaves_non_string_fields_intact",
         "test_audit_emits_one_parsable_json_line_with_the_given_fields",
@@ -732,6 +775,19 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_length_mismatch_fails_without_comparing",
         "test_missing_header_fails",
         "test_wrong_value_of_the_same_length_fails",
+        # --- test_healthcheck.py: the positive and default cases of the five `healthcheck.py`
+        # rows. Every FAIL-CLOSED branch in that module is now cited by name, because the security
+        # gate mutated all three and found them killed only by tests this sweep could not even see
+        # - the suite was outside it, because the guard derived cited suites from file references
+        # and the register cites this one by test name. What is left here is the other half of each
+        # truth table: a good port resolves, a padded one normalises rather than being refused, an
+        # absent one takes the documented 8080 default, and a 200 reads healthy.
+        "test_a_200_liveness_response_is_healthy",
+        "test_a_port_padded_by_the_operator_console_is_normalised_not_refused",
+        "test_a_valid_port_is_accepted",
+        "test_an_absent_port_falls_back_to_the_documented_default",
+        "test_the_probe_defaults_to_8080_when_no_port_is_injected",
+        "test_the_probe_reads_the_injected_port",
         # --- test_http.py: HTTP-level cases of rows the register carries at source
         # granularity - the body cap, the `If-Match` parse, the must-exist merge, the
         # `extra="forbid"` rejection, the probe cache and pool, the CORS echo, the public
@@ -791,7 +847,10 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_one_byte_over_the_cap_is_refused_and_the_app_never_runs",
         # --- test_storage.py: cases of the anti-shrink merge, the revision guard, the
         # must-exist-inside-the-lock check, the snapshot validation behind the corrupt-snapshot
-        # row, the retention cap and the real-write probe. `test_probe_reports_an_existing_path
+        # row, and the real-write probe. The two SESSION-cap tests were exempted here as cases of
+        # "the retention cap", which is the BACKUP retention row and a different control
+        # altogether; disabling `_enforce_cap` leaves the backup test green. The session cap has
+        # its own row now. `test_probe_reports_an_existing_path
         # _that_is_a_file_not_a_directory` is exempted DELIBERATELY and not by oversight: the
         # register's own NOTE records that citing it for the real-write control was wrong,
         # because it never reaches the write and so kills no existence-check mutant.
@@ -810,8 +869,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_probe_reports_an_existing_path_that_is_a_file_not_a_directory",
         "test_probe_writable_proves_a_usable_directory_with_a_real_write",
         "test_seed_creates_the_snapshot_and_is_idempotent",
-        "test_the_cap_boundary_holds_in_both_directions",
-        "test_the_cap_keeps_the_newest_and_never_drops_the_fresh_entry",
         "test_the_write_result_counts_are_measured_inside_the_lock",
     }
 )
@@ -831,18 +888,21 @@ def test_every_exempted_security_test_still_exists() -> None:
     for the register's citations. Two lists of names, both needing a liveness check, and only one
     of them had one.
     """
-    dead = sorted(UNCITED_SECURITY_TESTS - _all_test_names())
+    live = _all_test_names()
+    dead = UNCITED_SECURITY_TESTS - live
     assert not dead, (
         "these names are exempted from the citation sweep and match no test, so their written"
-        f" reasons guard nothing: {dead}"
+        f" reasons guard nothing: {sorted(dead)}"
     )
 
-    # An exemption for a test outside the swept suites is never consulted, so it reads as a
-    # decision while guarding nothing - the same silence in a different position.
+    # An exemption for a test that EXISTS but sits outside the swept suites is never consulted, so
+    # it reads as a decision while guarding nothing - the same silence in a different position.
+    # Subtracting `dead` keeps the two disjoint: without it every fabricated name trips both, and
+    # this second message would only ever be reachable in theory.
     swept = set()
     for suite in SWEPT_SECURITY_SUITES:
         swept |= _test_names_in(ROOT / "tests" / suite)
-    stray = sorted(UNCITED_SECURITY_TESTS - swept)
+    stray = sorted((UNCITED_SECURITY_TESTS & live) - swept)
     assert not stray, (
         "these names are exempted but live outside the swept suites, so the exemption is never"
         f" read: {stray}"
@@ -851,7 +911,8 @@ def test_every_exempted_security_test_still_exists() -> None:
     # An exemption that has since been CITED is stale: the register now carries the control, and
     # leaving the name here would keep exempting it if the citation were ever removed.
     policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
-    cited = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", policy))
+    rows = "\n".join(line for line in policy.splitlines() if line.lstrip().startswith("|"))
+    cited = set(re.findall(CITATION_TOKEN, rows))
     redundant = sorted(UNCITED_SECURITY_TESTS & cited)
     assert not redundant, (
         "these names are BOTH cited in docs/SECURITY.md and exempted from needing a citation;"
@@ -896,23 +957,44 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
     # document. A bare `in policy` test was the first version's other flaw: it would match a name
     # mentioned anywhere, including in the survivor prose and the mutant ledger, so one future
     # sentence naming a suite would silently exempt every test in it.
+    # ONLY the control table's rows count as citations, not the whole document. A document-wide
+    # scan let a name in the surviving-mutant prose read as a register row, and one did:
+    # `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` was cited nowhere
+    # but a sentence about mutants. The register's promise is "each with a test that fails if it
+    # regresses", and only a row makes that promise.
+    rows = "\n".join(line for line in policy.splitlines() if line.lstrip().startswith("|"))
     # The trailing lookaheads matter. `[a-z0-9_]` ends the token so a name cannot match a longer
     # one's prefix, and `(?!\.py\b)` drops the FILE stems: `tests/test_auth.py` in the table would
     # otherwise contribute a bare `test_auth` citation, and a future test named exactly `test_auth`
     # would then read as cited by a filename. The elided `test_x...` form still matches, because
     # only `.py` is excluded and not every dot.
-    cited_names = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", policy))
-    cited_prefixes = {name for name in cited_names if f"{name}..." in policy}
-    cited_suites = set(re.findall(r"tests/(test_\w+\.py)", policy))
+    cited_names = set(re.findall(CITATION_TOKEN, rows))
+    cited_prefixes = {name for name in cited_names if f"{name}..." in rows}
 
-    # The hand-maintained list must not fall behind the register, or the sweep's own coverage
-    # becomes the unchecked claim. A suite the register cites is either walked here or named in
-    # `UNSWEPT_CITED_SUITES` with a written reason; there is no third option, so a new citation
-    # fails this check until somebody decides which it is.
-    unaccounted = cited_suites - set(SWEPT_SECURITY_SUITES) - UNSWEPT_CITED_SUITES
-    assert not unaccounted, (
-        "docs/SECURITY.md cites test suites this sweep does not cover, so a new uncited control"
-        f" there would be invisible: {sorted(unaccounted)}"
+    # Every suite matching the glob is accounted for, in exactly one of three sets. The previous
+    # guard derived the cited suites from `tests/(test_\w+\.py)` FILE references only, so a suite
+    # the register cited by TEST NAME was neither swept nor flagged - `test_healthcheck.py` was
+    # cited for the port-validation row and its twelve tests were invisible, three of them the only
+    # thing killing a fail-closed branch in `healthcheck.py`. Partitioning the glob closes both
+    # that and the engineering gate's separate case: a brand-new suite, cited by nothing at all.
+    on_disk = {path.name for path in (ROOT / "tests").glob("test_*.py")}
+    accounted = set(SWEPT_SECURITY_SUITES) | UNSWEPT_CITED_SUITES | NON_SECURITY_SUITES
+    assert on_disk == accounted, (
+        "every tests/test_*.py must be swept, opted out in writing, or declared to hold no"
+        f" security property; unaccounted on disk: {sorted(on_disk - accounted)};"
+        f" named but absent: {sorted(accounted - on_disk)}"
+    )
+
+    # And a suite declared to hold no security property must not be where a cited control lives,
+    # or the declaration is simply false.
+    misdeclared = sorted(
+        f"{name} in {suite}"
+        for name in cited_names
+        if (suite := _suite_of(name)) is not None and suite in NON_SECURITY_SUITES
+    )
+    assert not misdeclared, (
+        "docs/SECURITY.md cites a control living in a suite declared to hold no security property:"
+        f" {misdeclared}"
     )
 
     uncited: list[str] = []
@@ -955,15 +1037,11 @@ def test_every_test_named_in_the_security_policy_exists() -> None:
     # cited names unchecked, so renaming one of those left the policy citing a test that no
     # longer exists with the sweep still green.
     elided = set(re.findall(r"`(test_[A-Za-z0-9_]+)\.\.\.`", policy))
-    defined: set[str] = set()
-    for module in sorted((ROOT / "tests").glob("test_*.py")):
-        defined.update(
-            re.findall(
-                r"^(?:async )?def (test_[A-Za-z0-9_]+)",
-                module.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        )
+    # `_all_test_names()` rather than a line scan of `^(?:async )?def test_`, which is the exact
+    # technique the sibling check above withdrew. It carried the same class-nesting blind spot,
+    # failing SAFE here (a cited class-nested test would read as dangling) but still measuring
+    # something other than what it reported.
+    defined = _all_test_names()
     dangling = sorted(
         name
         for name in cited
