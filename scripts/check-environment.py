@@ -297,12 +297,23 @@ def describe_version(version: str) -> str:
 #: measurement of the wrong population. A lock file gains dependencies; the bound would have
 #: started redacting real names the first time one arrived.
 #:
-#: The honest reading is that no length separates the two populations. Real names run 3 to 60-odd
+#: The honest reading is that no length separates the two populations. Real names run 3 to 188
 #: characters; credentials run 20 to 45. They overlap completely, so a length cap CANNOT provide
-#: secrecy here and pretending otherwise is what produced two bad numbers. So the cap is now
-#: PyPI's own maximum name length, chosen only to stop one absurd line filling a CI log, and the
-#: residual is stated in `describe_name` rather than implied away by a number.
-MAX_NAME_ECHO = 64
+#: secrecy here and pretending otherwise is what produced two bad numbers.
+#:
+#: **And then a third, which is why this one is measured.** The version that replaced them said 64
+#: was "PyPI's own maximum name length". PyPI has no such maximum: its project-name validation is a
+#: pattern with no length validator, `packaging` implements the PEP 503 grammar with no length
+#: bound, and `projects.name` is a text column. Measured against the live simple index on
+#: 2026-08-21: **875,180 projects, of which 141 have canonical names longer than 64 characters, the
+#: longest at 188, and none over 200.** So 64 excluded 141 real distributions exactly as 32 and 24
+#: did, and the justification was asserted rather than checked - in the constant whose entire
+#: comment is about not doing that.
+#:
+#: 200 is above every name that exists and below anything worth reading in a log line. It is an
+#: OUTPUT bound and not a secrecy boundary; the residual is stated in `describe_name` rather than
+#: implied away by a number.
+MAX_NAME_ECHO = 200
 
 #: A PEP 503 canonical distribution name, which is what `canonicalise` produces.
 CANONICAL_NAME = re.compile(r"\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\Z")

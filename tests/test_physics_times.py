@@ -307,6 +307,34 @@ def test_a_calendar_component_too_large_to_be_a_date_is_refused(
         julian_date_from_utc(**arguments)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("hour", "minute", "second"),
+    [(12.5, 0, 0.0), (0, 30.5, 0.0), (0, 0, 30.25), (12, 30, 30.5)],
+)
+def test_a_fractional_time_of_day_is_accepted(hour: float, minute: float, second: float) -> None:
+    """The half of the integrality rule I INTRODUCED, and left untested.
+
+    Merging the six components into one loop meant the whole-number check had to be scoped back to
+    year, month and day, because a fractional hour or second is ordinary and correct. Widening it to
+    all six left the entire suite green: none of the fifteen `julian_date_from_utc` call sites in
+    this suite passed a fractional time, so nothing asserted the behaviour the scoping exists to
+    preserve.
+
+    That is the same asymmetry the guard's own comment says has now happened four times - the
+    reported half gets thirteen cases and the half I added gets none.
+    """
+    assert math.isfinite(julian_date_from_utc(2000, 1, 1, hour, minute, second))
+
+
+@pytest.mark.parametrize("component", ["year", "month", "day"])
+def test_a_fractional_calendar_index_is_still_refused(component: str) -> None:
+    """The control for the test above: the scoping must exempt the times, not the dates."""
+    arguments: dict[str, float] = {"year": 2000, "month": 1, "day": 1}
+    arguments[component] = arguments[component] + 0.5
+    with pytest.raises(ValueError, match="whole number"):
+        julian_date_from_utc(**arguments)  # type: ignore[arg-type]
+
+
 def test_a_real_calendar_date_is_still_accepted() -> None:
     """The control: the bound must refuse a non-date, not refuse a date.
 

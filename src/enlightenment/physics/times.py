@@ -124,6 +124,13 @@ def julian_date_from_utc(
         #
         # One loop over one tuple now, so a seventh argument cannot be half-covered.
         #
+        # Merging the two loops changed which error a caller sees FIRST, and that is worth saying
+        # rather than leaving to be discovered: previously finiteness was checked across all six
+        # before any magnitude check, so `julian_date_from_utc(year=10**400, second=nan)` reported
+        # the non-finite second. It now reports the year's magnitude. Both are `ValueError` and both
+        # are true of the call, so no test pins the precedence and none should; recorded because a
+        # reader comparing an error message against an older run would otherwise wonder.
+        #
         # Bounded by what can produce a Julian Date this package will accept, so the two guards
         # agree instead of one of them being decorative. The same bound serves all six: a
         # time-of-day component past 27 million is no more a time than it is a date.

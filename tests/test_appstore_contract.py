@@ -1307,6 +1307,30 @@ def test_the_environment_check_reports_an_unreadable_pin_line_rather_than_skippi
     assert "could not be read" in result.stderr
 
 
+def test_the_line_numbers_in_a_report_count_only_real_line_terminators() -> None:
+    """`requirement_lines` splits on one terminator, and nothing asserted why.
+
+    Its live reason is the diagnosis: every report prints `lockfile:number`, and `str.splitlines()`
+    also breaks on the vertical tab, form feed, the file and group separators, NEL and the Unicode
+    line and paragraph separators. A line containing one of those would be counted as two, so an
+    operator sent to line 3 would find the fault at line 2 - and a line number that is off by one
+    is worse than none, because it is believed.
+
+    Swapping `split("\n")` for `str.splitlines()` left the whole suite green, which is why this
+    exists. No disclosure follows either way now that every echo site describes rather than echoes;
+    what breaks is the only thing those reports still carry.
+    """
+    body = "fastapi==0.115.0\nbroken \x0b line here\nalso-broken==\n"
+    result = _run_environment_check(body)
+    assert result.returncode != 0
+    assert ":2:" in result.stderr, (
+        "the line carrying a vertical tab must be reported as line 2; if it reads 3, the splitter"
+        " is counting a non-terminator as a line break and every number after it is wrong"
+    )
+    assert ":3:" in result.stderr, "the line after it must be reported as line 3"
+    assert ":4:" not in result.stderr, "a three-line file cannot have a fourth line"
+
+
 def test_the_environment_check_reads_the_extras_form_as_a_real_pin() -> None:
     """Not merely "does not crash" - the pin must be CHECKED and found wanting."""
     result = _run_environment_check("uvicorn[standard]==9.9.9\n")
@@ -1707,11 +1731,27 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
         f"pkg @ //{token}{{sep}}x@host/p",
         f"pkg @ https://host/p?token={token}{{sep}}x",
     ]
-    # These two parse, so they reach the version echo and the name echo respectively.
-    parsed_shapes = [
-        f"pkg=={token}{{sep}}x",
-        f"{token}{{sep}}x==1.0.0",
-    ]
+    # **The separator sweep cannot reach the version and name echoes, and that is a measurement
+    # rather than an omission.** A previous version carried two "parsed_shapes" here, commented as
+    # reaching those two sites. They do not: a pin is `name==version`, and ANY whitespace inside
+    # either field makes the line unparseable, so `main()` reports it and returns before the pin
+    # report. Measured across all 29 separators against both shapes, **0 of 58 parse**. The second
+    # body therefore drove the identical `describe_line` path as the first - 29 extra subprocess
+    # launches for no new coverage, under a comment claiming otherwise, which is the
+    # "prose describing a control that does not exist" fault this release rewrote
+    # `requirement_lines` to remove.
+    #
+    # So the whitespace class is swept over the sites whitespace can reach, and the version and
+    # name echoes are covered by the SEPARATOR-FREE body below, which is the only way they can be.
+    parsed_body = (
+        # A numeric version one character over the cap: shaped like a version, so only the LENGTH
+        # bound can catch it. This is the wiring test for `MAX_VERSION_ECHO` - a direct call to
+        # `describe_version` proved nothing last round, when deleting `describe_name` from both of
+        # its call sites left the suite green.
+        f"pkg==1.{'9' * 5000}\n"
+        # A name over the cap, to exercise `describe_name` through the real script.
+        f"{'a' * 260}==1.0.0\n"
+    )
     # BOTH forms of the needle, and the second one is a fix. The name echo passes the value
     # through `canonicalise`, which lowercases and folds `_` to `-`, so searching for the raw
     # token could never match what that site prints: deleting `describe_name` from both of its
@@ -1723,26 +1763,25 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
     needles = (token, module.canonicalise(token))
     leaks = []
     for separator in separators:
-        for shapes in (unparseable_shapes, parsed_shapes):
-            body = "".join(shape.format(sep=separator) + "\n" for shape in shapes)
-            result = _run_environment_check(body)
-            output = result.stdout + result.stderr
-            if any(needle in output for needle in needles):
-                leaks.append((hex(ord(separator)), shapes is parsed_shapes))
-    assert not leaks, f"the token reached output for {len(leaks)} cases: {leaks[:8]}"
+        body = "".join(shape.format(sep=separator) + "\n" for shape in unparseable_shapes)
+        result = _run_environment_check(body)
+        output = result.stdout + result.stderr
+        if any(needle in output for needle in needles):
+            leaks.append(hex(ord(separator)))
+    assert not leaks, f"the token reached output for {len(leaks)} separators: {leaks[:8]}"
 
     # The parsed path asserted POSITIVELY as well, so this test fails if a future change stops it
     # reaching those two sites rather than passing because it no longer looks.
-    # Choosing a name for this assertion took two goes, both instructive. A bare canonicalised
-    # token is NOT refused - it is lowercase alphanumeric with hyphens, so it is name-shaped and
-    # `describe_name` echoes it, which is the documented residual asserted directly in
-    # `test_a_credential_in_the_name_position_is_a_stated_residual`; demanding a refusal here was
-    # asking for behaviour the code deliberately does not have. Adding a `/` then made the line
-    # UNPARSEABLE, so `main()` returned before the pin report and the site went unreached again -
-    # the very fault this split exists to fix. A doubled token parses as a pin and exceeds
-    # `MAX_NAME_ECHO`, so it reaches the site and is described there.
-    parsed = _run_environment_check(f"pkg=={token}\n{token}-{token}==1.0.0\n")
+    # Both parsed sites, through the real script, with no separator anywhere - the only way they
+    # are reachable at all. The version line is 5,002 characters of digits: shaped exactly like a
+    # PEP 440 version, so nothing but the LENGTH bound can catch it, which is what makes this the
+    # wiring test that was missing. Removing `len(version) <= MAX_VERSION_ECHO` put 5,000 digits on
+    # stderr with the whole suite green, in the release that FAILed the round before for precisely
+    # that shape one function along.
+    parsed = _run_environment_check(parsed_body)
     reached = parsed.stdout + parsed.stderr
+    assert "9" * 100 not in reached, "the over-long numeric version was echoed to stderr"
+    assert "a" * 100 not in reached, "the over-long distribution name was echoed to stderr"
     assert "unrecognised-version" in reached, (
         "the version echo was never reached, so this test is not covering it: check that no line"
         " in the parsed body is unparseable, because main() returns before the pin report if one is"
@@ -1776,6 +1815,20 @@ def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
     # Shape IS refused: anything carrying a URL separator, uppercase, or an `@` is described.
     for refused in (f"host/{token}", f"{token}@host", "Not_A_Canonical_Name!", "https://h/x"):
         assert "unrecognised-name" in module.describe_name(refused)
+
+    # THE LENGTH BOUND, pinned. Reverting `MAX_NAME_ECHO` from 200 to 64 left the whole suite
+    # green, which is how three successive bounds each shipped while redacting real distributions.
+    # Measured against the live PyPI simple index on 2026-08-21: 875,180 projects, 141 of them with
+    # canonical names over 64 characters, the longest at 188, none over 200. So a name at the
+    # measured maximum must be echoed, and this assertion is what stops a fourth bad number.
+    longest_real_name = "a" * 188
+    assert module.describe_name(longest_real_name) == longest_real_name, (
+        "the longest canonical name on PyPI must be echoed; a cap that redacts it repeats the"
+        " mistake 32, 24 and 64 each made"
+    )
+    assert "unrecognised-name" in module.describe_name("a" * 201), (
+        "the cap must still bound the log line, or it is not a bound at all"
+    )
 
     # Real names are echoed, INCLUDING the long ones that the 32 and 24 bounds each broke. These
     # four are real PyPI distributions and the report must be able to name them.
@@ -1823,11 +1876,54 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
         "a trailing newline slipped through the version whitelist, so `$` is being used where"
         " `\\Z` is required"
     )
+    # LENGTH as well as shape, both directions, because `MAX_VERSION_ECHO` shipped with no test
+    # able to see it: removing the length check left all 734 tests green and put 5,000 digits on
+    # stderr. `SAFE_VERSION` constrains shape only, and the `ghp_...` needle used above contains an
+    # underscore, so it is shape-rejected and can never exercise the length half. Both directions
+    # are asserted, so neither raising nor lowering the constant passes unnoticed.
+    at_limit = "1." + "9" * (module.MAX_VERSION_ECHO - 2)
+    over_limit = "1." + "9" * (module.MAX_VERSION_ECHO - 1)
+    assert len(at_limit) == module.MAX_VERSION_ECHO
+    assert module.describe_version(at_limit) == at_limit, (
+        "a version exactly at the cap must still be echoed, or the cap redacts real versions"
+    )
+    assert module.describe_version(over_limit).startswith("[REDACTED"), (
+        "a version one character over the cap must be described, or the length bound is not wired"
+    )
+    assert module.describe_version("1." + "9" * 5_000).startswith("[REDACTED")
+
     for real in ("0.115.0", "1.0", "2.3.1rc1", "1.2.3.post1", "0.1.dev1", "1.0+local.1"):
         assert module.describe_version(real) == real, (
             f"{real} is a legitimate version and must be echoed verbatim, or the report becomes"
             " useless for the case it exists to serve"
         )
+
+
+def test_the_version_comparison_survives_a_release_segment_python_will_not_convert() -> None:
+    """`versions_equal` had no test at any commit, so its `ValueError` fix was invisible.
+
+    A release segment over about 4,300 digits trips CPython's integer-to-string conversion limit
+    inside `packaging.version`, which raises plain `ValueError` rather than `InvalidVersion`, so it
+    escaped as an uncaught traceback out of leg one of the loop - fail-closed only by the accident
+    that `EXIT_MISMATCH` is also 1. That is the same "fail-closed by coincidence" shape
+    `_marker_applies` documents twenty lines above it.
+
+    Reverting to `except InvalidVersion:` left the whole suite green, because nothing tested this
+    function at all. Asserted here at the function AND through the script, since a direct call is
+    what proved nothing about `describe_name` two rounds ago.
+    """
+    module = _environment_check_module()
+    assert module.versions_equal("1" * 5_000, "1.0") is False
+    assert module.versions_equal("9.1.1.0", "9.1.1") is True, (
+        "the PEP 440 comparison this function exists for must still hold"
+    )
+
+    result = _run_environment_check(f"pytest=={'9' * 4_400}\n")
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr, (
+        "an uncaught traceback out of leg one is indistinguishable, to whoever reads the CI log,"
+        " from the leg being broken"
+    )
 
 
 def test_an_unparseable_line_is_described_and_never_echoed() -> None:

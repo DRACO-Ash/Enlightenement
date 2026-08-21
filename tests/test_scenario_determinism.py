@@ -25,6 +25,7 @@ from enlightenment.scenario import (
     FINGERPRINT_LENGTH,
     MAX_PAYLOAD_BYTES,
     MAX_PAYLOAD_DEPTH,
+    MAX_PAYLOAD_NODES,
     TICK_MILLISECONDS,
     Event,
     RunLog,
@@ -748,6 +749,90 @@ NODE_BUDGET_DEADLINE_SECONDS = 30.0
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def test_a_flat_payload_over_the_node_budget_is_refused_in_process() -> None:
+    """The budget's refusal branch, exercised where COVERAGE can see it.
+
+    Moving the two shared-reference tests into subprocesses was necessary - an unbudgeted build of
+    that payload never returns, so an in-process call cannot be bounded - but it took the refusal
+    branch out of the coverage measurement with it, and `determinism.py` dropped off 100%. A
+    control measured only in a child process is a control the coverage report cannot vouch for.
+
+    A FLAT payload over the budget needs no expansion: 100,001 elements is one list, built in
+    milliseconds, and it charges the budget past its limit on the ordinary path. Cheap, in-process,
+    and it exercises the same raise.
+    """
+    log = RunLog(seed=1)
+    with pytest.raises(ValueError, match="nodes"):
+        log.record(ScenarioClock(tick=0), "flat", v=[0] * (MAX_PAYLOAD_NODES + 1))
+    assert log.events == (), "a refused write must append nothing"
+
+
+def test_a_flat_payload_just_under_the_node_budget_is_refused_for_its_size() -> None:
+    """The two caps in the right order, and a control I first wrote wrong.
+
+    My first attempt asserted that a flat payload just under the node budget is ACCEPTED, as a
+    control against the constant being raised. It fails, correctly: 99,998 integers serialise to
+    roughly 200 KB, three times `MAX_PAYLOAD_BYTES`, so the byte cap refuses it. There is no flat
+    payload that reaches the node budget and stays under the byte cap, which is worth knowing -
+    for FLAT input the byte cap is the binding constraint, and the node budget exists for input
+    whose serialised size is never computed because the expansion never finishes.
+
+    So the honest control is the ordering: just under the budget must refuse for SIZE, just over
+    must refuse for NODES. That pins both constants against each other, and `match="nodes"` in the
+    test above stops being incidental - raise `MAX_PAYLOAD_NODES` and the byte cap fires first, the
+    message changes, and that test goes red.
+    """
+    log = RunLog(seed=1)
+    with pytest.raises(ValueError, match="bytes"):
+        log.record(ScenarioClock(tick=0), "under", v=[0] * (MAX_PAYLOAD_NODES - 2))
+    assert log.events == ()
+
+
+def _refusal_in_a_subprocess(call: str, expected_reason: str) -> str:
+    """Build the shared-reference payload in a child process and report how ``call`` ended.
+
+    Shared between the two node-budget tests so neither can hang the run. The payload is a few
+    hundred bytes of live objects at depth 7 that expands to 40**6 = 4.1 billion nodes, so a build
+    without the budget does not fail, it does not RETURN - which is why the assertion has to live
+    behind a real timeout rather than a stopwatch taken after the call.
+    """
+    programme = (
+        "import sys\n"
+        "sys.path.insert(0, 'src')\n"
+        "from enlightenment.scenario.determinism import RunLog, ScenarioClock\n"
+        "v = 'z' * 10\n"
+        "for _ in range(6):\n"
+        "    v = [v] * 40\n"
+        "log = RunLog(seed=1)\n"
+        "try:\n"
+        f"    {call}\n"
+        "    print('ACCEPTED')\n"
+        "except ValueError as refusal:\n"
+        f"    print('REFUSED' if {expected_reason!r} in str(refusal) else 'WRONG-REASON')\n"
+        "print('EVENTS', len(log.events))\n"
+    )
+    try:
+        completed = subprocess.run(  # noqa: S603 - this interpreter and a literal programme
+            [sys.executable, "-c", programme],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=NODE_BUDGET_DEADLINE_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"the write did not return within {NODE_BUDGET_DEADLINE_SECONDS}s, so the cost of"
+            " accepting a payload is not bounded before the work is done"
+        )
+    lines = completed.stdout.split()
+    assert lines[-2:] == ["EVENTS", "0"], (
+        f"a refused write must append nothing; got {completed.stdout.strip()!r} with"
+        f" {completed.stderr.strip()[:200]!r}"
+    )
+    return lines[0]
+
+
 def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
     """A three-hundred-byte payload that the depth and size caps could not stop.
 
@@ -762,14 +847,18 @@ def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
     is the case that showed the difference. A node budget bounds the work, so the refusal arrives
     in milliseconds instead of never.
     """
-    payload: object = "z" * 10
-    for _ in range(6):
-        payload = [payload] * 40
-
-    log = RunLog(seed=1)
-    with pytest.raises(ValueError, match="nodes"):
-        log.record(ScenarioClock(tick=0), "shared references", v=payload)
-    assert log.events == (), "a refused write must append nothing"
+    # **Run in a subprocess, like its sibling below, and for the same reason.** This test used to
+    # call `log.record()` in-process. Under a mutation that deletes `budget.spend()` that call never
+    # returns, and because this test runs FIRST the whole file hung: measured at 400 seconds with
+    # zero failures before being killed. So the deadline test below could prove the control while
+    # the suite still reported a budget regression as broken infrastructure - which is the exact
+    # outcome that test was written to remove. A control's test must not be able to hang the run
+    # that is meant to report on it.
+    result = _refusal_in_a_subprocess(
+        "log.record(ScenarioClock(tick=0), 'shared references', v=v)",
+        "nodes",
+    )
+    assert result == "REFUSED", f"expected a node-budget refusal, got {result!r}"
 
 
 def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() -> None:
@@ -785,37 +874,9 @@ def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() 
     A subprocess with `timeout=` is the only version that actually holds. The docstring above
     claims the refusal arrives in milliseconds instead of never; here that claim is enforced.
     """
-    programme = (
-        "import sys;"
-        " sys.path.insert(0, 'src');"
-        " from enlightenment.scenario.determinism import RunLog, ScenarioClock;"
-        " v = 'z' * 10\n"
-        "for _ in range(6):\n"
-        "    v = [v] * 40\n"
-        "log = RunLog(seed=1)\n"
-        "try:\n"
-        "    log.record(ScenarioClock(tick=0), 'boom', v=v)\n"
-        "    print('ACCEPTED')\n"
-        "except ValueError as refusal:\n"
-        "    print('REFUSED' if 'nodes' in str(refusal) else 'WRONG-REASON')\n"
-    )
-    try:
-        result = subprocess.run(  # noqa: S603 - this interpreter and a literal programme
-            [sys.executable, "-c", programme],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=NODE_BUDGET_DEADLINE_SECONDS,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        pytest.fail(
-            f"the write did not return within {NODE_BUDGET_DEADLINE_SECONDS}s, so the cost of"
-            " accepting a payload is no longer bounded before the work is done"
-        )
-    assert result.stdout.strip() == "REFUSED", (
-        f"expected a node-budget refusal, got {result.stdout.strip()!r} with"
-        f" {result.stderr.strip()[:200]!r}"
+    assert (
+        _refusal_in_a_subprocess("log.record(ScenarioClock(tick=0), 'boom', v=v)", "nodes")
+        == "REFUSED"
     )
 
 

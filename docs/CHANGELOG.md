@@ -304,10 +304,74 @@ list's stated reasons being wrong for `SGP4_ERRORS`, `TEME_OF_DATE` and `BOUNDAR
 matters because a curation list is worth exactly what its reasons are worth; four test names still
 describing the deleted control; and the comment reflow damage from the surgical edits.
 
-**Verified.** Loop green under the pinned toolchain: **733 passed, 1 skipped**, coverage
-**99.04%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven
-physics and scenario modules at **100% line and branch coverage**. Pipeline simulation green against
-the version being shipped: **730 passed, 4 skipped**.
+### Round five: both gates found the same MAJOR, and it was the control this release added
+
+Both gates FAILED round four and both led with the same finding: **`MAX_VERSION_ECHO` shipped with
+no test able to see it.** Deleting the length check echoes a 5,002-character version to stderr with
+all 734 tests green. That is byte-for-byte the shape the previous round FAILed on for
+`describe_name`, applied to the control added to fix the round before that. The security gate's
+phrasing is the one to keep: *the control the commit was written to add is the one control the suite
+cannot see.*
+
+Two more of the same kind. `versions_equal` had **no test at any commit**, so its `ValueError` fix
+was invisible. And the integrality scoping I introduced - exempting fractional hours and seconds
+from the whole-number rule - was untested in the relaxing direction: widening it back to all six
+components left the entire suite green, because not one of the fifteen `julian_date_from_utc` call
+sites in the suite passed a fractional time. Thirteen cases for the half that was reported to me,
+none for the half I added.
+
+**A measurement contradicting my own comment.** I wrote that two shapes in the property test "parse,
+so they reach the version echo and the name echo". They do not. A pin is `name==version`, and any
+whitespace inside either field makes the line unparseable, so `main()` reports it and returns before
+the pin report: measured, **0 of 58 separator-bearing shapes parse**. That second body ran 29 extra
+subprocesses down the identical path under a comment claiming otherwise. The whitespace class is now
+swept over the sites whitespace can reach, and the two parsed sites are covered by a separator-free
+body carrying a 5,002-digit version, which is the wiring test that was missing - a direct call to
+`describe_version` proves nothing, as `describe_name` demonstrated a round earlier.
+
+**The third invented figure for the same constant, and this time I measured it.** The comment
+justifying `MAX_NAME_ECHO = 64` called it "PyPI's own maximum name length". PyPI has no such maximum:
+its project-name validation is a pattern with no length validator, `packaging` implements the PEP 503
+grammar with no length bound, and the column is free text. Measured against the live simple index on
+2026-08-21: **875,180 projects, 141 with canonical names over 64 characters, the longest at 188, none
+over 200.** So 64 excluded 141 real distributions exactly as 32 and 24 did.
+
+The cap is 200 now, above every name that exists, and the assertion that pins it is the point:
+reverting to 64 previously left the suite green, which is how three successive bounds shipped while
+redacting real packages. It is an OUTPUT bound and is documented as not being a secrecy boundary.
+
+**Two residuals moved into the register where a reader looks.** `docs/SECURITY.md` items 8 and 9: a
+lowercase name-shaped credential in name position echoes, and an all-numeric credential of 40
+characters or fewer in version position echoes. Both are accepted because the divergence report
+cannot do its one job without naming the distribution and the version it found. Six revisions of
+that control tried to spot a credential inside attacker-influenced text and each was bypassed; the
+seventh stopped echoing arbitrary text, which closed every site except the two that must name what
+they found.
+
+**A test that could hang the run it was meant to report on.** The in-process shared-references test
+ran before the deadline test and, under a mutation deleting the node budget, never returned: the file
+ran 400 seconds with zero failures before being killed. So the deadline test could prove the control
+while the suite still reported a budget regression as broken infrastructure, which is the outcome
+that test existed to remove. Both now share one subprocess harness, and the whole file fails in
+sixty seconds instead of hanging. Moving them out took the refusal branch off the coverage
+measurement, so a flat 100,001-element payload exercises it in-process - and the control I first
+wrote for it was wrong, asserting that a payload just under the budget is accepted when 99,998
+integers serialise to three times the byte cap. For flat input the byte cap binds; the node budget
+exists for input whose serialised size is never computed.
+
+**And a process change, because this is twice now.** My mutation harness left a disabled guard in the
+working tree for the second time, a shell loop timing out mid-iteration. Mutation runs go in a
+throwaway `git worktree` from here on, so the primary tree cannot carry a mutation at all. Twice in
+that session the harness also reported SURVIVED for mutations that were never applied, the shell
+quoting having silently failed - so a mutation is now confirmed applied before its result is
+believed.
+
+**Verified.** Loop green under the pinned toolchain: **744 passed, 1 skipped**, coverage
+**99.04%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven physics
+and scenario modules at **100% line and branch coverage**. Pipeline simulation green against the
+version being shipped: **741 passed, 4 skipped**. Five mutations confirmed applied and killed: the
+version length check, the `versions_equal` catch, the integrality scoping, the line splitter, and the
+name cap.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **734** now. An earlier version of this row attributed

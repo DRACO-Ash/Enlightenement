@@ -217,6 +217,28 @@ executes, never about the words beside it.
    and it is what an ingress read timeout exists for. Recorded as an accepted residual with
    the platform ingress named as its bound, rather than left as an omission. It predates the
    drain bound and is not a regression of it.
+8. **A name-shaped credential in a lock file's NAME position reaches the divergence report.**
+   `scripts/check-environment.py` must name the distribution it found missing, or "pinned
+   0.115.0, NOT INSTALLED" identifies nothing. A credential is not structurally distinguishable
+   from a distribution name: `canonicalise` lowercases and folds separators, so a Personal Access
+   Token comes out matching the PEP 503 name grammar exactly. `CANONICAL_NAME` rejects anything
+   carrying a URL separator, an `@`, or surviving uppercase, and that is the whole control;
+   `MAX_NAME_ECHO` bounds one log line and is explicitly NOT a secrecy boundary. Three length
+   bounds were tried as one (32, then 24, then 64) and each excluded real distributions while
+   admitting common secret formats, because the populations overlap: measured against the live
+   PyPI simple index on 2026-08-21, 875,180 projects, longest canonical name 188 characters.
+   Accepted because the report cannot do its one job without the name.
+9. **An all-numeric credential of 40 characters or fewer in VERSION position reaches the same
+   report.** `SAFE_VERSION` is a strict public PEP 440 whitelist, which excludes every
+   credential format that carries a letter, an underscore or a separator, and `MAX_VERSION_ECHO`
+   caps the length. A short purely numeric secret is shaped exactly like a version and echoes.
+   Accepted for the same reason: the report has to say which version is pinned.
+
+   Items 8 and 9 are the residue of a control revised seven times. Six revisions tried to spot a
+   credential inside attacker-influenced text and each was bypassed; the seventh stopped echoing
+   arbitrary text at all, which closed every site except the two that must name what they found.
+   Both are stated at the code site, asserted in the test suite as residuals rather than as
+   controls, and recorded here because this register is where a reader looks.
 
 ## Recovery, not just fail-closed
 

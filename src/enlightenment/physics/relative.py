@@ -131,11 +131,11 @@ def mean_motion_rad_s(semi_major_axis_km: float) -> float:
     # division underflows to zero, and since `EARTH_MU_KM3_S2 / 5e-324` itself overflows, NO finite
     # double cube can drive the quotient to zero. (An earlier version of this comment said "needs a
     # cube above 1e313", which is roughly the subnormal threshold rather than the zero threshold;
-    # the conclusion was right and conservative, the reason was imprecise.) It is belt and
-    # braces against
-    # a future edit to the arithmetic, not a covered control, and removing that sub-clause alone
-    # leaves the suite green. The identical line in `mean_motion_from_elements` below IS reachable,
-    # because an element set can carry a non-positive mean motion, and that one is mutation-killed.
+    # the conclusion was right and conservative, the reason was imprecise.) It is belt and braces
+    # against a future edit to the arithmetic, not a covered control, and removing that sub-clause
+    # alone leaves the suite green. The identical line in `mean_motion_from_elements` below IS
+    # reachable, because an element set can carry a non-positive mean motion, and that one is
+    # mutation-killed.
     try:
         rate = math.sqrt(EARTH_MU_KM3_S2 / semi_major_axis_km**3)
     except (ZeroDivisionError, OverflowError) as exhausted:
