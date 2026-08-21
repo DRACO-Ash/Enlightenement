@@ -1904,7 +1904,6 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
 
     # THE LOCAL-VERSION SEGMENT, which was unbounded and leaked real secret formats. Measured
     # through the script before the bound: a 32-character hex API key, a cloud access key
-    # through the script before the bound: a 32-character hex API key, a cloud access key
     # identifier and a base32 secret all echoed in full, because the local-segment pattern
     # admitted any alphanumeric run joined by `.` or `-` and only the underscore was excluded. The
     # register entry written to document that residual named it "all-numeric", which was wrong on
@@ -1919,6 +1918,23 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
             f"{secret} is a real secret format shaped like a local version and must be described;"
             " an unbounded local segment is how it echoed"
         )
+
+    # THE BOUND ITSELF, pinned absolutely, because it was the only echo bound in the file without
+    # a pin while the other two were being pinned. Measured: weakening the per-component limit to
+    # {1,19} or the component count to {0,5} both survived the suite; only {1,20} was caught. So
+    # the secret shapes above bracket the boundary loosely and these four cases nail it.
+    assert module.describe_version("1.0+abcdefgh") == "1.0+abcdefgh", (
+        "eight characters in a local component must echo, or real local versions are redacted"
+    )
+    assert module.describe_version("1.0+abcdefghi").startswith("[REDACTED"), (
+        "nine characters in a local component must be described, or the per-run bound is not there"
+    )
+    assert module.describe_version("1.0+a.b.c") == "1.0+a.b.c", (
+        "three local components must echo, which `+abcdef.1` and `+local.1` need"
+    )
+    assert module.describe_version("1.0+a.b.c.d").startswith("[REDACTED"), (
+        "four local components must be described, or the component count is unbounded"
+    )
 
     # The control: every real local version must still be echoed, or the bound has broken the
     # report for the PyTorch and build-tag forms that legitimately use it.

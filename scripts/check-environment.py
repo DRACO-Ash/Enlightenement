@@ -262,10 +262,22 @@ SAFE_VERSION = re.compile(
     # its three clauses.
     #
     # Eight characters per component and at most three components keeps every real local version
-    # echoing - `+cu118`, `+abcdef.1`, `+local.1`, the PyTorch and build-tag forms - while a
-    # 20-to-38-character token is described by length instead. Measured: none of the three lock
-    # files pins a local version at all, so the cost of this bound is zero today and the benefit is
-    # the commonest fixed-length secret formats there are.
+    # echoing: `+cu118`, `+cpu`, `+abcdef.1`, `+local.1`, the PyTorch and build-tag forms.
+    #
+    # **Precisely what that admits, because two earlier descriptions of it were wrong.** Three
+    # components of eight is 26 alphanumeric characters plus two separators, so an UNDOTTED token
+    # over eight characters is described - `0+AKIAIOSFODNN7EXAMPLE` is - while the same token
+    # rewritten as `0+AKIAIOSF.ODNN7EXA.MPLE` echoes in full. Measured, both of them. So this bound
+    # narrows the class by length per run; it does not exclude letter-bearing values, and the
+    # earlier claims that it described "a 20-to-38-character token" and left only "an all-numeric
+    # secret" were both false.
+    #
+    # There is no cleaner separation available, and that is the third time this file has run into
+    # the same wall: real local versions run from 3 characters (`+cpu`) to 13 (`+computecanada`),
+    # and real secrets from 16 up, so a total-length cap cannot separate them either. What is left
+    # is a bound that costs nothing - measured, none of the three lock files pins a local version
+    # at all - and a residual described accurately in `docs/SECURITY.md` item 9 rather than
+    # narrowed in the telling.
     r"(?:\+[A-Za-z0-9]{1,8}(?:[.-][A-Za-z0-9]{1,8}){0,2})?\Z"
 )
 
@@ -286,11 +298,17 @@ def describe_version(version: str) -> str:
     A real PEP 440 version is short - the longest plausible, a development release with a local
     segment, runs to about thirty characters - so the cap costs nothing real.
 
-    **The residual, stated as `describe_name` states its own:** an all-numeric secret in version
-    position, under the cap, is shaped exactly like a version and does echo. Nothing in the shape
-    distinguishes `1.2.3` from a short numeric token, and unlike the name echo this one could be
-    dropped entirely at the cost of the report no longer saying WHICH version is pinned - which is
-    half its diagnosis, so it is kept and written down.
+    **The residual, stated as `describe_name` states its own, and corrected twice before it was
+    right.** Any value matching `SAFE_VERSION` under `MAX_VERSION_ECHO` echoes. That is a numeric
+    release, optionally with a pre, post or dev segment, optionally followed by a local segment of
+    up to three alphanumeric components of eight characters each. So it is NOT limited to numeric
+    values: `0+AKIAIOSF.ODNN7EXA.MPLE` echoes, measured, while the same token undotted is described.
+
+    Two earlier versions of this paragraph said the residual was "all-numeric". It never was, and
+    the second version said so after the bound was added, which did not change the class - only the
+    per-run length. The class is stated here and in `docs/SECURITY.md` item 9 in the same words, in
+    the same edit, because fixing one of two locations is the fault `describe_name`'s docstring
+    below records having committed.
     """
     if len(version) <= MAX_VERSION_ECHO and SAFE_VERSION.match(version):
         return version
@@ -312,7 +330,7 @@ def describe_version(version: str) -> str:
 #: measurement of the wrong population. A lock file gains dependencies; the bound would have
 #: started redacting real names the first time one arrived.
 #:
-#: The honest reading is that no length separates the two populations. Real names run 3 to 188
+#: The honest reading is that no length separates the two populations. Real names run 1 to 188
 #: characters; credentials run 20 to 45. They overlap completely, so a length cap CANNOT provide
 #: secrecy here and pretending otherwise is what produced two bad numbers.
 #:

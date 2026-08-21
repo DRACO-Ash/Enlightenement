@@ -341,8 +341,10 @@ reverting to 64 previously left the suite green, which is how three successive b
 redacting real packages. It is an OUTPUT bound and is documented as not being a secrecy boundary.
 
 **Two residuals moved into the register where a reader looks.** `docs/SECURITY.md` items 8 and 9: a
-lowercase name-shaped credential in name position echoes, and an all-numeric credential of 40
-characters or fewer in version position echoes. Both are accepted because the divergence report
+lowercase name-shaped credential in name position echoes, and a credential of 40 characters or fewer
+in version position echoes. (This row said "an all-numeric credential" when it was written. That was
+false then and is corrected in the V0.22 round-six note below; the class was never limited to numeric
+values.) Both are accepted because the divergence report
 cannot do its one job without naming the distribution and the version it found. Six revisions of
 that control tried to spot a credential inside attacker-influenced text and each was bypassed; the
 seventh stopped echoing arbitrary text, which closed every site except the two that must name what
@@ -396,9 +398,15 @@ not an accepted residual; it is an acceptance taken on a false premise.**
 So the segment is bounded: eight characters per component, at most three components. Every real
 local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1` - and a 20-to-38-character
 token is reported by length. None of the three lock files pins a local version at all, so the bound
-costs nothing today. What remains is narrower by every letter-bearing format: a purely numeric secret
-of 40 characters or fewer is shaped exactly like a release version, and no pattern separates `1.2.3`
-from a short numeric token.
+costs nothing today.
+
+**And the description of what remains was wrong for the third time, which the next round caught.**
+The bound narrows the class by length PER COMPONENT, not by character class: three components of
+eight admit 26 alphanumerics, so `0+AKIAIOSFODNN7EXAMPLE` is described while the same 20-character
+cloud access key identifier written `0+AKIAIOSF.ODNN7EXA.MPLE` still echoes in full. Measured, both.
+Calling the residual "all-numeric" was false before the bound and remained false after it. It is
+stated accurately now, in the same words at all four places that describe it, because the previous
+round's finding was precisely a retraction applied to one of two locations.
 
 **A retraction applied to one of its two locations.** The comment at the constant said PyPI has no
 name-length maximum; `describe_name`'s own docstring, forty lines below, still said the cap was set
@@ -424,6 +432,44 @@ and scenario modules at **100% line and branch coverage**. Pipeline simulation g
 version being shipped: **741 passed, 4 skipped**. Collected: **745**. Four mutations confirmed
 applied and killed this round: the local-segment bound, the `json.loads` guard, and both constants in
 the raise direction that previously survived.
+
+### Round seven: the same overstatement in four places, and the last unpinned bound
+
+The engineering gate FAILED round six with five findings that are one factual error repeated. The
+code was right; every claimed control was real and every claimed mutation kill reproduced. What was
+wrong was the prose around the new bound, in four places, and it was wrong in the direction that
+matters: it described a NARROWER echo class than the bound actually has.
+
+Three components of eight characters admit 26 alphanumerics. So `0+AKIAIOSFODNN7EXAMPLE` is described
+- the form a credential actually arrives in - while `0+AKIAIOSF.ODNN7EXA.MPLE`, the same 20-character
+cloud access key identifier split across components, echoes in full. Measured end to end through the
+real script. Calling that residual "all-numeric" was false before the bound and stayed false after
+it, and it appeared in `SAFE_VERSION`'s comment, `describe_version`'s docstring, `SECURITY.md` item 9
+and the changelog. All four now carry the same measured sentence, written in one edit, because the
+round before had been about a retraction applied to one of two locations.
+
+There is no cleaner separation to be had, and that is worth stating rather than iterating on: real
+local versions run from 3 characters (`+cpu`) to 13 (`+computecanada`), and real secrets from 16 up.
+A total-length cap fails exactly as the name cap failed at 32, 24 and 64. What the bound buys is the
+undotted form, which is the realistic one; what it does not buy is a character-class exclusion, and
+saying so is the whole point.
+
+**The local-segment bound was also the last echo bound in the file with no absolute pin**, in the
+commit whose subject was pinning the other two. Measured: weakening the per-component limit to 19 or
+the component count to 5 both left the suite green. Four boundary assertions now, both weakenings
+killed.
+
+Also corrected: "real names run 3 to 188 characters" in the constant's comment, which the same commit
+had corrected to 1-to-188 in the test and not here - re-measured against the live index, minimum 1
+(single-character names `0` through `9`, `M`, `T` all exist), maximum 188; a comment line duplicated
+verbatim; a helper docstring still describing two callers after one was deleted; and a cross-reference
+pointing at a docstring that went with the test it belonged to.
+
+**Verified.** Loop green under the pinned toolchain: **744 passed, 1 skipped**, coverage **99.04%**
+against an 80% floor, all three lock files audited clean. All seven physics and scenario modules at
+**100% line and branch coverage**. Pipeline simulation green: **741 passed, 4 skipped**. Collected:
+**745**. Two mutations confirmed applied and killed: both local-segment weakenings that previously
+survived.
 
 **One thing for the owner, raised by the security gate and not a defect.** The service sends no
 Content-Security-Policy, `X-Content-Type-Options` or `Referrer-Policy` header. It is JSON-only, sets

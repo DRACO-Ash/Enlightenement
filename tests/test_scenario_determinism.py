@@ -807,10 +807,13 @@ def test_a_flat_payload_just_under_the_node_budget_is_refused_for_its_size() -> 
 def _refusal_in_a_subprocess(call: str, expected_reason: str) -> str:
     """Build the shared-reference payload in a child process and report how ``call`` ended.
 
-    Shared between the two node-budget tests so neither can hang the run. The payload is a few
-    hundred bytes of live objects at depth 7 that expands to 40**6 = 4.1 billion nodes, so a build
-    without the budget does not fail, it does not RETURN - which is why the assertion has to live
-    behind a real timeout rather than a stopwatch taken after the call.
+    One caller now. It was shared between two node-budget tests until they turned out to be the
+    same assertion twice and one was deleted; the helper stays because the reason for it is
+    structural, not a matter of how many callers it has.
+
+    The payload is a few hundred bytes of live objects at depth 7 that expands to 40**6 = 4.1
+    billion nodes, so a build without the budget does not fail, it does not RETURN - which is why
+    the assertion has to live behind a real timeout rather than a stopwatch taken after the call.
     """
     programme = (
         "import sys\n"
@@ -859,8 +862,10 @@ def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() 
     hung instead of failing, which in CI reads as broken infrastructure rather than as this control
     being gone.
 
-    A subprocess with `timeout=` is the only version that actually holds. The docstring above
-    claims the refusal arrives in milliseconds instead of never; here that claim is enforced.
+    A subprocess with `timeout=` is the only version that actually holds. `_Budget` in
+    `determinism.py` claims the refusal arrives in milliseconds instead of never; here that claim
+    is enforced. (The docstring this used to point at went with the duplicate test it belonged to,
+    which is how a cross-reference becomes a dangling one.)
     """
     assert (
         _refusal_in_a_subprocess("log.record(ScenarioClock(tick=0), 'boom', v=v)", "nodes")

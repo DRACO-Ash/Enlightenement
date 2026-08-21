@@ -248,10 +248,21 @@ executes, never about the words beside it.
    the PyTorch and build-tag forms - and a 20-to-38-character token is reported by length instead.
    Measured: none of the three lock files pins a local version at all, so the bound costs nothing.
 
-   What remains, and why it is accepted: a purely NUMERIC secret of 40 characters or fewer is
-   shaped exactly like a release version, and no pattern distinguishes `1.2.3` from a short
-   numeric token. The report has to say which version is pinned or it cannot do its job. That is
-   the residual, and it is narrower than it was by every letter-bearing format.
+   **What remains, stated for the third time and this time measured.** Two earlier versions of
+   this item called the residual "all-numeric". It is not. Any value matching `SAFE_VERSION` under
+   40 characters echoes, which is a numeric release plus an optional local segment of up to three
+   alphanumeric components of eight characters each. Measured: `0+AKIAIOSFODNN7EXAMPLE` is now
+   described, and `0+AKIAIOSF.ODNN7EXA.MPLE` - the same 20-character cloud access key identifier,
+   split across components - still echoes in full.
+
+   So the bound narrows the class by length PER RUN. It does not exclude letter-bearing values, and
+   an operator must not read it as doing so. What it does exclude is any undotted token over eight
+   characters, which is the form a credential actually arrives in.
+
+   Accepted because there is no separation to be had: real local versions run from 3 characters
+   (`+cpu`) to 13 (`+computecanada`) and real secrets from 16 up, so a total-length cap fails the
+   same way the name cap did at 32, 24 and 64. The report has to say which version is pinned or it
+   cannot do its job.
 
    Items 8 and 9 are the residue of a control revised seven times. Six revisions tried to spot a
    credential inside attacker-influenced text and each was bypassed; the seventh stopped echoing
