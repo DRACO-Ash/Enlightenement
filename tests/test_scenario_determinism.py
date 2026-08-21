@@ -862,10 +862,13 @@ def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() 
     hung instead of failing, which in CI reads as broken infrastructure rather than as this control
     being gone.
 
-    A subprocess with `timeout=` is the only version that actually holds. `_Budget` in
-    `determinism.py` claims the refusal arrives in milliseconds instead of never; here that claim
-    is enforced. (The docstring this used to point at went with the duplicate test it belonged to,
-    which is how a cross-reference becomes a dangling one.)
+    A subprocess with `timeout=` is the only version that actually holds. `MAX_PAYLOAD_NODES` in
+    `determinism.py` claims the refusal is "reached in milliseconds, so the refusal is a refusal
+    rather than a stall"; here that claim is enforced.
+
+    This reference took two goes to aim. It first pointed at a docstring that went with the
+    duplicate test it belonged to, leaving it dangling; then at `_Budget`, which carries no timing
+    claim at all. A cross-reference nobody checks is a cross-reference that rots.
     """
     assert (
         _refusal_in_a_subprocess("log.record(ScenarioClock(tick=0), 'boom', v=v)", "nodes")

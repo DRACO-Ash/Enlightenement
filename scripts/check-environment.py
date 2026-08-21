@@ -243,9 +243,14 @@ MAX_VERSION_ECHO = 40
 #: dots. The bound closed the accidental paste and left the deliberate one open.
 #:
 #: It also could not keep its own promise. "Every real local version still echoes" was falsified by
-#: genuine build tags: semver's own `+20130313144700`, `+ubuntu0.22.04.1`, `+git20260821abc`, and a
-#: local label containing an underscore, which PEP 440 permits. The clause was wrong in both
-#: directions at once, and three successive versions of it were each wrong once.
+#: genuine build tags: semver's own `+20130313144700`, `+ubuntu0.22.04.1`, `+git20260821abc`,
+#: `+computecanada`, and a local label containing an underscore, which PEP 440 permits. The clause
+#: was wrong in both directions at once, and three successive versions of it were each wrong once.
+#:
+#: The lengths overlap, which is why no bound worked: real local labels run past fifteen characters
+#: and real secrets start below twenty. Stated qualitatively on purpose - an earlier version of this
+#: reasoning carried a "3 to 13" range and a "16 up" range, neither measured, and the same file put
+#: the credential population at "20 to 45" fifty-seven lines away.
 #:
 #: Dropping it costs nothing measurable - none of the three lock files pins a local version - and
 #: buys an invariant that cannot drift. A `torch==2.1.0+cu118` pin reports its NAME plus
@@ -286,21 +291,27 @@ def describe_version(version: str) -> str:
     the one site that still needed it. Deleting dead code is right; deleting a live bound because
     it lived next to dead code is how a fix becomes a regression.
 
-    A real PEP 440 version is short - the longest plausible, a development release with a local
-    segment, runs to about thirty characters - so the cap costs nothing real.
+    A real PEP 440 version is short. With the local segment gone, the longest shape this whitelist
+    admits is a numeric release with pre, post and dev segments - `1.2.3rc1.post1.dev20260820`, 26
+    characters - so the cap costs nothing real.
 
-    **The residual, stated as `describe_name` states its own, and corrected twice before it was
-    right.** Any value matching `SAFE_VERSION` under `MAX_VERSION_ECHO` echoes. That is a numeric
-    release, optionally with a pre, post or dev segment, optionally followed by a local segment of
-    up to three alphanumeric components of eight characters each. So it is NOT limited to numeric
-    release, optionally with a pre, post or dev segment. No local segment: it is gone, and
-    the reason is below.
+    **The residual, stated as `describe_name` states its own, and corrected three times before it
+    was right.** What echoes is any value of `MAX_VERSION_ECHO` characters or fewer matching
+    `SAFE_VERSION`: a numeric release with optional pre, post and dev segments, and nothing else.
+    So a purely NUMERIC secret of that length or shorter echoes, because a numeric string in
+    release position is indistinguishable from a version - it IS one. That is irreducible, and it
+    is the whole residual.
 
-    Two earlier versions of this paragraph said the residual was "all-numeric". It never was, and
-    the second version said so after the bound was added, which did not change the class - only the
-    per-run length. The class is stated here and in `docs/SECURITY.md` item 9 in the same words, in
-    the same edit, because fixing one of two locations is the fault `describe_name`'s docstring
-    below records having committed.
+    It took three goes to say that. The first version called the residual "all-numeric" while the
+    local segment was still unbounded, which was false by every letter-bearing format. The second
+    said the same thing after bounding the segment, which changed the per-component length and not
+    the class. The third described the bounded class correctly and was still describing a segment
+    that should not have existed. Deleting the segment made the sentence true by making it simple,
+    which is the lesson worth keeping: three attempts to describe a control accurately were worth
+    less than one decision to remove the part that needed describing.
+
+    `docs/SECURITY.md` item 9 carries the same words. Both were edited together, because fixing one
+    of two locations is the fault `describe_name`'s docstring below records having committed.
     """
     if len(version) <= MAX_VERSION_ECHO and SAFE_VERSION.match(version):
         return version
@@ -323,7 +334,9 @@ def describe_version(version: str) -> str:
 #: started redacting real names the first time one arrived.
 #:
 #: The honest reading is that no length separates the two populations. Real names run 1 to 188
-#: characters; credentials run 20 to 45. They overlap completely, so a length cap CANNOT provide
+#: characters, and credential formats are commonly in the twenties to forties - illustrative, not
+#: measured, and named as such because an unmeasured range stated as a measurement is the fault this
+#: file has committed four times. They overlap, so a length cap CANNOT provide
 #: secrecy here and pretending otherwise is what produced two bad numbers.
 #:
 #: **And then a third, which is why this one is measured.** The version that replaced them said 64
@@ -331,7 +344,9 @@ def describe_version(version: str) -> str:
 #: pattern with no length validator, `packaging` implements the PEP 503 grammar with no length
 #: bound, and `projects.name` is a text column. Measured against the live simple index on
 #: 2026-08-21: **875,180 projects, of which 141 have canonical names longer than 64 characters, the
-#: longest at 188, and none over 200.** So 64 excluded 141 real distributions exactly as 32 and 24
+#: longest at 188, and none over 200.** (The project COUNT drifts daily - a re-measure the next day
+#: gave 875,199 - while the maximum did not move. The count is dated for that reason and nothing
+#: depends on it.) So 64 excluded 141 real distributions exactly as 32 and 24
 #: did, and the justification was asserted rather than checked - in the constant whose entire
 #: comment is about not doing that.
 #:

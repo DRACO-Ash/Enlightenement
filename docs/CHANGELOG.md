@@ -396,14 +396,19 @@ version position could not reach a log. **An accepted residual whose documented 
 not an accepted residual; it is an acceptance taken on a false premise.**
 
 So the segment is bounded: eight characters per component, at most three components. Every real
-local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1` - and a 20-to-38-character
-token is reported by length. None of the three lock files pins a local version at all, so the bound
+local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1` - and a longer token is
+reported by length. (Both halves of that sentence were false and are retracted in the round-seven
+and round-eight notes below: `+computecanada`, `+20130313144700` and `+ubuntu0.22.04.1` are real
+build tags that were NOT echoed, and a token written with dots in it was.) None of the three lock files pins a local version at all, so the bound
 costs nothing today.
 
 **And the description of what remains was wrong for the third time, which the next round caught.**
 The bound narrows the class by length PER COMPONENT, not by character class: three components of
-eight admit 26 alphanumerics, so a cloud access key identifier in version position is described while the same 20-character
-cloud access key identifier written the same identifier written with two dots in it still echoes in full. Measured, both.
+eight admit 24 alphanumerics plus two separators, so a cloud access key identifier in version
+position is described while the same 20-character identifier written with two dots in it still
+echoes in full. Measured, both. (This paragraph said 26; three components of eight is 24 plus the
+two dots, which the next round caught - arithmetic asserted rather than computed, in the sentence
+whose whole purpose was to be the measured one.)
 Calling the residual "all-numeric" was false before the bound and remained false after it. It is
 stated accurately now, in the same words at all four places that describe it, because the previous
 round's finding was precisely a retraction applied to one of two locations.
@@ -440,16 +445,21 @@ code was right; every claimed control was real and every claimed mutation kill r
 wrong was the prose around the new bound, in four places, and it was wrong in the direction that
 matters: it described a NARROWER echo class than the bound actually has.
 
-Three components of eight characters admit 26 alphanumerics. So a cloud access key identifier in version position is described
-- the form a credential actually arrives in - while the same identifier written with two dots in it, the same 20-character
-cloud access key identifier split across components, echoes in full. Measured end to end through the
+Three components of eight characters admit 24 alphanumerics plus two separators. So a cloud access
+key identifier in version position is described - the form a credential actually arrives in - while
+the same 20-character identifier split across components echoes in full. Measured end to end through
+the
 real script. Calling that residual "all-numeric" was false before the bound and stayed false after
 it, and it appeared in `SAFE_VERSION`'s comment, `describe_version`'s docstring, `SECURITY.md` item 9
 and the changelog. All four now carry the same measured sentence, written in one edit, because the
 round before had been about a retraction applied to one of two locations.
 
 There is no cleaner separation to be had, and that is worth stating rather than iterating on: real
-local versions run from 3 characters (`+cpu`) to 13 (`+computecanada`), and real secrets from 16 up.
+local versions and real secrets overlap in length, so no per-component or total bound separates
+them. (An earlier version of this sentence gave the ranges as "3 to 13" and "16 up". Neither was
+measured: `+ubuntu0.22.04.1` carries a 15-character label, past the claimed ceiling, and the same
+file put the credential population at "20 to 45" fifty-seven lines away. The qualitative point was
+sound and the numbers were decoration, so the numbers are gone.)
 A total-length cap fails exactly as the name cap failed at 32, 24 and 64. What the bound buys is the
 undotted form, which is the realistic one; what it does not buy is a character-class exclusion, and
 saying so is the whole point.

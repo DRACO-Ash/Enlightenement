@@ -1805,7 +1805,9 @@ def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
     repository gave 24, a real measurement of the wrong population, which would have started
     redacting real names as soon as a dependency arrived. The populations overlap completely:
     measured on the live PyPI index, real canonical names run 1 to 188 characters and
-    credentials 20 to 45. No length separates them.
+    credential formats are commonly in the twenties to forties. That second range is illustrative
+    rather than measured, and is named as such: the overlap is the point, and putting a precise
+    number on it would be the fourth unmeasured figure in this control's history.
 
     So what is asserted here is the truth: shape is refused, length is not a secrecy boundary, and
     a name-shaped credential DOES echo. Written down rather than implied away by a number.
@@ -1949,8 +1951,9 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
         " identifier in its separated spelling"
     )
 
-    # The control: every real local version must still be echoed, or the bound has broken the
-    # report for the PyTorch and build-tag forms that legitimately use it.
+    # The control: these six real versions must still be echoed, or the whitelist has broken the
+    # report it exists to serve.
+    #
     # Local versions are DESCRIBED now, not echoed, so they are not in this list. That is the
     # deliberate cost of dropping the segment: a `torch==2.1.0+cu118` pin reports its name and a
     # length rather than its version. Measured: no lock file in this repository pins one.

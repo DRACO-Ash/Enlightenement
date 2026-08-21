@@ -246,13 +246,15 @@ executes, never about the words beside it.
      local label containing an underscore, which PEP 440 permits.
 
    Three successive descriptions of that segment were each wrong once - as "all-numeric", as
-   covering "a 20-to-38-character token", and as keeping "every real local version". Dropping it
-   costs nothing measurable (no lock file here pins a local version) and replaces three clauses
-   that kept drifting with one that cannot.
+   covering "a 20-to-38-character token", and as keeping "every real local version". The lengths
+   overlap, which is why no bound worked: real local labels run past fifteen characters and real
+   secrets start below twenty. Dropping the segment costs nothing measurable - no lock file here
+   pins a local version - and replaces three clauses that kept drifting with one that cannot.
 
    **What remains is irreducible:** a numeric string in release position is indistinguishable from
-   a version, because it IS one. A purely numeric secret of 40 characters or fewer therefore
-   echoes. Accepted because the report has to say which version is pinned or it cannot do its job.
+   a version, because it IS one. A purely numeric secret of `MAX_VERSION_ECHO` characters or fewer
+   (40, inclusive) therefore echoes. Accepted because the report has to say which version is pinned
+   or it cannot do its job.
 
 10. **`X-Content-Type-Options: nosniff` is sent; Content-Security-Policy and `Referrer-Policy` are
     deliberately not.** The first is not inert here: a stored `title` or `notes` comes back inside a
