@@ -52,7 +52,7 @@ state-changing route.
 | Probe paths never rate-limited | `app.py` | `test_probe_paths_are_never_rate_limited` |
 | A wildcard origin refuses to start, unconditionally | `config.py` | `test_a_wildcard_origin_always_refuses_to_start_even_without_a_token` |
 | Every exposed method survives a preflight | `app.py` | `test_every_exposed_method_survives_a_preflight_from_the_allowed_origin` |
-| A 413 or 429 still carries the cross-origin header | `app.py` | `test_a_rate_limited_response_still_carries_the_cross_origin_header` |
+| A 413 or 429 still carries the cross-origin header | `app.py` | `test_a_rate_limited_response_still_carries_the_cross_origin_header`, `test_an_oversize_response_still_carries_the_cross_origin_header` |
 | `X-Content-Type-Options: nosniff` on every user-stack response | `middleware.py` | `test_every_user_stack_response_carries_nosniff`, `test_nosniff_is_appended_when_absent`, `test_nosniff_does_not_override_a_handler_that_set_it` |
 | The 500 no user middleware reaches sets both headers itself | `app.py` | `test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it` |
 | Anti-shrink merge; a partial update deletes nothing | `storage.py` | `test_a_partial_patch_keeps_every_field...` |
@@ -60,10 +60,11 @@ state-changing route.
 | Writes serialised by an exclusive lock; no lost update across processes | `storage.py` | `test_two_processes_writing_at_once_lose_no_record` |
 | A stale revision is a 409, never a silent overwrite | `storage.py`, `app.py` | `test_a_stale_expected_revision_is_refused...`, `test_a_stale_if_match_is_a_409...` |
 | Backup before a destructive write, pruned to retention | `storage.py` | `test_a_backup_is_taken_before_an_overwrite...` |
+| The backup copy is not taken through a symlink either | `storage.py` | `test_a_symlinked_snapshot_cannot_be_copied_into_a_backup` |
 | Log injection blocked; actor sanitised and capped | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
-| No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length` |
+| No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length`, `test_nothing_on_app_state_exposes_the_configuration` |
 | Operator values normalised before use | `config.py` | `test_clean_strips_quotes_whitespace_and_control_characters` |
 | Storage proved by a REAL write, never an existence check | `storage.py` | `test_probe_writable_reports_the_errno_when_the_write_is_refused`. NOTE: skipped when the suite runs as root, because root bypasses directory permissions, so this control is proved on the CI runner rather than locally. The file-not-a-directory case runs on every uid but does NOT kill an existence-check mutant, since it never reaches the write; citing that one here was wrong |
 | Probe cannot hang; hard timeout shorter than the platform's | `app.py` | `test_a_hanging_probe_times_out...` |
@@ -72,7 +73,7 @@ state-changing route.
 | The rate limiter sits OUTSIDE the body cap, so oversize requests spend budget | `app.py` | `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, `test_an_oversize_request_still_spends_rate_limit_budget` |
 | A probe path declaring a body that never arrives still answers | `middleware.py` | `test_a_liveness_request_declaring_a_body_that_never_arrives_still_answers` |
 | The existence check for a partial update runs inside the store lock | `storage.py` | `test_the_cap_cannot_turn_a_must_exist_merge_into_a_partial_append` |
-| The constant-time primitive is present and no token is compared with `==` | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive` |
+| The constant-time primitive is present and no token is compared with `==` | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive`, `test_no_module_compares_a_token_with_plain_equality` |
 | Backups carry the same restrictive mode as the snapshot | `storage.py` | `test_the_snapshot_and_its_backups_share_the_same_restrictive_mode` |
 | The lock path is not followed through a symlink | `storage.py` | `test_the_lock_file_is_not_followed_through_a_symlink` |
 | A storage fault leaves the app unready, never unstartable | `app.py` | `test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt` |
@@ -82,8 +83,8 @@ state-changing route.
 | Non-root numeric user, no suid or sgid bits, flat image | `Dockerfile` | `tests/test_appstore_contract.py` |
 
 Each control was mutation-proved before submission: the code it protects was broken in a
-copy of the tree and the named test went red. Mutants have been killed across three rounds,
-covering the anti-shrink merge, the token compare, both rate-limit boundary
+copy of the tree and the named test went red. Mutants have been killed across the twelve rounds
+the ledger below counts, covering the anti-shrink merge, the token compare, both rate-limit boundary
 directions, the readiness fail-closed branch, the unknown-key rejection, the size cap, the
 actor sanitiser, the closed-by-default write posture, the cross-origin method list, the
 strict tier on both write routes, the byte-counting body cap, the probe cache, the port
@@ -93,7 +94,9 @@ image checks in continuous integration.
 
 **Surviving mutants.** Not "all of them", which is what an earlier version of this section
 claimed twice while independent runs kept finding more. A mutation claim is worth exactly what
-the run behind it measured, and three separate rounds have proved that on this project:
+the run behind it measured, and every round in this table has proved that on this project - most
+sharply at round 12, where the mutation that mattered was aimed at the round-11 CHECK rather than at
+the code, and killed it:
 
 | Round | Claimed | Independently found |
 |---|---|---|
@@ -107,7 +110,8 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 8 | 10 run, 10 killed or shown neutralised by a layer | 2 MAJORs (eng, both documents), 1 MINOR (sec) |
 | 9 | 8 run, 8 killed | 2 MAJORs, 4 MINORs (eng, all documents); **`security-reviewer` PASS** |
 | 10 | 5 run, 5 killed | 3 MAJORs, 5 MINORs (eng, all documents); **`security-reviewer` PASS** on the exact head |
-| 11 | 2 run, 2 killed | the ordering claim `_install_cors` had carried since it was written |
+| 11 | 2 run, 2 killed | the ordering claim `_install_cors` had carried since it was written; the round's own changelog said "three", withdrawn to this figure |
+| 12 | 8 run, 8 killed | 1 BLOCKER in the round-eleven completeness check itself (both gates): it matched `def test_` and so could not see `async def`, missing 17 of 20 tests in the one suite that motivated it |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -276,7 +280,8 @@ executes, never about the words beside it.
     `GET /api/v1/sessions` body, and a browser pointed straight at that URL decides for itself what
     the bytes are. `NoSniffMiddleware` sets it on every response the USER STACK produces,
     including one a middleware answers itself - a 413 from the body cap, a 429 from the limiter -
-    which is why it is registered outermost among user middleware.
+    which is why it is registered outermost among user middleware, asserted by
+    `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`.
 
     It cannot reach further than that, and this item said "every response" for one round after that
     was disproved. Starlette installs `ServerErrorMiddleware` above every user middleware, and that

@@ -379,7 +379,9 @@ def _install_error_handlers(app: FastAPI, runtime: _Runtime) -> None:
 
         Starlette installs `ServerErrorMiddleware` ABOVE every user middleware, and that is what
         renders this handler's response. So `NoSniffMiddleware`, registered outermost among user
-        middleware, never sees a 500: measured, an unhandled exception answered with neither
+        middleware, an order asserted by
+        `test_the_middleware_order_puts_the_limiter_outside_the_body_cap` and by nothing else,
+        never sees a 500: measured, an unhandled exception answered with neither
         `x-content-type-options` nor `access-control-allow-origin`, while the code and three
         documents claimed the header was on "every response".
 

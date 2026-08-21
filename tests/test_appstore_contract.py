@@ -8,6 +8,7 @@ guaranteed-false on the machine that gates the deploy.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import os
@@ -610,10 +611,67 @@ def test_a_successful_build_reports_a_pass(tmp_path: Path) -> None:
 # --- the documentation cannot rot silently --------------------------------------------
 
 
+def _test_names_in(path: Path) -> set[str]:
+    """Every module-level test name in ``path``, both `def` and `async def`.
+
+    An AST walk rather than a line scan. The line scan missed `async def` entirely, and would also
+    have missed a decorated definition split across lines, or one reflowed by the formatter. The
+    parser knows what a function is; a prefix match guesses.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+
+
+def _all_test_names() -> set[str]:
+    """Every test name in the suite, for checking that a list of names still names something."""
+    names: set[str] = set()
+    for suite in sorted((ROOT / "tests").glob("test_*.py")):
+        names |= _test_names_in(suite)
+    return names
+
+
+#: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
+#: and `test_audit.py` were missing while the sweep read only four: the register cites the
+#: 500-header test, the middleware-order test, the symlink refusals, the atomic write, the
+#: anti-shrink merge and the log-injection block, all of which live there, so a new uncited control
+#: in any of them was exactly as invisible as nosniff was.
+SWEPT_SECURITY_SUITES: tuple[str, ...] = (
+    "test_audit.py",
+    "test_auth.py",
+    "test_config.py",
+    "test_http.py",
+    "test_middleware.py",
+    "test_ratelimit.py",
+    "test_storage.py",
+)
+
+#: Suites the register cites at FILE granularity and this sweep deliberately does NOT walk.
+#: `docs/SECURITY.md` cites `tests/test_appstore_contract.py` for the Dockerfile row, because that
+#: control is asserted by several Dockerfile-text tests rather than one. Walking this suite would
+#: put 104 of its 113 tests into the sweep, nearly all of them packaging, pipeline-naming and image
+#: shape assertions carried by `docs/DEPLOYMENT.md` at contract granularity rather than by the
+#: security register. A 104-entry exemption list is a list nobody maintains, and an unmaintained
+#: exemption list is the exact failure this check exists to catch, so the scope is narrowed here in
+#: writing instead of being quietly widened.
+UNSWEPT_CITED_SUITES: frozenset[str] = frozenset({"test_appstore_contract.py"})
+
 #: Security-property tests that are deliberately NOT cited in the register, each because the
 #: property it guards is already carried by a cited row rather than being a control of its own.
 #: A curated list with a written reason, in the same idiom as the checksum opt-out census: a NEW
 #: security test must either be cited or be added here on purpose.
+#:
+#: The list grew from 32 names to 100 when the sweep started walking the AST across all seven
+#: control suites instead of `def`-prefixed lines across four: 2 dead entries removed and 70 added.
+#: That growth is the point. The previous 32 were not a smaller true answer, they were all the
+#: sweep could see - 62 tests across four suites, of which it recognised 45, against 168 across
+#: seven now. Triaging the 74 newly visible names also found four register rows claiming more than
+#: they cited - the `==` census, the 413 half of the cross-origin row, the `app.state` exposure
+#: surface and the backup symlink refusal - and those four are now cited rather than exempted.
 UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
     {
         # A unit-level half of the nosniff rows, which cite the integration tests.
@@ -633,7 +691,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_a_value_at_the_cap_is_accepted",
         "test_allows_exactly_the_limit_then_refuses",
         "test_anything_other_than_an_affirmative_leaves_writes_closed",
-        "test_data_dir_resolution_prefers_explicit_the",
         "test_data_dir_resolution_prefers_explicit_then_platform_then_default",
         "test_explicit_host_overrides_the_default",
         "test_filesystem_root_as_data_dir_is_refused",
@@ -649,7 +706,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         # these read as cited when nothing cited them. Same reason as the rest - unit
         # cases of controls the register carries at source granularity.
         "test_a_token_alongside_anonymous_writes_refuses_to_start",
-        "test_a_token_at_the_minimum_is_",
         "test_a_token_at_the_minimum_is_accepted",
         "test_an_anonymous_or_wildcard_origin_refuses_to_start",
         "test_an_over_long_value_is_rejected_not_truncated",
@@ -659,63 +715,209 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_the_limit_is_reported",
         "test_the_token_band_never_exposes_an_exact_length",
         "test_writes_are_closed_by_default_with_no_token_and_no_opt_in",
+        # --- test_audit.py: cases of the two `audit.py` rows, the log-injection block and
+        # "EVERY reflected log value sanitised, lines emitted as JSON". Length bounding, actor
+        # defaulting and the JSON line shape are each one behaviour of that one sanitiser.
+        "test_a_reflected_value_is_length_bounded",
+        "test_actor_is_length_bounded",
+        "test_an_empty_reflected_value_stays_empty_rather_than_becoming_anonymous",
+        "test_an_event_line_leaves_non_string_fields_intact",
+        "test_audit_emits_one_parsable_json_line_with_the_given_fields",
+        "test_missing_or_blank_actor_becomes_anonymous",
+        "test_no_control_character_survives_a_reflected_value",
+        # --- test_auth.py: the four behaviour cases of the constant-time compare, whose row
+        # cites the primitive and the `==` census. Match, mismatch, wrong-same-length and a
+        # missing header are the compare's own truth table, not four separate controls.
+        "test_exact_match_passes",
+        "test_length_mismatch_fails_without_comparing",
+        "test_missing_header_fails",
+        "test_wrong_value_of_the_same_length_fails",
+        # --- test_http.py: HTTP-level cases of rows the register carries at source
+        # granularity - the body cap, the `If-Match` parse, the must-exist merge, the
+        # `extra="forbid"` rejection, the probe cache and pool, the CORS echo, the public
+        # health paths, the closed-by-default write posture and the nosniff header.
+        "test_a_body_within_the_cap_is_accepted_when_sent_chunked",
+        "test_a_latin1_if_match_byte_on_the_wire_is_ignored_rather_than_raising",
+        "test_a_matching_if_match_is_accepted",
+        "test_a_patch_to_an_unknown_session_is_a_404_not_a_silent_create",
+        "test_a_patch_with_an_unknown_key_is_rejected",
+        "test_a_post_still_requires_every_mandatory_field",
+        "test_a_probe_path_declaring_a_body_answers_even_for_a_body_method",
+        "test_a_probe_that_raises_reads_as_unready_never_as_a_pass",
+        "test_a_stale_probe_verdict_is_refreshed_once_the_window_passes",
+        "test_a_well_formed_if_match_still_parses",
+        "test_a_write_with_a_wrong_token_of_the_same_length_is_refused",
+        "test_a_write_with_the_right_token_succeeds",
+        "test_an_error_response_carries_nosniff_too",
+        "test_an_oversize_body_with_a_declared_length_is_refused",
+        "test_an_unparsable_if_match_is_ignored_rather_than_failing_the_request",
+        "test_liveness_paths_return_200_unauthenticated",
+        "test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous",
+        "test_no_cors_header_is_emitted_when_no_origin_is_configured",
+        "test_readiness_paths_return_200_unauthenticated_when_storage_is_writable",
+        "test_readiness_returns_503_with_the_resolved_dir_and_errno",
+        "test_reads_and_probes_stay_open_in_the_closed_default",
+        "test_repeated_probes_hold_exactly_one_probe_thread",
+        "test_the_allowed_origin_is_echoed_and_another_origin_is_not",
+        "test_the_published_pool_reference_is_cleared_with_the_pool",
+        "test_the_readiness_probe_uses_the_validated_config_not_a_fresh_environment_read",
+        "test_the_revision_digit_bound_stays_well_below_the_interpreter_limit",
+        # --- test_http.py, not security controls at all. Conditional GET is a caching
+        # behaviour, the diagnostics content assertions are completeness checks on an
+        # operator page whose ONE security property (no token, no exact length) is cited,
+        # and the root-path assertion is an App Store health contract carried by
+        # `docs/DEPLOYMENT.md`. Kept in the sweep's suite list rather than exempted by file,
+        # so a real control added beside them still fails this check.
+        "test_a_listing_carries_an_etag_and_answers_304_when_unchanged",
+        "test_diagnostics_answers_every_plausible_deploy_question_at_once",
+        "test_diagnostics_reports_the_anonymous_write_posture",
+        "test_root_returns_200_and_never_a_redirect",
+        "test_the_etag_changes_after_a_write",
+        # --- test_middleware.py: the body cap's and the drain budget's own boundary and scope
+        # cases. The register carries the cap on bytes read, the header order, the method case,
+        # the probe exemption and the total budget; these are the at-the-cap, one-over,
+        # zero-budget, within-budget, disconnect, replay and method-scope cases of those rows.
+        # The non-HTTP scope branch is behaviourally inert by construction, which is recorded
+        # in `middleware.py` and in accepted risk 10.
+        "test_a_body_arriving_within_the_budget_is_not_timed_out",
+        "test_a_body_at_the_cap_is_passed_through_intact",
+        "test_a_body_method_declaring_no_body_is_not_drained_either",
+        "test_a_disconnect_mid_body_reaches_the_app_and_is_not_refused",
+        "test_a_method_that_carries_no_body_is_never_drained",
+        "test_a_non_http_scope_is_passed_through_untouched",
+        "test_a_receive_after_the_replay_falls_through_to_the_real_transport",
+        "test_a_zero_budget_times_out_immediately",
+        "test_an_unknown_method_is_passed_through_rather_than_drained",
+        "test_one_byte_over_the_cap_is_refused_and_the_app_never_runs",
+        # --- test_storage.py: cases of the anti-shrink merge, the revision guard, the
+        # must-exist-inside-the-lock check, the snapshot validation behind the corrupt-snapshot
+        # row, the retention cap and the real-write probe. `test_probe_reports_an_existing_path
+        # _that_is_a_file_not_a_directory` is exempted DELIBERATELY and not by oversight: the
+        # register's own NOTE records that citing it for the real-write control was wrong,
+        # because it never reaches the write and so kills no existence-check mutant.
+        "test_a_matching_expected_revision_is_accepted",
+        "test_a_must_exist_write_is_refused_when_the_id_is_absent",
+        "test_a_must_exist_write_merges_when_the_id_is_present",
+        "test_a_non_object_snapshot_is_rejected",
+        "test_a_partial_update_never_deletes_an_unsent_field",
+        "test_every_write_advances_the_revision",
+        "test_load_returns_an_empty_snapshot_when_absent",
+        "test_malformed_json_is_rejected_not_coerced",
+        "test_merge_session_keeps_existing_values_absent_from_the_update",
+        "test_migrate_preserves_unrecognised_fields",
+        "test_migrate_rejects_a_malformed_sessions_field",
+        "test_migrate_rejects_a_non_integer_revision",
+        "test_probe_reports_an_existing_path_that_is_a_file_not_a_directory",
+        "test_probe_writable_proves_a_usable_directory_with_a_real_write",
+        "test_seed_creates_the_snapshot_and_is_idempotent",
+        "test_the_cap_boundary_holds_in_both_directions",
+        "test_the_cap_keeps_the_newest_and_never_drops_the_fresh_entry",
+        "test_the_write_result_counts_are_measured_inside_the_lock",
     }
 )
+
+
+def test_every_exempted_security_test_still_exists() -> None:
+    """An exemption naming nothing carries a written reason for nothing.
+
+    `UNCITED_SECURITY_TESTS` had two entries matching no test anywhere -
+    `test_a_token_at_the_minimum_is_` and `test_data_dir_resolution_prefers_explicit_the`, both
+    truncation residue from the shrinking-prefix matcher that produced the list. They sat beside
+    their real full-length names, so nothing was hidden, and nothing would have caught it either.
+    The same silence would let a renamed test drift out of scope and take its exemption with it, or
+    let a truncated stem exempt a future name by prefix accident.
+
+    This mirrors `test_every_test_named_in_the_security_policy_exists`, which does exactly this job
+    for the register's citations. Two lists of names, both needing a liveness check, and only one
+    of them had one.
+    """
+    dead = sorted(UNCITED_SECURITY_TESTS - _all_test_names())
+    assert not dead, (
+        "these names are exempted from the citation sweep and match no test, so their written"
+        f" reasons guard nothing: {dead}"
+    )
+
+    # An exemption for a test outside the swept suites is never consulted, so it reads as a
+    # decision while guarding nothing - the same silence in a different position.
+    swept = set()
+    for suite in SWEPT_SECURITY_SUITES:
+        swept |= _test_names_in(ROOT / "tests" / suite)
+    stray = sorted(UNCITED_SECURITY_TESTS - swept)
+    assert not stray, (
+        "these names are exempted but live outside the swept suites, so the exemption is never"
+        f" read: {stray}"
+    )
+
+    # An exemption that has since been CITED is stale: the register now carries the control, and
+    # leaving the name here would keep exempting it if the citation were ever removed.
+    policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    cited = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", policy))
+    redundant = sorted(UNCITED_SECURITY_TESTS & cited)
+    assert not redundant, (
+        "these names are BOTH cited in docs/SECURITY.md and exempted from needing a citation;"
+        f" drop the exemption: {redundant}"
+    )
+
+    # And the file-granularity opt-out must still name a real, still-cited suite.
+    for suite in sorted(UNSWEPT_CITED_SUITES):
+        assert (ROOT / "tests" / suite).is_file(), (
+            f"{suite} is exempted from the sweep but no such suite exists"
+        )
+        assert f"tests/{suite}" in policy, (
+            f"{suite} is exempted as a file-granularity citation, but docs/SECURITY.md no longer"
+            " cites it, so the opt-out narrows the sweep for no reason"
+        )
 
 
 def test_every_security_test_is_cited_by_the_policy() -> None:
     """The REVERSE direction, which is the gap that hid a control for several rounds.
 
-    Its sibling above catches a register row naming a test that does not exist. Nothing caught the
-    other direction, and that is not hypothetical: `X-Content-Type-Options: nosniff` was added,
+    Its sibling below catches a register row naming a test that does not exist. Nothing caught the
+    other direction, and that was not hypothetical: `X-Content-Type-Options: nosniff` was added,
     tested five ways, and left out of the register's control table entirely. The sweep is
-    citation-driven, so an UNCITED control is invisible to it by construction - the suite was green
-    and the policy simply did not mention the header. It took a reviewer reading the document to
-    find it.
+    citation-driven, so an UNCITED control is invisible to it by construction. It took a reviewer
+    reading the document to find it.
 
-    A register that omits a control is a register an assessor cannot rely on, which is the whole
-    point of the "each with a test that fails if it regresses" promise at the top of it. So a
-    security-property test must be cited, or be named in `UNCITED_SECURITY_TESTS` with a reason.
+    **This check has now been defeated twice, both times by verifying less than it reported.** The
+    first version matched a shrinking prefix, reduced a name to `test_an`, found that inside
+    `test_anonymous_writes_require_the_explicit_opt_in`, and passed every `test_an...` as cited.
+    The second matched `line.startswith("def test_")` - and 17 of the 20 tests in
+    `test_middleware.py` are `async def`, so the suite whose omission motivated the whole check was
+    the suite it could not see. Both gates planted an uncited async test and both watched it pass.
+    My own verification had held only because I wrote the plant as `def`.
 
-    Scoped to the tests that assert a SECURITY property, identified by the files that hold them,
-    because sweeping the whole suite would demand a register row for every physics boundary and
-    that is not what the document is for.
-
-    **Cited at FILE or at test granularity**, because the register legitimately does both: the
-    constant-time comparison row names `tests/test_auth.py` wholesale, and demanding that every
-    positive-and-negative unit pair inside it earn its own row would be a register nobody reads.
-    The property that matters is that the control is mentioned SOMEWHERE, which is exactly what
-    the nosniff header failed - neither its file nor any of its five tests appeared.
+    So it walks the AST now, which sees both function kinds and survives decorators, reflowing and
+    class nesting - none of which a line-prefix scan does. A completeness check is worth exactly
+    what it can see, and the two things that hid from this one were a keyword and a substring.
     """
     policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
-    security_suites = (
-        "test_auth.py",
-        "test_config.py",
-        "test_middleware.py",
-        "test_ratelimit.py",
+
+    # The policy's citation TOKENS, extracted once, rather than a substring search over the whole
+    # document. A bare `in policy` test was the first version's other flaw: it would match a name
+    # mentioned anywhere, including in the survivor prose and the mutant ledger, so one future
+    # sentence naming a suite would silently exempt every test in it.
+    # The trailing lookaheads matter. `[a-z0-9_]` ends the token so a name cannot match a longer
+    # one's prefix, and `(?!\.py\b)` drops the FILE stems: `tests/test_auth.py` in the table would
+    # otherwise contribute a bare `test_auth` citation, and a future test named exactly `test_auth`
+    # would then read as cited by a filename. The elided `test_x...` form still matches, because
+    # only `.py` is excluded and not every dot.
+    cited_names = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", policy))
+    cited_prefixes = {name for name in cited_names if f"{name}..." in policy}
+    cited_suites = set(re.findall(r"tests/(test_\w+\.py)", policy))
+
+    # The hand-maintained list must not fall behind the register, or the sweep's own coverage
+    # becomes the unchecked claim. A suite the register cites is either walked here or named in
+    # `UNSWEPT_CITED_SUITES` with a written reason; there is no third option, so a new citation
+    # fails this check until somebody decides which it is.
+    unaccounted = cited_suites - set(SWEPT_SECURITY_SUITES) - UNSWEPT_CITED_SUITES
+    assert not unaccounted, (
+        "docs/SECURITY.md cites test suites this sweep does not cover, so a new uncited control"
+        f" there would be invisible: {sorted(unaccounted)}"
     )
-    # The policy's citation TOKENS, extracted once, rather than a substring search. A naive
-    # shrinking-prefix match was the first version of this and it was useless: it stripped a name
-    # down to `test_an`, which appears inside `test_anonymous_writes_require_the_explicit_opt_in`,
-    # so every test starting `test_an...` read as cited. Measured - an uncited test planted in
-    # `test_middleware.py` passed. An over-loose matcher in a completeness check is worse than no
-    # check, because it reports the completeness it did not verify.
-    cited_names = set(re.findall(r"test_[a-z0-9_]+", policy))
-    cited_prefixes = {
-        name for name in cited_names if f"{name}..." in policy or f"{name}…" in policy
-    }
 
     uncited: list[str] = []
-    for suite in security_suites:
-        if suite in policy:
-            # The whole file is cited, which the register does for a control whose evidence is a
-            # suite rather than one case.
-            continue
-        source = (ROOT / "tests" / suite).read_text(encoding="utf-8")
-        for line in source.split("\n"):
-            if not line.startswith("def test_"):
-                continue
-            name = line[len("def ") :].split("(")[0]
+    for suite in SWEPT_SECURITY_SUITES:
+        for name in _test_names_in(ROOT / "tests" / suite):
             if name in UNCITED_SECURITY_TESTS or name in cited_names:
                 continue
             # The elided `test_a_thing...` form the table uses to stay narrow, matched as a real
@@ -723,6 +925,7 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
             if any(name.startswith(prefix) for prefix in cited_prefixes):
                 continue
             uncited.append(f"{suite}::{name}")
+
     assert not uncited, (
         "these security-property tests are cited nowhere in docs/SECURITY.md, so the register"
         " omits a control it claims to carry; cite them or name them in UNCITED_SECURITY_TESTS"

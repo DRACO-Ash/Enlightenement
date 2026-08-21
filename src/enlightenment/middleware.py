@@ -58,8 +58,10 @@ class NoSniffMiddleware:
 
     **Not literally every response, and the first version of this docstring said otherwise.**
     Starlette installs `ServerErrorMiddleware` above every user middleware, and that is what renders
-    the unhandled-exception 500. So registering this outermost among user middleware still cannot
-    reach a 500: measured, an unhandled exception answered with no `x-content-type-options` and no
+    the unhandled-exception 500. So registering this outermost among user middleware (asserted by
+    `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, the one authority on this
+    order) still cannot reach a 500: measured, an unhandled exception answered with no
+    `x-content-type-options` and no
     `access-control-allow-origin` while the code and three documents claimed "every response".
     "Outermost" was true and bought less than it sounded. The 500 handler in `app.py` sets both
     headers itself, because there is nowhere above `ServerErrorMiddleware` for a user layer to go.

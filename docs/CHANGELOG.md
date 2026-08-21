@@ -676,9 +676,13 @@ asked for - a security test with no register row - was straightforward to write 
 was useless: a shrinking-prefix matcher reduced a name to `test_an`, found it inside
 `test_anonymous_writes_require_the_explicit_opt_in`, and reported every `test_an...` as cited.
 Measured: an uncited test planted in `test_middleware.py` passed the check. Tightened to match the
-policy's actual citation tokens, it immediately flagged twelve more that the loose version had
-masked. A checker that reports the completeness it did not verify is the exact shape this suite keeps
-finding, and I wrote a fresh one while closing an instance of it.
+policy's actual citation tokens, it flagged a further batch the loose version had masked. **That
+batch was recorded three different ways in one release** - "twelve" here, "Ten more" in the
+exemption list's own comment, and eleven names actually committed. Only the third is a measurement;
+the other two are prose. The committed list is the record, and round twelve rebuilt it from an AST
+walk anyway, so the figure is superseded rather than corrected. A checker that reports the
+completeness it did not verify is the exact shape this suite keeps finding, and I wrote a fresh one
+while closing an instance of it.
 
 Also fixed: the module docstring's pipeline enumeration omitted the nosniff layer while claiming the
 registration order was "the reverse of that list"; the release summary's overstatement, corrected
@@ -688,8 +692,13 @@ not fire, because a crashing hook's stack trace yields a truthy fragment when sp
 
 **Verified.** Loop green under the pinned toolchain: **767 passed, 1 skipped**, coverage **99.06%**,
 all three lock files audited clean. Pipeline simulation green: **763 passed, 5 skipped**. Collected:
-**768**. Three mutations confirmed applied and killed: the reverse citation sweep against an uncited
-new test, and the two it had to be tightened to catch.
+**768**. Mutations: this entry said "Three ... confirmed applied and killed" while the mutant
+ledger in `docs/SECURITY.md` recorded "2 run, 2 killed" for the same round. The two figures were
+written from the same session and one of them is wrong; the ledger's is the lower and the one I can
+still tie to a recorded run, so **2 run, 2 killed** stands and the third is withdrawn as
+unverifiable. The killed pair: the reverse citation sweep against an uncited new test, and the
+tightening it needed to catch a masked name. Both were then shown insufficient in round twelve,
+which is the more useful fact than either count.
 
 **Superseded.** A paragraph here recorded the absence of Content-Security-Policy,
 `X-Content-Type-Options` and `Referrer-Policy` as a deliberate choice for the owner to
@@ -697,8 +706,90 @@ confirm, and asserted that "no document claims otherwise". The round-eight note 
 the second of those headers, so both halves went stale in the same release entry that
 changed them. Item 10 of the accepted-risk register carries the current position.
 
+### Round twelve: the completeness check could not see the keyword it was built for
+
+**Both gates FAILED, with the same BLOCKER, and it was in the thing I built last round to close
+their finding.** The reverse citation sweep matched `line.startswith("def test_")`. Seventeen of the
+twenty tests in `test_middleware.py` are `async def`. So the suite whose omission from the register
+motivated the entire check was the suite the check could not see. Both reviewers planted an uncited
+`async def` test and both watched it pass; my own verification of the same check had held only
+because I happened to write the plant as `def`.
+
+Measured before the fix: across the four suites it named, the sweep recognised **45 of 62** tests;
+in `test_middleware.py`, **3 of 20**.
+
+**The lesson is not "handle async too".** It is that a completeness check reports a completeness,
+and the report is worth exactly what the matcher can see. Two rounds, two matchers, two blind spots:
+a shrinking prefix that matched inside unrelated names, then a line prefix that missed a keyword. In
+both cases the check passed, said "complete", and was not. The fix is to stop pattern-matching source
+text for a structural question: it walks the AST now, which sees both function kinds and survives
+decorators, reflowed arguments and formatter changes, none of which a line scan does.
+
+**What that visibility then found.** Widening the sweep from four suites to seven (`test_audit.py`,
+`test_http.py` and `test_storage.py` were missing, while the register cites the 500-header test, the
+middleware-order test, the symlink refusals, the atomic write, the anti-shrink merge and the
+log-injection block, all of which live there) took the tests it walks from 62 to **168**, and
+surfaced **74** names nothing had ever checked. Triaging them:
+
+● **Four register rows claimed more than they cited**, and are now cited: the `==` census behind
+  "no token is compared with `==`"; the 413 half of "a 413 or 429 still carries the cross-origin
+  header"; `app.state` as a fourth token-exposure surface under "no secret in any response, log or
+  audit line"; and the backup copy as a third symlink surface, which now has its own row. Citations
+  in `docs/SECURITY.md`: **73 to 77**.
+● **Seventy are exempted with a written reason**, grouped by the cited row each is a case of. The
+  exemption list went from **32 entries to 100**: 2 removed, 70 added.
+
+**Two dead exemptions, and the reason they were invisible.** `UNCITED_SECURITY_TESTS` held
+`test_a_token_at_the_minimum_is_` and `test_data_dir_resolution_prefers_explicit_the`, truncation
+residue from the shrinking-prefix matcher, sitting beside their real full-length names. Harmless in
+effect and undetectable by anything in the suite - the register's citations had a liveness check and
+this list did not. It has one now, plus three more: an exemption for a test outside the swept suites
+is never read; an exemption for a test that is now cited is stale; and the one file-granularity
+opt-out must still name a real, still-cited suite.
+
+**The sweep's scope is narrowed in writing rather than quietly.** The register cites
+`tests/test_appstore_contract.py` at file granularity for the Dockerfile row. Walking that suite
+would pull 104 of its 113 tests into the sweep, nearly all packaging and image-shape assertions
+carried by `docs/DEPLOYMENT.md` at contract granularity. A 104-entry exemption list is a list nobody
+maintains, and an unmaintained exemption list is precisely the failure this check exists to catch, so
+`UNSWEPT_CITED_SUITES` records the opt-out and a test asserts the suite is still cited. Any OTHER
+suite the register starts citing fails the check until somebody decides which it is.
+
+**Also closed.** The citation regex now drops `.py` stems, so `tests/test_auth.py` in the table no
+longer contributes a bare `test_auth` citation that a future test of that name would inherit. The
+ordering authority is cited at the five sites that still carried the bare absolute
+(`app.py`, `middleware.py`, `docs/SECURITY.md` item 10, and two docstrings in `test_http.py`) -
+last round's claim that "every ordering claim now cites it" was false when written, at five live
+premises. `test_the_middleware_order_puts_the_limiter_outside_the_body_cap` now runs both postures
+rather than only the hosted one: with an origin configured the stack is four layers, without it
+three, and what must hold in both is nosniff outermost and the body cap innermost, which is the
+claim the five citing sites actually depend on. A reflow had also left a three-word orphan line in
+that docstring.
+
+**Verified.** Loop green under the pinned toolchain: **769 passed, 1 skipped**, coverage **99.06%**,
+all three lock files audited clean, 77 pins matched. Collected: **770**.
+
+**Mutations: 8 run, 8 killed**, each confirmed applied before its result was believed, and each
+reverted against a recorded SHA-256 digest afterwards.
+
+| # | Mutation | Result |
+|---|---|---|
+| 1 | an uncited, unexempted `async def` test appended to `test_middleware.py` - the exact plant both gates used | killed |
+| 2 | the same plant as `async def` with `@pytest.mark.parametrize` and its arguments reflowed across lines | killed |
+| 3 | a plain `def` plant beside it | killed |
+| 4 | an exemption naming no test anywhere | killed |
+| 5 | an exemption naming a real test outside the swept suites | killed |
+| 6 | a name both cited in the register and exempted from needing a citation | killed |
+| 7 | the register made to cite `tests/test_healthcheck.py`, a suite the sweep does not walk | killed |
+| 8 | every mention of `tests/test_appstore_contract.py` removed from the register, making the file-granularity opt-out stale | killed |
+
+Recorded because it is the honest shape of the run: my first attempt at 8 replaced one of the two
+mentions and the check correctly passed, because the suite was still cited. That was an inadequate
+mutation, not a survivor, and the difference between those two is the whole reason a mutation must be
+confirmed applied before its result is read.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **767** now. That last figure was left at 734 through one
+head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** now. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

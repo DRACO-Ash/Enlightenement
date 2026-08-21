@@ -160,15 +160,17 @@ the volume.
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0).** An
-      earlier PASS at commit `068b1c4` is not evidence about this tree and the tick claiming it has
-      been removed: 18 commits and 8,279 inserted lines have landed since (measured, not
-      estimated). Every finding from
-      that FAIL is closed in this release; the gate re-runs against this head and the tick goes
-      back only on the verdict itself.
-- [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `fa21434` (V0.21.0)**, on the
-      undocumented exception escapes and the `RunLog` append-only claim. Both are closed here. Same
-      rule: the tick returns on a verdict against this head, not on a verdict against an ancestor.
+- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `7906473`**, with a BLOCKER
+      in the round-eleven completeness check itself: it matched `def test_` and so could not see
+      `async def`, missing 17 of the 20 tests in the one suite that motivated it. An earlier PASS at
+      commit `068b1c4` is not evidence about this tree and the tick claiming it has been removed.
+      Every finding from that FAIL is closed in this release; the gate re-runs against this head and
+      the tick goes back only on the verdict itself.
+- [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `7906473`**, on the same
+      `async def` blind spot; it had PASSED on the two heads before that. The check it flagged now
+      walks the AST and was proved against eight mutations, three of them plants it previously
+      missed. Same rule: the tick returns on a verdict against this head, not on a verdict against
+      an ancestor.
 - [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
       the application: five undefined submission fields, an unset resource budget, and a container
       contract that could not be confirmed because the CI `image` job named as its binding check

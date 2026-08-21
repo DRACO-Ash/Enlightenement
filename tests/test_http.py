@@ -418,7 +418,9 @@ def test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it(
 
     Starlette installs `ServerErrorMiddleware` above every user middleware, and that is what
     renders the unhandled-exception response. So registering `NoSniffMiddleware` outermost among
-    user middleware still misses a 500: measured before the fix, an unhandled exception answered
+    user middleware, an order asserted by
+    `test_the_middleware_order_puts_the_limiter_outside_the_body_cap` and by nothing else,
+    still misses a 500: measured before the fix, an unhandled exception answered
     with neither `x-content-type-options` nor `access-control-allow-origin`, while the code and
     three documents claimed the header was on "every response". "Outermost" was true and bought
     less than it sounded.
@@ -690,29 +692,54 @@ def test_no_store_call_runs_on_the_event_loop(config: Config, data_dir: Path) ->
     assert watcher.on_loop == [], f"store calls ran on the event loop: {watcher.on_loop}"
 
 
+@pytest.mark.parametrize(
+    ("configured_origin", "expected"),
+    [
+        (
+            True,
+            ["NoSniffMiddleware", "CORSMiddleware", "BaseHTTPMiddleware", "BodyLimitMiddleware"],
+        ),
+        (False, ["NoSniffMiddleware", "BaseHTTPMiddleware", "BodyLimitMiddleware"]),
+    ],
+    ids=["hosted-with-origin", "local-no-origin"],
+)
 def test_the_middleware_order_puts_the_limiter_outside_the_body_cap(
-    token_config: Config, store: TrainingStore
+    token_config: Config,
+    config: Config,
+    store: TrainingStore,
+    configured_origin: bool,
+    expected: list[str],
 ) -> None:
-    """Order is load-bearing three times now.
+    """Order is load-bearing three times now, and this test is the ONLY authority on it.
+
+    Five sites in source, tests and the security policy assert which layer is outermost. Every one
+    of them now names this test, because the previous arrangement had `_install_cors` claiming to be
+    outermost - true when written, false from the moment `NoSniffMiddleware` was registered after
+    it - while this assertion sat green on the correct order the whole time. A prose claim about
+    ordering with no anchor is how that survived a release.
 
     The limiter must be OUTSIDE the cap, or an oversize request is read in full while spending no
     limiter budget. The cross-origin layer must be outside that, or a 413 or 429 reaches a browser
     with no header and reads as an opaque network error. Both were wrong in the first version.
 
-    And `NoSniffMiddleware` is outermost of the four user layers, for the same reason as the
-    second: a response a
+    And `NoSniffMiddleware` is outermost, for the same reason as the second: a response a
     middleware answers ITSELF - a 413 from the cap, a 429 from the limiter - never reaches a layer
     registered inside it, so a header installed beside the routes would miss exactly the responses
     an operator is most likely to open in a browser.
+
+    Both postures, because only the hosted one was exercised and the local one is the default a
+    developer runs. `CORSMiddleware` is installed only when an origin is configured, so the local
+    stack is three layers; what must hold in BOTH is that nosniff is outermost and the cap is
+    innermost, which is the claim the five citing sites actually depend on.
     """
-    app = create_app(config=token_config, store=store, probe=ok_probe)
+    app = create_app(
+        config=token_config if configured_origin else config, store=store, probe=ok_probe
+    )
     order = [layer.cls.__name__ for layer in app.user_middleware]
-    assert order == [
-        "NoSniffMiddleware",
-        "CORSMiddleware",
-        "BaseHTTPMiddleware",
-        "BodyLimitMiddleware",
-    ], order
+    assert order == expected, order
+    assert order[0] == "NoSniffMiddleware", order
+    assert order[-1] == "BodyLimitMiddleware", order
+    assert ("CORSMiddleware" in order) is configured_origin, order
 
 
 def test_an_oversize_request_still_spends_rate_limit_budget(
@@ -1191,8 +1218,10 @@ def test_an_error_response_carries_nosniff_too(client: TestClient) -> None:
 
     A 422 here, and equally a 413 from the body cap or a 429 from the limiter, is a response a
     browser can be pointed at. `NoSniffMiddleware` is registered outermost among USER middleware
-    for this reason: a header installed beside the routes would miss every response a middleware
-    answers itself. The unhandled-exception 500 is outside even that, and
+    for this reason - `test_the_middleware_order_puts_the_limiter_outside_the_body_cap` asserts that
+    order and is the only authority on it - because a header installed beside the routes would
+    miss every response a middleware answers itself. The unhandled-exception 500 is outside even
+    that, and
     `test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it` covers it.
 
     422 rather than 401, which is worth recording because I assumed the opposite when writing this:
