@@ -1804,7 +1804,8 @@ def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
     redacted - and 32 is exactly a hex API key. Re-deriving it from the longest name in THIS
     repository gave 24, a real measurement of the wrong population, which would have started
     redacting real names as soon as a dependency arrived. The populations overlap completely:
-    names run 3 to 60-odd characters, credentials 20 to 45. No length separates them.
+    measured on the live PyPI index, real canonical names run 1 to 188 characters and
+    credentials 20 to 45. No length separates them.
 
     So what is asserted here is the truth: shape is refused, length is not a secrecy boundary, and
     a name-shaped credential DOES echo. Written down rather than implied away by a number.
@@ -1876,27 +1877,108 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
         "a trailing newline slipped through the version whitelist, so `$` is being used where"
         " `\\Z` is required"
     )
-    # LENGTH as well as shape, both directions, because `MAX_VERSION_ECHO` shipped with no test
-    # able to see it: removing the length check left all 734 tests green and put 5,000 digits on
-    # stderr. `SAFE_VERSION` constrains shape only, and the `ghp_...` needle used above contains an
-    # underscore, so it is shape-rejected and can never exercise the length half. Both directions
-    # are asserted, so neither raising nor lowering the constant passes unnoticed.
-    at_limit = "1." + "9" * (module.MAX_VERSION_ECHO - 2)
-    over_limit = "1." + "9" * (module.MAX_VERSION_ECHO - 1)
-    assert len(at_limit) == module.MAX_VERSION_ECHO
+    # LENGTH as well as shape, and pinned to LITERALS rather than to the constant.
+    #
+    # The previous version derived both cases from `module.MAX_VERSION_ECHO`, so they self-adjusted
+    # to whatever the constant said and only the LOWERING direction was caught. Measured: raising it
+    # to 4000 left the entire suite green while `describe_version` would then echo a 4,000-character
+    # value - the disclosure this bound exists to stop. The comment claimed "neither raising nor
+    # lowering the constant passes unnoticed", which is the "prose describing a control the test
+    # does not have" fault, re-committed one round after it was found.
+    #
+    # A bound asserted relative to itself is not asserted. The constant is pinned absolutely, and
+    # the boundary pair is written out, so changing either requires changing this test on purpose.
+    assert module.MAX_VERSION_ECHO == 40, (
+        "the version echo bound changed; if that is deliberate, update the literals below, because"
+        " a cap asserted only relative to itself cannot catch being raised"
+    )
+    at_limit = "1." + "9" * 38
+    over_limit = "1." + "9" * 39
     assert module.describe_version(at_limit) == at_limit, (
-        "a version exactly at the cap must still be echoed, or the cap redacts real versions"
+        "a 40-character version must still be echoed, or the cap redacts real versions"
     )
     assert module.describe_version(over_limit).startswith("[REDACTED"), (
-        "a version one character over the cap must be described, or the length bound is not wired"
+        "a 41-character version must be described, or the length bound is not wired"
     )
     assert module.describe_version("1." + "9" * 5_000).startswith("[REDACTED")
 
-    for real in ("0.115.0", "1.0", "2.3.1rc1", "1.2.3.post1", "0.1.dev1", "1.0+local.1"):
+    # THE LOCAL-VERSION SEGMENT, which was unbounded and leaked real secret formats. Measured
+    # through the script before the bound: a 32-character hex API key, a cloud access key
+    # through the script before the bound: a 32-character hex API key, a cloud access key
+    # identifier and a base32 secret all echoed in full, because the local-segment pattern
+    # admitted any alphanumeric run joined by `.` or `-` and only the underscore was excluded. The
+    # register entry written to document that residual named it "all-numeric", which was wrong on
+    # two of its three clauses - so this asserts the class, not the wording.
+    for secret in (
+        "1.0+deadbeefcafebabe0123456789abcdef",
+        "0+AKIAIOSFODNN7EXAMPLE",
+        "1.0+JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+        "1.0+glpat-ABCDEFGHIJKLMNOPQRST",
+    ):
+        assert module.describe_version(secret).startswith("[REDACTED"), (
+            f"{secret} is a real secret format shaped like a local version and must be described;"
+            " an unbounded local segment is how it echoed"
+        )
+
+    # The control: every real local version must still be echoed, or the bound has broken the
+    # report for the PyTorch and build-tag forms that legitimately use it.
+    for real in (
+        "0.115.0",
+        "1.0",
+        "2.3.1rc1",
+        "1.2.3.post1",
+        "0.1.dev1",
+        "1.0+local.1",
+        "1.0+cu118",
+        "2.1.0+cpu",
+        "1.13.1+cu117",
+        "1.0+abcdef.1",
+    ):
         assert module.describe_version(real) == real, (
             f"{real} is a legitimate version and must be echoed verbatim, or the report becomes"
             " useless for the case it exists to serve"
         )
+
+
+def test_a_probe_that_does_not_answer_with_json_fails_without_a_traceback() -> None:
+    """The third site of a class fixed twice in one round, and fail-closed only by coincidence.
+
+    `json.loads(result.stdout)` was unguarded, so an interpreter whose stdout is not pure JSON
+    exited leg one with an uncaught `JSONDecodeError` traceback. It happened to exit 1, which is
+    `EXIT_MISMATCH`, so it failed closed by accident rather than by design - the same shape
+    `_marker_applies` documents and `versions_equal` was fixed for.
+
+    Realistic, not contrived: a `sitecustomize.py`, a `.pth` file, or a wrapper interpreter on a
+    platform runner will print to stdout before the probe's own output. The stub here does exactly
+    that, and carries a credential to prove the stdout is described rather than echoed.
+    """
+    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    with tempfile.TemporaryDirectory() as workspace:
+        stub = Path(workspace) / "chatty-python"
+        stub.write_text(
+            f'#!/bin/sh\necho "loading plugin {token}"\nexec {sys.executable} "$@"\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o700)
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "check-environment.py"),
+                str(stub),
+                str(ROOT / "requirements.txt"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr, (
+        "an uncaught traceback out of leg one reads, to whoever sees the CI log, as the leg being"
+        " broken rather than the environment being wrong"
+    )
+    assert token not in result.stdout + result.stderr, "the probe's stdout was echoed"
+    assert "did not answer with JSON" in result.stderr
+    assert "characters of stdout not echoed" in result.stderr
 
 
 def test_the_version_comparison_survives_a_release_segment_python_will_not_convert() -> None:

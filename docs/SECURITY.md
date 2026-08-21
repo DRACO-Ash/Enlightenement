@@ -228,11 +228,30 @@ executes, never about the words beside it.
    admitting common secret formats, because the populations overlap: measured against the live
    PyPI simple index on 2026-08-21, 875,180 projects, longest canonical name 188 characters.
    Accepted because the report cannot do its one job without the name.
-9. **An all-numeric credential of 40 characters or fewer in VERSION position reaches the same
-   report.** `SAFE_VERSION` is a strict public PEP 440 whitelist, which excludes every
-   credential format that carries a letter, an underscore or a separator, and `MAX_VERSION_ECHO`
-   caps the length. A short purely numeric secret is shaped exactly like a version and echoes.
-   Accepted for the same reason: the report has to say which version is pinned.
+9. **A numeric credential of 40 characters or fewer in VERSION position reaches the same report,
+   and this item was wrong twice before it was right.**
+
+   The first version claimed `SAFE_VERSION` "excludes every credential format that carries a
+   letter, an underscore or a separator". Two of those three clauses were false. The PEP 440
+   local-version segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything
+   alphanumeric joined by `.` or `-` was version-shaped: measured through the real script,
+   `1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key),
+   `0+AKIAIOSFODNN7EXAMPLE` (a cloud access key identifier) and a base32 secret all echoed in
+   full. Only the underscore was excluded.
+
+   The second version documented that class honestly and left it open. That was the wrong call:
+   documenting a hole is not closing one, and this hole admitted the commonest fixed-length
+   secret formats there are.
+
+   **So the segment is bounded now**, to eight characters per component and at most three
+   components. Every real local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1`,
+   the PyTorch and build-tag forms - and a 20-to-38-character token is reported by length instead.
+   Measured: none of the three lock files pins a local version at all, so the bound costs nothing.
+
+   What remains, and why it is accepted: a purely NUMERIC secret of 40 characters or fewer is
+   shaped exactly like a release version, and no pattern distinguishes `1.2.3` from a short
+   numeric token. The report has to say which version is pinned or it cannot do its job. That is
+   the residual, and it is narrower than it was by every letter-bearing format.
 
    Items 8 and 9 are the residue of a control revised seven times. Six revisions tried to spot a
    credential inside attacker-influenced text and each was bypassed; the seventh stopped echoing

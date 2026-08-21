@@ -760,10 +760,20 @@ def test_a_flat_payload_over_the_node_budget_is_refused_in_process() -> None:
     A FLAT payload over the budget needs no expansion: 100,001 elements is one list, built in
     milliseconds, and it charges the budget past its limit on the ordinary path. Cheap, in-process,
     and it exercises the same raise.
+
+    **The constant is pinned to a LITERAL, and the previous version was not.** Sizing the payload
+    as `MAX_PAYLOAD_NODES + 1` self-adjusts to whatever the constant says, so only the lowering
+    direction was caught: measured, raising it to 200,000 left this whole file green, and a
+    weakened cost bound on the shared-reference class would have shipped unnoticed. A bound
+    asserted relative to itself is not asserted.
     """
+    assert MAX_PAYLOAD_NODES == 100_000, (
+        "the node budget changed; if that is deliberate, update the literals below, because a cap"
+        " asserted only relative to itself cannot catch being raised"
+    )
     log = RunLog(seed=1)
     with pytest.raises(ValueError, match="nodes"):
-        log.record(ScenarioClock(tick=0), "flat", v=[0] * (MAX_PAYLOAD_NODES + 1))
+        log.record(ScenarioClock(tick=0), "flat", v=[0] * 100_001)
     assert log.events == (), "a refused write must append nothing"
 
 
@@ -778,13 +788,19 @@ def test_a_flat_payload_just_under_the_node_budget_is_refused_for_its_size() -> 
     whose serialised size is never computed because the expansion never finishes.
 
     So the honest control is the ordering: just under the budget must refuse for SIZE, just over
-    must refuse for NODES. That pins both constants against each other, and `match="nodes"` in the
-    test above stops being incidental - raise `MAX_PAYLOAD_NODES` and the byte cap fires first, the
-    message changes, and that test goes red.
+    must refuse for NODES.
+
+    **What this does NOT do, corrected because the docstring claimed it did.** It said this "pins
+    both constants against each other" so that raising `MAX_PAYLOAD_NODES` would make the byte cap
+    fire first and turn the sibling test red. Measured, that is false: the budget is charged during
+    the freeze while bytes are only measured after the freeze returns, so an over-budget payload
+    always raises "nodes" whatever the constant says. Raising it to 200,000 left the whole file
+    green. The absolute assertion in the sibling test is what catches that now; this test covers
+    the ORDER, and nothing more.
     """
     log = RunLog(seed=1)
     with pytest.raises(ValueError, match="bytes"):
-        log.record(ScenarioClock(tick=0), "under", v=[0] * (MAX_PAYLOAD_NODES - 2))
+        log.record(ScenarioClock(tick=0), "under", v=[0] * 99_998)
     assert log.events == ()
 
 
@@ -831,34 +847,6 @@ def _refusal_in_a_subprocess(call: str, expected_reason: str) -> str:
         f" {completed.stderr.strip()[:200]!r}"
     )
     return lines[0]
-
-
-def test_a_payload_of_shared_references_is_refused_before_it_expands() -> None:
-    """A three-hundred-byte payload that the depth and size caps could not stop.
-
-    `v = "z" * 10` then `v = [v] * 40` six times is a few hundred bytes of live objects, depth 7
-    (inside the depth-8 cap), and logically 40**6 = 4.1 billion elements because every reference is
-    the same list. The freeze allocates a distinct tuple per reference, so `len(canonical)` - the
-    thing the size cap measures - is never computed at all. The write does not fail; it does not
-    RETURN. Measured before the fix: still allocating at a sixty-second timeout under a 2 GiB
-    address-space limit.
-
-    Depth and serialised size both bound the RESULT of a write. Neither bounds its COST, and this
-    is the case that showed the difference. A node budget bounds the work, so the refusal arrives
-    in milliseconds instead of never.
-    """
-    # **Run in a subprocess, like its sibling below, and for the same reason.** This test used to
-    # call `log.record()` in-process. Under a mutation that deletes `budget.spend()` that call never
-    # returns, and because this test runs FIRST the whole file hung: measured at 400 seconds with
-    # zero failures before being killed. So the deadline test below could prove the control while
-    # the suite still reported a budget regression as broken infrastructure - which is the exact
-    # outcome that test was written to remove. A control's test must not be able to hang the run
-    # that is meant to report on it.
-    result = _refusal_in_a_subprocess(
-        "log.record(ScenarioClock(tick=0), 'shared references', v=v)",
-        "nodes",
-    )
-    assert result == "REFUSED", f"expected a node-budget refusal, got {result!r}"
 
 
 def test_the_node_budget_refuses_within_a_hard_deadline_in_a_separate_process() -> None:

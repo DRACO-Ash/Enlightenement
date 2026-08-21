@@ -366,15 +366,75 @@ that session the harness also reported SURVIVED for mutations that were never ap
 quoting having silently failed - so a mutation is now confirmed applied before its result is
 believed.
 
+### Round six: a bound asserted against itself is not asserted, and a documented hole is not closed
+
+Both gates FAILED round five, and the two findings that matter are the same mistake in two shapes.
+
+**Two constants were "pinned" by tests derived from the constants.** `MAX_VERSION_ECHO` was checked
+with `at_limit = "1." + "9" * (MAX_VERSION_ECHO - 2)`, and `MAX_PAYLOAD_NODES` with a payload of
+`MAX_PAYLOAD_NODES + 1` elements. Both self-adjust, so only the LOWERING direction was ever caught:
+measured, raising the version cap to 4,000 and the node budget to 200,000 each left the whole suite
+green. Raising the version cap that far re-opens the disclosure it exists to bound. And both
+docstrings claimed the opposite - "neither raising nor lowering the constant passes unnoticed", and
+"that pins both constants against each other" - which is prose describing a control the test does
+not have, one round after that exact fault was found. Both constants are pinned to literals now, and
+both raise-direction mutations are killed.
+
+**The version echo had a real hole I had documented instead of closing.** The PEP 440 local-version
+segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything alphanumeric joined by `.`
+or `-` was version-shaped and echoed under the 40-character cap. Measured through the real script:
+`1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key), `0+AKIAIOSFODNN7EXAMPLE` (a
+cloud access key identifier), a base32 secret and an underscore-free JWT segment all reached stderr
+in full. Only the underscore was excluded.
+
+Worse, the register entry I added in round five to state that residual honestly said `SAFE_VERSION`
+"excludes every credential format that carries a letter, an underscore or a separator". Two of those
+three clauses were false, and an operator reading it would have concluded a personal access token in
+version position could not reach a log. **An accepted residual whose documented boundary is wrong is
+not an accepted residual; it is an acceptance taken on a false premise.**
+
+So the segment is bounded: eight characters per component, at most three components. Every real
+local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1` - and a 20-to-38-character
+token is reported by length. None of the three lock files pins a local version at all, so the bound
+costs nothing today. What remains is narrower by every letter-bearing format: a purely numeric secret
+of 40 characters or fewer is shaped exactly like a release version, and no pattern separates `1.2.3`
+from a short numeric token.
+
+**A retraction applied to one of its two locations.** The comment at the constant said PyPI has no
+name-length maximum; `describe_name`'s own docstring, forty lines below, still said the cap was set
+"at PyPI's own maximum name length". The file refuted and repeated the same invented fact, and the
+docstring is the half a reader trusts. Fixing one of a claim's two locations is the same fault as
+installing a control at one echo site of two.
+
+**And a third uncaught-exception site, after two were fixed in one round.** `json.loads(result.stdout)`
+was unguarded, so an interpreter printing anything before the probe's output - a `sitecustomize.py`,
+a `.pth` file, a wrapper on a platform runner - exited leg one with a `JSONDecodeError` traceback,
+fail-closed only by the coincidence that `EXIT_MISMATCH` is 1. Guarded, and the stdout is described
+rather than echoed like every other report in the file.
+
+Also corrected: the collected-test figure, left at 734 for a round while its neighbours were updated,
+inside the paragraph whose subject is stale numbers; the pre-measurement "3 to 60-odd characters"
+range, contradicted by this release's own 188-character measurement; a stated 27 characters that was
+26; an assertion that could not fail (`len(at_limit) == MAX_VERSION_ECHO`, true by construction); and
+two node-budget tests that had become the same assertion twice.
+
 **Verified.** Loop green under the pinned toolchain: **744 passed, 1 skipped**, coverage
 **99.04%** against an 80% floor, all three lock files audited clean by `pip-audit`. All seven physics
 and scenario modules at **100% line and branch coverage**. Pipeline simulation green against the
-version being shipped: **741 passed, 4 skipped**. Five mutations confirmed applied and killed: the
-version length check, the `versions_equal` catch, the integrality scoping, the line splitter, and the
-name cap.
+version being shipped: **741 passed, 4 skipped**. Collected: **745**. Four mutations confirmed
+applied and killed this round: the local-segment bound, the `json.loads` guard, and both constants in
+the raise direction that previously survived.
+
+**One thing for the owner, raised by the security gate and not a defect.** The service sends no
+Content-Security-Policy, `X-Content-Type-Options` or `Referrer-Policy` header. It is JSON-only, sets
+no cookies, serves no HTML and its CORS is fail-closed, so this is defence in depth rather than an
+exploitable gap, and no document claims otherwise. Recorded as a deliberate absence to confirm rather
+than an omission to fix.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **734** now. An earlier version of this row attributed
+head, **725** after the redaction rewrite, **745** now. That last figure was left at 734 through one
+round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
+numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and
 ignored nine additions - a derived figure presented as a measured one, in the release whose subject
 is exactly that. Every figure here was measured after the final edit, then again after this row was

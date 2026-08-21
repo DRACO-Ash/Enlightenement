@@ -224,7 +224,7 @@ def _marker_applies(marker: str | None) -> bool:
 
 
 #: Longest version echoed verbatim. A PEP 440 version with a development release and a local
-#: segment - `1.2.3.dev20260820+abcdef.1`, 27 characters - is about as long as a real one gets, so
+#: segment - `1.2.3.dev20260820+abcdef.1`, 26 characters - is about as long as a real one gets, so
 #: 40 is generous. This bounds one log line; it is not a secrecy boundary, for the same reason
 #: `MAX_NAME_ECHO` is not.
 MAX_VERSION_ECHO = 40
@@ -251,7 +251,22 @@ SAFE_VERSION = re.compile(
     # echoed the value verbatim and injected a line break into the divergence report. Unreachable
     # through a pinned version, whose pattern excludes whitespace, but reachable through the
     # INSTALLED version, which comes from the probed interpreter's distribution metadata.
-    r"(?:\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?\Z"
+    # **The local-version segment is BOUNDED, and unbounded it was a live disclosure.** The
+    # previous form, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, admits any run of alphanumerics joined
+    # by `.` or `-`, so a lock-file line `pkg==1.0+deadbeefcafebabe0123456789abcdef` was
+    # version-shaped, passed the 40-character cap, and put a 32-character hex API key on stderr in
+    # full. Measured through `main()`: hex-32 keys, cloud access key identifiers
+    # (`0+AKIAIOSFODNN7EXAMPLE`), base32 secrets and underscore-free JWT segments all echoed. Only
+    # the underscore was excluded, so the register entry claiming this shape "excludes every
+    # credential format that carries a letter, an underscore or a separator" was wrong on two of
+    # its three clauses.
+    #
+    # Eight characters per component and at most three components keeps every real local version
+    # echoing - `+cu118`, `+abcdef.1`, `+local.1`, the PyTorch and build-tag forms - while a
+    # 20-to-38-character token is described by length instead. Measured: none of the three lock
+    # files pins a local version at all, so the cost of this bound is zero today and the benefit is
+    # the commonest fixed-length secret formats there are.
+    r"(?:\+[A-Za-z0-9]{1,8}(?:[.-][A-Za-z0-9]{1,8}){0,2})?\Z"
 )
 
 
@@ -343,8 +358,15 @@ def describe_name(name: str) -> str:
     divergence report cannot do its one job without naming the distribution - "pinned 0.115.0,
     NOT INSTALLED" about an unnamed package tells an operator nothing.
 
-    The length cap is retained only to bound the size of one log line, at PyPI's own maximum name
-    length. It is not a secrecy boundary and is no longer described as one.
+    The length cap is retained only to bound the size of one log line. 200 is above every canonical
+    name measured on the live PyPI simple index on 2026-08-21, the longest of 875,180 being 188
+    characters; PyPI itself enforces no name-length maximum. It is not a secrecy boundary.
+
+    An earlier version of this paragraph said "at PyPI's own maximum name length", and the
+    retraction of that invented claim was applied forty lines above and not here, so the file
+    contradicted itself and the false justification shipped next to the function it justified.
+    Fixing one of a claim's two locations is the same fault as installing a control at one echo
+    site of two.
     """
     if len(name) <= MAX_NAME_ECHO and CANONICAL_NAME.match(name):
         return name
@@ -445,7 +467,21 @@ def installed_versions(interpreter: str) -> dict[str, str]:
         )
         raise SystemExit(EXIT_MISMATCH)
 
-    raw: dict[str, str] = json.loads(result.stdout)
+    try:
+        raw: dict[str, str] = json.loads(result.stdout)
+    except json.JSONDecodeError as unparseable:
+        # The third site of a class fixed twice already this round, at `versions_equal` and
+        # `_marker_applies`: an uncaught exception out of leg one that is fail-closed only by the
+        # coincidence that `EXIT_MISMATCH` happens to be 1. Reproduced with an interpreter wrapper
+        # that writes one line to stdout before exec, which a `sitecustomize.py`, a `.pth` file or a
+        # wrapper interpreter on a platform runner will do. The stdout is DESCRIBED, not echoed,
+        # like every other report in this file.
+        sys.stderr.write(
+            f"FAIL: {interpreter} did not answer with JSON:"
+            f" {unparseable.msg} at position {unparseable.pos},"
+            f" {len(result.stdout)} characters of stdout not echoed\n"
+        )
+        raise SystemExit(EXIT_MISMATCH) from None
     return {canonicalise(name): version for name, version in raw.items()}
 
 
