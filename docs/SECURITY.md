@@ -238,18 +238,22 @@ executes, never about the words beside it.
    ● Unbounded, the segment let any alphanumeric run joined by `.` or `-` through, so a
      32-character hex key or a cloud access key identifier in version position echoed in full.
    ● Bounded to eight characters per component and three components, the CONTIGUOUS spelling of
-     every mainstream credential format was described - twenty-one of them measured - and the
-     SEPARATED spelling was not: two dots inside a 20-character access key identifier put all
-     twenty characters back on stderr, reconstructible by deleting the dots.
+     the credential formats checked was described, and a SEPARATED spelling that fitted the bound
+     was not: two dots inside a 20-character access key identifier put all twenty characters back
+     on stderr, reconstructible by deleting the dots. The quantifier matters and an earlier version
+     of this bullet overstated it - a format longer than 24 characters had no separated spelling the
+     three-component bound admitted, so "the separated spelling was not described" was true only up
+     to 24 characters.
    ● Its own promise was also false. "Every real local version still echoes" was disproved by
      genuine build tags: semver's `+20130313144700`, `+ubuntu0.22.04.1`, `+git20260821abc`, and a
      local label containing an underscore, which PEP 440 permits.
 
    Three successive descriptions of that segment were each wrong once - as "all-numeric", as
-   covering "a 20-to-38-character token", and as keeping "every real local version". The lengths
-   overlap, which is why no bound worked: real local labels run past fifteen characters and real
-   secrets start below twenty. Dropping the segment costs nothing measurable - no lock file here
-   pins a local version - and replaces three clauses that kept drifting with one that cannot.
+   covering "a 20-to-38-character token", and as keeping "every real local version". The two
+   populations overlap in length, which is why no bound worked; no numbers are given here because
+   four successive unmeasured ones were. Dropping the segment costs nothing measurable - no lock
+   file here pins a local version - and replaces three clauses that kept drifting with one that
+   cannot.
 
    **What remains is irreducible:** a numeric string in release position is indistinguishable from
    a version, because it IS one. A purely numeric secret of `MAX_VERSION_ECHO` characters or fewer
@@ -263,8 +267,9 @@ executes, never about the words beside it.
     answers itself, which is why `NoSniffMiddleware` is registered outermost.
 
     The other two are inert on this service and are recorded as absent rather than left unexplained:
-    it is JSON-only (no `HTMLResponse`, no templates, no static files, no `text/html` anywhere in
-    the source), it sets no cookies, and CORS refuses to start on a wildcard or `null` origin. They
+    it serves JSON and plain text only (`/livez`, `/ping` and `/health` return `PlainTextResponse`;
+    there is no `HTMLResponse`, no template, no static file and no `text/html` anywhere in the
+    source), it sets no cookies, and CORS refuses to start on a wildcard or `null` origin. They
     would be a policy claim with nothing to enforce. Revisit if this service ever serves a document
     or sets a cookie.
 

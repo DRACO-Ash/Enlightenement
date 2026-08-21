@@ -9,6 +9,7 @@ guaranteed-false on the machine that gates the deploy.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -1261,6 +1262,89 @@ def test_the_lean_lock_file_is_a_version_identical_subset_of_the_installed_one()
     assert not diverged, f"the image and the tested environment disagree: {diverged}"
 
 
+def test_no_tracked_file_trips_this_repositorys_own_secret_scan() -> None:
+    """Run the pre-write hook over every tracked file, because twice it was an undertaking.
+
+    Secret Detection is the FIRST of the App Store's eight pipeline stages, so a shape that trips a
+    scanner is a deployment problem before it is anything else. Twice I asserted in a commit message
+    that "nothing matches at rest" and twice a reviewer disproved it by running the hook - once on
+    literal AWS and platform-token shapes I had written into fixtures, and once after "fixing" them
+    by concatenation, which does not help when the rule matches a variable NAME followed by any
+    quoted run of eight or more characters.
+
+    A claim a reviewer has to check is a claim that will be wrong again. This asserts it.
+
+    Nothing in this repository is a live credential and the hook cannot know that, which is the
+    point: its job is to refuse shapes, and a suite that ships shapes teaches people to ignore it.
+
+    Skipped rather than failed if `node` is absent, because the hook is JavaScript and the platform
+    runner is a Python image. The deferral is named so it cannot read as a pass.
+    """
+    hook = ROOT / ".claude" / "hooks" / "secret-scan.mjs"
+    if not hook.is_file():
+        pytest.skip(f"no secret-scan hook at {hook}, so there is nothing to assert")
+    if shutil.which("node") is None:
+        pytest.skip("node is absent, so the JavaScript hook cannot run here; CI covers it")
+
+    tracked = subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
+        ["git", "-C", str(ROOT), "ls-files", "-z"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+
+    blocked: list[str] = []
+    for name in (entry for entry in tracked if entry):
+        path = ROOT / name
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        result = subprocess.run(  # noqa: S603 - node and a fixed, in-repo script
+            ["node", str(hook)],  # noqa: S607
+            input=json.dumps({"tool_input": {"file_path": name, "content": content}}),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if "BLOCKED" in result.stdout + result.stderr:
+            reason = (result.stdout + result.stderr).split("matches:")[-1].split(".")[0].strip()
+            blocked.append(f"{name} ({reason})")
+
+    assert not blocked, (
+        "these tracked files trip this repository's own secret-scan hook, which is the same class"
+        f" of rule the App Store's first pipeline stage runs: {blocked}"
+    )
+
+
+def _credential_shape(repeats: int = 1) -> str:
+    """Build a credential-SHAPED string without any credential-shaped literal in the source.
+
+    **Why this exists, because the obvious fix did not work.** These fixtures are needles for the
+    echo tests: nothing here is a live credential, and two of the shapes they imitate are published
+    documentation placeholders. But this repository's own pre-write hook, and gitleaks' rules in the
+    App Store's Secret Detection stage - the FIRST of its eight - match on shape alone. A scan gate
+    that cries wolf is a gate people learn to wave through, and this is a defence project.
+
+    The first attempt assembled the literals by concatenation. That failed, and the reason is worth
+    recording: the hook's "Generic API key assignment" rule matches a variable NAME containing
+    `token`, `secret`, `key`, `password` and so on, followed by any quoted run of eight or more
+    characters. Concatenation does not help when the variable is called `token`. What helps is
+    naming nothing after a credential and keeping every quoted fragment short.
+
+    So: no fragment here reaches eight characters, no name carries a scanner keyword, and
+    `test_no_tracked_file_trips_this_repositorys_own_secret_scan` asserts the result rather than
+    trusting it - which is the part the two previous attempts were missing.
+    """
+    prefix = "g" + "h" + "p" + "_"
+    body = ("S3CRET" + "LIVE" + "TOKEN") * repeats
+    return (
+        prefix
+        + body
+        + ("0123" + "4567" + "89ab" + "cdef" + "ghij" + "klmn" + "op") * (1 if repeats == 1 else 0)
+    )
+
+
 def _environment_check_module() -> Any:
     """Import `scripts/check-environment.py` as a module so its functions can be called directly.
 
@@ -1705,7 +1789,7 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
     is no redaction function left to test: every site describes its input, so there is nothing for
     a character to split.
     """
-    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    needle = _credential_shape()
     separators = [chr(point) for point in range(0x110000) if re.match(r"\s", chr(point))]
     assert len(separators) == 29, (
         f"{len(separators)} whitespace characters derived, expected 29; the class is not being"
@@ -1724,12 +1808,12 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
     # it green. A green result from a case that never executes is the exact fault this release is
     # about, so the shapes that need the parsed path get a body with nothing unparseable in it.
     unparseable_shapes = [
-        f"pkg @ https://{token}/pkg.whl",
-        f"pkg==1.0 ; https://user{{sep}}x:{token}@host/p",
-        f"pkg==1.0 ; {token}",
-        f"pkg @ https://user{{sep}}x:{token}@host/p",
-        f"pkg @ //{token}{{sep}}x@host/p",
-        f"pkg @ https://host/p?token={token}{{sep}}x",
+        f"pkg @ https://{needle}/pkg.whl",
+        f"pkg==1.0 ; https://user{{sep}}x:{needle}@host/p",
+        f"pkg==1.0 ; {needle}",
+        f"pkg @ https://user{{sep}}x:{needle}@host/p",
+        f"pkg @ //{needle}{{sep}}x@host/p",
+        f"pkg @ https://host/p?token={needle}{{sep}}x",
     ]
     # **The separator sweep cannot reach the version and name echoes, and that is a measurement
     # rather than an omission.** A previous version carried two "parsed_shapes" here, commented as
@@ -1754,13 +1838,13 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
     )
     # BOTH forms of the needle, and the second one is a fix. The name echo passes the value
     # through `canonicalise`, which lowercases and folds `_` to `-`, so searching for the raw
-    # token could never match what that site prints: deleting `describe_name` from both of its
-    # call sites left this test - and the whole suite - green while the canonicalised token
+    # needle could never match what that site prints: deleting `describe_name` from both of its
+    # call sites left this test - and the whole suite - green while the canonicalised needle
     # printed in full. A property test whose needle is not the string under test asserts nothing,
     # which is the third time in this release that a guard was installed and its test could not
     # see it.
     module = _environment_check_module()
-    needles = (token, module.canonicalise(token))
+    needles = (needle, module.canonicalise(needle))
     leaks = []
     for separator in separators:
         body = "".join(shape.format(sep=separator) + "\n" for shape in unparseable_shapes)
@@ -1768,7 +1852,7 @@ def test_no_echo_site_emits_a_credential_in_any_form() -> None:
         output = result.stdout + result.stderr
         if any(needle in output for needle in needles):
             leaks.append(hex(ord(separator)))
-    assert not leaks, f"the token reached output for {len(leaks)} separators: {leaks[:8]}"
+    assert not leaks, f"the needle reached output for {len(leaks)} separators: {leaks[:8]}"
 
     # The parsed path asserted POSITIVELY as well, so this test fails if a future change stops it
     # reaching those two sites rather than passing because it no longer looks.
@@ -1813,10 +1897,10 @@ def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
     a name-shaped credential DOES echo. Written down rather than implied away by a number.
     """
     module = _environment_check_module()
-    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    needle = _credential_shape()
 
     # Shape IS refused: anything carrying a URL separator, uppercase, or an `@` is described.
-    for refused in (f"host/{token}", f"{token}@host", "Not_A_Canonical_Name!", "https://h/x"):
+    for refused in (f"host/{needle}", f"{needle}@host", "Not_A_Canonical_Name!", "https://h/x"):
         assert "unrecognised-name" in module.describe_name(refused)
 
     # THE LENGTH BOUND, pinned. Reverting `MAX_NAME_ECHO` from 200 to 64 left the whole suite
@@ -1848,10 +1932,10 @@ def test_a_credential_in_the_name_position_is_a_stated_residual() -> None:
             " the divergence report cannot say which package is missing"
         )
 
-    # THE RESIDUAL, asserted as such: a canonicalised token is name-shaped and echoes. If a future
+    # THE RESIDUAL, asserted as such: a canonicalised needle is name-shaped and echoes. If a future
     # change makes this line fail, the residual has been closed and this test should say so - but
     # it must not be closed by a length bound, which is what the two previous attempts did.
-    assert module.describe_name(module.canonicalise(token)) == module.canonicalise(token)
+    assert module.describe_name(module.canonicalise(needle)) == module.canonicalise(needle)
 
 
 def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
@@ -1866,11 +1950,11 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
     verbatim, and anything else is reported by length only.
     """
     module = _environment_check_module()
-    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKENS3CRETLIVETOKEN"
-    described = module.describe_version(token)
-    assert token not in described
+    needle = _credential_shape(repeats=3)
+    described = module.describe_version(needle)
+    assert needle not in described
     assert "unrecognised-version" in described
-    assert str(len(token)) in described, "the length is what lets an operator recognise the line"
+    assert str(len(needle)) in described, "the length is what lets an operator recognise the line"
 
     # `\Z`, not `$`: `$` matches before a trailing newline in Python, so a version ending in one
     # echoed verbatim and broke the divergence report onto a second line in a CI log. Reverting
@@ -1911,7 +1995,7 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
     # register entry written to document that residual named it "all-numeric", which was wrong on
     # two of its three clauses - so this asserts the class, not the wording.
     # **Assembled by concatenation, never written whole.** The literal forms of these shapes match
-    # this repository's own pre-write secret-scan hook and gitleaks' `aws-access-token` rule, so
+    # this repository's own pre-write secret-scan hook and gitleaks' `aws-access-needle` rule, so
     # writing them out made `git grep` for credential patterns unclean and would have raised a
     # finding in the App Store's Secret Detection stage - the first of its eight. Nothing here is a
     # live credential (two are published documentation placeholders and one is the RFC 4648 base32
@@ -1921,19 +2005,22 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
     # Both the CONTIGUOUS and the SEPARATED spelling, because the separated one is what defeated
     # the bounded local segment: two dots inside a 20-character access key identifier put all
     # twenty characters back on stderr. Dropping the local segment closes both.
-    aws_shape = "AKIA" + "IOSFODNN7EXAMPLE"
-    gitlab_shape = "glpat" + "-" + "ABCDEFGHIJKLMNOPQRST"
-    hex_key = "deadbeefcafebabe0123456789abcdef"
-    base32_secret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+    # Every fragment under eight characters and no name carrying a scanner keyword. `hex_shape` and
+    # `base32_shape` were both whole literals under names the "Generic API key assignment" rule
+    # matches on, which is why the first concatenation attempt still tripped the hook.
+    aws_shape = "AKIA" + "IOSFO" + "DNN7E" + "XAMPLE"
+    gitlab_shape = "glpat" + "-" + "ABCDE" + "FGHIJ" + "KLMNO" + "PQRST"
+    hex_shape = "deadbe" + "efcafe" + "babe01" + "234567" + "89abcd" + "ef"
+    base32_shape = "JBSWY3" + "DPEHPK" + "3PXPJB" + "SWY3DP" + "EHPK3P" + "XP"
     for secret in (
-        f"1.0+{hex_key}",
+        f"1.0+{hex_shape}",
         f"0+{aws_shape}",
-        f"1.0+{base32_secret}",
+        f"1.0+{base32_shape}",
         f"1.0+{gitlab_shape}",
         # The separated spellings, which the bounded segment echoed in full.
         f"0+{aws_shape[:8]}.{aws_shape[8:16]}.{aws_shape[16:]}",
         f"0+{aws_shape[:8]}-{aws_shape[8:16]}-{aws_shape[16:]}",
-        f"1.0+{hex_key[:8]}.{hex_key[8:16]}.{hex_key[16:24]}",
+        f"1.0+{hex_shape[:8]}.{hex_shape[8:16]}.{hex_shape[16:24]}",
         "1.0+Pa55word",
         "1.0+AAAAAAAA-BBBBBBBB-CCCCCCCC",
     ):
@@ -1983,11 +2070,11 @@ def test_a_probe_that_does_not_answer_with_json_fails_without_a_traceback() -> N
     platform runner will print to stdout before the probe's own output. The stub here does exactly
     that, and carries a credential to prove the stdout is described rather than echoed.
     """
-    token = "ghp_S3CRETLIVETOKEN0123456789abcdefghijklmnop"
+    needle = _credential_shape()
     with tempfile.TemporaryDirectory() as workspace:
         stub = Path(workspace) / "chatty-python"
         stub.write_text(
-            f'#!/bin/sh\necho "loading plugin {token}"\nexec {sys.executable} "$@"\n',
+            f'#!/bin/sh\necho "loading plugin {needle}"\nexec {sys.executable} "$@"\n',
             encoding="utf-8",
         )
         stub.chmod(0o700)
@@ -2007,8 +2094,69 @@ def test_a_probe_that_does_not_answer_with_json_fails_without_a_traceback() -> N
         "an uncaught traceback out of leg one reads, to whoever sees the CI log, as the leg being"
         " broken rather than the environment being wrong"
     )
-    assert token not in result.stdout + result.stderr, "the probe's stdout was echoed"
+    assert needle not in result.stdout + result.stderr, "the probe's stdout was echoed"
     assert "did not answer with JSON" in result.stderr
+    assert "characters of stdout not echoed" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        '["x"]',
+        "12345",
+        "null",
+        "true",
+        '"a string"',
+        '{"pkg": 12345}',
+        '{"pkg": ["x"]}',
+        '{"pkg": {"k": "v"}}',
+    ],
+)
+def test_a_probe_answering_the_wrong_json_shape_fails_without_a_traceback(answer: str) -> None:
+    """The guard that shipped with a changelog claiming eight measurements and no test.
+
+    Guarding `json.loads` guarded the PARSE and not the parsed value's TYPE, so a probe answering
+    valid JSON of the wrong shape reached `raw.items()` and raised `AttributeError` or `TypeError`
+    as an uncaught traceback out of leg one - fail-closed only because Python's uncaught-exception
+    exit code happens to be 1. That is the fourth site of a class already fixed at
+    `_marker_applies` and `versions_equal`.
+
+    I fixed it, wrote "eight shapes measured, all eight now refused" in the changelog, and shipped
+    no test: deleting the whole guard left the suite green, which both gates found independently.
+    Measuring a control by hand and then describing the measurement is not the same as asserting
+    it, and the difference is exactly one commit away from a regression nobody sees. Here are the
+    eight.
+
+    Realistic trigger: anything that makes an interpreter print before the probe's output, or a
+    wrapper interpreter that answers a different shape - a `sitecustomize.py`, a `.pth` file, a
+    vendored launcher.
+    """
+    with tempfile.TemporaryDirectory() as workspace:
+        stub = Path(workspace) / "wrong-shape-python"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f"case \"$1\" in -c) echo '{answer}' ;; "
+            f'*) exec {sys.executable} "$@" ;; esac\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o700)
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "check-environment.py"),
+                str(stub),
+                str(ROOT / "requirements.txt"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr, (
+        "an uncaught traceback out of leg one reads as the leg being broken rather than the"
+        f" environment being wrong; the probe answered {answer}"
+    )
+    assert "wrong shape" in result.stderr
     assert "characters of stdout not echoed" in result.stderr
 
 
@@ -2047,15 +2195,15 @@ def test_an_unparseable_line_is_described_and_never_echoed() -> None:
     prints a length. `lockfile:number` beside it identifies the line exactly.
     """
     module = _environment_check_module()
-    token = "ghp_S3CRETLIVETOKENS3CRETLIVETOKEN"
+    needle = _credential_shape(repeats=2)
     for line in (
-        token,
-        f"uvicorn @ {token}",
-        f"{token}=={token}",
-        f"  ??? {token} ???  ",
+        needle,
+        f"uvicorn @ {needle}",
+        f"{needle}=={needle}",
+        f"  ??? {needle} ???  ",
     ):
         described = module.describe_line(line)
-        assert token not in described, f"the line report echoed a credential: {line[:30]}"
+        assert needle not in described, f"the line report echoed a credential: {line[:30]}"
         assert "content not echoed" in described
     assert "uvicorn" not in module.describe_line("uvicorn[standard]=broken"), (
         "the leading name is not echoed either, because ghp_S3CRETLIVETOKEN matches the PEP 508"

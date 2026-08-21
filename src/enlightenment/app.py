@@ -337,7 +337,7 @@ def _install_rate_limit(app: FastAPI, runtime: _Runtime) -> None:
         return await call_next(request)
 
 
-def _install_error_handlers(app: FastAPI) -> None:
+def _install_error_handlers(app: FastAPI, runtime: _Runtime) -> None:
     """The client gets a generic message; the cause is logged server-side.
 
     Every reflected value reaching a log line goes through the shared sanitiser and the
@@ -354,9 +354,31 @@ def _install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def on_unhandled(request: Request, _exc: Exception) -> JSONResponse:
+        """The one response class no user middleware can reach, so it sets its own headers.
+
+        Starlette installs `ServerErrorMiddleware` ABOVE every user middleware, and that is what
+        renders this handler's response. So `NoSniffMiddleware`, registered outermost among user
+        middleware, never sees a 500: measured, an unhandled exception answered with neither
+        `x-content-type-options` nor `access-control-allow-origin`, while the code and three
+        documents claimed the header was on "every response".
+
+        "Outermost" was true and meant less than it sounded. Both headers are set here explicitly
+        rather than by widening the middleware, because there is nowhere above
+        `ServerErrorMiddleware` for a user layer to go.
+        """
         _logger.exception("unhandled error serving %s", sanitise_log_value(request.url.path))
+        headers = {"x-content-type-options": "nosniff"}
+        # The cross-origin header too, and its absence here was the more consequential half: a
+        # browser that cannot read a 500 reports an opaque network error, which is exactly the
+        # case an operator most needs to see. Echoed only for the configured origin, never `*`.
+        origin = request.headers.get("origin")
+        if origin and origin == runtime.settings.allowed_origin:
+            headers["access-control-allow-origin"] = origin
+            headers["vary"] = "Origin"
         return JSONResponse(
-            {"error": "internal error"}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {"error": "internal error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers=headers,
         )
 
 
@@ -667,7 +689,9 @@ def create_app(
     )
 
     # Registered innermost FIRST, because add_middleware prepends. The resulting order from
-    # the wire inwards is: CORS, rate limit, body cap, routes. Asserted by
+    # the wire inwards is: nosniff, CORS, rate limit, body cap, routes - and note that
+    # Starlette's own ServerErrorMiddleware sits outside all of these, which is why the 500
+    # handler sets its own headers rather than relying on the layer named first here. Asserted by
     # test_the_middleware_order_puts_the_limiter_outside_the_body_cap, because getting it
     # backwards let an oversize request be read in full while spending no limiter budget.
     app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES, exempt_paths=UNLIMITED_PATHS)
@@ -686,7 +710,7 @@ def create_app(
     app.state.probe_pool = runtime.probe_pool
     app.state.runtime_probe_pool_released = False
 
-    _install_error_handlers(app)
+    _install_error_handlers(app, runtime)
     _boot(runtime)
     _register_probe_routes(app, runtime)
     _register_diagnostics_route(app, runtime)

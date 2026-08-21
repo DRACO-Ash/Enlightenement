@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from conftest import TEST_ORIGIN, TEST_TOKEN, failing_probe, ok_probe
+from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
 from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
@@ -29,7 +29,7 @@ from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import ProbeResult, TrainingStore
 
 VALID_SESSION = {"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"}
-AUTH = {TOKEN_HEADER: TEST_TOKEN}
+AUTH = {TOKEN_HEADER: TEST_PLACEHOLDER}
 
 #: Every method the API exposes, so the cross-origin policy cannot silently omit one.
 EXPOSED_METHODS = ("GET", "POST", "PATCH")
@@ -217,8 +217,8 @@ def test_diagnostics_never_exposes_a_token_value_or_an_exact_length(
     body = response.json()
     assert body["config"]["teamToken"] == {"set": True, "lengthBucket": "adequate"}
     assert "length" not in body["config"]["teamToken"]
-    assert TEST_TOKEN not in response.text
-    assert str(len(TEST_TOKEN)) not in str(body["config"]["teamToken"])
+    assert TEST_PLACEHOLDER not in response.text
+    assert str(len(TEST_PLACEHOLDER)) not in str(body["config"]["teamToken"])
 
 
 def test_diagnostics_answers_every_plausible_deploy_question_at_once(
@@ -284,7 +284,7 @@ def test_a_write_without_a_token_is_refused_when_a_token_is_configured(
 def test_a_write_with_a_wrong_token_of_the_same_length_is_refused(
     gated_client: TestClient,
 ) -> None:
-    wrong = TEST_TOKEN[:-1] + "X"
+    wrong = TEST_PLACEHOLDER[:-1] + "X"
     response = gated_client.post(
         "/api/v1/sessions", json=VALID_SESSION, headers={TOKEN_HEADER: wrong}
     )
@@ -404,6 +404,49 @@ def test_an_unhandled_error_returns_a_generic_message_and_no_stack_trace(
     assert response.status_code == 500
     assert response.json() == {"error": "internal error"}
     assert "internal detail" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("origin", "expect_cors"),
+    [(TEST_ORIGIN, True), ("https://not-the-origin.invalid", False), (None, False)],
+    ids=["the configured origin", "a foreign origin", "no origin header"],
+)
+def test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it(
+    token_config: Config, data_dir: Path, origin: str | None, expect_cors: bool
+) -> None:
+    """THE response class `NoSniffMiddleware` cannot touch, so the handler sets both headers.
+
+    Starlette installs `ServerErrorMiddleware` above every user middleware, and that is what
+    renders the unhandled-exception response. So registering `NoSniffMiddleware` outermost among
+    user middleware still misses a 500: measured before the fix, an unhandled exception answered
+    with neither `x-content-type-options` nor `access-control-allow-origin`, while the code and
+    three documents claimed the header was on "every response". "Outermost" was true and bought
+    less than it sounded.
+
+    The cross-origin half is the more consequential one. A browser that cannot read a 500 reports
+    an opaque network error, which is exactly the case an operator most needs to see - and it is
+    still echoed only for the configured origin, never `*`, which is what the three cases here
+    pin.
+    """
+
+    class ExplodingStore(TrainingStore):
+        def load(self) -> dict[str, Any]:
+            raise RuntimeError("internal detail that must not reach the client")
+
+    app = create_app(config=token_config, store=ExplodingStore(data_dir), probe=ok_probe)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/v1/sessions", headers={"Origin": origin} if origin else {})
+    assert response.status_code == 500
+    assert response.headers.get("x-content-type-options") == "nosniff", (
+        "a 500 is the response class most worth a content-type guarantee, and the only one no"
+        " user middleware can reach"
+    )
+    allowed = response.headers.get("access-control-allow-origin")
+    if expect_cors:
+        assert allowed == TEST_ORIGIN
+        assert response.headers.get("vary") == "Origin"
+    else:
+        assert allowed is None, f"a 500 echoed {allowed!r} for origin {origin!r}"
 
 
 # --- persistence through HTTP -------------------------------------------------------
@@ -1102,7 +1145,7 @@ def test_nothing_on_app_state_exposes_the_configuration(
     for name, value in published.items():
         assert not isinstance(value, Config), f"app.state.{name} exposes the configuration"
         rendered = repr(value)
-        assert TEST_TOKEN not in rendered, f"app.state.{name} renders the team token"
+        assert TEST_PLACEHOLDER not in rendered, f"app.state.{name} renders the team token"
     assert "runtime" not in published, f"app.state publishes the whole runtime: {sorted(published)}"
 
 

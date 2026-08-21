@@ -54,7 +54,15 @@ BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 
 class NoSniffMiddleware:
-    """Set ``X-Content-Type-Options: nosniff`` on every response.
+    """Set ``X-Content-Type-Options: nosniff`` on every response the user stack produces.
+
+    **Not literally every response, and the first version of this docstring said otherwise.**
+    Starlette installs `ServerErrorMiddleware` above every user middleware, and that is what renders
+    the unhandled-exception 500. So registering this outermost among user middleware still cannot
+    reach a 500: measured, an unhandled exception answered with no `x-content-type-options` and no
+    `access-control-allow-origin` while the code and three documents claimed "every response".
+    "Outermost" was true and bought less than it sounded. The 500 handler in `app.py` sets both
+    headers itself, because there is nowhere above `ServerErrorMiddleware` for a user layer to go.
 
     One header, no behavioural cost, and it closes the one content-type path here that is not
     purely theoretical: a stored `title` or `notes` comes back inside a `GET /api/v1/sessions`
@@ -63,9 +71,11 @@ class NoSniffMiddleware:
     reinterpret it - "should not" being the reason to say so explicitly.
 
     The other two headers a reviewer would look for are deliberately absent and recorded as such
-    in `docs/SECURITY.md`: Content-Security-Policy and `Referrer-Policy` are inert on a JSON-only
-    service that sets no cookies, serves no HTML and refuses to start on a wildcard origin. This
-    one is not inert, which is why it is here and they are not.
+    in `docs/SECURITY.md`: Content-Security-Policy and `Referrer-Policy` are inert on a service that
+    serves JSON and plain text only, sets no cookies, renders no HTML and refuses to start on a
+    wildcard origin. ("JSON-only" is what an earlier version of this said; `/livez`, `/ping` and
+    `/health` return `PlainTextResponse`, which is exactly the sniffing case this header covers.)
+    This one is not inert, which is why it is here and they are not.
 
     Written as raw ASGI rather than a `BaseHTTPMiddleware` subclass to match the rest of this
     module, and because `BaseHTTPMiddleware` buffers a response to rewrite it - a cost worth

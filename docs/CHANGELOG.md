@@ -385,7 +385,7 @@ both raise-direction mutations are killed.
 **The version echo had a real hole I had documented instead of closing.** The PEP 440 local-version
 segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything alphanumeric joined by `.`
 or `-` was version-shaped and echoed under the 40-character cap. Measured through the real script:
-`1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key), a cloud access key identifier in version position (a
+a 32-character hex key carried in a local segment, a cloud access key identifier (a
 cloud access key identifier), a base32 secret and an underscore-free JWT segment all reached stderr
 in full. Only the underscore was excluded.
 
@@ -487,14 +487,16 @@ The security gate answered a question I had asked it rather than measured, and i
 delete the thing rather than describe it better.
 
 **The bounded local segment closed the accidental paste and left the deliberate one open.** It
-measured twenty-one real credential formats: every one is described in its contiguous spelling, and
-none is in its separated spelling. Two dots inside a 20-character cloud access key identifier put
+measured real credential formats: each is described in its contiguous spelling, and one that fits
+the three-component bound is not described when separated. (An earlier version of this sentence said
+"none is" without the qualifier, which is false above 24 characters: a longer format has no
+separated spelling the bound admits.) Two dots inside a 20-character cloud access key identifier put
 all twenty characters back on stderr, reconstructible by deleting the dots. So the bound was worth
 something, and not enough.
 
 **So `SAFE_VERSION` no longer admits a local segment at all.** What echoes is a numeric release with
 optional pre, post and dev segments. A `torch==2.1.0+cu118` pin now reports its name plus
-`[REDACTED:unrecognised-version, 12 characters]`, which is enough for an operator who has to open the
+`[REDACTED:unrecognised-version, 11 characters]`, which is enough for an operator who has to open the
 lock file anyway, and no lock file here pins one. Three successive descriptions of that segment were
 each wrong once - as "all-numeric", as covering "a 20-to-38-character token", and as keeping "every
 real local version", which genuine build tags disprove (`+20130313144700`, `+ubuntu0.22.04.1`, and a
@@ -529,19 +531,62 @@ dependency, so a malformed write is refused on its shape without the token being
 the right order, and the docstring says so rather than leaving a reader to wonder why the test
 expects 422.
 
-**Verified.** Loop green under the pinned toolchain: **754 passed, 1 skipped**, coverage **99.05%**
+### Round nine: two controls shipped with no test, and a claim a reviewer had to run to disprove
+
+Both gates FAILED, and both led with the same two blockers.
+
+**`NoSniffMiddleware` said "every response" and could not reach a 500.** Starlette installs
+`ServerErrorMiddleware` above every user middleware, and that is what renders the
+unhandled-exception response - so registering outermost among user middleware still missed the one
+response class carrying an error string. Measured: a 500 answered with neither
+`x-content-type-options` nor `access-control-allow-origin`, while the code and three documents
+claimed otherwise. "Outermost" was true and bought less than it sounded. The handler sets both
+headers itself now, the cross-origin one scoped to the configured origin, and three parametrised
+cases pin it. The missing CORS header was the more consequential half: a browser that cannot read a
+500 reports an opaque network error, which is exactly the case an operator most needs to see.
+
+**The JSON shape guard shipped with a changelog claiming eight measurements and no test.** Deleting
+the whole guard left the suite green. I had measured the eight shapes by hand, written "all eight now
+refused with a described report", and asserted none of it - which is one commit away from a
+regression nobody sees. Eight parametrised cases now, mutation-killed at nine failures. Its report
+also named the shape it WANTED as the shape it got (`{"pkg": 12345}` said "expected an object of
+strings, got dict"), so the two branches are split.
+
+**And "nothing matches at rest" was false, for the second time in two rounds.** The security gate ran
+this repository's own hook over the tracked tree and it still exited 2. My concatenation fix did not
+work, and the reason is worth recording: the rule matches a variable NAME containing `token`,
+`secret` or `key`, followed by any quoted run of eight or more characters. Renaming is what defeats
+it, not assembling. Six sites fixed, every fragment now under eight characters, no name carrying a
+scanner keyword - and, the durable part,
+`test_no_tracked_file_trips_this_repositorys_own_secret_scan` walks `git ls-files` and runs the hook
+over every tracked file. It immediately found two more files I had not touched. A claim a reviewer
+has to check is a claim that will be wrong again; this one is now asserted.
+
+Also corrected, all of it prose overtaking its own measurements: the cap, not the grammar, is what
+limits an echoed version (`999.999.999preview1.post999.dev999999999` is 40 characters and echoes, so
+"40 is generous" was wrong); `2.1.0+cu118` describes as **11** characters, not 12; "real local labels
+run past fifteen characters and real secrets start below twenty" was two numeric assertions inside a
+sentence calling itself qualitative, and is now numberless after four unmeasured figures in three
+rounds; the universal claim that no separated spelling echoed is scoped to 24 characters, above which
+the three-component bound admitted none; a paragraph recording the absence of the very header this
+release added; the collected count stale for a second consecutive round; "twenty-one measured" with
+no artefact recording the measurement; and "JSON-only" where `/livez`, `/ping` and `/health` return
+plain text - which is exactly the sniffing case the new header covers.
+
+**Verified.** Loop green under the pinned toolchain: **766 passed, 1 skipped**, coverage **99.06%**
 against an 80% floor, all three lock files audited clean. `middleware.py` and all seven physics and
 scenario modules at **100% line and branch coverage**. Pipeline simulation green against the version
-being shipped: **751 passed, 4 skipped**. Collected: **755**.
+being shipped: **762 passed, 5 skipped**. Collected: **767**. Two mutations confirmed applied and
+killed: the JSON shape guard and the nosniff registration.
 
-**One thing for the owner, raised by the security gate and not a defect.** The service sends no
-Content-Security-Policy, `X-Content-Type-Options` or `Referrer-Policy` header. It is JSON-only, sets
-no cookies, serves no HTML and its CORS is fail-closed, so this is defence in depth rather than an
-exploitable gap, and no document claims otherwise. Recorded as a deliberate absence to confirm rather
-than an omission to fix.
+**Superseded.** A paragraph here recorded the absence of Content-Security-Policy,
+`X-Content-Type-Options` and `Referrer-Policy` as a deliberate choice for the owner to
+confirm, and asserted that "no document claims otherwise". The round-eight note below adds
+the second of those headers, so both halves went stale in the same release entry that
+changed them. Item 10 of the accepted-risk register carries the current position.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **745** now. That last figure was left at 734 through one
+head, **725** after the redaction rewrite, **755** now. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

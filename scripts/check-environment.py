@@ -223,10 +223,17 @@ def _marker_applies(marker: str | None) -> bool:
 #: deleted rather than kept for a future caller to trust.
 
 
-#: Longest version echoed verbatim. With the local segment gone, the longest shape this whitelist
-#: admits is a numeric release plus pre, post and dev segments - `1.2.3rc1.post1.dev20260820`, 26
-#: characters - so 40 is generous. This bounds one log line; it is not a secrecy boundary, for the
-#: same reason `MAX_NAME_ECHO` is not.
+#: Longest version echoed verbatim, and THIS is what limits the line rather than the grammar.
+#:
+#: An earlier version of this comment said the longest admissible shape was 26 characters "so 40 is
+#: generous". Measured, that is wrong: the release segment and every numeric run in `SAFE_VERSION`
+#: are unbounded, so `999.999.999preview1.post999.dev999999999` is 40 characters and echoes, and a
+#: 40-digit numeric string echoes too. The cap is the binding constraint, not a comfortable margin
+#: around one - which is the same fault as the round before, arithmetic corrected without
+#: re-deriving the sentence built on it.
+#:
+#: This bounds one log line; it is not a secrecy boundary, for the same reason `MAX_NAME_ECHO` is
+#: not.
 MAX_VERSION_ECHO = 40
 
 #: A version this script is willing to echo VERBATIM. Public PEP 440 shape, and strict: a
@@ -237,8 +244,8 @@ MAX_VERSION_ECHO = 40
 #: admitted a real disclosure twice over. Unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*` let any
 #: alphanumeric run joined by `.` or `-` through, so a 32-character hex key or a cloud access key
 #: identifier in version position echoed in full. Bounded to eight characters per component and
-#: three components, the CONTIGUOUS spelling of every mainstream credential format was described -
-#: twenty-one measured - and the SEPARATED spelling was not: inserting two dots into a 20-character
+#: three components, the CONTIGUOUS spelling of the credential formats checked was described and a
+#: SEPARATED spelling fitting the bound was not: inserting two dots into a 20-character
 #: access key identifier put all twenty characters back on stderr, reconstructible by deleting the
 #: dots. The bound closed the accidental paste and left the deliberate one open.
 #:
@@ -247,14 +254,15 @@ MAX_VERSION_ECHO = 40
 #: `+computecanada`, and a local label containing an underscore, which PEP 440 permits. The clause
 #: was wrong in both directions at once, and three successive versions of it were each wrong once.
 #:
-#: The lengths overlap, which is why no bound worked: real local labels run past fifteen characters
-#: and real secrets start below twenty. Stated qualitatively on purpose - an earlier version of this
-#: reasoning carried a "3 to 13" range and a "16 up" range, neither measured, and the same file put
-#: the credential population at "20 to 45" fifty-seven lines away.
+#: The two populations overlap in length, which is why no bound worked. Stated with no numbers at
+#: all, deliberately: this reasoning has carried a "3 to 13" range, a "16 up" range, and then "past
+#: fifteen" and "below twenty" - four unmeasured figures in three rounds, the last pair inside a
+#: sentence that called itself qualitative. The overlap carries the whole argument and the digits
+#: were decoration.
 #:
 #: Dropping it costs nothing measurable - none of the three lock files pins a local version - and
 #: buys an invariant that cannot drift. A `torch==2.1.0+cu118` pin reports its NAME plus
-#: `[REDACTED:unrecognised-version, 12 characters]`, which is enough for an operator who has to
+#: `[REDACTED:unrecognised-version, 11 characters]`, which is enough for an operator who has to
 #: open the lock file anyway. A simpler invariant is worth more than the echo it removes.
 #:
 #: What remains is irreducible and is stated in `docs/SECURITY.md` item 9: a numeric string in
@@ -291,9 +299,11 @@ def describe_version(version: str) -> str:
     the one site that still needed it. Deleting dead code is right; deleting a live bound because
     it lived next to dead code is how a fix becomes a regression.
 
-    A real PEP 440 version is short. With the local segment gone, the longest shape this whitelist
-    admits is a numeric release with pre, post and dev segments - `1.2.3rc1.post1.dev20260820`, 26
-    characters - so the cap costs nothing real.
+    A real PEP 440 version is short - `1.2.3rc1.post1.dev20260820` is 26 characters and nothing pip
+    reports comes close to the cap. But the GRAMMAR is not what limits the line: the release segment
+    and every numeric run are unbounded, so a 40-digit string and
+    `999.999.999preview1.post999.dev999999999` both echo. `MAX_VERSION_ECHO` is the binding
+    constraint, and an earlier version of this docstring called it "generous" instead.
 
     **The residual, stated as `describe_name` states its own, and corrected three times before it
     was right.** What echoes is any value of `MAX_VERSION_ECHO` characters or fewer matching
@@ -517,12 +527,20 @@ def installed_versions(interpreter: str) -> dict[str, str]:
     # Realistic, not contrived: anything that makes an interpreter print before the probe's own
     # output shifts the JSON, and a wrapper that answers a different shape entirely is a wrapper
     # somebody wrote for another purpose.
-    if not isinstance(raw, dict) or not all(
-        isinstance(name, str) and isinstance(version, str) for name, version in raw.items()
-    ):
+    # Two branches, not one, because a single message named the shape it WANTED as the shape it
+    # got: `{"pkg": 12345}` reported "expected an object of strings, got dict", which is true of
+    # the outer container and useless about the fault.
+    if not isinstance(raw, dict):
         sys.stderr.write(
             f"FAIL: {interpreter} answered JSON of the wrong shape:"
-            f" expected an object of strings, got {type(raw).__name__},"
+            f" expected an object, got {type(raw).__name__},"
+            f" {len(result.stdout)} characters of stdout not echoed\n"
+        )
+        raise SystemExit(EXIT_MISMATCH)
+    if not all(isinstance(name, str) and isinstance(version, str) for name, version in raw.items()):
+        sys.stderr.write(
+            f"FAIL: {interpreter} answered an object of the wrong shape:"
+            f" every name and version must be a string,"
             f" {len(result.stdout)} characters of stdout not echoed\n"
         )
         raise SystemExit(EXIT_MISMATCH)

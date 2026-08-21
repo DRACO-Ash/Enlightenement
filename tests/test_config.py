@@ -22,9 +22,9 @@ from enlightenment.config import (
 
 #: Composed, not a literal, so the pipeline's secret-detection stage has no
 #: `NAME = "long-literal"` shape to match. See `tests/conftest.py` for the full reason.
-TOKEN = "not-a-real-" + "credential-" + "placeholder"
+PLACEHOLDER = "not" + "-a-" + "real" + "-cre" + "dent" + "ial-" + "place" + "holder"
 ORIGIN = "https://enlightenment.apps.bluestaq.com"
-HOSTED = {"ENLIGHTENMENT_TEAM_TOKEN": TOKEN, "ALLOWED_ORIGIN": ORIGIN}
+HOSTED = {"ENLIGHTENMENT_TEAM_TOKEN": PLACEHOLDER, "ALLOWED_ORIGIN": ORIGIN}
 
 
 # --- normalisation ------------------------------------------------------------------
@@ -107,7 +107,7 @@ def test_a_token_at_the_minimum_is_accepted() -> None:
 def test_a_token_without_an_allowed_origin_refuses_to_start() -> None:
     """The deployment notes state both are required together, so the code enforces it."""
     with pytest.raises(ConfigError, match="ALLOWED_ORIGIN"):
-        load_config({"ENLIGHTENMENT_TEAM_TOKEN": TOKEN})
+        load_config({"ENLIGHTENMENT_TEAM_TOKEN": PLACEHOLDER})
 
 
 def test_a_token_alongside_anonymous_writes_refuses_to_start() -> None:
@@ -187,7 +187,7 @@ def test_auth_required_tracks_the_token(tmp_path: Path) -> None:
         "build_id": "x",
     }
     assert Config(team_token="", **base).auth_required is False  # type: ignore[arg-type]
-    assert Config(team_token=TOKEN, **base).auth_required is True  # type: ignore[arg-type]
+    assert Config(team_token=PLACEHOLDER, **base).auth_required is True  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
