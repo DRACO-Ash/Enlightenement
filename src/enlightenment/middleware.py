@@ -53,6 +53,47 @@ HTTP_REQUEST_TIMEOUT = 408
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 
 
+class NoSniffMiddleware:
+    """Set ``X-Content-Type-Options: nosniff`` on every response.
+
+    One header, no behavioural cost, and it closes the one content-type path here that is not
+    purely theoretical: a stored `title` or `notes` comes back inside a `GET /api/v1/sessions`
+    body, and an operator who navigates a browser straight at that URL gets whatever the browser
+    decides the bytes are. FastAPI sends `application/json`, so a sniffing browser should not
+    reinterpret it - "should not" being the reason to say so explicitly.
+
+    The other two headers a reviewer would look for are deliberately absent and recorded as such
+    in `docs/SECURITY.md`: Content-Security-Policy and `Referrer-Policy` are inert on a JSON-only
+    service that sets no cookies, serves no HTML and refuses to start on a wildcard origin. This
+    one is not inert, which is why it is here and they are not.
+
+    Written as raw ASGI rather than a `BaseHTTPMiddleware` subclass to match the rest of this
+    module, and because `BaseHTTPMiddleware` buffers a response to rewrite it - a cost worth
+    avoiding for a header that can be appended to the start message in place.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_header(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                # Appended only if absent, so a handler that sets its own value keeps it. Header
+                # names arrive lower-cased from the server but a handler may set any case, so the
+                # comparison folds both sides rather than trusting one.
+                if not any(name.lower() == b"x-content-type-options" for name, _ in headers):
+                    headers.append((b"x-content-type-options", b"nosniff"))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)
+
+
 class BodyLimitMiddleware:
     """Reject any request whose body exceeds ``max_bytes``, however it is framed.
 

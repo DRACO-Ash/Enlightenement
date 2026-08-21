@@ -43,7 +43,7 @@ from enlightenment import __version__
 from enlightenment.audit import ANONYMOUS_ACTOR, audit, log_event, sanitise_log_value
 from enlightenment.auth import TOKEN_HEADER, token_ok
 from enlightenment.config import Config, load_config, token_length_bucket
-from enlightenment.middleware import BodyLimitMiddleware
+from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import (
@@ -673,6 +673,10 @@ def create_app(
     app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES, exempt_paths=UNLIMITED_PATHS)
     _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
+    # Outermost, so the header is on every response including one a middleware answers itself: a
+    # 413 from the body cap and a 429 from the limiter are responses a browser can be pointed at
+    # too, and a header installed inside them would miss both.
+    app.add_middleware(NoSniffMiddleware)
 
     # An IN-PROCESS inspection seam, so a test can assert the constructed wiring rather than
     # grep the source for it. Deliberately narrow: publishing the whole runtime put

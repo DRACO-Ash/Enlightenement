@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from enlightenment.middleware import BODY_METHODS, BodyLimitMiddleware
+from enlightenment.middleware import BODY_METHODS, BodyLimitMiddleware, NoSniffMiddleware
 
 Message = MutableMapping[str, Any]
 
@@ -25,6 +25,11 @@ CHUNKED = [(b"transfer-encoding", b"chunked")]
 
 def scope(method: str = "POST", headers: list[tuple[bytes, bytes]] | None = None) -> dict[str, Any]:
     return {"type": "http", "method": method, "path": "/x", "headers": headers or list(CHUNKED)}
+
+
+async def _no_receive() -> Message:
+    """A receive callable for a middleware that must not read the request body."""
+    raise AssertionError("this middleware must not read the request")
 
 
 class Silent:
@@ -453,3 +458,64 @@ async def test_a_body_arriving_within_the_budget_is_not_timed_out() -> None:
     await middleware(scope(), slow_but_honest, send)
     assert sent[0]["status"] == 200
     assert bytes(app.body) == b"payload"
+
+
+# --- the one content-type header that is not inert here -----------------------------------
+
+
+def test_nosniff_is_appended_when_absent() -> None:
+    """The header goes on, at raw ASGI level, with no response buffering."""
+    sent: list[Message] = []
+
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"x", b"y")]})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    asyncio.run(NoSniffMiddleware(app)(scope(method="GET"), _no_receive, send))
+    headers = dict(sent[0]["headers"])
+    assert headers[b"x-content-type-options"] == b"nosniff"
+    assert headers[b"x"] == b"y", "an existing header must survive"
+
+
+def test_nosniff_does_not_override_a_handler_that_set_it() -> None:
+    """Appended only if absent, and the comparison folds case on both sides.
+
+    Header names arrive lower-cased from the server but a handler may set any case, so a
+    case-sensitive check would append a duplicate rather than respect the handler's value.
+    """
+    sent: list[Message] = []
+
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"X-Content-Type-Options", b"nosniff-and-more")],
+            }
+        )
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    asyncio.run(NoSniffMiddleware(app)(scope(method="GET"), _no_receive, send))
+    values = [
+        value for name, value in sent[0]["headers"] if name.lower() == b"x-content-type-options"
+    ]
+    assert values == [b"nosniff-and-more"], f"expected the handler's value untouched, got {values}"
+
+
+def test_a_non_http_scope_passes_through_untouched() -> None:
+    """A lifespan or websocket scope has no response start to append to."""
+    seen: list[str] = []
+
+    async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+        seen.append(str(scope.get("type")))
+
+    async def send(message: Message) -> None:
+        raise AssertionError("nothing should be sent")
+
+    asyncio.run(NoSniffMiddleware(app)({"type": "lifespan"}, _no_receive, send))
+    assert seen == ["lifespan"]

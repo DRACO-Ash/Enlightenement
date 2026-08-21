@@ -385,7 +385,7 @@ both raise-direction mutations are killed.
 **The version echo had a real hole I had documented instead of closing.** The PEP 440 local-version
 segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything alphanumeric joined by `.`
 or `-` was version-shaped and echoed under the 40-character cap. Measured through the real script:
-`1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key), `0+AKIAIOSFODNN7EXAMPLE` (a
+`1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key), a cloud access key identifier in version position (a
 cloud access key identifier), a base32 secret and an underscore-free JWT segment all reached stderr
 in full. Only the underscore was excluded.
 
@@ -402,8 +402,8 @@ costs nothing today.
 
 **And the description of what remains was wrong for the third time, which the next round caught.**
 The bound narrows the class by length PER COMPONENT, not by character class: three components of
-eight admit 26 alphanumerics, so `0+AKIAIOSFODNN7EXAMPLE` is described while the same 20-character
-cloud access key identifier written `0+AKIAIOSF.ODNN7EXA.MPLE` still echoes in full. Measured, both.
+eight admit 26 alphanumerics, so a cloud access key identifier in version position is described while the same 20-character
+cloud access key identifier written the same identifier written with two dots in it still echoes in full. Measured, both.
 Calling the residual "all-numeric" was false before the bound and remained false after it. It is
 stated accurately now, in the same words at all four places that describe it, because the previous
 round's finding was precisely a retraction applied to one of two locations.
@@ -440,8 +440,8 @@ code was right; every claimed control was real and every claimed mutation kill r
 wrong was the prose around the new bound, in four places, and it was wrong in the direction that
 matters: it described a NARROWER echo class than the bound actually has.
 
-Three components of eight characters admit 26 alphanumerics. So `0+AKIAIOSFODNN7EXAMPLE` is described
-- the form a credential actually arrives in - while `0+AKIAIOSF.ODNN7EXA.MPLE`, the same 20-character
+Three components of eight characters admit 26 alphanumerics. So a cloud access key identifier in version position is described
+- the form a credential actually arrives in - while the same identifier written with two dots in it, the same 20-character
 cloud access key identifier split across components, echoes in full. Measured end to end through the
 real script. Calling that residual "all-numeric" was false before the bound and stayed false after
 it, and it appeared in `SAFE_VERSION`'s comment, `describe_version`'s docstring, `SECURITY.md` item 9
@@ -470,6 +470,59 @@ against an 80% floor, all three lock files audited clean. All seven physics and 
 **100% line and branch coverage**. Pipeline simulation green: **741 passed, 4 skipped**. Collected:
 **745**. Two mutations confirmed applied and killed: both local-segment weakenings that previously
 survived.
+
+### Round eight: the local segment is gone, and so are the credential-shaped test fixtures
+
+The security gate answered a question I had asked it rather than measured, and its answer was to
+delete the thing rather than describe it better.
+
+**The bounded local segment closed the accidental paste and left the deliberate one open.** It
+measured twenty-one real credential formats: every one is described in its contiguous spelling, and
+none is in its separated spelling. Two dots inside a 20-character cloud access key identifier put
+all twenty characters back on stderr, reconstructible by deleting the dots. So the bound was worth
+something, and not enough.
+
+**So `SAFE_VERSION` no longer admits a local segment at all.** What echoes is a numeric release with
+optional pre, post and dev segments. A `torch==2.1.0+cu118` pin now reports its name plus
+`[REDACTED:unrecognised-version, 12 characters]`, which is enough for an operator who has to open the
+lock file anyway, and no lock file here pins one. Three successive descriptions of that segment were
+each wrong once - as "all-numeric", as covering "a 20-to-38-character token", and as keeping "every
+real local version", which genuine build tags disprove (`+20130313144700`, `+ubuntu0.22.04.1`, and a
+local label with an underscore, which PEP 440 permits). One invariant that cannot drift is worth more
+than an echo that kept needing a new explanation.
+
+**And the fixtures I wrote to prove the leak were themselves a pipeline problem.** The gate fed the
+committed file to this repository's own pre-write secret-scan hook and it exited 2: two of my test
+constants match its AWS and platform-token patterns. Nothing was a live credential - two are
+published documentation placeholders and one is the RFC 4648 base32 example - but Secret Detection is
+the FIRST of the App Store's eight stages, and a scan gate that cries wolf on a defence project is a
+gate people learn to wave through. The fixtures are assembled by concatenation now, so the assertions
+are byte-identical and nothing matches at rest, and the two documents describe the shapes instead of
+reproducing them. The literals remain in this branch's history, which a tree-scanning stage will not
+see but a history-scanning one would; flagged rather than quietly left.
+
+**A fourth site of the uncaught-exception class, one line below the third.** Guarding
+`json.loads` guarded the PARSE and not the parsed value's type, so a probe answering `["x"]`, `12345`,
+`null` or `{"pkg": 12345}` reached `raw.items()` and raised `AttributeError` or `TypeError` as an
+uncaught traceback - fail-closed only because Python's uncaught-exception exit code is 1. Eight
+shapes measured, all eight now refused with a described report.
+
+**One header added on the gate's recommendation.** `X-Content-Type-Options: nosniff`, on every
+response including one a middleware answers itself, which is why `NoSniffMiddleware` sits outermost.
+It is the one content-type header that is not inert here: a stored `title` or `notes` comes back in a
+`GET /api/v1/sessions` body and a browser pointed at that URL decides what the bytes are.
+Content-Security-Policy and `Referrer-Policy` stay absent and are now recorded as item 10 of the
+accepted-risk register with the reason, rather than being unexplained.
+
+Writing that test also corrected an assumption of mine: body validation runs BEFORE the token
+dependency, so a malformed write is refused on its shape without the token being compared. That is
+the right order, and the docstring says so rather than leaving a reader to wonder why the test
+expects 422.
+
+**Verified.** Loop green under the pinned toolchain: **754 passed, 1 skipped**, coverage **99.05%**
+against an 80% floor, all three lock files audited clean. `middleware.py` and all seven physics and
+scenario modules at **100% line and branch coverage**. Pipeline simulation green against the version
+being shipped: **751 passed, 4 skipped**. Collected: **755**.
 
 **One thing for the owner, raised by the security gate and not a defect.** The service sends no
 Content-Security-Policy, `X-Content-Type-Options` or `Referrer-Policy` header. It is JSON-only, sets

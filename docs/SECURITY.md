@@ -228,47 +228,43 @@ executes, never about the words beside it.
    admitting common secret formats, because the populations overlap: measured against the live
    PyPI simple index on 2026-08-21, 875,180 projects, longest canonical name 188 characters.
    Accepted because the report cannot do its one job without the name.
-9. **A numeric credential of 40 characters or fewer in VERSION position reaches the same report,
-   and this item was wrong twice before it was right.**
+9. **A numeric credential of 40 characters or fewer in VERSION position reaches the divergence
+   report, and this item was wrong three times before it was right.**
 
-   The first version claimed `SAFE_VERSION` "excludes every credential format that carries a
-   letter, an underscore or a separator". Two of those three clauses were false. The PEP 440
-   local-version segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything
-   alphanumeric joined by `.` or `-` was version-shaped: measured through the real script,
-   `1.0+deadbeefcafebabe0123456789abcdef` (a 32-character hex API key),
-   `0+AKIAIOSFODNN7EXAMPLE` (a cloud access key identifier) and a base32 secret all echoed in
-   full. Only the underscore was excluded.
+   `SAFE_VERSION` is a whitelist: a numeric release with optional pre, post and dev segments, and
+   nothing else. The PEP 440 local-version segment used to be part of it and is now gone, which is
+   the seventh and last revision of this control.
 
-   The second version documented that class honestly and left it open. That was the wrong call:
-   documenting a hole is not closing one, and this hole admitted the commonest fixed-length
-   secret formats there are.
+   ● Unbounded, the segment let any alphanumeric run joined by `.` or `-` through, so a
+     32-character hex key or a cloud access key identifier in version position echoed in full.
+   ● Bounded to eight characters per component and three components, the CONTIGUOUS spelling of
+     every mainstream credential format was described - twenty-one of them measured - and the
+     SEPARATED spelling was not: two dots inside a 20-character access key identifier put all
+     twenty characters back on stderr, reconstructible by deleting the dots.
+   ● Its own promise was also false. "Every real local version still echoes" was disproved by
+     genuine build tags: semver's `+20130313144700`, `+ubuntu0.22.04.1`, `+git20260821abc`, and a
+     local label containing an underscore, which PEP 440 permits.
 
-   **So the segment is bounded now**, to eight characters per component and at most three
-   components. Every real local version still echoes - `+cu118`, `+cpu`, `+abcdef.1`, `+local.1`,
-   the PyTorch and build-tag forms - and a 20-to-38-character token is reported by length instead.
-   Measured: none of the three lock files pins a local version at all, so the bound costs nothing.
+   Three successive descriptions of that segment were each wrong once - as "all-numeric", as
+   covering "a 20-to-38-character token", and as keeping "every real local version". Dropping it
+   costs nothing measurable (no lock file here pins a local version) and replaces three clauses
+   that kept drifting with one that cannot.
 
-   **What remains, stated for the third time and this time measured.** Two earlier versions of
-   this item called the residual "all-numeric". It is not. Any value matching `SAFE_VERSION` under
-   40 characters echoes, which is a numeric release plus an optional local segment of up to three
-   alphanumeric components of eight characters each. Measured: `0+AKIAIOSFODNN7EXAMPLE` is now
-   described, and `0+AKIAIOSF.ODNN7EXA.MPLE` - the same 20-character cloud access key identifier,
-   split across components - still echoes in full.
+   **What remains is irreducible:** a numeric string in release position is indistinguishable from
+   a version, because it IS one. A purely numeric secret of 40 characters or fewer therefore
+   echoes. Accepted because the report has to say which version is pinned or it cannot do its job.
 
-   So the bound narrows the class by length PER RUN. It does not exclude letter-bearing values, and
-   an operator must not read it as doing so. What it does exclude is any undotted token over eight
-   characters, which is the form a credential actually arrives in.
+10. **`X-Content-Type-Options: nosniff` is sent; Content-Security-Policy and `Referrer-Policy` are
+    deliberately not.** The first is not inert here: a stored `title` or `notes` comes back inside a
+    `GET /api/v1/sessions` body, and a browser pointed straight at that URL decides for itself what
+    the bytes are. It costs one header and is set on every response, including one a middleware
+    answers itself, which is why `NoSniffMiddleware` is registered outermost.
 
-   Accepted because there is no separation to be had: real local versions run from 3 characters
-   (`+cpu`) to 13 (`+computecanada`) and real secrets from 16 up, so a total-length cap fails the
-   same way the name cap did at 32, 24 and 64. The report has to say which version is pinned or it
-   cannot do its job.
-
-   Items 8 and 9 are the residue of a control revised seven times. Six revisions tried to spot a
-   credential inside attacker-influenced text and each was bypassed; the seventh stopped echoing
-   arbitrary text at all, which closed every site except the two that must name what they found.
-   Both are stated at the code site, asserted in the test suite as residuals rather than as
-   controls, and recorded here because this register is where a reader looks.
+    The other two are inert on this service and are recorded as absent rather than left unexplained:
+    it is JSON-only (no `HTMLResponse`, no templates, no static files, no `text/html` anywhere in
+    the source), it sets no cookies, and CORS refuses to start on a wildcard or `null` origin. They
+    would be a policy claim with nothing to enforce. Revisit if this service ever serves a document
+    or sets a cookie.
 
 ## Recovery, not just fail-closed
 

@@ -223,14 +223,37 @@ def _marker_applies(marker: str | None) -> bool:
 #: deleted rather than kept for a future caller to trust.
 
 
-#: Longest version echoed verbatim. A PEP 440 version with a development release and a local
-#: segment - `1.2.3.dev20260820+abcdef.1`, 26 characters - is about as long as a real one gets, so
-#: 40 is generous. This bounds one log line; it is not a secrecy boundary, for the same reason
-#: `MAX_NAME_ECHO` is not.
+#: Longest version echoed verbatim. With the local segment gone, the longest shape this whitelist
+#: admits is a numeric release plus pre, post and dev segments - `1.2.3rc1.post1.dev20260820`, 26
+#: characters - so 40 is generous. This bounds one log line; it is not a secrecy boundary, for the
+#: same reason `MAX_NAME_ECHO` is not.
 MAX_VERSION_ECHO = 40
 
 #: A version this script is willing to echo VERBATIM. Public PEP 440 shape, and strict: a
-#: numeric release, optional pre/post/dev segments, an optional local segment, nothing else.
+#: numeric release with optional pre, post and dev segments. No local segment, and no letters
+#: outside the fixed pre-release vocabulary.
+#:
+#: **The local segment is GONE, and that is the seventh and last revision of this control.** It
+#: admitted a real disclosure twice over. Unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*` let any
+#: alphanumeric run joined by `.` or `-` through, so a 32-character hex key or a cloud access key
+#: identifier in version position echoed in full. Bounded to eight characters per component and
+#: three components, the CONTIGUOUS spelling of every mainstream credential format was described -
+#: twenty-one measured - and the SEPARATED spelling was not: inserting two dots into a 20-character
+#: access key identifier put all twenty characters back on stderr, reconstructible by deleting the
+#: dots. The bound closed the accidental paste and left the deliberate one open.
+#:
+#: It also could not keep its own promise. "Every real local version still echoes" was falsified by
+#: genuine build tags: semver's own `+20130313144700`, `+ubuntu0.22.04.1`, `+git20260821abc`, and a
+#: local label containing an underscore, which PEP 440 permits. The clause was wrong in both
+#: directions at once, and three successive versions of it were each wrong once.
+#:
+#: Dropping it costs nothing measurable - none of the three lock files pins a local version - and
+#: buys an invariant that cannot drift. A `torch==2.1.0+cu118` pin reports its NAME plus
+#: `[REDACTED:unrecognised-version, 12 characters]`, which is enough for an operator who has to
+#: open the lock file anyway. A simpler invariant is worth more than the echo it removes.
+#:
+#: What remains is irreducible and is stated in `docs/SECURITY.md` item 9: a numeric string in
+#: release position is indistinguishable from a version, because it IS one.
 #:
 #: This is a whitelist, and it exists because `redact()` cannot close the last disclosure class
 #: by pattern. `redact()` finds credentials by their CONTEXT - the ``//`` of a URL, the ``=`` of a
@@ -244,41 +267,9 @@ MAX_VERSION_ECHO = 40
 #: like `0.115.0`. Every version pip reports and every version a correct lock file pins matches
 #: this. What fails it is malformed input, which is exactly the path that discloses.
 SAFE_VERSION = re.compile(
-    r"^[0-9]+(?:\.[0-9]+)*"
+    r"\A[0-9]+(?:\.[0-9]+)*"
     r"(?:(?:a|b|rc|alpha|beta|c|pre|preview)[0-9]+)?"
-    r"(?:\.post[0-9]+)?(?:\.dev[0-9]+)?"
-    # `\Z`, not `$`. `$` matches before a trailing newline in Python, so `describe_version("1.0\n")`
-    # echoed the value verbatim and injected a line break into the divergence report. Unreachable
-    # through a pinned version, whose pattern excludes whitespace, but reachable through the
-    # INSTALLED version, which comes from the probed interpreter's distribution metadata.
-    # **The local-version segment is BOUNDED, and unbounded it was a live disclosure.** The
-    # previous form, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, admits any run of alphanumerics joined
-    # by `.` or `-`, so a lock-file line `pkg==1.0+deadbeefcafebabe0123456789abcdef` was
-    # version-shaped, passed the 40-character cap, and put a 32-character hex API key on stderr in
-    # full. Measured through `main()`: hex-32 keys, cloud access key identifiers
-    # (`0+AKIAIOSFODNN7EXAMPLE`), base32 secrets and underscore-free JWT segments all echoed. Only
-    # the underscore was excluded, so the register entry claiming this shape "excludes every
-    # credential format that carries a letter, an underscore or a separator" was wrong on two of
-    # its three clauses.
-    #
-    # Eight characters per component and at most three components keeps every real local version
-    # echoing: `+cu118`, `+cpu`, `+abcdef.1`, `+local.1`, the PyTorch and build-tag forms.
-    #
-    # **Precisely what that admits, because two earlier descriptions of it were wrong.** Three
-    # components of eight is 26 alphanumeric characters plus two separators, so an UNDOTTED token
-    # over eight characters is described - `0+AKIAIOSFODNN7EXAMPLE` is - while the same token
-    # rewritten as `0+AKIAIOSF.ODNN7EXA.MPLE` echoes in full. Measured, both of them. So this bound
-    # narrows the class by length per run; it does not exclude letter-bearing values, and the
-    # earlier claims that it described "a 20-to-38-character token" and left only "an all-numeric
-    # secret" were both false.
-    #
-    # There is no cleaner separation available, and that is the third time this file has run into
-    # the same wall: real local versions run from 3 characters (`+cpu`) to 13 (`+computecanada`),
-    # and real secrets from 16 up, so a total-length cap cannot separate them either. What is left
-    # is a bound that costs nothing - measured, none of the three lock files pins a local version
-    # at all - and a residual described accurately in `docs/SECURITY.md` item 9 rather than
-    # narrowed in the telling.
-    r"(?:\+[A-Za-z0-9]{1,8}(?:[.-][A-Za-z0-9]{1,8}){0,2})?\Z"
+    r"(?:\.post[0-9]+)?(?:\.dev[0-9]+)?\Z"
 )
 
 
@@ -302,7 +293,8 @@ def describe_version(version: str) -> str:
     right.** Any value matching `SAFE_VERSION` under `MAX_VERSION_ECHO` echoes. That is a numeric
     release, optionally with a pre, post or dev segment, optionally followed by a local segment of
     up to three alphanumeric components of eight characters each. So it is NOT limited to numeric
-    values: `0+AKIAIOSF.ODNN7EXA.MPLE` echoes, measured, while the same token undotted is described.
+    release, optionally with a pre, post or dev segment. No local segment: it is gone, and
+    the reason is below.
 
     Two earlier versions of this paragraph said the residual was "all-numeric". It never was, and
     the second version said so after the bound was added, which did not change the class - only the
@@ -500,6 +492,26 @@ def installed_versions(interpreter: str) -> dict[str, str]:
             f" {len(result.stdout)} characters of stdout not echoed\n"
         )
         raise SystemExit(EXIT_MISMATCH) from None
+    # The TYPE as well as the parse, because guarding only the parse left the fourth site of this
+    # class one line below the third. Measured with stub interpreters: `["x"]`, `12345`, `null` and
+    # `true` all parse cleanly and then raise `AttributeError: 'list' object has no attribute
+    # 'items'` or `TypeError: object of type 'int' has no len()` as an uncaught traceback out of leg
+    # one - fail-closed only because Python's uncaught-exception exit code happens to be 1, which is
+    # the same accident `_marker_applies` and `versions_equal` were fixed for.
+    #
+    # Realistic, not contrived: anything that makes an interpreter print before the probe's own
+    # output shifts the JSON, and a wrapper that answers a different shape entirely is a wrapper
+    # somebody wrote for another purpose.
+    if not isinstance(raw, dict) or not all(
+        isinstance(name, str) and isinstance(version, str) for name, version in raw.items()
+    ):
+        sys.stderr.write(
+            f"FAIL: {interpreter} answered JSON of the wrong shape:"
+            f" expected an object of strings, got {type(raw).__name__},"
+            f" {len(result.stdout)} characters of stdout not echoed\n"
+        )
+        raise SystemExit(EXIT_MISMATCH)
+
     return {canonicalise(name): version for name, version in raw.items()}
 
 

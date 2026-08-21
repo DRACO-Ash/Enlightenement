@@ -650,14 +650,25 @@ def test_no_store_call_runs_on_the_event_loop(config: Config, data_dir: Path) ->
 def test_the_middleware_order_puts_the_limiter_outside_the_body_cap(
     token_config: Config, store: TrainingStore
 ) -> None:
-    """Order is load-bearing twice. The limiter must be OUTSIDE the cap, or an oversize
-    request is read in full while spending no limiter budget; and the cross-origin layer
-    must be outermost, or a 413 or 429 reaches a browser with no header and reads as an
-    opaque network error. Both were wrong in the first version.
+    """Order is load-bearing three times now.
+
+    The limiter must be OUTSIDE the cap, or an oversize request is read in full while spending no
+    limiter budget. The cross-origin layer must be outside that, or a 413 or 429 reaches a browser
+    with no header and reads as an opaque network error. Both were wrong in the first version.
+
+    And `NoSniffMiddleware` is outermost of all, for the same reason as the second: a response a
+    middleware answers ITSELF - a 413 from the cap, a 429 from the limiter - never reaches a layer
+    registered inside it, so a header installed beside the routes would miss exactly the responses
+    an operator is most likely to open in a browser.
     """
     app = create_app(config=token_config, store=store, probe=ok_probe)
     order = [layer.cls.__name__ for layer in app.user_middleware]
-    assert order == ["CORSMiddleware", "BaseHTTPMiddleware", "BodyLimitMiddleware"], order
+    assert order == [
+        "NoSniffMiddleware",
+        "CORSMiddleware",
+        "BaseHTTPMiddleware",
+        "BodyLimitMiddleware",
+    ], order
 
 
 def test_an_oversize_request_still_spends_rate_limit_budget(
@@ -1108,3 +1119,41 @@ def test_the_revision_digit_bound_stays_well_below_the_interpreter_limit() -> No
         f"the revision digit bound is {MAX_REVISION_DIGITS}, which no real revision needs and "
         "which weakens the first of three layers"
     )
+
+
+@pytest.mark.parametrize(
+    "path", ["/", "/healthz", "/readyz", "/livez", "/ping", "/api/v1/sessions"]
+)
+def test_every_response_carries_nosniff(client: TestClient, path: str) -> None:
+    """The one content-type header that is not inert on this service.
+
+    A stored `title` or `notes` comes back inside a `GET /api/v1/sessions` body, and a browser
+    pointed straight at that URL decides for itself what the bytes are. FastAPI sends
+    `application/json`, so a sniffing browser should not reinterpret it, and "should not" is
+    exactly the reason to say so in a header.
+
+    The other two a reviewer looks for are deliberately absent and recorded in `docs/SECURITY.md`:
+    Content-Security-Policy and `Referrer-Policy` are inert on a JSON-only service that sets no
+    cookies, serves no HTML and refuses to start on a wildcard origin. This one is not inert, which
+    is why it is here and they are not.
+    """
+    response = client.get(path)
+    assert response.headers.get("x-content-type-options") == "nosniff"
+
+
+def test_an_error_response_carries_nosniff_too(client: TestClient) -> None:
+    """Error paths are as navigable as successful ones.
+
+    A 422 here, and equally a 413 from the body cap or a 429 from the limiter, is a response a
+    browser can be pointed at. `NoSniffMiddleware` is registered OUTERMOST for this reason: a
+    header installed beside the routes would miss every response a middleware answers itself.
+
+    422 rather than 401, which is worth recording because I assumed the opposite when writing this:
+    body validation runs BEFORE the token dependency on this route, so a malformed write is
+    refused on its shape without the token ever being compared. That is the right order - it
+    reveals nothing and costs nothing - but it means a test aiming at the auth refusal has to send
+    a well-formed body.
+    """
+    refused = client.post("/api/v1/sessions", json={"id": "a", "title": "b"})
+    assert refused.status_code == 422
+    assert refused.headers.get("x-content-type-options") == "nosniff"
