@@ -520,7 +520,9 @@ uncaught traceback - fail-closed only because Python's uncaught-exception exit c
 shapes measured, all eight now refused with a described report.
 
 **One header added on the gate's recommendation.** `X-Content-Type-Options: nosniff`, on every
-response including one a middleware answers itself, which is why `NoSniffMiddleware` sits outermost.
+response the user stack produces, including one a middleware answers itself, which is why
+`NoSniffMiddleware` sits outermost of the user layers. (It does not reach the unhandled-exception
+500; see round nine below, and `on_unhandled` sets that one's headers itself.)
 It is the one content-type header that is not inert here: a stored `title` or `notes` comes back in a
 `GET /api/v1/sessions` body and a browser pointed at that URL decides what the bytes are.
 Content-Security-Policy and `Referrer-Policy` stay absent and are now recorded as item 10 of the
@@ -600,8 +602,16 @@ position.
 
 Its countermeasure is one line, so I ran it before writing anything: grep the claim string tree-wide.
 That found **two more sites the gate had not listed**, in `app.py` and `test_http.py`. The claim had
-survived at four places, not one. All four are scoped now, and every "outermost" now says "among user
-middleware" - because outermost among user middleware is exactly what does not reach a 500.
+survived at four places, not one. All four are scoped now - and the claim that "every `outermost`
+now says among user middleware" was itself false when written, which the next round caught with a
+thirty-second grep: five sites in source and tests still carried the bare absolute, including
+`_install_cors`, which asserted an ordering fact its own green test contradicted.
+
+The lesson is narrower and more useful than "grep before claiming". The sweep grepped the SENTENCE
+about the header and missed the same absolute attached to a different layer. What has exactly one
+authority here is the PROPERTY - which middleware is outermost - and that authority is
+`test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, asserting `app.user_middleware`
+directly. Every ordering claim in the source now cites it - because outermost among user middleware is exactly what does not reach a 500.
 
 The second MAJOR was a count contradicting its own entry ten lines away: 767 collected on one line,
 755 on another. Third consecutive round of a stale figure in the paragraph whose subject is stale
@@ -633,6 +643,53 @@ all three lock files audited clean. Pipeline simulation green: **762 passed, 5 s
 **767** - measured once and quoted from that measurement, which is the other countermeasure. Two
 mutations confirmed applied and killed this round: the two-branch shape report, and a register
 citation pointing at a test that does not exist.
+
+### Round eleven: the sweep grepped the sentence, and the property was somewhere else
+
+**`security-reviewer`: PASS on the exact head.** It proved scope rather than accepting it, parsing
+all nineteen source files at both ends of the diff and hashing the AST with docstrings stripped: none
+differ, so the 500 headers, the RunLog caps, the `times.py` bound and the storage, auth, CORS and
+limiter controls cannot have regressed, because the code is the same code. It also corrected a figure
+in my briefing - I said the two-branch revert killed nine tests and it kills eight; nine is the count
+for deleting the parse guard as well. The repository already said eight.
+
+**`engineering-reviewer`: FAIL, and the diagnosis is the most useful of the eleven rounds.** The
+class did not vanish; it moved sideways one layer. My countermeasure grepped the CLAIM STRING - the
+sentence about the nosniff header - and that sweep was complete. What it could not see was the same
+absolute attached to a DIFFERENT layer: `_install_cors` said "Registered LAST so it is the outermost
+middleware", true when written and false from the moment `NoSniffMiddleware` was registered after it,
+in the very commit that created the 500-header defect the three previous rounds were spent
+correcting. Five sites in source and tests still carried the bare absolute, and this changelog's own
+completeness claim about the sweep was false when written.
+
+The lesson is narrower and more useful than "grep before claiming":
+
+**The property has exactly one authority, so cite the authority beside the claim.** Which middleware
+is outermost is settled by `app.user_middleware`, asserted by
+`test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, which was passing green on the
+correct four-layer order the entire time `_install_cors` said otherwise. A prose claim about ordering
+that does not name that test is a claim with no anchor. Every ordering claim in the source now names
+it, which is the one thing in this round that generalises.
+
+**And a completeness check that was worse than none.** The reverse citation sweep the security gate
+asked for - a security test with no register row - was straightforward to write and my first version
+was useless: a shrinking-prefix matcher reduced a name to `test_an`, found it inside
+`test_anonymous_writes_require_the_explicit_opt_in`, and reported every `test_an...` as cited.
+Measured: an uncited test planted in `test_middleware.py` passed the check. Tightened to match the
+policy's actual citation tokens, it immediately flagged twelve more that the loose version had
+masked. A checker that reports the completeness it did not verify is the exact shape this suite keeps
+finding, and I wrote a fresh one while closing an instance of it.
+
+Also fixed: the module docstring's pipeline enumeration omitted the nosniff layer while claiming the
+registration order was "the reverse of that list"; the release summary's overstatement, corrected
+fifteen lines below but not at the site; the mutant ledger two rounds stale in the document whose own
+thesis is that a mutation claim is worth what its run measured; and a `or exit N` fallback that could
+not fire, because a crashing hook's stack trace yields a truthy fragment when split on `matches:`.
+
+**Verified.** Loop green under the pinned toolchain: **767 passed, 1 skipped**, coverage **99.06%**,
+all three lock files audited clean. Pipeline simulation green: **763 passed, 5 skipped**. Collected:
+**768**. Three mutations confirmed applied and killed: the reverse citation sweep against an uncited
+new test, and the two it had to be tightened to catch.
 
 **Superseded.** A paragraph here recorded the absence of Content-Security-Policy,
 `X-Content-Type-Options` and `Referrer-Policy` as a deliberate choice for the owner to

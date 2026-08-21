@@ -4,17 +4,26 @@
 app WITHOUT listening, so the suite can mount it in-process with fakes. The listener
 lives in :mod:`enlightenment.__main__` (local) and :mod:`enlightenment.asgi` (container).
 
-The request pipeline, outermost first: cross-origin policy, the coarse rate limit, the
-byte-counting body cap, then per-route authentication on every cost-incurring or
-state-changing route, then boundary validation of the body, then the handler, then a
+The request pipeline, outermost first: the nosniff header, cross-origin policy, the coarse
+rate limit, the byte-counting body cap, then per-route authentication on every cost-incurring
+or state-changing route, then boundary validation of the body, then the handler, then a
 generic error response with the detail kept server-side.
 
 ``add_middleware`` PREPENDS, so the registration order at the bottom of this module is the
 reverse of that list. The order is load-bearing twice over: the limiter must sit OUTSIDE the
 body cap, or an oversize request is read in full while spending no limiter budget, and the
-cross-origin layer must be outermost, or a 413 or a 429 reaches a browser with no
-``Access-Control-Allow-Origin`` header and reads as an opaque network error. Both were wrong
-in the first version and both are now asserted by tests.
+cross-origin layer must sit outside the limiter and the cap, or a 413 or a 429 reaches a
+browser with no ``Access-Control-Allow-Origin`` header and reads as an opaque network error.
+Both were wrong in the first version.
+
+**The single authority for this ordering is
+``test_the_middleware_order_puts_the_limiter_outside_the_body_cap``, which asserts
+``app.user_middleware`` directly.** Cited here rather than described, because a prose claim
+about ordering with no anchor is how this docstring came to say "the cross-origin layer must
+be outermost" and stay that way for three releases after the nosniff layer overtook it. Note
+also what NO user layer reaches: Starlette's ``ServerErrorMiddleware`` renders the
+unhandled-exception 500 above all of them, which is why ``on_unhandled`` sets its own
+headers.
 
 Route registration is split into small ``_register_*`` helpers rather than one long
 factory, so no function approaches the cognitive-complexity cap the quality gate enforces.
@@ -307,9 +316,21 @@ def _install_cors(app: FastAPI, runtime: _Runtime) -> None:
 
     A wildcard never reaches here: :func:`enlightenment.config.load_config` refuses to
     start on one, unconditionally, so the guard lives where it is tested rather than as an
-    unasserted condition on this line. Registered LAST so it is the outermost middleware,
-    which is what puts the cross-origin headers on a 413 or a 429 as well as on a handler
-    response; without that a browser client sees an opaque network error instead of a status.
+    unasserted condition on this line. Registered outside the limiter and the body cap, which
+    is what puts the cross-origin headers on a 413 or a 429 as well as on a handler response;
+    without that a browser client sees an opaque network error instead of a status.
+
+    **This said "Registered LAST so it is the outermost middleware" until round eleven.** It was
+    true when written and stopped being true the moment `NoSniffMiddleware` was registered after
+    it - in the same commit that created the 500-header defect the three previous rounds were
+    spent correcting. The ordering is asserted by
+    `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, which was passing green on
+    the correct four-layer order the whole time this sentence was wrong. A prose claim about
+    ordering that does not cite that test is a claim with no anchor, which is exactly how this one
+    survived.
+
+    Neither this layer nor the nosniff layer reaches the unhandled-exception 500;
+    `ServerErrorMiddleware` is above both, so `on_unhandled` sets those headers itself.
     """
     if runtime.settings.allowed_origin:
         app.add_middleware(

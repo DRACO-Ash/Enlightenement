@@ -104,7 +104,10 @@ the run behind it measured, and three separate rounds have proved that on this p
 | 5 | 6 run, 6 killed after closing all 5 | 1 MAJOR (a claimed proof disproved), 2 survivors (eng), 2 (sec) |
 | 6 | 10 run, 10 killed after closing all 3 survivors | 2 MAJORs, 4 survivors, 1 dangling citation |
 | 7 | 9 run, 9 killed after closing the last survivor | **both gates PASS**; 6 MINORs (eng), 5 (sec) |
-| 8 | 10 run, 10 killed or shown neutralised by a layer | pending confirmation |
+| 8 | 10 run, 10 killed or shown neutralised by a layer | 2 MAJORs (eng, both documents), 1 MINOR (sec) |
+| 9 | 8 run, 8 killed | 2 MAJORs, 4 MINORs (eng, all documents); **`security-reviewer` PASS** |
+| 10 | 5 run, 5 killed | 3 MAJORs, 5 MINORs (eng, all documents); **`security-reviewer` PASS** on the exact head |
+| 11 | 2 run, 2 killed | the ordering claim `_install_cors` had carried since it was written |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 

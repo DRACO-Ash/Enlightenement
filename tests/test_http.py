@@ -699,7 +699,8 @@ def test_the_middleware_order_puts_the_limiter_outside_the_body_cap(
     limiter budget. The cross-origin layer must be outside that, or a 413 or 429 reaches a browser
     with no header and reads as an opaque network error. Both were wrong in the first version.
 
-    And `NoSniffMiddleware` is outermost of all, for the same reason as the second: a response a
+    And `NoSniffMiddleware` is outermost of the four user layers, for the same reason as the
+    second: a response a
     middleware answers ITSELF - a 413 from the cap, a 429 from the limiter - never reaches a layer
     registered inside it, so a header installed beside the routes would miss exactly the responses
     an operator is most likely to open in a browser.

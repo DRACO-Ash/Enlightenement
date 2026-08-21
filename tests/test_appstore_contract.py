@@ -610,6 +610,126 @@ def test_a_successful_build_reports_a_pass(tmp_path: Path) -> None:
 # --- the documentation cannot rot silently --------------------------------------------
 
 
+#: Security-property tests that are deliberately NOT cited in the register, each because the
+#: property it guards is already carried by a cited row rather than being a control of its own.
+#: A curated list with a written reason, in the same idiom as the checksum opt-out census: a NEW
+#: security test must either be cited or be added here on purpose.
+UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
+    {
+        # A unit-level half of the nosniff rows, which cite the integration tests.
+        "test_a_non_http_scope_passes_through_untouched",
+        # Unit-level cases of controls the register cites at SOURCE granularity - the
+        # `config.py` rows for start-up refusals and binding, and the `ratelimit.py` rows for
+        # the two-tier limiter. Each is a positive-or-negative case of a cited control rather
+        # than a control of its own, and demanding a register row per case would produce a
+        # register nobody reads. Listed individually rather than exempted by file, so a NEW
+        # security test in either suite still fails this check until somebody decides.
+        "test_a_configured_token_requires_authentication_and_keeps_writes_closed",
+        "test_a_finished_window_is_dropped_from_the_table",
+        "test_a_nonsensical_limit_is_refused",
+        "test_a_nonsensical_window_is_refused",
+        "test_a_real_origin_still_starts",
+        "test_a_tracked_caller_is_still_counted_when_the_table_is_full",
+        "test_a_value_at_the_cap_is_accepted",
+        "test_allows_exactly_the_limit_then_refuses",
+        "test_anything_other_than_an_affirmative_leaves_writes_closed",
+        "test_data_dir_resolution_prefers_explicit_the",
+        "test_data_dir_resolution_prefers_explicit_then_platform_then_default",
+        "test_explicit_host_overrides_the_default",
+        "test_filesystem_root_as_data_dir_is_refused",
+        "test_host_binds_every_interface_when_a_token_is_set",
+        "test_host_binds_loopback_when_authentication_is_off",
+        "test_keys_are_independent",
+        "test_one_call_below_the_limit_still_passes",
+        "test_port_defaults_to_8080_and_validates",
+        "test_relative_data_dir_is_refused",
+        "test_window_resets_only_after_it_elapses",
+        # Ten more that a LOOSE matcher had masked: the first version of the check
+        # shrank a name to `test_an` and found it inside an unrelated citation, so
+        # these read as cited when nothing cited them. Same reason as the rest - unit
+        # cases of controls the register carries at source granularity.
+        "test_a_token_alongside_anonymous_writes_refuses_to_start",
+        "test_a_token_at_the_minimum_is_",
+        "test_a_token_at_the_minimum_is_accepted",
+        "test_an_anonymous_or_wildcard_origin_refuses_to_start",
+        "test_an_over_long_value_is_rejected_not_truncated",
+        "test_auth_required_tracks_the_token",
+        "test_build_id_falls_back_to_the_package_version",
+        "test_the_key_table_never_exceeds_its_bound_under_a_flood",
+        "test_the_limit_is_reported",
+        "test_the_token_band_never_exposes_an_exact_length",
+        "test_writes_are_closed_by_default_with_no_token_and_no_opt_in",
+    }
+)
+
+
+def test_every_security_test_is_cited_by_the_policy() -> None:
+    """The REVERSE direction, which is the gap that hid a control for several rounds.
+
+    Its sibling above catches a register row naming a test that does not exist. Nothing caught the
+    other direction, and that is not hypothetical: `X-Content-Type-Options: nosniff` was added,
+    tested five ways, and left out of the register's control table entirely. The sweep is
+    citation-driven, so an UNCITED control is invisible to it by construction - the suite was green
+    and the policy simply did not mention the header. It took a reviewer reading the document to
+    find it.
+
+    A register that omits a control is a register an assessor cannot rely on, which is the whole
+    point of the "each with a test that fails if it regresses" promise at the top of it. So a
+    security-property test must be cited, or be named in `UNCITED_SECURITY_TESTS` with a reason.
+
+    Scoped to the tests that assert a SECURITY property, identified by the files that hold them,
+    because sweeping the whole suite would demand a register row for every physics boundary and
+    that is not what the document is for.
+
+    **Cited at FILE or at test granularity**, because the register legitimately does both: the
+    constant-time comparison row names `tests/test_auth.py` wholesale, and demanding that every
+    positive-and-negative unit pair inside it earn its own row would be a register nobody reads.
+    The property that matters is that the control is mentioned SOMEWHERE, which is exactly what
+    the nosniff header failed - neither its file nor any of its five tests appeared.
+    """
+    policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    security_suites = (
+        "test_auth.py",
+        "test_config.py",
+        "test_middleware.py",
+        "test_ratelimit.py",
+    )
+    # The policy's citation TOKENS, extracted once, rather than a substring search. A naive
+    # shrinking-prefix match was the first version of this and it was useless: it stripped a name
+    # down to `test_an`, which appears inside `test_anonymous_writes_require_the_explicit_opt_in`,
+    # so every test starting `test_an...` read as cited. Measured - an uncited test planted in
+    # `test_middleware.py` passed. An over-loose matcher in a completeness check is worse than no
+    # check, because it reports the completeness it did not verify.
+    cited_names = set(re.findall(r"test_[a-z0-9_]+", policy))
+    cited_prefixes = {
+        name for name in cited_names if f"{name}..." in policy or f"{name}…" in policy
+    }
+
+    uncited: list[str] = []
+    for suite in security_suites:
+        if suite in policy:
+            # The whole file is cited, which the register does for a control whose evidence is a
+            # suite rather than one case.
+            continue
+        source = (ROOT / "tests" / suite).read_text(encoding="utf-8")
+        for line in source.split("\n"):
+            if not line.startswith("def test_"):
+                continue
+            name = line[len("def ") :].split("(")[0]
+            if name in UNCITED_SECURITY_TESTS or name in cited_names:
+                continue
+            # The elided `test_a_thing...` form the table uses to stay narrow, matched as a real
+            # prefix of a real citation rather than as any old substring.
+            if any(name.startswith(prefix) for prefix in cited_prefixes):
+                continue
+            uncited.append(f"{suite}::{name}")
+    assert not uncited, (
+        "these security-property tests are cited nowhere in docs/SECURITY.md, so the register"
+        " omits a control it claims to carry; cite them or name them in UNCITED_SECURITY_TESTS"
+        f" with a reason: {uncited}"
+    )
+
+
 def test_every_test_named_in_the_security_policy_exists() -> None:
     """`docs/SECURITY.md` promises "each with a test that fails if it regresses", so a row
     pointing at a test that no longer exists cannot keep that promise.
@@ -1311,8 +1431,16 @@ def test_no_tracked_file_trips_this_repositorys_own_secret_scan() -> None:
         # own JSON parse falls through to `process.exit(0)`, reports a silent green - a scan test
         # that cannot tell "clean" from "did not run" is the shape this suite keeps finding.
         if result.returncode != 0:
-            reason = (result.stdout + result.stderr).split("matches:")[-1].split(".")[0].strip()
-            blocked.append(f"{name} ({reason or 'exit ' + str(result.returncode)})")
+            # Gated on the marker being PRESENT. The `or exit N` fallback was dead for the case it
+            # was written for: a crashing hook emits a stack trace, and splitting that on
+            # "matches:" returns a truthy fragment of the trace, so the exit code never printed.
+            # A fallback that cannot fire is the same shape as an assertion that cannot fail.
+            output = result.stdout + result.stderr
+            if "matches:" in output:
+                reason = output.split("matches:")[-1].split(".")[0].strip()
+            else:
+                reason = f"exit {result.returncode}, hook did not report a match"
+            blocked.append(f"{name} ({reason})")
 
     assert not blocked, (
         "these tracked files trip this repository's own secret-scan hook, which is the same class"
