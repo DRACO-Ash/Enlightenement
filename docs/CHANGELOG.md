@@ -844,9 +844,18 @@ pass. It asks the structural question now - is a token VALUE an operand - and th
 blind spot that remains is declared, with the measurement showing which sibling test catches it.
 
 **Numbers, measured after the final edit.** Sweep: 8 suites, **180** tests, up from 7 and 168.
-Control-table citations **77 to 89**; control rows **78**. Exemptions **100 to 99** (7 promoted to
-citations, 6 healthcheck case-level tests added). Loop: **769 passed, 1 skipped**, coverage
+Control rows **63 to 74**; the citations in them **76 to 89**. Exemptions **100 to 99** (7 promoted
+to citations, 6 healthcheck case-level tests added). Loop: **769 passed, 1 skipped**, coverage
 **99.06%**, 77 pins matched, three lock files clean.
+
+Two of those figures were wrong when first written, and the correction is the point rather than the
+numbers. I published "control rows **78**" against a measured 74, and "citations **77** to 89" using
+the DOCUMENT-WIDE baseline in the release that withdrew document-wide counting - the row-only
+baseline is 76. Both came from a throwaway one-liner counting pipe-prefixed lines with a backtick
+in them, run before the control-table slice existed, so it counted two other tables as well. The
+engineering gate re-derived them and found the discrepancy. Every figure in this paragraph is now
+taken from the same slice the sweep itself uses, at three named commits, which is the only version
+of this claim that a later reader can check.
 
 **Mutations: 19 run, 19 killed.** Three against the sweep's structure (class-nested plant,
 module-level plant, a citation moved from a row into prose), two more against its accounting (a
@@ -860,6 +869,58 @@ discarded all seven. Caught immediately by a grep for one of the new rows, and r
 same script that wrote them. `git checkout` is not a revert mechanism on a dirty file; the
 digest-backed restore the harness uses everywhere else is, and it is what the harness should have
 been used for there too.
+
+### Round fourteen: the table was not the only table
+
+**`engineering-reviewer` FAIL, three MAJORs, and two of them are the same fault in the fix I had
+just shipped.**
+
+**One table along.** Round thirteen stopped reading citations from the whole document and read them
+from `line.lstrip().startswith("|")` instead, with a comment saying "ONLY the control table's rows
+count". That filter is every markdown table in `docs/SECURITY.md`, and the mutant ledger is one of
+them - under the same heading, further down the section, its rows already naming source files and
+tests. The gate proved it occupied-able in one line: delete a control row, add a ledger row naming
+that row's test, and all three sweep checks go green. A control carrying no register promise reads
+as cited.
+
+My first fix was to slice from the heading to the next heading, and **that was still wrong**, which
+I found by re-running the gate's own mutant against it rather than by trusting the edit: the ledger
+is inside the same section. The slice is now the FIRST contiguous run of pipe-prefixed lines after
+the heading, so the ledger is a later run and outside it whatever it says. Both anchor failures are
+loud rather than silent: a renamed heading and an emptied table each raise their own message, because
+an empty slice would report every security test as uncited and bury the real cause in the noise.
+
+**And the exclusion was wider than its own docstring.** The `==` census's `is_token_value` returned
+`False` for every `ast.Call` while the docstring said it excluded "a `len()` of one", and separately
+claimed `token == expected` was caught "however the rest of the expression is written". Measured by
+the gate: `str(token) == expected` and `token.strip() == expected` both survive. Any wrapper at all
+hid the comparison. `len` is excluded by NAME now, and four wrapper forms are mutation-proved dead
+while the legitimate `len(token) != len(expected)` guard stays allowed.
+
+**The third MAJOR is a figure I published without measuring.** "Control rows **78**" against a
+measured **74**, and "citations **77** to 89" using the document-wide baseline in the release that
+withdrew document-wide counting - the row-only baseline is **76**. Both came from a throwaway
+one-liner counting pipe lines with a backtick in them, written before the slice existed, so it
+counted the other tables too. This is the fault the V0.22 header records as a BLOCKER and states the
+rule for: run the assertion before writing the sentence about it. I did not, in the very round whose
+subject was a matcher measuring something other than what it reported.
+
+**Also closed.** `NON_SECURITY_SUITES` gave one reason - pure numeric functions - for a set that
+includes `test_entrypoint.py`, which reads the environment and asserts the resolved bind address.
+The classification is right and the reason did not cover it, so `test_entrypoint.py` has its own
+sentence citing `config.py:158-167`, where the record already says loopback binding is deliberately
+not relied on as a control. That comment is the only thing between an unswept suite and the sweep,
+so a reason that does not fit its member is a gap in waiting.
+
+**Verified.** Loop green under the pinned toolchain: **769 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Collected: **770**.
+
+**Mutations: 9 run, 9 killed, plus one control that must SURVIVE and does.** The ledger-loophole
+mutant (control row deleted, ledger row added naming its test) - killed, after the first fix was
+measured insufficient against it. The heading rename and the emptied table - each raising its own
+message rather than passing. Four census wrappers (`str(...)`, `.strip()`, `[:32]`, `.encode()`) -
+killed. And `len(token) != len(expected)`, which must stay allowed - it does, so the fix narrowed
+the exclusion without removing it.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** now (unchanged

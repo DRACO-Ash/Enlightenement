@@ -124,6 +124,7 @@ the code, and killed it:
 | 11 | 2 run, 2 killed | the ordering claim `_install_cors` had carried since it was written; the round's own changelog said "three", withdrawn to this figure |
 | 12 | 8 run, 8 killed | 1 BLOCKER in the round-eleven completeness check itself (both gates): it matched `def test_` and so could not see `async def`, missing 17 of 20 tests in the one suite that motivated it |
 | 13 | 19 run, 19 killed | 3 MAJORs from each gate on the SAME check: `tests/test_appstore_contract.py:624` read `tree.body`, so a class-nested test was invisible while the docstring claimed class nesting was survived; the cited-suite guard read FILE references only, so `test_healthcheck.py` and its three fail-closed branches were unswept; and four exemption REASONS asserted a mutation relationship that mutation disproved |
+| 14 | 9 run, 9 killed, 1 required survivor | 3 MAJORs (eng): the row-only citation filter admitted the MUTANT LEDGER's own rows, so a control cited only there read as cited; the `==` census excluded every `ast.Call`, so `str(token) == expected` survived; and two published figures were never measured |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 

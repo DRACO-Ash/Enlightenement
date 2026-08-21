@@ -655,6 +655,44 @@ def _suite_of(name: str) -> str | None:
     return None
 
 
+#: The heading that opens the control table. Sliced on, rather than pattern-matched around, because
+#: `startswith("|")` over the whole document is not "the control table" - it is every markdown table
+#: in `docs/SECURITY.md`, and the mutant ledger is one of those. Proved by the engineering gate: it
+#: deleted a control row, added a ledger row naming that row's test, and all three sweep checks went
+#: green. A control carrying no register promise read as cited, which is the same fault as scanning
+#: the prose, one table along.
+CONTROL_TABLE_HEADING = "## Controls, each with a test that fails if it regresses"
+
+
+def _control_table_rows(policy: str) -> str:
+    """The lines of the control table, and of nothing else.
+
+    Asserts the heading exists. A renamed heading must fail loudly: an empty slice would make every
+    citation vanish, and the sweep would then report every security test as uncited - noisy rather
+    than silent, but a rename should say so rather than be diagnosed from a wall of names.
+
+    **Slicing to the next heading was not narrow enough**, and the first attempt at this fix was
+    measured as insufficient before it was believed: the mutant LEDGER lives under this same
+    heading, further down the section, so cutting a control row and adding a ledger row naming its
+    test still read as cited. The table is the FIRST contiguous run of pipe-prefixed lines after
+    the heading, and that is what this returns - the ledger is a later run, separated by prose, and
+    is therefore outside it whatever it says.
+    """
+    assert CONTROL_TABLE_HEADING in policy, (
+        f"docs/SECURITY.md has no {CONTROL_TABLE_HEADING!r} heading, so the citation slice cannot"
+        " be anchored; if the heading was renamed, update CONTROL_TABLE_HEADING with it"
+    )
+    after = policy.split(CONTROL_TABLE_HEADING, 1)[1]
+    rows: list[str] = []
+    for line in after.splitlines():
+        if line.lstrip().startswith("|"):
+            rows.append(line)
+        elif rows:
+            break
+    assert rows, "the control table under the heading holds no rows, so no citation can resolve"
+    return "\n".join(rows)
+
+
 #: How a citation is spelled, in one place, because three checks read them and they drifted apart
 #: once already. `(?![a-z0-9_])` ends the token so a name cannot match inside a longer one, and
 #: `(?!\.py\b)` drops file stems so `tests/test_auth.py` contributes no bare `test_auth`.
@@ -686,6 +724,16 @@ NON_SECURITY_SUITES: frozenset[str] = frozenset(
         # The physics core and the determinism substrate: pure functions over numbers, no input or
         # output, no state, no untrusted value. Their boundary guards are correctness bounds, not
         # access controls, and `docs/SECURITY.md` carries no row for them by design.
+        #
+        # `test_entrypoint.py` is here for a DIFFERENT reason, spelled out because the reason above
+        # does not cover it and this list is the only thing between an unswept suite and the sweep.
+        # It does read the environment and assert the resolved bind address, which looks like an
+        # access-control assertion and is not: `config.py:158-167` records that loopback binding is
+        # deliberately NOT relied on as a control, because the container binds `0.0.0.0` from its
+        # launch command and the write routes fail closed on their own. So it asserts wiring - that
+        # the documented default is what actually gets bound - and the control it might look like
+        # lives in the `writes_open` rows instead. A security test added HERE would need this set
+        # amended on purpose, which is the decision this comment exists to force.
         "test_entrypoint.py",
         "test_physics_angles.py",
         "test_physics_propagation.py",
@@ -911,8 +959,7 @@ def test_every_exempted_security_test_still_exists() -> None:
     # An exemption that has since been CITED is stale: the register now carries the control, and
     # leaving the name here would keep exempting it if the citation were ever removed.
     policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
-    rows = "\n".join(line for line in policy.splitlines() if line.lstrip().startswith("|"))
-    cited = set(re.findall(CITATION_TOKEN, rows))
+    cited = set(re.findall(CITATION_TOKEN, _control_table_rows(policy)))
     redundant = sorted(UNCITED_SECURITY_TESTS & cited)
     assert not redundant, (
         "these names are BOTH cited in docs/SECURITY.md and exempted from needing a citation;"
@@ -957,12 +1004,13 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
     # document. A bare `in policy` test was the first version's other flaw: it would match a name
     # mentioned anywhere, including in the survivor prose and the mutant ledger, so one future
     # sentence naming a suite would silently exempt every test in it.
-    # ONLY the control table's rows count as citations, not the whole document. A document-wide
-    # scan let a name in the surviving-mutant prose read as a register row, and one did:
+    # ONLY the control table's rows count as citations. A document-wide scan let a name in the
+    # surviving-mutant prose read as a register row, and one did:
     # `test_an_honest_oversize_declaration_is_refused_without_reading_the_body` was cited nowhere
-    # but a sentence about mutants. The register's promise is "each with a test that fails if it
-    # regresses", and only a row makes that promise.
-    rows = "\n".join(line for line in policy.splitlines() if line.lstrip().startswith("|"))
+    # but a sentence about mutants. Filtering on `|` alone then let the MUTANT LEDGER's rows count,
+    # which is the same hole one table along. The register's promise is "each with a test that fails
+    # if it regresses", and only a row under that heading makes it.
+    rows = _control_table_rows(policy)
     # The trailing lookaheads matter. `[a-z0-9_]` ends the token so a name cannot match a longer
     # one's prefix, and `(?!\.py\b)` drops the FILE stems: `tests/test_auth.py` in the table would
     # otherwise contribute a bare `test_auth` citation, and a future test named exactly `test_auth`

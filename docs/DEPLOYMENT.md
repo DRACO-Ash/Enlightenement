@@ -160,18 +160,20 @@ the volume.
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `6caf92b`**, with a MAJOR in
-      the same completeness check one round on: it read `tree.body`, so a class-nested test was
-      invisible while its docstring claimed class nesting was survived. An earlier PASS at commit
-      `068b1c4` is not evidence about this tree and the tick claiming it has been removed. Every
-      finding from that FAIL is closed in this release; the gate re-runs against this head and the
-      tick goes back only on the verdict itself.
+- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `cced724`**, with three
+      MAJORs: the row-only citation filter admitted the mutant ledger's own table rows, the `==`
+      census excluded every `ast.Call` rather than only `len`, and two published figures were never
+      measured. An earlier PASS at commit `068b1c4` is not evidence about this tree and the tick
+      claiming it has been removed. Every finding from that FAIL is closed in this release; the gate
+      re-runs against this head and the tick goes back only on the verdict itself.
 - [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `6caf92b`**, on the class-nested
       blind spot, on `test_healthcheck.py` being unswept while the register cited it (three
       fail-closed branches in `healthcheck.py` had no row), and on four exemption reasons asserting
-      a coverage relationship that mutation disproved. All are closed here, and the seven promoted
-      tests were each re-mutated against their own cited test alone. Same rule: the tick returns on
-      a verdict against this head, not on a verdict against an ancestor.
+      a coverage relationship that mutation disproved. All are closed, and the seven promoted tests
+      were each re-mutated against their own cited test alone. It has not yet run against a head
+      carrying the citation-slice and census fixes, both of which are completeness controls, so its
+      verdict must be re-taken here. Same rule: the tick returns on a verdict against this head,
+      not on a verdict against an ancestor.
 - [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
       the application: five undefined submission fields, an unset resource budget, and a container
       contract that could not be confirmed because the CI `image` job named as its binding check

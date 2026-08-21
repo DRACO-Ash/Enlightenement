@@ -71,10 +71,16 @@ def test_no_module_compares_a_token_with_plain_equality() -> None:
 
     The other was the exclusion. `"len(" not in rendered` was there to permit the legitimate
     length guard, and it permitted a great deal more: `token == expected and len(x) > 0` renders
-    with `len(` in it and passed unseen. The test now asks the structural question instead - is a
-    token VALUE an operand of this comparison - so `len(token) != len(reference)` is allowed
-    because neither operand is the value, while `token == expected` is caught however the rest of
-    the expression is written.
+    with `len(` in it and passed unseen. The test asks the structural question instead - is a token
+    VALUE an operand of this comparison - so `len(token) != len(reference)` is allowed because
+    neither operand is the value, while `token == expected` is caught.
+
+    **The first version of that structural question excluded EVERY call, and said it excluded a
+    `len()`.** Measured by the engineering gate: `str(token) == expected` and `token.strip() ==
+    expected` both survived, because both operands were calls. Any wrapper at all - `str`,
+    `.strip()`, `.encode()`, a helper - hid the comparison, and the docstring claimed the only
+    remaining hole was a renamed variable. `len` is now excluded by NAME rather than the whole
+    `ast.Call` class.
 
     The declared blind spot that REMAINS: this matches on identifier names, so a token held in a
     differently named variable passes unseen. Measured by the security gate, which rewrote
@@ -84,8 +90,16 @@ def test_no_module_compares_a_token_with_plain_equality() -> None:
     """
 
     def is_token_value(operand: ast.expr) -> bool:
-        """A bare reference to a token, as opposed to a `len()` of one."""
-        if isinstance(operand, ast.Call):
+        """A reference to a token, whatever wraps it, as opposed to a `len()` OF one.
+
+        Only `len` is excluded, and only when it is the call being made. Excluding every
+        `ast.Call` let `str(token) == expected` through.
+        """
+        if (
+            isinstance(operand, ast.Call)
+            and isinstance(operand.func, ast.Name)
+            and operand.func.id == "len"
+        ):
             return False
         return "token" in ast.unparse(operand).lower()
 
