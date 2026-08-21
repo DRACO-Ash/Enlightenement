@@ -23,6 +23,11 @@ __pycache__/
 .venv/
 venv/
 
+# Agent worktrees: transient checkouts a subagent works in, removed when it finishes. Never
+# tracked, because tracking them nests whole copies of the repository inside the repository and
+# carries them into the App Store artefact.
+.claude/worktrees/
+
 # Packaging output
 dist/
 build/
