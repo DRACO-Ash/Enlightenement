@@ -86,6 +86,12 @@ class NoSniffMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # A DEFENSIVE early return with no observable effect, and that is recorded rather than left
+        # for a fourth attempt to test it. Deleting it leaves the suite green, and no assertion can
+        # change that: every non-HTTP ASGI message carries a `type` key that is not
+        # `http.response.start`, so `send_with_header` is already a pass-through for a lifespan or
+        # websocket scope. The guard states the intent and saves the wrapper allocation; it does not
+        # close a gap, and a test claiming it does would be the thing this suite keeps deleting.
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return

@@ -1167,7 +1167,7 @@ def test_the_revision_digit_bound_stays_well_below_the_interpreter_limit() -> No
 @pytest.mark.parametrize(
     "path", ["/", "/healthz", "/readyz", "/livez", "/ping", "/api/v1/sessions"]
 )
-def test_every_response_carries_nosniff(client: TestClient, path: str) -> None:
+def test_every_user_stack_response_carries_nosniff(client: TestClient, path: str) -> None:
     """The one content-type header that is not inert on this service.
 
     A stored `title` or `notes` comes back inside a `GET /api/v1/sessions` body, and a browser
@@ -1176,7 +1176,8 @@ def test_every_response_carries_nosniff(client: TestClient, path: str) -> None:
     exactly the reason to say so in a header.
 
     The other two a reviewer looks for are deliberately absent and recorded in `docs/SECURITY.md`:
-    Content-Security-Policy and `Referrer-Policy` are inert on a JSON-only service that sets no
+    Content-Security-Policy and `Referrer-Policy` are inert on a service serving JSON and plain
+    text only (`/livez` and `/ping` in this very list return `PlainTextResponse`) that sets no
     cookies, serves no HTML and refuses to start on a wildcard origin. This one is not inert, which
     is why it is here and they are not.
     """
@@ -1188,8 +1189,10 @@ def test_an_error_response_carries_nosniff_too(client: TestClient) -> None:
     """Error paths are as navigable as successful ones.
 
     A 422 here, and equally a 413 from the body cap or a 429 from the limiter, is a response a
-    browser can be pointed at. `NoSniffMiddleware` is registered OUTERMOST for this reason: a
-    header installed beside the routes would miss every response a middleware answers itself.
+    browser can be pointed at. `NoSniffMiddleware` is registered outermost among USER middleware
+    for this reason: a header installed beside the routes would miss every response a middleware
+    answers itself. The unhandled-exception 500 is outside even that, and
+    `test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it` covers it.
 
     422 rather than 401, which is worth recording because I assumed the opposite when writing this:
     body validation runs BEFORE the token dependency on this route, so a malformed write is

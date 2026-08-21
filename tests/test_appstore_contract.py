@@ -1307,9 +1307,12 @@ def test_no_tracked_file_trips_this_repositorys_own_secret_scan() -> None:
             text=True,
             check=False,
         )
-        if "BLOCKED" in result.stdout + result.stderr:
+        # The EXIT CODE, not a substring. Keying on "BLOCKED" means a hook that crashes, or whose
+        # own JSON parse falls through to `process.exit(0)`, reports a silent green - a scan test
+        # that cannot tell "clean" from "did not run" is the shape this suite keeps finding.
+        if result.returncode != 0:
             reason = (result.stdout + result.stderr).split("matches:")[-1].split(".")[0].strip()
-            blocked.append(f"{name} ({reason})")
+            blocked.append(f"{name} ({reason or 'exit ' + str(result.returncode)})")
 
     assert not blocked, (
         "these tracked files trip this repository's own secret-scan hook, which is the same class"
@@ -1995,7 +1998,7 @@ def test_a_version_that_is_not_shaped_like_a_version_is_not_echoed() -> None:
     # register entry written to document that residual named it "all-numeric", which was wrong on
     # two of its three clauses - so this asserts the class, not the wording.
     # **Assembled by concatenation, never written whole.** The literal forms of these shapes match
-    # this repository's own pre-write secret-scan hook and gitleaks' `aws-access-needle` rule, so
+    # this repository's own pre-write secret-scan hook and gitleaks' `aws-access-token` rule, so
     # writing them out made `git grep` for credential patterns unclean and would have raised a
     # finding in the App Store's Secret Detection stage - the first of its eight. Nothing here is a
     # live credential (two are published documentation placeholders and one is the RFC 4648 base32
@@ -2158,6 +2161,14 @@ def test_a_probe_answering_the_wrong_json_shape_fails_without_a_traceback(answer
     )
     assert "wrong shape" in result.stderr
     assert "characters of stdout not echoed" in result.stderr
+    # The two branches asserted APART, because reverting the split back to one combined message
+    # left the suite green: both cases matched "wrong shape", so the diagnostic improvement this
+    # commit made for honesty - a value-type failure no longer reporting "got dict" - was itself
+    # unasserted. The same fault as the guard it sits inside, one layer along.
+    if answer.startswith("{"):
+        assert "every name and version must be a string" in result.stderr
+    else:
+        assert "expected an object, got" in result.stderr
 
 
 def test_the_version_comparison_survives_a_release_segment_python_will_not_convert() -> None:

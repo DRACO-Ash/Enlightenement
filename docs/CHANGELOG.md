@@ -385,8 +385,8 @@ both raise-direction mutations are killed.
 **The version echo had a real hole I had documented instead of closing.** The PEP 440 local-version
 segment was unbounded, `\+[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*`, so anything alphanumeric joined by `.`
 or `-` was version-shaped and echoed under the 40-character cap. Measured through the real script:
-a 32-character hex key carried in a local segment, a cloud access key identifier (a
-cloud access key identifier), a base32 secret and an underscore-free JWT segment all reached stderr
+a 32-character hex key carried in a local segment, a cloud access key identifier, a base32 secret
+and an underscore-free JWT segment all reached stderr
 in full. Only the underscore was excluded.
 
 Worse, the register entry I added in round five to state that residual honestly said `SAFE_VERSION`
@@ -548,7 +548,10 @@ cases pin it. The missing CORS header was the more consequential half: a browser
 **The JSON shape guard shipped with a changelog claiming eight measurements and no test.** Deleting
 the whole guard left the suite green. I had measured the eight shapes by hand, written "all eight now
 refused with a described report", and asserted none of it - which is one commit away from a
-regression nobody sees. Eight parametrised cases now, mutation-killed at nine failures. Its report
+regression nobody sees. Eight parametrised cases now, mutation-killed at **eight** failures - I wrote nine, and the gate
+measured eight: the eight cases and nothing else, because no other test in the repository references
+that code path. Nine was the count for deleting the parse guard as well, which is a different
+mutation. In the row whose own headline is that figures must be run before they are written. Its report
 also named the shape it WANTED as the shape it got (`{"pkg": 12345}` said "expected an object of
 strings, got dict"), so the two branches are split.
 
@@ -579,6 +582,58 @@ scenario modules at **100% line and branch coverage**. Pipeline simulation green
 being shipped: **762 passed, 5 skipped**. Collected: **767**. Two mutations confirmed applied and
 killed: the JSON shape guard and the nosniff registration.
 
+### Round ten: the security gate PASSED, and the correction had outrun its own distribution
+
+**`security-reviewer`: PASS.** No blocker, no major. It could not defeat either fix: the 500's header
+dict survived a foreign origin, `*`, `null`, an upper-cased and a trailing-slash variant, a
+`<origin>.evil.example` suffix, two `Origin` headers with the foreign one first, and the `"" == ""`
+case with `ALLOWED_ORIGIN` unset - and header injection is closed by construction, because
+`config.py` strips non-printables from the configured value before it can ever be echoed. The
+tracked tree is clean against the hook and against eight gitleaks pattern families. Five minors,
+all prose or test-strength.
+
+**`engineering-reviewer`: FAIL, entirely on documents**, and its diagnosis is the one worth keeping:
+*last round the prose outran the tests; this round the correction outran its own distribution.* The
+"every response" claim was corrected in the middleware, the handler and the test, and left standing
+in `docs/SECURITY.md` item 10 - the one place this changelog nominates as carrying the current
+position.
+
+Its countermeasure is one line, so I ran it before writing anything: grep the claim string tree-wide.
+That found **two more sites the gate had not listed**, in `app.py` and `test_http.py`. The claim had
+survived at four places, not one. All four are scoped now, and every "outermost" now says "among user
+middleware" - because outermost among user middleware is exactly what does not reach a 500.
+
+The second MAJOR was a count contradicting its own entry ten lines away: 767 collected on one line,
+755 on another. Third consecutive round of a stale figure in the paragraph whose subject is stale
+figures.
+
+Also fixed, and most of it collateral from my own edits: a blanket `token` to `needle` rename turned
+gitleaks' `aws-access-token` rule into `aws-access-needle`; a substitution left "a cloud access key
+identifier (a cloud access key identifier)"; "JSON-only" survived at a fourth site, in a docstring
+attached to a list containing two plain-text paths; and `test_every_response_carries_nosniff` kept its
+overstated name after the round that disproved it.
+
+From the security gate: the nosniff control was tested but **uncited**, so the register's
+doc-to-test sweep could not see it - two table rows now, and renaming a cited test to a
+non-existent one turns that sweep red. The two-branch split of the shape report was unasserted
+(reverting it left the suite green), so the two object-valued cases assert their distinguishing
+message. The tracked-tree scan keyed on the string `BLOCKED` rather than the exit code, so a hook
+that crashed would have read as clean. Item 9 stated the residual as an instance while
+`describe_version` claimed the two carried "the same words"; item 9 now states the grammar. And the
+non-HTTP scope guard is documented as behaviourally inert rather than tested a fourth time - every
+non-HTTP message carries a type that is not `http.response.start`, so there is nothing observable to
+assert.
+
+One figure of mine it corrected: I wrote the shape guard as "mutation-killed at nine failures" and
+the measured answer is eight. Nine is the count for deleting the parse guard as well, which is a
+different mutation.
+
+**Verified.** Loop green under the pinned toolchain: **766 passed, 1 skipped**, coverage **99.06%**,
+all three lock files audited clean. Pipeline simulation green: **762 passed, 5 skipped**. Collected:
+**767** - measured once and quoted from that measurement, which is the other countermeasure. Two
+mutations confirmed applied and killed this round: the two-branch shape report, and a register
+citation pointing at a test that does not exist.
+
 **Superseded.** A paragraph here recorded the absence of Content-Security-Policy,
 `X-Content-Type-Options` and `Referrer-Policy` as a deliberate choice for the owner to
 confirm, and asserted that "no document claims otherwise". The round-eight note below adds
@@ -586,7 +641,7 @@ the second of those headers, so both halves went stale in the same release entry
 changed them. Item 10 of the accepted-risk register carries the current position.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **755** now. That last figure was left at 734 through one
+head, **725** after the redaction rewrite, **767** now. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

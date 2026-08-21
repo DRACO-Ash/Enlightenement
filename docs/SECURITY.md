@@ -53,6 +53,8 @@ state-changing route.
 | A wildcard origin refuses to start, unconditionally | `config.py` | `test_a_wildcard_origin_always_refuses_to_start_even_without_a_token` |
 | Every exposed method survives a preflight | `app.py` | `test_every_exposed_method_survives_a_preflight_from_the_allowed_origin` |
 | A 413 or 429 still carries the cross-origin header | `app.py` | `test_a_rate_limited_response_still_carries_the_cross_origin_header` |
+| `X-Content-Type-Options: nosniff` on every user-stack response | `middleware.py` | `test_every_user_stack_response_carries_nosniff`, `test_nosniff_is_appended_when_absent`, `test_nosniff_does_not_override_a_handler_that_set_it` |
+| The 500 no user middleware reaches sets both headers itself | `app.py` | `test_a_500_carries_its_own_headers_because_no_user_middleware_reaches_it` |
 | Anti-shrink merge; a partial update deletes nothing | `storage.py` | `test_a_partial_patch_keeps_every_field...` |
 | Atomic write; no half-written or orphaned file | `storage.py` | `test_write_is_atomic...`, `test_a_failed_write_leaves_no_temporary_file_behind` |
 | Writes serialised by an exclusive lock; no lost update across processes | `storage.py` | `test_two_processes_writing_at_once_lose_no_record` |
@@ -255,16 +257,30 @@ executes, never about the words beside it.
    file here pins a local version - and replaces three clauses that kept drifting with one that
    cannot.
 
-   **What remains is irreducible:** a numeric string in release position is indistinguishable from
-   a version, because it IS one. A purely numeric secret of `MAX_VERSION_ECHO` characters or fewer
-   (40, inclusive) therefore echoes. Accepted because the report has to say which version is pinned
-   or it cannot do its job.
+   **What remains is irreducible, stated as the GRAMMAR rather than as an instance.** Any value of
+   `MAX_VERSION_ECHO` characters or fewer (40, inclusive) matching `SAFE_VERSION` echoes: a digit
+   run with optional dots, optionally carrying one pre-release token from a fixed vocabulary and a
+   `.post` or `.dev` tail. So `1preview1.post1.dev1` echoes as well as `1.2.3`.
+
+   A purely numeric secret is the common case and the previous wording named only that, which was
+   narrower than the regex by exactly one case - while `describe_version`'s docstring claimed "item
+   9 carries the same words". It does now. Accepted because the report has to say which version is
+   pinned or it cannot do its job, and a numeric string in release position is indistinguishable
+   from a version because it IS one.
 
 10. **`X-Content-Type-Options: nosniff` is sent; Content-Security-Policy and `Referrer-Policy` are
     deliberately not.** The first is not inert here: a stored `title` or `notes` comes back inside a
     `GET /api/v1/sessions` body, and a browser pointed straight at that URL decides for itself what
-    the bytes are. It costs one header and is set on every response, including one a middleware
-    answers itself, which is why `NoSniffMiddleware` is registered outermost.
+    the bytes are. `NoSniffMiddleware` sets it on every response the USER STACK produces,
+    including one a middleware answers itself - a 413 from the body cap, a 429 from the limiter -
+    which is why it is registered outermost among user middleware.
+
+    It cannot reach further than that, and this item said "every response" for one round after that
+    was disproved. Starlette installs `ServerErrorMiddleware` above every user middleware, and that
+    is what renders the unhandled-exception 500, so `_install_error_handlers` sets both this header
+    and the configured-origin `access-control-allow-origin` on that response itself. The claim was
+    corrected in the middleware, the handler and the test, and left standing here - in the item the
+    changelog nominates as carrying the current position, which is the one that mattered.
 
     The other two are inert on this service and are recorded as absent rather than left unexplained:
     it serves JSON and plain text only (`/livez`, `/ping` and `/health` return `PlainTextResponse`;

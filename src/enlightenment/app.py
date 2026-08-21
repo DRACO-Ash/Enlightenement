@@ -697,9 +697,11 @@ def create_app(
     app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES, exempt_paths=UNLIMITED_PATHS)
     _install_rate_limit(app, runtime)
     _install_cors(app, runtime)
-    # Outermost, so the header is on every response including one a middleware answers itself: a
-    # 413 from the body cap and a 429 from the limiter are responses a browser can be pointed at
-    # too, and a header installed inside them would miss both.
+    # Outermost among USER middleware, so the header is on every response this stack produces,
+    # including one a middleware answers itself: a 413 from the body cap and a 429 from the limiter
+    # are responses a browser can be pointed at too, and a header installed inside them would miss
+    # both. It does NOT reach the unhandled-exception 500 - `ServerErrorMiddleware` sits above
+    # every user layer - which is why `on_unhandled` sets its own headers.
     app.add_middleware(NoSniffMiddleware)
 
     # An IN-PROCESS inspection seam, so a test can assert the constructed wiring rather than
