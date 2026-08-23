@@ -1099,11 +1099,70 @@ Register, from the slice the sweep reads: control rows **89**, citations in them
 stay dead, the behaviour-preserving reorder that must fail loudly, and the three frame defeats: the
 rebound `hmac` name, the decorated function, and the naked wrapper that only the name check sees.
 
+### Round seventeen: an authentication bypass that passed every check I had written
+
+**`engineering-reviewer`: FAIL, one BLOCKER, and it is the most serious finding of the whole
+stretch.** The AST body pin I introduced in round sixteen parsed `auth.py`'s MODULE source and
+pinned whichever `def token_ok` it found there. That is not necessarily the callable the name
+reaches. The gate left the canonical `def` completely untouched, appended this after it, and
+rebound the name:
+
+    _pinned_token_ok = token_ok
+
+    def _token_ok_with_break_glass(given, expected):
+        if given == "break-glass":
+            return True
+        return _pinned_token_ok(given, expected)
+
+    _token_ok_with_break_glass.__qualname__ = "token_ok"
+    token_ok = _token_ok_with_break_glass
+
+Body pin green, because the canonical `def` is still the only one in the file. `hmac` probe green.
+Both wrapper assertions green - `inspect.unwrap` finds no `__wrapped__` on a naked wrapper, and
+`__qualname__` was assigned. The `==` census green, because `given == "break-glass"` has no operand
+whose name contains "token". Ruff, mypy and the full suite green at **776 passed**. And any request
+could authenticate with a fixed string.
+
+**A second frame in the same round.** `hmac.compare_digest = _compare` inside `auth.py` leaves
+`auth.hmac is stdlib_hmac` TRUE, because both sides are the same module object and only the
+attribute moved. The constant-time control is gone, the loop is green, and the primitive is poisoned
+process-wide for every other importer.
+
+**The lesson is the same one, arrived at for the fourth time, and I should have reached it sooner.**
+Round fifteen: enumerating equality SPELLINGS could not work, because the set is open. Rounds
+sixteen and seventeen: enumerating FRAMES cannot work either, for exactly the same reason - the body,
+the names it resolves to, what wraps it, what rebinds it, what replaces an attribute on a module it
+holds. I replaced one enumeration with another and called it an allowlist.
+
+What actually closes it is asking the runtime which code object the public name reaches:
+`inspect.getsource(auth.token_ok)` follows `__code__.co_filename` and `co_firstlineno`, so pinning
+THAT closes the naked wrapper, the `functools.wraps` wrapper, the qualname spoof, the name rebind
+and a `__code__` swap in one assertion. The primitive is checked by TYPE - the real
+`compare_digest` is a C builtin and no Python-level replacement is - rather than by module identity.
+The two frame probes stay, demoted honestly to what they are: cheap diagnostics that name which
+frame moved when one fires, which a body diff does not.
+
+**Also closed.** Two docstrings and three register rows claimed a closure they did not have, in the
+same idiom as the "complete list" withdrawn one round earlier. The collected count read 775 in the
+paragraph whose subject is stale counts, ten lines from the 777 in this round's own block. And the
+`engineering-reviewer` checklist row described the round-fourteen FAIL rather than the last one, so
+a reader of the submission checklist took away the wrong record of what the most recent review
+found.
+
+**Verified.** Loop green under the pinned toolchain: **776 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Simulation: **772 passed, 5 skipped**. Collected: **777**.
+
+**Mutations: 5 run, 5 killed.** The two new frames - the rebound name with the spoofed qualname, and
+the reassigned `compare_digest` attribute - plus three regression checks that the earlier positions
+stay dead under the new pin: plain `==` replacing the primitive, a `startswith` guard inside the
+body, and a source-level decorator.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
-round-fourteen head, **772** after round fifteen, **775** now: round thirteen moved names between
+round-fourteen head, **772** after round fifteen, **777** now: round thirteen moved names between
 two lists rather than adding tests; round fifteen added the backup-target symlink refusal and the
-gated audit line; round sixteen added the audit-field sanitiser test and two model-cap cases. That last figure was left at 734 through one
+gated audit line; round sixteen added the audit-field sanitiser test and two model-cap cases; and
+round seventeen added the two frame probes, the primitive-name check and the wrapper check. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

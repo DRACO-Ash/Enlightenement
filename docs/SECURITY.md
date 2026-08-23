@@ -87,9 +87,9 @@ state-changing route.
 | The rate limiter sits OUTSIDE the body cap, so oversize requests spend budget | `app.py` | `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, `test_an_oversize_request_still_spends_rate_limit_budget` |
 | A probe path declaring a body that never arrives still answers | `middleware.py` | `test_a_liveness_request_declaring_a_body_that_never_arrives_still_answers` |
 | The existence check for a partial update runs inside the store lock | `storage.py` | `test_the_cap_cannot_turn_a_must_exist_merge_into_a_partial_append` |
-| `token_ok`'s body IS the reviewed constant-time implementation, pinned statement by statement | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive` |
-| The name `hmac` in `auth.py` resolves to the STANDARD LIBRARY module, not something named it | `auth.py` | `test_the_primitive_name_resolves_to_the_standard_library_module` |
-| Nothing runs before `token_ok`: it is neither wrapped nor decorated, so no guard can leak ahead of the comparison | `auth.py` | `test_token_ok_is_neither_wrapped_nor_decorated` |
+| The callable `auth.token_ok` REACHES is the reviewed constant-time implementation, pinned statement by statement through its code object | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive` |
+| `hmac` in `auth.py` is the standard library module AND `compare_digest` is still the C builtin, so neither the module nor the attribute can be substituted | `auth.py` | `test_the_primitive_name_resolves_to_the_standard_library_module` |
+| `token_ok` is neither wrapped nor decorated, naming which frame moved when it fires; the guard against anything running first is the code-object pin above | `auth.py` | `test_token_ok_is_neither_wrapped_nor_decorated` |
 | No token is compared with `==` anywhere in the package | `auth.py` and every module | `test_no_module_compares_a_token_with_plain_equality` |
 | Backups carry the same restrictive mode as the snapshot | `storage.py` | `test_the_snapshot_and_its_backups_share_the_same_restrictive_mode` |
 | The lock path is not followed through a symlink | `storage.py` | `test_the_lock_file_is_not_followed_through_a_symlink` |
@@ -144,6 +144,7 @@ the code, and killed it:
 | 15b | included above | 1 MAJOR (eng) on the SAME control: the tightened constant-time check was a substring test on the deciding return, so a decoy moved inside it kept plain equality deciding; plus 2 figures published without re-measuring and 1 justification measurement falsified |
 | 16 | 9 run, 9 killed | **`security-reviewer` PASS** (60 mutants, no BLOCKER, no MAJOR); 4 MINORs, 3 closed: a FOURTH position on the constant-time check (`operator.eq`, `in (x,)`, `__eq__`, and a `startswith` guard needing no comparison at all), two uncovered `models.py` length caps, and `audit()` merging extra fields unsanitised |
 | 16b | included above | 6 MAJORs (eng), the first structural: the AST body pin was defeated TWICE without touching the body - `hmac` rebound to a class whose `compare_digest` is `a == b`, and `token_ok` decorated with a prefix oracle - so a pin over statements is blind to what their names mean and what wraps them; plus 4 stale published figures and a tick describing an ancestor commit |
+| 17 | 5 run, 5 killed | **1 BLOCKER (eng): an unconditional authentication bypass surviving the whole loop.** The AST body pin read the MODULE's source, so leaving the canonical `def` untouched, appending a naked wrapper with a break-glass branch, spoofing `__qualname__` and rebinding the module name passed every check with ruff and mypy silent. Plus a substitutable `hmac.compare_digest` attribute, two docstrings claiming a closure they lacked, and 2 stale document records |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -163,7 +164,7 @@ Survivors that remain, each with the reason it is or is not load-bearing:
   `a == b`, and it decorated `token_ok` with a `startswith` prefix oracle that returns before the
   function is reached. Both green on the full loop, no lint warning. An AST pin over a body cannot
   see what its names mean or what wraps it, so two sibling tests now check exactly those two
-  frames and carry their own rows. Seven positions measured dead in total. The TIMING property
+  frames and carry their own rows. **And "two frames" undercounted: there were four.** `hmac.compare_digest` can be REASSIGNED while `auth.hmac` stays the standard library module, and the name `token_ok` can be rebound to a wrapper that spoofs `__qualname__` while the canonical `def` sits untouched - the engineering gate measured the second as an UNCONDITIONAL AUTHENTICATION BYPASS surviving the whole loop with ruff and mypy silent. Enumerating frames was the wrong method, exactly as enumerating equality spellings was. The pin now follows the CODE OBJECT the public name reaches, via `inspect.getsource(auth.token_ok)`, and the primitive is checked by TYPE rather than module identity. Nine positions measured dead in total, and the count is offered as a history of this control rather than as a bound on what is possible. The TIMING property
   itself stays unassertable by any functional test and is recorded as such in `auth.py`.
 ● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
   than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`

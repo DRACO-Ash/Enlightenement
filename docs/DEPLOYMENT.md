@@ -160,12 +160,17 @@ the volume.
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `cced724`**, with three
-      MAJORs: the row-only citation filter admitted the mutant ledger's own table rows, the `==`
-      census excluded every `ast.Call` rather than only `len`, and two published figures were never
-      measured. An earlier PASS at commit `068b1c4` is not evidence about this tree and the tick
-      claiming it has been removed. Every finding from that FAIL is closed in this release; the gate
-      re-runs against this head and the tick goes back only on the verdict itself.
+- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `03d9788`**, with one
+      BLOCKER and five MAJORs. The BLOCKER was an unconditional authentication bypass surviving the
+      whole loop: the AST body pin on `token_ok` read the module's SOURCE, so leaving the canonical
+      `def` untouched, appending a naked wrapper with a break-glass branch, spoofing its
+      `__qualname__` and rebinding the module-level name passed every check with ruff and mypy
+      silent. The pin now follows the code object `auth.token_ok` reaches. The MAJORs were a
+      substitutable `hmac.compare_digest` attribute, two docstrings claiming a closure they did not
+      have, a stale collected count, and this bullet naming the wrong prior FAIL. An earlier PASS at
+      commit `068b1c4` is not evidence about this tree and the tick claiming it has been removed.
+      Every finding is closed in this release; the gate re-runs against this head and the tick goes
+      back only on the verdict itself.
 - [ ] `security-reviewer` PASS. **The verdict was PASS on commit `be19697`**, after a 60-mutant
       campaign across `src/` and a live black-box run: no BLOCKER, no MAJOR. It confirmed all four
       new regression tests are the SOLE killer of the control they name, that all nine promoted

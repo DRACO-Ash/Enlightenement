@@ -12,6 +12,8 @@ from __future__ import annotations
 import ast
 import hmac as stdlib_hmac
 import inspect
+import textwrap
+import types
 from pathlib import Path
 
 from enlightenment import auth
@@ -105,8 +107,18 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     `a == b`, and it decorated `token_ok` with a `startswith` prefix oracle that returns before the
     function is reached. Both measured with the whole loop green, no lint warning. An AST pin over
     a function body is blind to one frame out in either direction - what its names mean, and what
-    wraps it. Two sibling tests below close exactly those two frames, and they are cited separately
-    in the register because they guard different things.
+    wraps it. Two sibling tests below name those two frames and are cited separately in the
+    register, because each says which frame moved when it fires.
+
+    **And "two frames" undercounted: there were four.** `hmac.compare_digest` can be REASSIGNED
+    while `auth.hmac` remains the standard library module, and the name `token_ok` can be rebound to
+    a wrapper that spoofs `__qualname__` while the canonical `def` sits untouched in the file - the
+    second of those measured by the engineering gate as an unconditional authentication bypass at
+    776 passed, with ruff and mypy silent. Enumerating frames was the wrong method, for the same
+    reason enumerating equality spellings was. The pin now follows the CODE OBJECT the public name
+    reaches, via `inspect.getsource(auth.token_ok)`, which closes the naked wrapper, the
+    `functools.wraps` wrapper, the qualname spoof, the name rebind and a `__code__` swap at once;
+    and the primitive is checked by TYPE rather than by module identity.
 
     What this still cannot see, and this list is bounded by the mechanism rather than offered as a
     complete account of the risk: the TIMING property itself, which no functional test can assert;
@@ -163,7 +175,26 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     # `.__eq__`, `in (x,)` - and a leaky guard AHEAD of an honest return needs no comparison at
     # all. The body of this one function is four statements; requiring it to be those four
     # statements is the only form of this check that is not a guess about what comes next.
-    statements = functions[0].body
+    #
+    # **Pinned through the OBJECT, not through the module's source.** Reading `functions[0]` above
+    # pins whichever `def token_ok` appears in the file, which is not necessarily the callable the
+    # name reaches. The engineering gate proved that a full authentication bypass: it left the
+    # canonical `def` untouched, appended a naked wrapper with `given == "break-glass"`, assigned
+    # `__qualname__ = "token_ok"`, and rebound the module-level name. Body pin green, `hmac` probe
+    # green, both wrapper assertions green, census green, ruff and mypy silent, 776 passed - and
+    # any request could authenticate. `inspect.getsource` follows `__code__.co_filename` and
+    # `co_firstlineno`, so pinning the source of `auth.token_ok` ITSELF closes the naked wrapper,
+    # the `functools.wraps` wrapper, the qualname spoof, the name rebind and a `__code__` swap in
+    # one assertion. `functions[0]` stays as the belt: exactly one `def token_ok` in the file.
+    reached = ast.parse(textwrap.dedent(inspect.getsource(auth.token_ok))).body[0]
+    assert isinstance(reached, (ast.FunctionDef, ast.AsyncFunctionDef)), (
+        f"the name auth.token_ok does not reach a function definition: {reached!r}"
+    )
+    assert not reached.decorator_list, (
+        "auth.token_ok is decorated at source level, so something runs before the pinned body:"
+        f" {[ast.unparse(node) for node in reached.decorator_list]}"
+    )
+    statements = reached.body
     # The docstring is prose and must be free to change; the code under it must not be.
     if (
         statements
@@ -202,6 +233,15 @@ def test_the_primitive_name_resolves_to_the_standard_library_module() -> None:
         "auth.hmac is not the standard library module, so `hmac.compare_digest` in token_ok is"
         f" whatever this name now points at: {auth.hmac!r}"
     )
+    # Module identity is not enough: `hmac.compare_digest = _compare` inside `auth.py` leaves both
+    # sides the SAME module object and still removes the control - measured green at 776 passed,
+    # and it poisons the primitive process-wide for every other importer too. An identity check
+    # against `stdlib_hmac.compare_digest` would be vacuous for the same reason, so the assertion
+    # is on the TYPE: the real primitive is a C builtin, and no Python-level replacement is.
+    assert isinstance(auth.hmac.compare_digest, types.BuiltinFunctionType), (
+        "hmac.compare_digest is no longer the C builtin, so the comparison token_ok reaches is a"
+        f" Python-level replacement: {auth.hmac.compare_digest!r}"
+    )
 
 
 def test_token_ok_is_neither_wrapped_nor_decorated() -> None:
@@ -211,11 +251,20 @@ def test_token_ok_is_neither_wrapped_nor_decorated() -> None:
     with a wrapper that returns `False` when `given` does not share a four-character prefix with
     `expected`. Behaviour-preserving on every test vector, green at 774, and a prefix oracle -
     `compare_digest` still ships, still matches the literal, and is never reached for a wrong
-    prefix. This is the fifth defeat position from outside the function instead of inside it.
+    prefix. Five defeat positions were inside the function; this is one of the ones outside it.
 
     Both assertions are needed and neither is redundant. `functools.wraps` copies `__qualname__`,
     so a wrapped function passes the name check and fails the unwrap check; a naked wrapper sets no
     `__wrapped__`, so it passes the unwrap check and fails the name check.
+
+    **Neither is what closes the wrapping frame, and an earlier version of this docstring read as
+    though they were.** A naked wrapper that ASSIGNS `__qualname__ = "token_ok"` and rebinds the
+    module-level name passes both, and the engineering gate demonstrated exactly that as an
+    unconditional authentication bypass with the whole loop green. What closes the frame is the body
+    pin in `test_the_token_comparison_uses_the_constant_time_primitive`, which parses
+    `inspect.getsource(auth.token_ok)` and so follows the code object the NAME reaches. These two
+    assertions remain as cheap, specifically-named diagnostics: when one fires it says which frame
+    moved, which a body diff does not.
     """
     assert inspect.unwrap(auth.token_ok) is auth.token_ok, (
         "token_ok is wrapped, so something runs before the constant-time comparison:"
