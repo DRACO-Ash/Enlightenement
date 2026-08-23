@@ -1013,7 +1013,7 @@ across **8** suites.
 **Mutations: 22 run. 20 killed, 2 survivors both deliberate.** The two survivors are the point
 rather than an omission: the backup mutant run against the OLD source test alone had to survive, or
 the new test would be redundant; and the `<!-- retired -->` cell is the declared limit above. One
-of the thirteen is worth naming, because it caught my own bug: the empty-control-cell guard tested
+of the twenty is worth naming, because it caught my own bug: the empty-control-cell guard tested
 `set(control) <= {"-", " "}`, and `set("")` is a subset of everything, so the separator check
 swallowed the empty cell it was written to catch. It survived, I fixed the guard, it died. A guard
 written and never mutated is a guard nobody has measured.
@@ -1063,13 +1063,41 @@ suite, which would let one caller consume everyone's budget behind the gateway. 
 because `TestClient` presents a single client host, so the reason is testability rather than
 triviality, and that is now written down instead of absent.
 
-**Verified.** Loop green under the pinned toolchain: **774 passed, 1 skipped**, coverage **99.06%**,
-77 pins matched, three lock files clean. Simulation: **770 passed, 5 skipped**. Collected: **775**.
-Register, from the slice the sweep reads: control rows **86**, citations in them **103**, exemptions
-**88**, tests swept **183** across **8** suites.
+**Then the engineering gate defeated the body pin twice more WITHOUT touching the body**, which is
+the finding that matters most in this round. An AST pin over a function body is blind one frame out
+in each direction:
 
-**Mutations: 6 run, 6 killed** - the gate's four new positions, the plain-`==` form that had to stay
-dead, and the behaviour-preserving reorder that must fail loudly and does.
+● It deleted `import hmac` and bound the name to a class whose `compare_digest` is `a == b`. The
+  body still matched the literal character for character; the constant-time control was entirely
+  gone; the full loop was green and lint was silent.
+● It decorated `token_ok` with a wrapper returning `False` unless `given` shared a four-character
+  prefix with `expected`. Behaviour-preserving on every test vector, and a prefix oracle:
+  `compare_digest` still ships, still matches, and is never reached for a wrong prefix.
+
+So the pin covers the STATEMENTS and not the names they resolve to, nor what wraps the function.
+Two sibling tests now check those two frames - `hmac` is the standard library module, and `token_ok`
+is neither wrapped nor decorated - each with its own register row, because they guard different
+things. Seven positions measured dead. Both assertions in the second test are load-bearing:
+`functools.wraps` copies `__qualname__`, so a wrapped function passes the name check and fails the
+unwrap check, while a naked wrapper sets no `__wrapped__` and fails the opposite one. Both forms
+measured dead.
+
+**And the figures in one comment went stale for the third consecutive commit**, so they are gone
+rather than corrected again. It read "matches 32 of the 182 swept tests and `test_a...` would match
+91"; both numbers change whenever a swept test is added, which this commit did twice. A count in a
+comment has no mechanism keeping it true. The comment states the property, the assertion reports the
+live numbers when it fires, and the claim that the widened citation class changes nothing on this
+register is now an ASSERTION rather than a sentence - so a capitalised citation produces the loud
+failure the widening exists to produce.
+
+**Verified.** Loop green under the pinned toolchain: **776 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Simulation: **772 passed, 5 skipped**. Collected: **777**.
+Register, from the slice the sweep reads: control rows **89**, citations in them **105**, exemptions
+**88**, tests swept **185** across **8** suites.
+
+**Mutations: 9 run, 9 killed** - the gate's four in-body positions, the plain-`==` form that had to
+stay dead, the behaviour-preserving reorder that must fail loudly, and the three frame defeats: the
+rebound `hmac` name, the decorated function, and the naked wrapper that only the name check sees.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the

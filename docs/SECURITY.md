@@ -87,7 +87,10 @@ state-changing route.
 | The rate limiter sits OUTSIDE the body cap, so oversize requests spend budget | `app.py` | `test_the_middleware_order_puts_the_limiter_outside_the_body_cap`, `test_an_oversize_request_still_spends_rate_limit_budget` |
 | A probe path declaring a body that never arrives still answers | `middleware.py` | `test_a_liveness_request_declaring_a_body_that_never_arrives_still_answers` |
 | The existence check for a partial update runs inside the store lock | `storage.py` | `test_the_cap_cannot_turn_a_must_exist_merge_into_a_partial_append` |
-| The constant-time primitive is present and no token is compared with `==` | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive`, `test_no_module_compares_a_token_with_plain_equality` |
+| `token_ok`'s body IS the reviewed constant-time implementation, pinned statement by statement | `auth.py` | `test_the_token_comparison_uses_the_constant_time_primitive` |
+| The name `hmac` in `auth.py` resolves to the STANDARD LIBRARY module, not something named it | `auth.py` | `test_the_primitive_name_resolves_to_the_standard_library_module` |
+| Nothing runs before `token_ok`: it is neither wrapped nor decorated, so no guard can leak ahead of the comparison | `auth.py` | `test_token_ok_is_neither_wrapped_nor_decorated` |
+| No token is compared with `==` anywhere in the package | `auth.py` and every module | `test_no_module_compares_a_token_with_plain_equality` |
 | Backups carry the same restrictive mode as the snapshot | `storage.py` | `test_the_snapshot_and_its_backups_share_the_same_restrictive_mode` |
 | The lock path is not followed through a symlink | `storage.py` | `test_the_lock_file_is_not_followed_through_a_symlink` |
 | A storage fault leaves the app unready, never unstartable | `app.py` | `test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt` |
@@ -139,7 +142,8 @@ the code, and killed it:
 | 14 | 9 run, 9 killed, 1 required survivor | 3 MAJORs (eng): the row-only citation filter admitted the MUTANT LEDGER's own rows, so a control cited only there read as cited; the `==` census excluded every `ast.Call`, so `str(token) == expected` survived; and two published figures were never measured |
 | 15 | 22 run, 20 killed, 2 deliberate survivors | 6 MAJORs (sec) from a 92-mutant campaign: FOUR controls deletable with the suite green - the backup TARGET `O_NOFOLLOW` (read access escalating to arbitrary file overwrite), both audit emissions, the constant-time compare behind a decoy call, and the PATCH `extra="forbid"` - plus 9 further exemption reasons disproved and an unbounded elided-citation prefix |
 | 15b | included above | 1 MAJOR (eng) on the SAME control: the tightened constant-time check was a substring test on the deciding return, so a decoy moved inside it kept plain equality deciding; plus 2 figures published without re-measuring and 1 justification measurement falsified |
-| 16 | 6 run, 6 killed | **`security-reviewer` PASS** (60 mutants, no BLOCKER, no MAJOR); 4 MINORs, 3 closed: a FOURTH position on the constant-time check (`operator.eq`, `in (x,)`, `__eq__`, and a `startswith` guard needing no comparison at all), two uncovered `models.py` length caps, and `audit()` merging extra fields unsanitised |
+| 16 | 9 run, 9 killed | **`security-reviewer` PASS** (60 mutants, no BLOCKER, no MAJOR); 4 MINORs, 3 closed: a FOURTH position on the constant-time check (`operator.eq`, `in (x,)`, `__eq__`, and a `startswith` guard needing no comparison at all), two uncovered `models.py` length caps, and `audit()` merging extra fields unsanitised |
+| 16b | included above | 6 MAJORs (eng), the first structural: the AST body pin was defeated TWICE without touching the body - `hmac` rebound to a class whose `compare_digest` is `a == b`, and `token_ok` decorated with a prefix oracle - so a pin over statements is blind to what their names mean and what wraps them; plus 4 stale published figures and a tick describing an ancestor commit |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
@@ -153,7 +157,13 @@ Survivors that remain, each with the reason it is or is not load-bearing:
   needed no comparison: a `startswith` guard AHEAD of an untouched canonical return leaks a prefix
   oracle while the primitive still ships and is still reached.
   `test_the_token_comparison_uses_the_constant_time_primitive` now pins `token_ok`'s body against
-  a canonical four-statement literal, and all five positions are measured dead. The TIMING property
+  a canonical four-statement literal, and all five positions are measured dead. **The body pin was
+  then defeated TWICE more without touching the body**, one frame out in each direction: the
+  engineering gate deleted `import hmac` and bound the name to a class whose `compare_digest` is
+  `a == b`, and it decorated `token_ok` with a `startswith` prefix oracle that returns before the
+  function is reached. Both green on the full loop, no lint warning. An AST pin over a body cannot
+  see what its names mean or what wraps it, so two sibling tests now check exactly those two
+  frames and carry their own rows. Seven positions measured dead in total. The TIMING property
   itself stays unassertable by any functional test and is recorded as such in `auth.py`.
 ● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
   than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`

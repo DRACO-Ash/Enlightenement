@@ -10,6 +10,7 @@ cannot see.
 from __future__ import annotations
 
 import ast
+import hmac as stdlib_hmac
 import inspect
 from pathlib import Path
 
@@ -98,12 +99,21 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     authentication in four lines, a human re-reading it on every edit is the point, not friction to
     be engineered away.
 
-    What this still cannot see, stated as a complete list rather than a sample: the TIMING property
-    itself, which no functional test can assert; a caller comparing the token somewhere else in the
-    package, which is the census below; and a change to `compare_digest`'s own semantics, which is
-    the standard library's business. It also cannot see whether `CANONICAL_TOKEN_OK_BODY` is
-    itself correct - that is a human reading, and the reasoning for the shipped four lines is in
-    `auth.py`'s own docstring.
+    **This pin covers the STATEMENTS, not the names they resolve to, and that was a real hole.**
+    The engineering gate kept the body byte-identical to the literal and defeated the control twice
+    anyway: it deleted `import hmac` and bound the name to a class whose `compare_digest` is
+    `a == b`, and it decorated `token_ok` with a `startswith` prefix oracle that returns before the
+    function is reached. Both measured with the whole loop green, no lint warning. An AST pin over
+    a function body is blind to one frame out in either direction - what its names mean, and what
+    wraps it. Two sibling tests below close exactly those two frames, and they are cited separately
+    in the register because they guard different things.
+
+    What this still cannot see, and this list is bounded by the mechanism rather than offered as a
+    complete account of the risk: the TIMING property itself, which no functional test can assert;
+    a caller comparing the token somewhere else in the package, which is the census below; a change
+    to `compare_digest`'s own semantics, which is the standard library's business; and whether
+    `CANONICAL_TOKEN_OK_BODY` is itself the right four lines, which is a human reading with its
+    reasoning in `auth.py`'s own docstring.
 
     **The division of labour with the census, stated honestly.** An earlier docstring said the
     census "is what caught that one" for the decoy defeat. It did not and cannot: the census
@@ -168,6 +178,52 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
         " strict: the function decides authentication, so a change here needs a human to re-read"
         " it and update CANONICAL_TOKEN_OK_BODY in the same commit, with the reasoning in the"
         f" message.\n  shipped:   {body}\n  canonical: {CANONICAL_TOKEN_OK_BODY}"
+    )
+
+
+def test_the_primitive_name_resolves_to_the_standard_library_module() -> None:
+    """`hmac` in `auth.py` must BE the standard library's `hmac`, not something named it.
+
+    The AST pin on `token_ok`'s body is satisfied by the text `hmac.compare_digest(...)`. It says
+    nothing about what `hmac` means. Measured by the engineering gate: delete `import hmac`, define
+
+        class _Hmac:
+            @staticmethod
+            def compare_digest(a: bytes, b: bytes) -> bool:
+                return a == b
+
+        hmac = _Hmac()
+
+    and the constant-time control is entirely gone while the body still matches the literal, the
+    full loop is green, and lint is silent. A pin over statements is blind to what their names
+    resolve to; this is that frame.
+    """
+    assert auth.hmac is stdlib_hmac, (
+        "auth.hmac is not the standard library module, so `hmac.compare_digest` in token_ok is"
+        f" whatever this name now points at: {auth.hmac!r}"
+    )
+
+
+def test_token_ok_is_neither_wrapped_nor_decorated() -> None:
+    """Nothing may run before `token_ok`, because a guard in front of it never needs to compare.
+
+    The other frame the body pin cannot see. Measured by the engineering gate: decorate `token_ok`
+    with a wrapper that returns `False` when `given` does not share a four-character prefix with
+    `expected`. Behaviour-preserving on every test vector, green at 774, and a prefix oracle -
+    `compare_digest` still ships, still matches the literal, and is never reached for a wrong
+    prefix. This is the fifth defeat position from outside the function instead of inside it.
+
+    Both assertions are needed and neither is redundant. `functools.wraps` copies `__qualname__`,
+    so a wrapped function passes the name check and fails the unwrap check; a naked wrapper sets no
+    `__wrapped__`, so it passes the unwrap check and fails the name check.
+    """
+    assert inspect.unwrap(auth.token_ok) is auth.token_ok, (
+        "token_ok is wrapped, so something runs before the constant-time comparison:"
+        f" {inspect.unwrap(auth.token_ok)!r}"
+    )
+    assert auth.token_ok.__qualname__ == "token_ok", (
+        "the name token_ok is bound to a different function, so the pinned body may never run:"
+        f" {auth.token_ok.__qualname__}"
     )
 
 

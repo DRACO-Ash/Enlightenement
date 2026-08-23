@@ -696,10 +696,14 @@ def _control_table_rows(policy: str) -> str:
 #: An elided citation - the `test_a_thing...` form the table uses to stay narrow - is resolved by
 #: PREFIX, and an unbounded prefix re-opens the sweep for a whole family. Measured by the security
 #: gate: shortening `test_the_coarse_tier...` to `test_the...` made an uncited control read as
-#: cited,
-#: because `test_the...` matches 32 of the 182 swept tests and `test_a...` would match 91. So both
-#: ends are bounded. The literals are absolute, not derived from the register, because a bound
-#: asserted against itself is no bound - this project has shipped that mistake twice.
+#: cited, because a short prefix matches a large fraction of the swept suite. So both ends are
+#: bounded. The literals are absolute, not derived from the register, because a bound asserted
+#: against itself is no bound - this project has shipped that mistake twice.
+#:
+#: **No counts here on purpose.** This comment carried "matches 32 of the 182 swept tests and
+#: `test_a...` would match 91" and went stale in three consecutive commits, because any commit that
+#: adds a swept test changes both. A figure in a comment has no mechanism keeping it true. The
+#: assertion below reports the live numbers when it fires, which is when anybody needs them.
 MIN_ELIDED_PREFIX = 20
 MAX_ELIDED_RESOLUTION = 3
 
@@ -712,12 +716,11 @@ MAX_ELIDED_RESOLUTION = 3
 #: used `[A-Za-z0-9_]`. Two spellings of one idea is how they diverged last time. The trigger was a
 #: test briefly named `..._TARGET_...`: the lowercase class truncated it at the capital, matched the
 #: useless stem `test_a_symlinked_backup_`, and a real cited control read as UNCITED. Lint then
-#: required the lowercase name (N802), so measured on the register as it now stands the two classes
-#: return the identical 102 citations and no citation contains a capital at all. The earlier
-#: measurement here said "changes exactly that one name", which was true when taken and stale the
-#: moment the test was renamed - published without re-measuring, which is the fault this file
-#: keeps finding. What widening actually buys: a capitalised citation becomes a LOUD dangling-name
-#: failure instead of a silent truncation, and the two regexes stop drifting.
+#: required the lowercase name (N802), so on the register as it stands the two classes return the
+#: identical set. That equivalence is ASSERTED below rather than stated here, because the earlier
+#: version of this comment quoted a count, was true when taken, and went stale the moment the test
+#: was renamed. What widening actually buys: a capitalised citation becomes a LOUD dangling-name
+#: failure instead of a silent truncation, and the two sibling regexes stop drifting.
 CITATION_TOKEN = r"\btest_[A-Za-z0-9_]+(?![A-Za-z0-9_])(?!\.py\b)"
 
 #: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
@@ -1030,6 +1033,16 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
     cited_names = set(re.findall(CITATION_TOKEN, rows))
     cited_prefixes = {name for name in cited_names if f"{name}..." in rows}
 
+    # The claim beside CITATION_TOKEN - that widening to include capitals changes nothing on the
+    # register as it stands - checked rather than asserted in prose. If a capitalised citation is
+    # ever added this fails, which is the loud failure the widening exists to produce.
+    lowercase_only = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", rows))
+    assert lowercase_only == cited_names, (
+        "a citation in the control table contains a capital letter. That is now handled rather"
+        " than silently truncated, but the comment beside CITATION_TOKEN says the two classes"
+        f" agree on this register, and they no longer do: {sorted(cited_names - lowercase_only)}"
+    )
+
     # Both bounds asserted against absolute literals first, so raising one cannot quietly widen
     # what the sweep accepts.
     assert MIN_ELIDED_PREFIX == 20, "the minimum elided-prefix length changed; re-measure the risk"
@@ -1044,8 +1057,9 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
         resolved = sorted(name for name in live if name.startswith(prefix))
         assert resolved, f"the elided citation {prefix!r} resolves to no test at all"
         assert len(resolved) <= MAX_ELIDED_RESOLUTION, (
-            f"the elided citation {prefix!r} resolves to {len(resolved)} tests, over the bound of"
-            f" {MAX_ELIDED_RESOLUTION}; write the names out or narrow the prefix: {resolved}"
+            f"the elided citation {prefix!r} resolves to {len(resolved)} of the {len(live)} tests"
+            f" in the suite, over the bound of {MAX_ELIDED_RESOLUTION}; write the names out or"
+            f" narrow the prefix: {resolved}"
         )
 
     # A row whose control cell is empty carries a citation and promises nothing. The register's
