@@ -968,10 +968,13 @@ when the branch regresses.
 owner's decision. The elided-citation prefix had no floor: shortening `test_the_coarse_tier...` to
 `test_the...` made an uncited control read as cited, because that prefix matches 32 of the 182
 swept tests. There is now a minimum length and a resolution bound, both asserted against absolute
-literals so raising one fails rather than widening the sweep. A gutted control row can no longer
-keep its citation. The citation token is case-insensitive, because a lowercase-only class truncated
-`..._TARGET_...` at the first capital and made a real cited control read as uncited - pytest does
-not care about case, so the sweep cannot either.
+literals so raising one fails rather than widening the sweep. A control row cannot keep its citation
+with its control cell blank or gutted to separator punctuation - the engineering gate measured the
+first version of that guard passing a `---` cell, because the branch meant to recognise the table
+separator recognised any row whose FIRST cell looked like one. The citation token is now
+case-insensitive to stop it drifting from its sibling regex, which already was; on the register as
+it stands both classes return the identical 102 citations, and the honest gain is that a
+capitalised citation fails loudly rather than truncating in silence.
 
 **One declared limit, stated rather than closed.** A control cell holding `<!-- retired -->` passes
 the non-empty check, and so does a row whose text no longer describes what its test asserts. Both
@@ -980,11 +983,34 @@ recorded as a limit in the code because every defeat of this sweep so far came f
 claiming ground the code did not hold.
 
 **Verified.** Loop green under the pinned toolchain: **771 passed, 1 skipped**, coverage **99.06%**,
-77 pins matched, three lock files clean. Collected: **772**. Register, all from the same slice the
+77 pins matched, three lock files clean. Collected: **772**.
+
+**Then the engineering gate found the fourth control still open, and it was the same mutant one
+level down.** `test_the_token_comparison_uses_the_constant_time_primitive` had been tightened to
+require `compare_digest` in the deciding `return` - a SUBSTRING test on the rendered return. So the
+decoy moved inside it:
+
+    return len(supplied) == len(reference) and (
+        supplied == reference or hmac.compare_digest(supplied, reference)
+    )
+
+`compare_digest` is in the return, the check passes, `or` short-circuits, and plain equality decides
+authentication. Green at 771. Third position of one mutant: primitive absent, decoy elsewhere in the
+module, decoy inside the return. It now asks the structural question - no equality comparison in
+`token_ok` may have an operand that is not a `len(...)` call - and three defeats are dead while the
+legitimate length guard is measured as still allowed.
+
+It also caught two figures in this round's own comment, published without re-measuring: 180 swept
+tests against a real 182, and `test_a...` matching 89 against a real 91, both stale by exactly the
+two tests this round added. And a justification that measurement falsified: the case-insensitive
+citation token was recorded as fixing a live miss, but lint required the test back to lowercase
+afterwards, so on the shipped register both classes return the identical 102 citations. The
+measurement was true when taken and stale when published. That is the fault this file exists to
+catch, committed in the round that closed four instances of it. Register, all from the same slice the
 sweep reads: control rows **86**, citations in them **102**, exemptions **88**, tests swept **182**
 across **8** suites.
 
-**Mutations: 15 run. 13 killed, 2 survivors both deliberate.** The two survivors are the point
+**Mutations: 22 run. 20 killed, 2 survivors both deliberate.** The two survivors are the point
 rather than an omission: the backup mutant run against the OLD source test alone had to survive, or
 the new test would be redundant; and the `<!-- retired -->` cell is the declared limit above. One
 of the thirteen is worth naming, because it caught my own bug: the empty-control-cell guard tested

@@ -60,12 +60,28 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     shipped naming, not a hypothetical rename. A decoy call satisfied the check while plain
     equality decided authentication.
 
-    So it asserts the structure that matters: EVERY `return` in `token_ok` whose value is not a
-    bare constant must have `compare_digest` in it. A decoy call on a different branch no longer
-    helps, because the branch that decides is a return too and it has to carry the primitive.
+    So it asserts the structure that matters. First: EVERY `return` in `token_ok` whose value is
+    not a bare constant must have `compare_digest` in it, so a decoy on a different branch no
+    longer helps.
+
+    **That was still a substring test, and the decoy moved inside the deciding return.** Written as
+    `len(supplied) == len(reference) and (supplied == reference or compare_digest(...))`, the
+    primitive appears in the rendered return, this check passes, `or` short-circuits, and plain
+    equality decides authentication. Measured green at 771 passed by the engineering gate. Third
+    position of one mutant: primitive absent, decoy elsewhere in the module, decoy inside the
+    return. So the second assertion asks the structural question instead - no equality comparison
+    anywhere in `token_ok` may compare anything but two lengths - and a ternary, an `or`, and an
+    early `!=` on the token value are all measured dead, while the real length guard is measured
+    still allowed.
 
     What this still cannot see: the timing property itself, which no functional test can assert,
     and a caller comparing the token elsewhere - which is the census below.
+
+    **The division of labour between the two, stated honestly.** An earlier docstring said the
+    census "is what caught that one" for the decoy defeat. It did not and cannot: the census
+    matches identifier names and the shipped operands are `supplied` and `reference`, so every
+    decoy variant passed it. THIS test is the only thing standing between `token_ok` and plain
+    equality; the census covers a DIFFERENT risk, a token compared somewhere else in the package.
     """
     source = inspect.getsource(auth)
     tree = ast.parse(source)
@@ -101,6 +117,24 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
         "token_ok has a computed return that does not use the constant-time primitive, so a"
         f" decoy call elsewhere in the module would satisfy this check: {uncovered}"
     )
+
+    # A substring test over the return is not enough either - see the docstring's third position.
+    # The structural question, asked directly: no equality comparison in `token_ok` may have an
+    # operand that is not a `len(...)` call. The length guard is allowed because both its operands
+    # are lengths; a comparison of the token VALUE is not, wherever in the function it sits.
+    plain = [
+        ast.unparse(node)
+        for node in ast.walk(functions[0])
+        if isinstance(node, ast.Compare)
+        and any(isinstance(op, ast.Eq | ast.NotEq) for op in node.ops)
+        and not all(
+            isinstance(operand, ast.Call)
+            and isinstance(operand.func, ast.Name)
+            and operand.func.id == "len"
+            for operand in [node.left, *node.comparators]
+        )
+    ]
+    assert not plain, f"token_ok decides with plain equality: {plain}"
 
 
 def test_no_module_compares_a_token_with_plain_equality() -> None:

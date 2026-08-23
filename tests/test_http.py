@@ -344,12 +344,11 @@ def test_a_gated_write_emits_one_audit_line_naming_the_token_actor(
     partial update: what changed, by whom, at which revision, without copying the payload into
     the log.
     """
-    headers = {TOKEN_HEADER: TEST_PLACEHOLDER}
     with caplog.at_level(logging.INFO, logger="enlightenment.audit"):
-        created = gated_client.post("/api/v1/sessions", json=VALID_SESSION, headers=headers)
+        created = gated_client.post("/api/v1/sessions", json=VALID_SESSION, headers=AUTH)
         assert created.status_code == 201
         patched = gated_client.patch(
-            f"/api/v1/sessions/{VALID_SESSION['id']}", json={"title": "Renamed"}, headers=headers
+            f"/api/v1/sessions/{VALID_SESSION['id']}", json={"title": "Renamed"}, headers=AUTH
         )
         assert patched.status_code == 200
 

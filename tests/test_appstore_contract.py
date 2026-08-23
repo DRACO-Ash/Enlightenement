@@ -697,7 +697,7 @@ def _control_table_rows(policy: str) -> str:
 #: PREFIX, and an unbounded prefix re-opens the sweep for a whole family. Measured by the security
 #: gate: shortening `test_the_coarse_tier...` to `test_the...` made an uncited control read as
 #: cited,
-#: because `test_the...` matches 32 of the 180 swept tests and `test_a...` would match 89. So both
+#: because `test_the...` matches 32 of the 182 swept tests and `test_a...` would match 91. So both
 #: ends are bounded. The literals are absolute, not derived from the register, because a bound
 #: asserted against itself is no bound - this project has shipped that mistake twice.
 MIN_ELIDED_PREFIX = 20
@@ -707,11 +707,17 @@ MAX_ELIDED_RESOLUTION = 3
 #: once already. `(?![A-Za-z0-9_])` ends the token so a name cannot match inside a longer one, and
 #: `(?!\.py\b)` drops file stems so `tests/test_auth.py` contributes no bare `test_auth`.
 #:
-#: **Case-insensitive, and it was not.** A lowercase-only class truncated
-#: `test_a_symlinked_backup_target_...` at the first capital and matched the useless stem
-#: `test_a_symlinked_backup_`, so a real cited control read as uncited. pytest does not care about
-#: case, so neither can this: any name the collector sees, the sweep must see. Measured on the
-#: current register, widening changes exactly that one name and loses nothing.
+#: **Case-insensitive, and the reason is drift, not a live miss.** It was written as a lowercase
+#: class, while the sibling regex in `test_every_test_named_in_the_security_policy_exists` already
+#: used `[A-Za-z0-9_]`. Two spellings of one idea is how they diverged last time. The trigger was a
+#: test briefly named `..._TARGET_...`: the lowercase class truncated it at the capital, matched the
+#: useless stem `test_a_symlinked_backup_`, and a real cited control read as UNCITED. Lint then
+#: required the lowercase name (N802), so measured on the register as it now stands the two classes
+#: return the identical 102 citations and no citation contains a capital at all. The earlier
+#: measurement here said "changes exactly that one name", which was true when taken and stale the
+#: moment the test was renamed - published without re-measuring, which is the fault this file
+#: keeps finding. What widening actually buys: a capitalised citation becomes a LOUD dangling-name
+#: failure instead of a silent truncation, and the two regexes stop drifting.
 CITATION_TOKEN = r"\btest_[A-Za-z0-9_]+(?![A-Za-z0-9_])(?!\.py\b)"
 
 #: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
@@ -1016,8 +1022,8 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
     # which is the same hole one table along. The register's promise is "each with a test that fails
     # if it regresses", and only a row under that heading makes it.
     rows = _control_table_rows(policy)
-    # The trailing lookaheads matter. `[a-z0-9_]` ends the token so a name cannot match a longer
-    # one's prefix, and `(?!\.py\b)` drops the FILE stems: `tests/test_auth.py` in the table would
+    # The trailing lookaheads matter. `[A-Za-z0-9_]` ends the token so a name cannot match a
+    # longer one's prefix, and `(?!\.py\b)` drops the FILE stems: `tests/test_auth.py` would
     # otherwise contribute a bare `test_auth` citation, and a future test named exactly `test_auth`
     # would then read as cited by a filename. The elided `test_x...` form still matches, because
     # only `.py` is excluded and not every dot.
@@ -1057,13 +1063,18 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
         if len(cells) < 4:
             continue  # not a three-column row
         control = cells[1].strip()
-        # The markdown separator is dashes and colons. Note the ORDER: an earlier version of this
-        # guard tested `set(control) <= {"-", " "}`, and `set("")` is a subset of everything, so the
-        # separator check swallowed the empty cell it was written to catch. Measured as a survivor
-        # before this line was corrected.
-        if control and set(control) <= {"-", ":"}:
+        # The markdown separator is dashes and colons, and it is recognised by EVERY cell being
+        # separator-shaped, not just the first. Two earlier versions of this guard were measured as
+        # survivors: one tested `set(control) <= {"-", " "}`, and `set("")` is a subset of
+        # everything, so the separator branch swallowed the empty cell it was written to catch; the
+        # next skipped any row whose first cell was `---`, so a real data row could keep its
+        # citation with its control gutted to a dash.
+        if all(cell.strip() and set(cell.strip()) <= {"-", ":"} for cell in cells[1:-1]):
             continue
         assert control, f"a control row has an empty control cell: {row!r}"
+        assert set(control) - {"-", ":"}, (
+            f"a control row's control cell is separator punctuation, not a control: {row!r}"
+        )
 
     # Every suite matching the glob is accounted for, in exactly one of three sets. The previous
     # guard derived the cited suites from `tests/(test_\w+\.py)` FILE references only, so a suite
