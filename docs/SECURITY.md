@@ -72,7 +72,7 @@ state-changing route.
 | The backup SOURCE is not read through a symlink | `storage.py` | `test_a_symlinked_snapshot_cannot_be_copied_into_a_backup` |
 | The backup TARGET is not written through one either, so a planted backup path cannot overwrite the file it points at | `storage.py` | `test_a_symlinked_backup_target_cannot_overwrite_the_file_it_points_at` |
 | Log injection blocked; actor sanitised | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
-| Actor and every reflected value LENGTH-CAPPED, so a flood cannot be written through a log line | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded` |
+| Actor and every reflected value LENGTH-CAPPED and sanitised, in `audit()` as well as `log_event()` | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded`, `test_an_audit_line_sanitises_every_string_field_not_only_the_actor` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
 | Both write routes EMIT an audit line naming the actor, which is the accountability control under a shared token | `app.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor` |
 | A missing or blank actor becomes `anonymous`, never an empty field | `audit.py` | `test_missing_or_blank_actor_becomes_anonymous` |
@@ -139,13 +139,22 @@ the code, and killed it:
 | 14 | 9 run, 9 killed, 1 required survivor | 3 MAJORs (eng): the row-only citation filter admitted the MUTANT LEDGER's own rows, so a control cited only there read as cited; the `==` census excluded every `ast.Call`, so `str(token) == expected` survived; and two published figures were never measured |
 | 15 | 22 run, 20 killed, 2 deliberate survivors | 6 MAJORs (sec) from a 92-mutant campaign: FOUR controls deletable with the suite green - the backup TARGET `O_NOFOLLOW` (read access escalating to arbitrary file overwrite), both audit emissions, the constant-time compare behind a decoy call, and the PATCH `extra="forbid"` - plus 9 further exemption reasons disproved and an unbounded elided-citation prefix |
 | 15b | included above | 1 MAJOR (eng) on the SAME control: the tightened constant-time check was a substring test on the deciding return, so a decoy moved inside it kept plain equality deciding; plus 2 figures published without re-measuring and 1 justification measurement falsified |
+| 16 | 6 run, 6 killed | **`security-reviewer` PASS** (60 mutants, no BLOCKER, no MAJOR); 4 MINORs, 3 closed: a FOURTH position on the constant-time check (`operator.eq`, `in (x,)`, `__eq__`, and a `startswith` guard needing no comparison at all), two uncovered `models.py` length caps, and `audit()` merging extra fields unsanitised |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 
-● **`hmac.compare_digest` to `==`** (`auth.py`): survives every BEHAVIOURAL test, because the
-  difference is timing, not output. Caught instead by a source assertion that the primitive is
-  present, plus a module-wide check that no token is compared with plain equality. The timing
-  property itself stays unassertable and is recorded as such.
+● **`hmac.compare_digest` to `==`** (`auth.py`): NO LONGER a survivor, and this bullet described
+  the wrong control for two releases. It said the mutant was caught by "a source assertion that the
+  primitive is present, plus a module-wide check that no token is compared with plain equality".
+  Both statements were true and neither was sufficient: the presence assertion fell to a decoy call,
+  then to a decoy inside the deciding return, then to `operator.eq`, `.__eq__` and `in (x,)`, which
+  are calls rather than comparisons; and the module-wide census cannot see it at all, because it
+  matches identifier names and the shipped operands are `supplied` and `reference`. A fifth defeat
+  needed no comparison: a `startswith` guard AHEAD of an untouched canonical return leaks a prefix
+  oracle while the primitive still ships and is still reached.
+  `test_the_token_comparison_uses_the_constant_time_primitive` now pins `token_ok`'s body against
+  a canonical four-statement literal, and all five positions are measured dead. The TIMING property
+  itself stays unassertable by any functional test and is recorded as such in `auth.py`.
 ● **Deleting the `store.seed()` call at boot** (`app.py`): survives, and is harmless rather
   than proved. `load()` returns an empty snapshot when the file is absent and `upsert_session`
   creates it, so seeding makes the first read cheaper and is not a control.
@@ -239,6 +248,14 @@ executes, never about the words beside it.
 3. **Rate-limit keying is coarse.** Callers are keyed by remote address. Behind the platform
    gateway many callers can share one address, so the limiter protects the process rather
    than fairly apportioning per user. Acceptable while the token is shared.
+
+   And a stronger form of the same risk is UNTESTED, not merely accepted: `_client_key`
+   collapsing to one constant key for every caller survives the whole suite. The consequence
+   is availability - one caller would consume the global and write budgets for everyone behind
+   the gateway. It is untested because `TestClient` presents a single client host, so asserting
+   distinct keys through the app is awkward rather than trivial; the reason is testability, not
+   that the risk is negligible. Recorded here rather than left silent, which is the difference
+   between an accepted risk and an oversight.
 4. **The rate limiter is per process.** The container runs a single worker, so the
    configured limit is the effective limit today. If the worker count ever rises, the
    effective limit rises with it; an exact global limit would need a shared store. The

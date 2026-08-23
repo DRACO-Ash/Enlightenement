@@ -60,6 +60,27 @@ def test_audit_emits_one_parsable_json_line_with_the_given_fields() -> None:
     }
 
 
+def test_an_audit_line_sanitises_every_string_field_not_only_the_actor() -> None:
+    """`audit()` merged its extra fields raw while `log_event()` beside it sanitised every string.
+
+    The register claimed "every reflected value LENGTH-CAPPED", and the two tests it cited assert
+    the sanitiser in isolation, not `audit()`'s use of it. Measured by the security gate:
+    `audit("probe", actor="a", note="x" * 10_000)` emitted all ten thousand characters.
+
+    Unreachable from either route today - the only string field they pass is a session id already
+    matched against `SESSION_ID_PATTERN`, and a 404 raises before the call - so this closed an
+    over-claim rather than an exploit. Closed in the code, because the alternative was weakening
+    the register to match a weaker control.
+    """
+    line = json.loads(audit("probe", actor="operator", note="x" * 10_000, count=3))
+    assert len(line["note"]) == MAX_LOG_VALUE_LENGTH
+    assert line["count"] == 3, "a non-string field must pass through untouched"
+
+    forged = json.loads(audit("probe", actor="operator", note="a\nb\rc"))
+    assert "\n" not in forged["note"]
+    assert "\r" not in forged["note"]
+
+
 def test_an_event_line_sanitises_every_string_field_structurally() -> None:
     """A crafted request path must not be able to confuse a JSON log pipeline."""
     line = log_event("request.rejected", path='/x\n{"event":"deploy"}', reason="validation")

@@ -47,9 +47,18 @@ def audit(event: str, *, actor: str | None = None, **fields: Any) -> str:
 
     The return value exists so a test can assert the exact record without capturing
     log output. Callers pass counts, timings, and costs; never a credential.
+
+    **Every string field is sanitised and capped, not only the actor.** `record.update(fields)`
+    merged them raw, so `audit("probe", actor="a", note="x" * 10_000)` emitted all ten thousand
+    characters while the register claimed "every reflected value LENGTH-CAPPED". No caller could
+    reach it - the only string field either route passes is a session id already matched against
+    `SESSION_ID_PATTERN`, and a 404 raises before the call - so this closes an over-claim rather
+    than an exploit. It is closed in the code because the alternative was narrowing the register
+    to match a weaker control, and :func:`log_event` beside it already did the right thing.
     """
     record: dict[str, Any] = {"event": event, "actor": sanitise_actor(actor)}
-    record.update(fields)
+    for key, value in fields.items():
+        record[key] = sanitise_log_value(value) if isinstance(value, str) else value
     line = json.dumps(record, separators=(",", ":"), sort_keys=True, default=str)
     _logger.info(line)
     return line

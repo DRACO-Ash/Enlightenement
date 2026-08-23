@@ -1018,10 +1018,64 @@ of the thirteen is worth naming, because it caught my own bug: the empty-control
 swallowed the empty cell it was written to catch. It survived, I fixed the guard, it died. A guard
 written and never mutated is a guard nobody has measured.
 
+### Round sixteen: security-reviewer PASS, and an allowlist instead of a fifth denylist
+
+**`security-reviewer`: PASS**, on `be19697`, after a 60-mutant campaign across `src/` and a live
+black-box run against a real app. No BLOCKER, no MAJOR. It confirmed all four new tests are the
+**sole** killer of the control they name, that the backup-target test fails if the flag comes back
+off and nothing else does, and that all nine promoted exemptions are real rather than paper. It also
+recomputed every published figure independently and they matched.
+
+**Four MINORs, and three were closed here rather than deferred**, because each is a control with no
+regression test, which is exactly the scope the owner set.
+
+**The `token_ok` check, fourth position, and why this one changes the method.** The gate broke the
+tightened check four more ways. `operator.eq(supplied, reference)` is an `ast.Call`, not an
+`ast.Compare`, so a filter over comparisons never sees it; `supplied in (reference,)` uses `In`
+rather than `Eq`; `bool(supplied.__eq__(reference))` is a method call. And the fourth needs no
+comparison at all: `if not supplied.startswith(reference[:8]): return False` sits AHEAD of an
+untouched canonical return, returns a bare constant so every "deciding return" rule excludes it by
+design, and leaks a prefix oracle while `compare_digest` still ships and is still reached.
+
+Four rounds, four denylists, four defeats. **The set of ways to compare two byte strings in Python
+is open**, so a denylist over it can only name the spellings somebody has already thought of. The
+check now pins `token_ok`'s body against a canonical four-statement literal, docstring excluded so
+prose stays free. All five positions measured dead, and a control mutation - reordering the length
+guard to `len(reference) == len(supplied)`, which is behaviour-preserving - fails loudly, which is
+the intended cost: any change to the four lines that decide authentication needs a human to re-read
+them and update the literal in the same commit.
+
+**Two more controls with no test.** `models.py` caps four string fields; `notes` and `id` were
+asserted and `title` (200) and `scenario` (120) were deletable with the suite green - two cases
+added to the same parametrised test. And `audit()` merged its extra fields RAW while `log_event()`
+beside it sanitised every string, so `audit("probe", actor="a", note="x" * 10_000)` emitted all ten
+thousand characters against a register row claiming "every reflected value LENGTH-CAPPED". Not
+reachable from either route - the only string either passes is a session id already matched against
+`SESSION_ID_PATTERN`, and a 404 raises before the call - so it was an over-claim, not an exploit.
+Closed in the CODE rather than by narrowing the row, because the alternative was weakening the
+register to match a weaker control.
+
+**And two records corrected.** The surviving-mutant bullet for the constant-time control described
+the position that had already been defeated and still listed a killed mutant as live - wrong in the
+safe direction, which this ledger's own standard rejects. Accepted risk 3 recorded coarse rate-limit
+keying and not the stronger form: `_client_key` collapsing to one constant key survives the whole
+suite, which would let one caller consume everyone's budget behind the gateway. It is untested
+because `TestClient` presents a single client host, so the reason is testability rather than
+triviality, and that is now written down instead of absent.
+
+**Verified.** Loop green under the pinned toolchain: **774 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Simulation: **770 passed, 5 skipped**. Collected: **775**.
+Register, from the slice the sweep reads: control rows **86**, citations in them **103**, exemptions
+**88**, tests swept **183** across **8** suites.
+
+**Mutations: 6 run, 6 killed** - the gate's four new positions, the plain-`==` form that had to stay
+dead, and the behaviour-preserving reorder that must fail loudly and does.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
-round-fourteen head, **772** now: round thirteen moved names between two lists rather than adding
-tests, and round fifteen added two, the backup-target symlink refusal and the gated audit line. That last figure was left at 734 through one
+round-fourteen head, **772** after round fifteen, **775** now: round thirteen moved names between
+two lists rather than adding tests; round fifteen added the backup-target symlink refusal and the
+gated audit line; round sixteen added the audit-field sanitiser test and two model-cap cases. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

@@ -377,6 +377,11 @@ def test_a_gated_write_emits_one_audit_line_naming_the_token_actor(
         {"id": "alpha", "title": "", "scenario": "s"},
         {"id": "alpha", "title": "A", "scenario": "s", "notes": "n" * 2001},
         {"id": "a" * 65, "title": "A", "scenario": "s"},
+        # `title` and `scenario` are capped in `models.py` too, and both caps were deletable
+        # with the whole suite green while `notes` and `id` above were covered. Measured by the
+        # security gate: one model, four capped fields, two asserted.
+        {"id": "alpha", "title": "A" * 201, "scenario": "s"},
+        {"id": "alpha", "title": "A", "scenario": "s" * 121},
         {"id": {"nested": "object"}, "title": "A", "scenario": "s"},
     ],
 )

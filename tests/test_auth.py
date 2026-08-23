@@ -43,6 +43,18 @@ def test_missing_header_fails() -> None:
 # --- the primitive itself --------------------------------------------------------------
 
 
+#: `token_ok`'s reviewed implementation, statement by statement, docstring excluded because prose
+#: must be free to change and the code under it must not. Pinned by
+#: `test_the_token_comparison_uses_the_constant_time_primitive`, which explains in full why an
+#: allowlist and not another denylist of equality spellings.
+CANONICAL_TOKEN_OK_BODY = [
+    "if not expected:\n    return False",
+    "supplied = (given or '').encode('utf-8')",
+    "reference = expected.encode('utf-8')",
+    "return len(supplied) == len(reference) and hmac.compare_digest(supplied, reference)",
+]
+
+
 def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     """Mutating `hmac.compare_digest` to `==` leaves every behavioural test green, because
     the difference is timing, not output. This asserts the primitive is on the DECIDING path.
@@ -60,28 +72,45 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     shipped naming, not a hypothetical rename. A decoy call satisfied the check while plain
     equality decided authentication.
 
-    So it asserts the structure that matters. First: EVERY `return` in `token_ok` whose value is
-    not a bare constant must have `compare_digest` in it, so a decoy on a different branch no
-    longer helps.
+    **Four denylists were defeated in four rounds, so this is an allowlist.** The history is the
+    argument, and each position was measured green against the full suite before it was closed:
 
-    **That was still a substring test, and the decoy moved inside the deciding return.** Written as
-    `len(supplied) == len(reference) and (supplied == reference or compare_digest(...))`, the
-    primitive appears in the rendered return, this check passes, `or` short-circuits, and plain
-    equality decides authentication. Measured green at 771 passed by the engineering gate. Third
-    position of one mutant: primitive absent, decoy elsewhere in the module, decoy inside the
-    return. So the second assertion asks the structural question instead - no equality comparison
-    anywhere in `token_ok` may compare anything but two lengths - and a ternary, an `or`, and an
-    early `!=` on the token value are all measured dead, while the real length guard is measured
-    still allowed.
+    1. "A `compare_digest` call exists in the module" - defeated by a decoy call on a branch that
+       never decides, with plain `==` deciding.
+    2. "Every computed `return` contains `compare_digest`" - defeated by moving the decoy INSIDE
+       the deciding return: `... and (supplied == reference or compare_digest(...))`. The primitive
+       is in the rendered return, and `or` short-circuits.
+    3. "No `ast.Compare` with `Eq`/`NotEq` compares anything but two `len(...)` calls" - defeated
+       by `operator.eq(supplied, reference)`, which is an `ast.Call`, not an `ast.Compare`. So are
+       `supplied.__eq__(reference)` and `supplied in (reference,)`.
+    4. Any of the above - defeated without a comparison at all, by a LEAKY GUARD ahead of an
+       untouched canonical return: `if not supplied.startswith(reference[:8]): return False`
+       returns a bare constant, so it is excluded from any "deciding return" rule by design, and
+       it leaks a prefix oracle while `compare_digest` still ships and is still reached.
 
-    What this still cannot see: the timing property itself, which no functional test can assert,
-    and a caller comparing the token elsewhere - which is the census below.
+    The set of ways to compare two byte strings in Python is open, so a denylist over it can only
+    ever name the spellings somebody has already thought of. The body of this function is four
+    statements. Requiring it to BE those four statements is the only version of this check that is
+    not a prediction about the next spelling.
 
-    **The division of labour between the two, stated honestly.** An earlier docstring said the
+    The cost is deliberate and worth stating: any legitimate change to `token_ok` fails this test
+    until `CANONICAL_TOKEN_OK_BODY` is updated in the same commit. For a function that decides
+    authentication in four lines, a human re-reading it on every edit is the point, not friction to
+    be engineered away.
+
+    What this still cannot see, stated as a complete list rather than a sample: the TIMING property
+    itself, which no functional test can assert; a caller comparing the token somewhere else in the
+    package, which is the census below; and a change to `compare_digest`'s own semantics, which is
+    the standard library's business. It also cannot see whether `CANONICAL_TOKEN_OK_BODY` is
+    itself correct - that is a human reading, and the reasoning for the shipped four lines is in
+    `auth.py`'s own docstring.
+
+    **The division of labour with the census, stated honestly.** An earlier docstring said the
     census "is what caught that one" for the decoy defeat. It did not and cannot: the census
     matches identifier names and the shipped operands are `supplied` and `reference`, so every
-    decoy variant passed it. THIS test is the only thing standing between `token_ok` and plain
-    equality; the census covers a DIFFERENT risk, a token compared somewhere else in the package.
+    decoy variant passed it. THIS test is the only thing standing between `token_ok` and a
+    non-constant-time comparison; the census covers a DIFFERENT risk, a token compared elsewhere
+    in the package.
     """
     source = inspect.getsource(auth)
     tree = ast.parse(source)
@@ -118,23 +147,28 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
         f" decoy call elsewhere in the module would satisfy this check: {uncovered}"
     )
 
-    # A substring test over the return is not enough either - see the docstring's third position.
-    # The structural question, asked directly: no equality comparison in `token_ok` may have an
-    # operand that is not a `len(...)` call. The length guard is allowed because both its operands
-    # are lengths; a comparison of the token VALUE is not, wherever in the function it sits.
-    plain = [
-        ast.unparse(node)
-        for node in ast.walk(functions[0])
-        if isinstance(node, ast.Compare)
-        and any(isinstance(op, ast.Eq | ast.NotEq) for op in node.ops)
-        and not all(
-            isinstance(operand, ast.Call)
-            and isinstance(operand.func, ast.Name)
-            and operand.func.id == "len"
-            for operand in [node.left, *node.comparators]
-        )
-    ]
-    assert not plain, f"token_ok decides with plain equality: {plain}"
+    # An ALLOWLIST of the whole body, not a denylist of equality spellings. See the docstring:
+    # four rounds of denylist each closed the spellings named and left the next one open, because
+    # the ways to compare two byte strings in Python are an open set - `==`, `operator.eq`,
+    # `.__eq__`, `in (x,)` - and a leaky guard AHEAD of an honest return needs no comparison at
+    # all. The body of this one function is four statements; requiring it to be those four
+    # statements is the only form of this check that is not a guess about what comes next.
+    statements = functions[0].body
+    # The docstring is prose and must be free to change; the code under it must not be.
+    if (
+        statements
+        and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and isinstance(statements[0].value.value, str)
+    ):
+        statements = statements[1:]
+    body = [ast.unparse(statement) for statement in statements]
+    assert body == CANONICAL_TOKEN_OK_BODY, (
+        "token_ok's body is not the reviewed constant-time implementation. This is deliberately"
+        " strict: the function decides authentication, so a change here needs a human to re-read"
+        " it and update CANONICAL_TOKEN_OK_BODY in the same commit, with the reasoning in the"
+        f" message.\n  shipped:   {body}\n  canonical: {CANONICAL_TOKEN_OK_BODY}"
+    )
 
 
 def test_no_module_compares_a_token_with_plain_equality() -> None:

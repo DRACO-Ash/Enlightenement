@@ -166,14 +166,13 @@ the volume.
       measured. An earlier PASS at commit `068b1c4` is not evidence about this tree and the tick
       claiming it has been removed. Every finding from that FAIL is closed in this release; the gate
       re-runs against this head and the tick goes back only on the verdict itself.
-- [ ] `security-reviewer` PASS. **Last verdict was FAIL, on commit `6caf92b`**, on the class-nested
-      blind spot, on `test_healthcheck.py` being unswept while the register cited it (three
-      fail-closed branches in `healthcheck.py` had no row), and on four exemption reasons asserting
-      a coverage relationship that mutation disproved. All are closed, and the seven promoted tests
-      were each re-mutated against their own cited test alone. It has not yet run against a head
-      carrying the citation-slice and census fixes, both of which are completeness controls, so its
-      verdict must be re-taken here. Same rule: the tick returns on a verdict against this head,
-      not on a verdict against an ancestor.
+- [x] `security-reviewer` **PASS, on commit `be19697`**, after a 60-mutant campaign across `src/`
+      and a live black-box run: no BLOCKER, no MAJOR. It confirmed all four new regression tests
+      are the SOLE killer of the control they name, that all nine promoted exemptions are real,
+      and it recomputed every published register figure independently. Four MINORs were raised and
+      three are closed in the commit under review here - the fourth `token_ok` position, two
+      uncovered `models.py` length caps, and `audit()` merging extra fields unsanitised - so this
+      tick describes `be19697` and the gate must re-run against the current head before deploy.
 - [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
       the application: five undefined submission fields, an unset resource budget, and a container
       contract that could not be confirmed because the CI `image` job named as its binding check
