@@ -45,22 +45,62 @@ def test_missing_header_fails() -> None:
 
 def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     """Mutating `hmac.compare_digest` to `==` leaves every behavioural test green, because
-    the difference is timing, not output. This asserts the primitive is present.
+    the difference is timing, not output. This asserts the primitive is on the DECIDING path.
 
-    What this CANNOT see: whether the comparison is reached on every path, or whether some
-    caller compares the token elsewhere. The first is covered by the behavioural tests
-    above; the second is covered by the module-wide check that follows.
+    **"Present in the module" was not enough, and the gap was demonstrated, not theorised.**
+    The security gate rewrote the comparison to
+
+        if len(supplied) != len(reference):
+            return hmac.compare_digest(b"x", b"y")
+        return supplied == reference
+
+    and both cited tests stayed green: this one because a `compare_digest` call still existed
+    somewhere in the module, and the `==` census because it matches identifier names and the
+    shipped operands are `supplied` and `reference` - so the "declared blind spot" was the actual
+    shipped naming, not a hypothetical rename. A decoy call satisfied the check while plain
+    equality decided authentication.
+
+    So it asserts the structure that matters: EVERY `return` in `token_ok` whose value is not a
+    bare constant must have `compare_digest` in it. A decoy call on a different branch no longer
+    helps, because the branch that decides is a return too and it has to carry the primitive.
+
+    What this still cannot see: the timing property itself, which no functional test can assert,
+    and a caller comparing the token elsewhere - which is the census below.
     """
     source = inspect.getsource(auth)
     tree = ast.parse(source)
-    calls = [
+
+    def has_compare_digest(node: ast.AST) -> bool:
+        return any(
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr == "compare_digest"
+            for inner in ast.walk(node)
+        )
+
+    assert has_compare_digest(tree), "auth.py does not call hmac.compare_digest"
+
+    functions = [
         node
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "compare_digest"
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "token_ok"
     ]
-    assert calls, "auth.py does not call hmac.compare_digest"
+    assert len(functions) == 1, "expected exactly one token_ok in auth.py"
+
+    deciding = [
+        ast.unparse(node)
+        for node in ast.walk(functions[0])
+        if isinstance(node, ast.Return)
+        # A bare `return False` is the fail-closed guard, not a comparison of the token.
+        and node.value is not None
+        and not isinstance(node.value, ast.Constant)
+    ]
+    assert deciding, "token_ok returns no computed value, so nothing compares the token"
+    uncovered = [rendered for rendered in deciding if "compare_digest" not in rendered]
+    assert not uncovered, (
+        "token_ok has a computed return that does not use the constant-time primitive, so a"
+        f" decoy call elsewhere in the module would satisfy this check: {uncovered}"
+    )
 
 
 def test_no_module_compares_a_token_with_plain_equality() -> None:

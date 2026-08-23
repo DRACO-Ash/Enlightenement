@@ -693,10 +693,26 @@ def _control_table_rows(policy: str) -> str:
     return "\n".join(rows)
 
 
+#: An elided citation - the `test_a_thing...` form the table uses to stay narrow - is resolved by
+#: PREFIX, and an unbounded prefix re-opens the sweep for a whole family. Measured by the security
+#: gate: shortening `test_the_coarse_tier...` to `test_the...` made an uncited control read as
+#: cited,
+#: because `test_the...` matches 32 of the 180 swept tests and `test_a...` would match 89. So both
+#: ends are bounded. The literals are absolute, not derived from the register, because a bound
+#: asserted against itself is no bound - this project has shipped that mistake twice.
+MIN_ELIDED_PREFIX = 20
+MAX_ELIDED_RESOLUTION = 3
+
 #: How a citation is spelled, in one place, because three checks read them and they drifted apart
-#: once already. `(?![a-z0-9_])` ends the token so a name cannot match inside a longer one, and
+#: once already. `(?![A-Za-z0-9_])` ends the token so a name cannot match inside a longer one, and
 #: `(?!\.py\b)` drops file stems so `tests/test_auth.py` contributes no bare `test_auth`.
-CITATION_TOKEN = r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)"
+#:
+#: **Case-insensitive, and it was not.** A lowercase-only class truncated
+#: `test_a_symlinked_backup_target_...` at the first capital and matched the useless stem
+#: `test_a_symlinked_backup_`, so a real cited control read as uncited. pytest does not care about
+#: case, so neither can this: any name the collector sees, the sweep must see. Measured on the
+#: current register, widening changes exactly that one name and loses nothing.
+CITATION_TOKEN = r"\btest_[A-Za-z0-9_]+(?![A-Za-z0-9_])(?!\.py\b)"
 
 #: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
 #: and `test_audit.py` were missing while the sweep read only four: the register cites the
@@ -777,7 +793,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         # security test in either suite still fails this check until somebody decides.
         "test_a_configured_token_requires_authentication_and_keeps_writes_closed",
         "test_a_finished_window_is_dropped_from_the_table",
-        "test_a_nonsensical_limit_is_refused",
         "test_a_nonsensical_window_is_refused",
         "test_a_real_origin_still_starts",
         "test_a_tracked_caller_is_still_counted_when_the_table_is_full",
@@ -786,13 +801,10 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_anything_other_than_an_affirmative_leaves_writes_closed",
         "test_data_dir_resolution_prefers_explicit_then_platform_then_default",
         "test_explicit_host_overrides_the_default",
-        "test_filesystem_root_as_data_dir_is_refused",
         "test_host_binds_every_interface_when_a_token_is_set",
         "test_host_binds_loopback_when_authentication_is_off",
         "test_keys_are_independent",
         "test_one_call_below_the_limit_still_passes",
-        "test_port_defaults_to_8080_and_validates",
-        "test_relative_data_dir_is_refused",
         "test_window_resets_only_after_it_elapses",
         # Ten more that a LOOSE matcher had masked: the first version of the check
         # shrank a name to `test_an` and found it inside an unrelated citation, so
@@ -814,7 +826,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_an_empty_reflected_value_stays_empty_rather_than_becoming_anonymous",
         "test_an_event_line_leaves_non_string_fields_intact",
         "test_audit_emits_one_parsable_json_line_with_the_given_fields",
-        "test_missing_or_blank_actor_becomes_anonymous",
         "test_no_control_character_survives_a_reflected_value",
         # --- test_auth.py: the four behaviour cases of the constant-time compare, whose row
         # cites the primitive and the `==` census. Match, mismatch, wrong-same-length and a
@@ -844,10 +855,8 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_a_latin1_if_match_byte_on_the_wire_is_ignored_rather_than_raising",
         "test_a_matching_if_match_is_accepted",
         "test_a_patch_to_an_unknown_session_is_a_404_not_a_silent_create",
-        "test_a_patch_with_an_unknown_key_is_rejected",
         "test_a_post_still_requires_every_mandatory_field",
         "test_a_probe_path_declaring_a_body_answers_even_for_a_body_method",
-        "test_a_probe_that_raises_reads_as_unready_never_as_a_pass",
         "test_a_stale_probe_verdict_is_refreshed_once_the_window_passes",
         "test_a_well_formed_if_match_still_parses",
         "test_a_write_with_a_wrong_token_of_the_same_length_is_refused",
@@ -856,7 +865,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_an_oversize_body_with_a_declared_length_is_refused",
         "test_an_unparsable_if_match_is_ignored_rather_than_failing_the_request",
         "test_liveness_paths_return_200_unauthenticated",
-        "test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous",
         "test_no_cors_header_is_emitted_when_no_origin_is_configured",
         "test_readiness_paths_return_200_unauthenticated_when_storage_is_writable",
         "test_readiness_returns_503_with_the_resolved_dir_and_errno",
@@ -905,15 +913,12 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_a_matching_expected_revision_is_accepted",
         "test_a_must_exist_write_is_refused_when_the_id_is_absent",
         "test_a_must_exist_write_merges_when_the_id_is_present",
-        "test_a_non_object_snapshot_is_rejected",
         "test_a_partial_update_never_deletes_an_unsent_field",
         "test_every_write_advances_the_revision",
         "test_load_returns_an_empty_snapshot_when_absent",
         "test_malformed_json_is_rejected_not_coerced",
         "test_merge_session_keeps_existing_values_absent_from_the_update",
         "test_migrate_preserves_unrecognised_fields",
-        "test_migrate_rejects_a_malformed_sessions_field",
-        "test_migrate_rejects_a_non_integer_revision",
         "test_probe_reports_an_existing_path_that_is_a_file_not_a_directory",
         "test_probe_writable_proves_a_usable_directory_with_a_real_write",
         "test_seed_creates_the_snapshot_and_is_idempotent",
@@ -1018,6 +1023,47 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
     # only `.py` is excluded and not every dot.
     cited_names = set(re.findall(CITATION_TOKEN, rows))
     cited_prefixes = {name for name in cited_names if f"{name}..." in rows}
+
+    # Both bounds asserted against absolute literals first, so raising one cannot quietly widen
+    # what the sweep accepts.
+    assert MIN_ELIDED_PREFIX == 20, "the minimum elided-prefix length changed; re-measure the risk"
+    assert MAX_ELIDED_RESOLUTION == 3, "the elided-prefix resolution bound changed; re-measure"
+    live = _all_test_names()
+    for prefix in sorted(cited_prefixes):
+        assert len(prefix) >= MIN_ELIDED_PREFIX, (
+            f"the elided citation {prefix!r} is {len(prefix)} characters, under the"
+            f" {MIN_ELIDED_PREFIX}-character floor; a short prefix admits a whole family of tests"
+            " as cited"
+        )
+        resolved = sorted(name for name in live if name.startswith(prefix))
+        assert resolved, f"the elided citation {prefix!r} resolves to no test at all"
+        assert len(resolved) <= MAX_ELIDED_RESOLUTION, (
+            f"the elided citation {prefix!r} resolves to {len(resolved)} tests, over the bound of"
+            f" {MAX_ELIDED_RESOLUTION}; write the names out or narrow the prefix: {resolved}"
+        )
+
+    # A row whose control cell is empty carries a citation and promises nothing. The register's
+    # heading is "Controls, each with a test that fails if it regresses"; a blank control is not
+    # one.
+    #
+    # DECLARED LIMIT, measured not assumed: a cell holding `<!-- retired -->` passes this, and
+    # so does a row whose text no longer describes what its test asserts. Both need somebody to
+    # judge
+    # whether prose describes a real control, which no matcher does. Stated here rather than
+    # implied away, because every defeat of this sweep so far came from a comment claiming ground
+    # the code did not hold.
+    for row in rows.splitlines():
+        cells = row.split("|")
+        if len(cells) < 4:
+            continue  # not a three-column row
+        control = cells[1].strip()
+        # The markdown separator is dashes and colons. Note the ORDER: an earlier version of this
+        # guard tested `set(control) <= {"-", " "}`, and `set("")` is a subset of everything, so the
+        # separator check swallowed the empty cell it was written to catch. Measured as a survivor
+        # before this line was corrected.
+        if control and set(control) <= {"-", ":"}:
+            continue
+        assert control, f"a control row has an empty control cell: {row!r}"
 
     # Every suite matching the glob is accounted for, in exactly one of three sets. The previous
     # guard derived the cited suites from `tests/(test_\w+\.py)` FILE references only, so a suite

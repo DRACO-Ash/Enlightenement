@@ -29,6 +29,7 @@ state-changing route.
 | Health paths public, and nothing else | `app.py` | `test_health_paths_stay_public_when_a_token_is_configured` |
 | Boundary validation rejects, never coerces | `models.py` | `test_a_malformed_body_is_rejected_generically` |
 | Unknown keys rejected (`extra="forbid"`) | `models.py` | same, `body1` case |
+| And on the PATCH model specifically, so an attacker-chosen `id` cannot reach the merge | `models.py`, `app.py` | `test_a_patch_with_an_unknown_key_is_rejected` |
 | Body cap enforced on BYTES READ, so chunked framing cannot bypass it | `middleware.py` | `test_an_oversize_chunked_body_is_refused_on_bytes_read` |
 | The cap holds whatever ORDER the framing headers arrive in | `middleware.py` | `test_the_cap_holds_whatever_order_the_framing_headers_arrive_in` |
 | The cap runs whatever CASE the method token arrives in | `middleware.py` | `test_a_lower_case_method_token_does_not_skip_the_cap` |
@@ -52,6 +53,10 @@ state-changing route.
 | The cap runs ahead of authentication | `middleware.py` | `test_an_oversize_chunked_body_is_refused_before_authentication` |
 | Two-tier rate limiting, 429 in both tiers | `ratelimit.py`, `app.py` | `test_the_coarse_tier...`, `test_the_strict_tier...` |
 | Probe paths never rate-limited | `app.py` | `test_probe_paths_are_never_rate_limited` |
+| A relative `DATA_DIR` refuses to start | `config.py` | `test_relative_data_dir_is_refused` |
+| The filesystem root as `DATA_DIR` refuses to start | `config.py` | `test_filesystem_root_as_data_dir_is_refused` |
+| An out-of-range `PORT` is refused, never clamped or defaulted silently | `config.py` | `test_port_defaults_to_8080_and_validates` |
+| A nonsensical rate-limit bound is refused at construction | `ratelimit.py` | `test_a_nonsensical_limit_is_refused` |
 | A wildcard origin refuses to start, unconditionally | `config.py` | `test_a_wildcard_origin_always_refuses_to_start_even_without_a_token` |
 | And so does `null`, whatever its case or padding, which is what a sandboxed iframe and a `file://` page send | `config.py` | `test_an_anonymous_or_wildcard_origin_refuses_to_start` |
 | Every exposed method survives a preflight | `app.py` | `test_every_exposed_method_survives_a_preflight_from_the_allowed_origin` |
@@ -64,10 +69,13 @@ state-changing route.
 | A stale revision is a 409, never a silent overwrite | `storage.py`, `app.py` | `test_a_stale_expected_revision_is_refused...`, `test_a_stale_if_match_is_a_409...` |
 | Backup before a destructive write, pruned to retention | `storage.py` | `test_a_backup_is_taken_before_an_overwrite...` |
 | The session collection is capped, newest kept, so the snapshot cannot grow without bound | `storage.py` | `test_the_cap_boundary_holds_in_both_directions`, `test_the_cap_keeps_the_newest_and_never_drops_the_fresh_entry` |
-| The backup copy is not taken through a symlink either | `storage.py` | `test_a_symlinked_snapshot_cannot_be_copied_into_a_backup` |
+| The backup SOURCE is not read through a symlink | `storage.py` | `test_a_symlinked_snapshot_cannot_be_copied_into_a_backup` |
+| The backup TARGET is not written through one either, so a planted backup path cannot overwrite the file it points at | `storage.py` | `test_a_symlinked_backup_target_cannot_overwrite_the_file_it_points_at` |
 | Log injection blocked; actor sanitised | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
 | Actor and every reflected value LENGTH-CAPPED, so a flood cannot be written through a log line | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
+| Both write routes EMIT an audit line naming the actor, which is the accountability control under a shared token | `app.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor` |
+| A missing or blank actor becomes `anonymous`, never an empty field | `audit.py` | `test_missing_or_blank_actor_becomes_anonymous` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
 | No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length`, `test_nothing_on_app_state_exposes_the_configuration` |
 | Operator values normalised before use | `config.py` | `test_clean_strips_quotes_whitespace_and_control_characters` |
@@ -83,6 +91,10 @@ state-changing route.
 | Backups carry the same restrictive mode as the snapshot | `storage.py` | `test_the_snapshot_and_its_backups_share_the_same_restrictive_mode` |
 | The lock path is not followed through a symlink | `storage.py` | `test_the_lock_file_is_not_followed_through_a_symlink` |
 | A storage fault leaves the app unready, never unstartable | `app.py` | `test_the_app_still_starts_and_diagnoses_itself_when_the_snapshot_is_corrupt` |
+| A RAISING probe reads as unready, never as a pass | `app.py` | `test_a_probe_that_raises_reads_as_unready_never_as_a_pass` |
+| A non-object snapshot is rejected, not coerced | `storage.py` | `test_a_non_object_snapshot_is_rejected` |
+| A malformed `sessions` field is rejected on migration | `storage.py` | `test_migrate_rejects_a_malformed_sessions_field` |
+| A non-integer revision is rejected on migration | `storage.py` | `test_migrate_rejects_a_non_integer_revision` |
 | The rate-limit key table fails CLOSED when full | `ratelimit.py` | `test_a_full_table_refuses_a_new_caller_rather_than_evicting_a_tracked_one` |
 | The HEALTHCHECK port is validated, never interpolated raw | `healthcheck.py` | `test_a_hostile_port_is_refused_rather_than_interpolated` |
 | A malformed port reads UNHEALTHY, never a silent fallback that probes a different port | `healthcheck.py` | `test_a_hostile_port_never_reaches_a_url` |
@@ -125,6 +137,7 @@ the code, and killed it:
 | 12 | 8 run, 8 killed | 1 BLOCKER in the round-eleven completeness check itself (both gates): it matched `def test_` and so could not see `async def`, missing 17 of 20 tests in the one suite that motivated it |
 | 13 | 19 run, 19 killed | 3 MAJORs from each gate on the SAME check: `tests/test_appstore_contract.py:624` read `tree.body`, so a class-nested test was invisible while the docstring claimed class nesting was survived; the cited-suite guard read FILE references only, so `test_healthcheck.py` and its three fail-closed branches were unswept; and four exemption REASONS asserted a mutation relationship that mutation disproved |
 | 14 | 9 run, 9 killed, 1 required survivor | 3 MAJORs (eng): the row-only citation filter admitted the MUTANT LEDGER's own rows, so a control cited only there read as cited; the `==` census excluded every `ast.Call`, so `str(token) == expected` survived; and two published figures were never measured |
+| 15 | 15 run, 13 killed, 2 deliberate survivors | 6 MAJORs (sec) from a 92-mutant campaign: FOUR controls deletable with the suite green - the backup TARGET `O_NOFOLLOW` (read access escalating to arbitrary file overwrite), both audit emissions, the constant-time compare behind a decoy call, and the PATCH `extra="forbid"` - plus 9 further exemption reasons disproved and an unbounded elided-citation prefix |
 
 Survivors that remain, each with the reason it is or is not load-bearing:
 

@@ -922,9 +922,80 @@ message rather than passing. Four census wrappers (`str(...)`, `.strip()`, `[:32
 killed. And `len(token) != len(expected)`, which must stay allowed - it does, so the fix narrowed
 the exclusion without removing it.
 
+### Round fifteen: four controls that could be deleted with the suite green
+
+**The owner called this: close the REAL gaps, upload, and bound the sweep's claims instead of
+extending it.** Fourteen rounds had been spent on the release record while the application itself
+was sound, and the security gate's ninety-two-mutant campaign finally separated the two. Its live
+attacks all behaved correctly against the built app - 401 on a wrong token of equal length, 422 on
+`__proto__` and on `{"id":"zzz"}` with the store unchanged, 413 on an oversize body, 200 not 500 on
+a 5000-digit `If-Match`, no cross-origin header for a hostile origin, no token or exact length in
+diagnostics, log injection neutralised. **Seventy-four of its mutants died to a cited test.** What it
+found was four controls that could be DELETED with all 769 tests green, and those are what this
+round closes.
+
+● **`storage.py` backup TARGET, and this one had a real consequence.** The existing test covered
+  the SOURCE: a symlinked `training.json` cannot be read into a backup. `os.O_NOFOLLOW` on the
+  target it WRITES was uncovered. A principal with write access to the data volume - the same one
+  the snapshot and lock guards already assume - pre-creates the next backup path as a symlink to
+  any file, and the next privileged write destroys that file. Read access escalated to arbitrary
+  file overwrite. `test_a_symlinked_backup_target_cannot_overwrite_the_file_it_points_at` now
+  plants exactly that and asserts the victim survives. Measured both ways: the new test kills the
+  mutant, and the old source test demonstrably does NOT, which is the whole reason the row needed
+  splitting into two.
+● **The audit trail was entirely unasserted at the wiring level.** Replacing either
+  `audit(...)` call with a no-op left the suite green, no test in `tests/` used `caplog`, and the
+  one test whose NAME promised the actor asserted only `201`. Under a shared team token, accepted
+  risk 1 says the token cannot distinguish who wrote - so the audit line IS the accountability
+  control, and nothing checked it existed. Both routes and both actors are asserted now, including
+  that no credential appears in the line, and the misnamed test does what its name says.
+● **The constant-time compare fell to a decoy.** Keeping any `compare_digest` call in the module
+  while returning plain `==` satisfied both cited tests: the primitive check because a call existed
+  somewhere, and the `==` census because it matches identifier names and the shipped operands are
+  `supplied` and `reference` - so the "declared blind spot" was the actual shipped naming, not a
+  hypothetical rename. The check now requires EVERY computed `return` in `token_ok` to carry the
+  primitive. Four defeats proved dead, including the gate's exact one.
+● **The PATCH model's `extra="forbid"`** was load-bearing and cited by nothing that asserts it:
+  without it an attacker-chosen `id` reaches the merge. Cited now.
+
+**Nine more exemption reasons were disproved by mutation and are now rows** - the relative and
+root `DATA_DIR` refusals, the out-of-range `PORT`, the nonsensical rate-limit bound, the raising
+probe reading unready, the non-object snapshot, both migration rejections, and the `anonymous`
+actor default. Each was killed only by an exempted test, so the register carried no row that fails
+when the branch regresses.
+
+**And the sweep's loose ends are BOUNDED rather than extended**, which was the other half of the
+owner's decision. The elided-citation prefix had no floor: shortening `test_the_coarse_tier...` to
+`test_the...` made an uncited control read as cited, because that prefix matches 32 of the 182
+swept tests. There is now a minimum length and a resolution bound, both asserted against absolute
+literals so raising one fails rather than widening the sweep. A gutted control row can no longer
+keep its citation. The citation token is case-insensitive, because a lowercase-only class truncated
+`..._TARGET_...` at the first capital and made a real cited control read as uncited - pytest does
+not care about case, so the sweep cannot either.
+
+**One declared limit, stated rather than closed.** A control cell holding `<!-- retired -->` passes
+the non-empty check, and so does a row whose text no longer describes what its test asserts. Both
+need somebody to judge whether prose describes a real control, which no matcher does. It is
+recorded as a limit in the code because every defeat of this sweep so far came from a comment
+claiming ground the code did not hold.
+
+**Verified.** Loop green under the pinned toolchain: **771 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Collected: **772**. Register, all from the same slice the
+sweep reads: control rows **86**, citations in them **102**, exemptions **88**, tests swept **182**
+across **8** suites.
+
+**Mutations: 15 run. 13 killed, 2 survivors both deliberate.** The two survivors are the point
+rather than an omission: the backup mutant run against the OLD source test alone had to survive, or
+the new test would be redundant; and the `<!-- retired -->` cell is the declared limit above. One
+of the thirteen is worth naming, because it caught my own bug: the empty-control-cell guard tested
+`set(control) <= {"-", " "}`, and `set("")` is a subset of everything, so the separator check
+swallowed the empty cell it was written to catch. It survived, I fixed the guard, it died. A guard
+written and never mutated is a guard nobody has measured.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** now (unchanged
-across round thirteen, which moved names between two lists rather than adding tests). That last figure was left at 734 through one
+head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
+round-fourteen head, **772** now: round thirteen moved names between two lists rather than adding
+tests, and round fifteen added two, the backup-target symlink refusal and the gated audit line. That last figure was left at 734 through one
 round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
 numbers, caught by the gate re-deriving it. An earlier version of this row attributed
 the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and

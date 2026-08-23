@@ -354,6 +354,40 @@ def test_the_snapshot_is_not_read_through_a_symlink(tmp_path: Path) -> None:
         store.load()
 
 
+def test_a_symlinked_backup_target_cannot_overwrite_the_file_it_points_at(tmp_path: Path) -> None:
+    """The `O_NOFOLLOW` on the backup TARGET, which no test could see regress.
+
+    Its sibling below covers the SOURCE: a symlinked `training.json` cannot be read into a backup.
+    The target was uncovered, and `os.open(target, ... | os.O_NOFOLLOW, 0o600)` in `_take_backup`
+    could be deleted with all 769 tests green. The security gate measured the consequence: a
+    principal holding write access to the data volume - the same principal the snapshot and lock
+    `O_NOFOLLOW` guards already defend against - pre-creates the next backup path as a symlink to
+    any file it wants destroyed, and the next privileged write overwrites that file with the
+    snapshot. Arbitrary file overwrite, from an attacker who could previously only read.
+
+    The stamp is predictable because `now` is injected, which is what makes the attack practical
+    rather than a race: `fixed_now` yields one stamp, and a real deployment's stamp is a timestamp
+    an attacker on the same volume can watch.
+    """
+    data_dir = tmp_path / "data"
+    victim = tmp_path / "victim.conf"
+    victim.write_text("do-not-overwrite", encoding="utf-8")
+
+    store = TrainingStore(data_dir, now=fixed_now)
+    store.seed()  # the snapshot must exist, or no backup is taken
+
+    stamp = fixed_now().strftime("%Y%m%dT%H%M%S%f")
+    planted = data_dir / f"{STORE_FILENAME}.{stamp}.bak"
+    planted.symlink_to(victim)
+
+    with pytest.raises(OSError, match=r"symbolic link|Too many levels|ELOOP|loop"):
+        store.upsert_session(dict(SESSION))
+
+    assert victim.read_text(encoding="utf-8") == "do-not-overwrite", (
+        "the backup write followed a symlink and destroyed the file it pointed at"
+    )
+
+
 def test_a_symlinked_snapshot_cannot_be_copied_into_a_backup(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir()

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import json
+import logging
 import threading
 import time
 from collections.abc import Iterator
@@ -302,10 +304,63 @@ def test_health_paths_stay_public_when_a_token_is_configured(gated_client: TestC
         assert gated_client.get(path).status_code == 200, path
 
 
+def _audit_lines(records: list[logging.LogRecord]) -> list[dict[str, Any]]:
+    """The audit records emitted, parsed. Only `enlightenment.audit`, never the event log."""
+    return [
+        json.loads(record.getMessage())
+        for record in records
+        if record.name == "enlightenment.audit"
+    ]
+
+
 def test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous(
-    client: TestClient,
+    client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
+    """**This test asserted only `201` for four releases, while its name promised the actor.**
+
+    Under a shared team token the audit line IS the accountability control: accepted risk 1
+    records that the token cannot distinguish who wrote, so the actor field and the fact a line
+    is emitted at all are what the register is standing on. Nothing asserted either. Measured by
+    the security gate: replacing the `audit(...)` call in the write route with a no-op left the
+    whole suite green, and no test in `tests/` used `caplog`.
+    """
+    with caplog.at_level(logging.INFO, logger="enlightenment.audit"):
+        assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
+
+    lines = _audit_lines(caplog.records)
+    assert len(lines) == 1, f"expected exactly one audit line, got {lines}"
+    assert lines[0]["event"] == "session.upsert"
+    assert lines[0]["actor"] == "anonymous"
+    assert lines[0]["sessionId"] == VALID_SESSION["id"]
+
+
+def test_a_gated_write_emits_one_audit_line_naming_the_token_actor(
+    gated_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The other half: a token-authenticated write records the actor the token resolves to.
+
+    Both routes, because both carried an unasserted `audit(...)` call. `session.patch` records
+    the FIELDS touched rather than the values, which is the whole point of an audit line on a
+    partial update: what changed, by whom, at which revision, without copying the payload into
+    the log.
+    """
+    headers = {TOKEN_HEADER: TEST_PLACEHOLDER}
+    with caplog.at_level(logging.INFO, logger="enlightenment.audit"):
+        created = gated_client.post("/api/v1/sessions", json=VALID_SESSION, headers=headers)
+        assert created.status_code == 201
+        patched = gated_client.patch(
+            f"/api/v1/sessions/{VALID_SESSION['id']}", json={"title": "Renamed"}, headers=headers
+        )
+        assert patched.status_code == 200
+
+    lines = _audit_lines(caplog.records)
+    assert [line["event"] for line in lines] == ["session.upsert", "session.patch"], lines
+    assert {line["actor"] for line in lines} == {"team"}, lines
+    assert lines[1]["fields"] == ["title"], lines[1]
+    assert lines[1]["rev"] > lines[0]["rev"], lines
+    # The audit line carries no credential, which is the rule the whole log posture rests on.
+    for line in lines:
+        assert TEST_PLACEHOLDER not in json.dumps(line)
 
 
 # --- boundary validation ------------------------------------------------------------
