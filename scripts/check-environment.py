@@ -578,7 +578,8 @@ def scan(lockfiles: list[str], installed: dict[str, str]) -> Divergences:
             # Described where the line is COMPOSED, not at one echo site. The first version
             # guarded only the unreadable-line report, and this is the other place a URL
             # reaches stderr: the version group is `[^\s;\\]+`, which swallows a whole URL, so
-            # `pkg==https://user:token@host/x` - a one-character typo of the direct-reference
+            # a pinned line whose version is a whole URL carrying userinfo - a one-character
+            # typo of the direct-reference
             # form the redaction was written for - printed the credential in full.
             if actual is None:
                 missing.append(

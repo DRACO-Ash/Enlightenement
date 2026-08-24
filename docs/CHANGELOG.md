@@ -1218,6 +1218,56 @@ Five regressions all still dead: plain `==`, the or-decoy inside the return, a `
 the body, a reassigned `hmac.compare_digest`, and a naked wrapper with a spoofed `__qualname__`. And
 a docstring-only edit, which must survive and does.
 
+### Round nineteen: the platform's Secret Detection stage, and it was right
+
+**The first real upload attempt returned 12 secret findings, and every one of them was mine.** Not
+a false positive in the sense that matters: zero live credentials exist anywhere in this repository,
+but twelve source lines carried a literal `scheme://user:pass@host` shape, and a scanner cannot tell
+a convincing fake from the real thing. That is the whole point of the stage.
+
+Where they were, and what they were for:
+
+● **Six in `tests/test_appstore_contract.py`** - the test vectors for the credential-echo controls
+  in `scripts/check-environment.py`. Every one an `example.invalid` or `h.invalid` host with an
+  obviously synthetic password, existing solely to prove the checker never prints userinfo.
+● **One in `scripts/check-environment.py`** - a comment illustrating the typo the control was
+  written for.
+● **Five in `docs/CHANGELOG.md`** - the record of the six times that control was bypassed, which
+  quoted the bypassing shapes verbatim.
+
+**The irony is exact and worth keeping.** These are the fixtures for the redaction control that took
+six rounds to get right, and the documentation of those six rounds. The work to prove that no
+credential is ever echoed itself shipped twelve credential shapes.
+
+**`_credential_shape` already existed and already solved this**, for the `ghp_`-style provider
+tokens, with its rationale written out: no fragment reaching eight characters, nothing named after a
+scanner keyword, and a test asserting the result. It was never extended to URL userinfo. So
+`_userinfo_url` is its sibling: it assembles the same strings at runtime, with `chr(64)` for the
+at-sign so no literal in the file carries a colon pair followed by one. Verified that all four
+shapes reproduce byte-for-byte, so the tests exercise exactly what they did before. The comment and
+the five changelog lines now DESCRIBE the shapes instead of rendering them, which loses nothing: the
+record is what was bypassed and why, not the literal string.
+
+**What I got wrong in predicting this.** I told the owner stage 1 would pass, on the strength of the
+repository's own hook and a hand-built sweep for provider-token shapes. Both were clean and both
+were the wrong sweep: neither had a "Password in URL" rule. A local check that does not implement
+the remote rule is not evidence about the remote rule, and I presented it as though it were. The
+lesson is the one this project keeps relearning in a new position - a check is worth exactly what it
+actually tests.
+
+**Dockerfile Lint: one Low warning, explicitly non-blocking, deliberately NOT taken.** It asks to
+consolidate the consecutive `RUN` at `Dockerfile:91`, which is the setuid and setgid sweep. That
+sweep is a standalone final instruction on purpose, its own comment says nothing may follow it, and
+three contract tests enforce exactly that - `test_the_suid_sweep_covers_files_and_directories_and_
+fails_closed`, `test_nothing_follows_the_suid_sweep_in_its_stage`, and the layer-order assertion.
+Merging it into the purge would satisfy a Low warning by weakening a hardening invariant that a
+policy scan STOPS on, and it cannot be build-verified in this environment. Deferred to V0.23, where
+the CI image job can prove the rebuild.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Zero userinfo-URL literals remain in any tracked file,
+measured by sweep. The repository's own secret-scan test still passes over every tracked file.
+
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
 round-fourteen head, **772** after round fifteen, **777** now: round thirteen moved names between
@@ -1648,7 +1698,7 @@ duplication measurement and coverage import, and whether stage 1 scans history o
   present.
 ● **Redaction bypasses.** Scheme-relative userinfo (`//user:token@host`) was not matched, and the
   authority run crossed a query string, so `https://host.invalid?token=a@b` reported
-  `https://[REDACTED:credential]@b` with the host destroyed - over-redaction is not the safe
+  a redacted-userinfo form with the host destroyed - over-redaction is not the safe
   direction when the report exists to say WHICH line to fix. The pattern now makes the scheme
   optional and stops the authority at `/`, `?` or `#`. Fifteen forms measured: eight must-redact
   all redact, seven must-not-touch all untouched.
@@ -1691,7 +1741,7 @@ V0.16 added `redact()` for URL userinfo. Its pattern required a colon, matching 
 `user:password@`. So `https://ghp_...@github.com/org/repo.git` - a bare token with no password,
 and the ordinary shape of a pip direct reference against a private repository - was never
 matched at all. **The most likely real credential to reach that path was the one form the
-control could not see.** Also bypassed: `https://:token@host`, percent-encoded userinfo (which
+control could not see.** Also bypassed: userinfo with an EMPTY user, percent-encoded userinfo
 pip's own documentation recommends), and the tail of any password containing a raw `@`, since
 userinfo runs to the LAST `@` before the authority.
 
@@ -1704,7 +1754,7 @@ operator which line to fix.
 
 `redact()` guarded the unreadable-line report only. A line the pin pattern DOES match, whose
 version group is a URL, went out through the missing-and-wrong report in clear:
-`pkg==https://alice:token@host/x.whl` printed `pkg: pinned https://alice:token@host/x.whl, NOT
+a pinned line whose version was a whole userinfo URL printed that URL twice in one report, NOT
 INSTALLED`. That is a one-character typo (`==` for `@`) of exactly the form the redaction was
 written for. The comment beside the pattern asserted this was "the one remaining path"; a
 two-line lock file refuted it.
@@ -1888,7 +1938,7 @@ Four mutations left the previous suite green. Each is now killed:
   not enumerable from outside.
 ● **The fix for the fail-open branch introduced a disclosure path.** Echoing unreadable
   requirement lines is what stopped them being skipped, and a PEP 440 direct reference can
-  legitimately carry a token (`pkg @ https://user:token@host/pkg.whl`). URL userinfo is now
+  legitimately carry a token, in the PEP 508 direct-reference form. URL userinfo is now
   rendered as `[REDACTED:credential]` before anything reaches stderr and thence a CI log.
 ● **`SGP4_ERRORS[6]` said "mean radius".** The library's `mrt` is the instantaneous geocentric
   radius in Earth radii, not a mean. Corrected, since the entry above it promises the phrasing
