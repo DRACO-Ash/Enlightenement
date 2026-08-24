@@ -1134,10 +1134,14 @@ sixteen and seventeen: enumerating FRAMES cannot work either, for exactly the sa
 the names it resolves to, what wraps it, what rebinds it, what replaces an attribute on a module it
 holds. I replaced one enumeration with another and called it an allowlist.
 
-What actually closes it is asking the runtime which code object the public name reaches:
+What I reached for was asking the runtime which code object the public name reaches:
 `inspect.getsource(auth.token_ok)` follows `__code__.co_filename` and `co_firstlineno`, so pinning
 THAT closes the naked wrapper, the `functools.wraps` wrapper, the qualname spoof, the name rebind
-and a `__code__` swap in one assertion. The primitive is checked by TYPE - the real
+and a NAIVE `__code__` swap in one assertion.
+
+**And that sentence named its own defeat as its proof, which round eighteen records.**
+`co_filename` and `co_firstlineno` are writable through `types.CodeType.replace()`. Citing them as
+the reason the pin is safe was the over-claim again, one round after withdrawing the last one. The primitive is checked by TYPE - the real
 `compare_digest` is a C builtin and no Python-level replacement is - rather than by module identity.
 The two frame probes stay, demoted honestly to what they are: cheap diagnostics that name which
 frame moved when one fires, which a body diff does not.
@@ -1156,6 +1160,63 @@ found.
 the reassigned `compare_digest` attribute - plus three regression checks that the earlier positions
 stay dead under the new pin: plain `==` replacing the primitive, a `startswith` guard inside the
 body, and a source-level decorator.
+
+### Round eighteen: the pin was handed the canonical source by a function that ignored it
+
+**`engineering-reviewer`: FAIL, one MAJOR, and it is the fourth defeat of this one control in four
+consecutive rounds.** Round seventeen's fix pinned `inspect.getsource(auth.token_ok)` on the
+reasoning that it follows `__code__.co_filename` and `co_firstlineno`, so it reads the callable the
+name actually reaches. Both fields are writable through `types.CodeType.replace()`. The gate forged
+one:
+
+    forged = types.FunctionType(
+        _bypass.__code__.replace(
+            co_filename=auth.__file__, co_firstlineno=<canonical line>, co_name="token_ok"
+        ),
+        auth.__dict__,
+        "token_ok",
+    )
+    forged.__qualname__ = "token_ok"
+    auth.token_ok = forged
+
+`inspect.getsource(auth.token_ok)` returned the canonical four lines VERBATIM. All four sibling
+controls passed. `token_ok("junk", "the-real-secret")` returned `True`. Total authentication bypass,
+full loop green.
+
+**And the record was worse than the hole.** Round seventeen's changelog cited `co_filename` and
+`co_firstlineno` as the REASON the pin was safe. They are precisely the two forgeable fields. The
+claim named its own defeat as its proof, one round after withdrawing the previous over-claim on the
+same control.
+
+**What the control is now: the executed bytecode.**
+`test_the_executed_bytecode_is_the_reviewed_implementation` compiles `auth.py` from disk, finds
+`token_ok`'s code object without executing anything, and compares `co_code` and `co_names` against
+the callable the name reaches. A forged code object carries the bypass's bytecode whatever it claims
+about its origin, so it cannot survive. `co_consts` is deliberately excluded because it holds the
+docstring: measured, a docstring edit leaves `co_code` and `co_names` identical while `co_consts`
+differs, so prose stays free and code does not.
+
+Everything else in this control's stack is demoted to a diagnostic and labelled as one, including
+the source pin. They stay because when one fires it names WHICH frame or statement moved, and a
+bytecode diff cannot.
+
+**Nine positions across four rounds, and the pattern is now unmistakable.** Equality spellings, then
+frames, then the source a code object reports. Each fix enumerated one more surface and each was
+defeated by the next surface out. Bytecode is the first assertion in the sequence that is not an
+enumeration: it reads what runs.
+
+**Also: my own guard caught my own mistake, which is the first time that has happened.** The
+capital-letter citation assertion added in round seventeen fired on `..._BYTECODE_...` in the new
+test's name, exactly as designed, before any gate saw it. The name is lowercase now.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean.
+
+**Mutations: 8 run, 6 killed, 2 deliberate survivors.** The forgery, killed - and measured surviving
+the SOURCE PIN alone, which is the proof that the pin was the hole rather than a redundant check.
+Five regressions all still dead: plain `==`, the or-decoy inside the return, a `startswith` guard in
+the body, a reassigned `hmac.compare_digest`, and a naked wrapper with a spoofed `__qualname__`. And
+a docstring-only edit, which must survive and does.
 
 The collected-test count, measured at each commit rather than derived: **757** at the round-two
 head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the

@@ -160,7 +160,13 @@ the volume.
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `03d9788`**, with one
+- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `08a384e`**, with one MAJOR:
+      the fourth defeat of the constant-time detection control in four rounds. `inspect.getsource`
+      reads the location a code object SELF-REPORTS, and `types.CodeType.replace()` writes
+      `co_filename` and `co_firstlineno`, so a forged code object was handed the canonical source
+      while returning `True` unconditionally - and the round-seventeen changelog had cited those two
+      fields as the reason the pin was safe. The control is now the executed BYTECODE compared
+      against `auth.py` compiled from disk. The verdict BEFORE that was FAIL on `03d9788`, with one
       BLOCKER and five MAJORs. The BLOCKER was an unconditional authentication bypass surviving the
       whole loop: the AST body pin on `token_ok` read the module's SOURCE, so leaving the canonical
       `def` untouched, appending a naked wrapper with a break-glass branch, spoofing its

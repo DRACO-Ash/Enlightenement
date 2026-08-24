@@ -117,8 +117,17 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     776 passed, with ruff and mypy silent. Enumerating frames was the wrong method, for the same
     reason enumerating equality spellings was. The pin now follows the CODE OBJECT the public name
     reaches, via `inspect.getsource(auth.token_ok)`, which closes the naked wrapper, the
-    `functools.wraps` wrapper, the qualname spoof, the name rebind and a `__code__` swap at once;
-    and the primitive is checked by TYPE rather than by module identity.
+    `functools.wraps` wrapper, the qualname spoof, the name rebind and a NAIVE `__code__` swap at
+    once; and the primitive is checked by TYPE rather than by module identity.
+
+    **"And a `__code__` swap" was the next over-claim, withdrawn here.** `inspect.getsource` reads
+    the text at the location the code object SELF-REPORTS through `co_filename` and
+    `co_firstlineno`, and `types.CodeType.replace()` writes both. The engineering gate forged
+    exactly that and this pin was handed the canonical four lines verbatim by a function returning
+    `True` unconditionally. The changelog had cited those two fields as the REASON the pin was
+    safe, which named its own defeat as its proof.
+    `test_the_executed_bytecode_is_the_reviewed_implementation` is the control now; this pin
+    is the diagnostic that says which statement moved.
 
     What this still cannot see, and this list is bounded by the mechanism rather than offered as a
     complete account of the risk: the TIMING property itself, which no functional test can assert;
@@ -212,6 +221,65 @@ def test_the_token_comparison_uses_the_constant_time_primitive() -> None:
     )
 
 
+def test_the_executed_bytecode_is_the_reviewed_implementation() -> None:
+    """The only assertion here that reads what actually RUNS.
+
+    `inspect.getsource` reads the text at the location the code object SELF-REPORTS, through
+    `co_filename` and `co_firstlineno`. Both are writable via `types.CodeType.replace()`, which is
+    the standard `__code__`-swap idiom. So the source pin can be handed the canonical text by a
+    function that does something else entirely. The engineering gate built it:
+
+        forged = types.FunctionType(
+            _bypass.__code__.replace(
+                co_filename=auth.__file__, co_firstlineno=<canonical line>, co_name="token_ok"
+            ),
+            auth.__dict__,
+            "token_ok",
+        )
+        forged.__qualname__ = "token_ok"
+        auth.token_ok = forged
+
+    `inspect.getsource(auth.token_ok)` then returns the canonical four lines VERBATIM. All four
+    sibling controls passed, the whole loop was green, and `token_ok("junk", "the-real-secret")`
+    returned True. A total authentication bypass.
+
+    Worse than the hole: round seventeen's changelog claimed this pin closed "a `__code__` swap",
+    and cited `co_filename` and `co_firstlineno` as the reason it was safe. Those are exactly the
+    forgeable fields. The claim named its own defeat as its proof.
+
+    So this compares the BYTECODE of the callable the name reaches against the bytecode of
+    `token_ok` compiled fresh from `auth.py` on disk. A forged code object carries the bypass's
+    bytecode whatever it says about its origin, so it cannot survive this. `co_code` and `co_names`
+    only: `co_consts` holds the docstring, and prose must stay free to change. Measured - a
+    docstring edit leaves `co_code` and `co_names` identical while `co_consts` differs.
+
+    This test, not the source pin, is the control. The source pin stays because when it fires it
+    names WHICH statement changed, which a bytecode diff cannot.
+    """
+    source = Path(auth.__file__).read_text(encoding="utf-8")
+    # Compiled, never executed: `exec` here would re-run the module for no benefit.
+    module_code = compile(source, auth.__file__, "exec")
+    canonical = [
+        const
+        for const in module_code.co_consts
+        if isinstance(const, types.CodeType) and const.co_name == "token_ok"
+    ]
+    assert len(canonical) == 1, (
+        f"expected exactly one token_ok code object in {auth.__file__}, found {len(canonical)}"
+    )
+
+    live = auth.token_ok.__code__
+    assert live.co_code == canonical[0].co_code, (
+        "the bytecode auth.token_ok executes is not the bytecode auth.py compiles. A code object"
+        " can forge co_filename and co_firstlineno, so the source pin can be shown the canonical"
+        " text by a function that does something else; this comparison cannot be."
+    )
+    assert live.co_names == canonical[0].co_names, (
+        "auth.token_ok references different global names than auth.py's token_ok compiles:"
+        f" {live.co_names} against {canonical[0].co_names}"
+    )
+
+
 def test_the_primitive_name_resolves_to_the_standard_library_module() -> None:
     """`hmac` in `auth.py` must BE the standard library's `hmac`, not something named it.
 
@@ -261,10 +329,11 @@ def test_token_ok_is_neither_wrapped_nor_decorated() -> None:
     though they were.** A naked wrapper that ASSIGNS `__qualname__ = "token_ok"` and rebinds the
     module-level name passes both, and the engineering gate demonstrated exactly that as an
     unconditional authentication bypass with the whole loop green. What closes the frame is the body
-    pin in `test_the_token_comparison_uses_the_constant_time_primitive`, which parses
-    `inspect.getsource(auth.token_ok)` and so follows the code object the NAME reaches. These two
-    assertions remain as cheap, specifically-named diagnostics: when one fires it says which frame
-    moved, which a body diff does not.
+    bytecode comparison in `test_the_executed_bytecode_is_the_reviewed_implementation`, which is
+    the only assertion here that reads what actually RUNS. The source pin beside it was itself
+    defeated by a code object forging `co_filename`, so it is a diagnostic too. All of these
+    remain because when one fires it names WHICH frame or statement moved, which a bytecode diff
+    does not.
     """
     assert inspect.unwrap(auth.token_ok) is auth.token_ok, (
         "token_ok is wrapped, so something runs before the constant-time comparison:"
