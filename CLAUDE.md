@@ -92,6 +92,12 @@ requirements*.txt           hash-locked dependencies (the python template marker
 - Releases are `V0.1` style. The version lives in `src/enlightenment/__init__.py` and
   `pyproject.toml`; bump both by path, never by a repo-wide search-and-replace, and add one
   audit row in `docs/CHANGELOG.md` on every change.
+- **Bump the version on EVERY change, not only on a release.** Owner decision, taken after three
+  distinct artefacts shipped as `0.22.0` in one day and the App Store recorded an upload against
+  one of them. A version that identifies more than one build cannot answer "which one is
+  deployed", and the SHA-256 is not a substitute: nobody quotes a digest in a conversation. Six
+  tests bind the version across both stamps, `docs/CHANGELOG.md`, the deploy checklist, the
+  submission manifest and the artefact, so a missed site fails the loop rather than shipping.
 - The App Store slug is `enlightenment`: lowercase, alphanumeric, no hyphen at all, so it
   cannot trip the double-hyphen naming fault that fails a pipeline with zero stages run.
 

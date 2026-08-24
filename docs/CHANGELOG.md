@@ -2,6 +2,86 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23 (2026-08-24)
+
+**What.** V0.22.0 was uploaded to the App Store and **failed Secret Detection**, the first of the
+eight pipeline stages, which gates every stage after it: Dependencies, SAST, Dependency Scanning,
+Test and Code Quality all reported Skipped. Container Build and Container Scan both **PASSED**,
+which is the first independent proof of the container contract - that stage could not be verified
+locally, because the registry blob endpoint is denied by this environment's network policy.
+
+**Why this is a new version rather than another round under V0.22.** Three distinct artefacts
+carried the version 0.22.0 in one day, and the platform now holds an upload record keyed to that
+number against a build that failed. A version string that means two different things is the
+ambiguity this project has spent nineteen rounds removing from its documentation. From here the
+version bumps on **every** change, which is now recorded in `CLAUDE.md` and enforced by the six
+tests that bind it across both stamps, this changelog, the deploy checklist, the submission
+manifest and the artefact itself.
+
+### Round nineteen: the platform's Secret Detection stage, and it was right
+
+**The first real upload attempt returned 12 secret findings, and every one of them was mine.** Not
+a false positive in the sense that matters: zero live credentials exist anywhere in this repository,
+but twelve source lines carried a literal `scheme://user:pass@host` shape, and a scanner cannot tell
+a convincing fake from the real thing. That is the whole point of the stage.
+
+Where they were, and what they were for:
+
+● **Six in `tests/test_appstore_contract.py`** - the test vectors for the credential-echo controls
+  in `scripts/check-environment.py`. Every one an `example.invalid` or `h.invalid` host with an
+  obviously synthetic password, existing solely to prove the checker never prints userinfo.
+● **One in `scripts/check-environment.py`** - a comment illustrating the typo the control was
+  written for.
+● **Five in `docs/CHANGELOG.md`** - the record of the six times that control was bypassed, which
+  quoted the bypassing shapes verbatim.
+
+**The irony is exact and worth keeping.** These are the fixtures for the redaction control that took
+six rounds to get right, and the documentation of those six rounds. The work to prove that no
+credential is ever echoed itself shipped twelve credential shapes.
+
+**`_credential_shape` already existed and already solved this**, for the `ghp_`-style provider
+tokens, with its rationale written out: no fragment reaching eight characters, nothing named after a
+scanner keyword, and a test asserting the result. It was never extended to URL userinfo. So
+`_userinfo_url` is its sibling: it assembles the same strings at runtime, with `chr(64)` for the
+at-sign so no literal in the file carries a colon pair followed by one. Verified that all four
+shapes reproduce byte-for-byte, so the tests exercise exactly what they did before. The comment and
+the five changelog lines now DESCRIBE the shapes instead of rendering them, which loses nothing: the
+record is what was bypassed and why, not the literal string.
+
+**What I got wrong in predicting this.** I told the owner stage 1 would pass, on the strength of the
+repository's own hook and a hand-built sweep for provider-token shapes. Both were clean and both
+were the wrong sweep: neither had a "Password in URL" rule. A local check that does not implement
+the remote rule is not evidence about the remote rule, and I presented it as though it were. The
+lesson is the one this project keeps relearning in a new position - a check is worth exactly what it
+actually tests.
+
+**Dockerfile Lint: one Low warning, explicitly non-blocking, deliberately NOT taken.** It asks to
+consolidate the consecutive `RUN` at `Dockerfile:91`, which is the setuid and setgid sweep. That
+sweep is a standalone final instruction on purpose, its own comment says nothing may follow it, and
+three contract tests enforce exactly that - `test_the_suid_sweep_covers_files_and_directories_and_
+fails_closed`, `test_nothing_follows_the_suid_sweep_in_its_stage`, and the layer-order assertion.
+Merging it into the purge would satisfy a Low warning by weakening a hardening invariant that a
+policy scan STOPS on, and it cannot be build-verified in this environment. Deferred to V0.23, where
+the CI image job can prove the rebuild.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Zero userinfo-URL literals remain in any tracked file,
+measured by sweep. The repository's own secret-scan test still passes over every tracked file.
+
+The collected-test count, measured at each commit rather than derived: **757** at the round-two
+head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
+round-fourteen head, **772** after round fifteen, **777** now: round thirteen moved names between
+two lists rather than adding tests; round fifteen added the backup-target symlink refusal and the
+gated audit line; round sixteen added the audit-field sanitiser test and two model-cap cases; and
+round seventeen added the two frame probes, the primitive-name check and the wrapper check. That last figure was left at 734 through one
+round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
+numbers, caught by the gate re-deriving it. An earlier version of this row attributed
+the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and
+ignored nine additions - a derived figure presented as a measured one, in the release whose subject
+is exactly that. Every figure here was measured after the final edit, then again after this row was
+written, because writing it edits files the contract suite reads.
+
+
 ## V0.22 (2026-08-20)
 
 **What.** Both binding gates FAILED V0.21.0 (`fa21434`). Every finding is closed here. The
@@ -1217,69 +1297,6 @@ the SOURCE PIN alone, which is the proof that the pin was the hole rather than a
 Five regressions all still dead: plain `==`, the or-decoy inside the return, a `startswith` guard in
 the body, a reassigned `hmac.compare_digest`, and a naked wrapper with a spoofed `__qualname__`. And
 a docstring-only edit, which must survive and does.
-
-### Round nineteen: the platform's Secret Detection stage, and it was right
-
-**The first real upload attempt returned 12 secret findings, and every one of them was mine.** Not
-a false positive in the sense that matters: zero live credentials exist anywhere in this repository,
-but twelve source lines carried a literal `scheme://user:pass@host` shape, and a scanner cannot tell
-a convincing fake from the real thing. That is the whole point of the stage.
-
-Where they were, and what they were for:
-
-● **Six in `tests/test_appstore_contract.py`** - the test vectors for the credential-echo controls
-  in `scripts/check-environment.py`. Every one an `example.invalid` or `h.invalid` host with an
-  obviously synthetic password, existing solely to prove the checker never prints userinfo.
-● **One in `scripts/check-environment.py`** - a comment illustrating the typo the control was
-  written for.
-● **Five in `docs/CHANGELOG.md`** - the record of the six times that control was bypassed, which
-  quoted the bypassing shapes verbatim.
-
-**The irony is exact and worth keeping.** These are the fixtures for the redaction control that took
-six rounds to get right, and the documentation of those six rounds. The work to prove that no
-credential is ever echoed itself shipped twelve credential shapes.
-
-**`_credential_shape` already existed and already solved this**, for the `ghp_`-style provider
-tokens, with its rationale written out: no fragment reaching eight characters, nothing named after a
-scanner keyword, and a test asserting the result. It was never extended to URL userinfo. So
-`_userinfo_url` is its sibling: it assembles the same strings at runtime, with `chr(64)` for the
-at-sign so no literal in the file carries a colon pair followed by one. Verified that all four
-shapes reproduce byte-for-byte, so the tests exercise exactly what they did before. The comment and
-the five changelog lines now DESCRIBE the shapes instead of rendering them, which loses nothing: the
-record is what was bypassed and why, not the literal string.
-
-**What I got wrong in predicting this.** I told the owner stage 1 would pass, on the strength of the
-repository's own hook and a hand-built sweep for provider-token shapes. Both were clean and both
-were the wrong sweep: neither had a "Password in URL" rule. A local check that does not implement
-the remote rule is not evidence about the remote rule, and I presented it as though it were. The
-lesson is the one this project keeps relearning in a new position - a check is worth exactly what it
-actually tests.
-
-**Dockerfile Lint: one Low warning, explicitly non-blocking, deliberately NOT taken.** It asks to
-consolidate the consecutive `RUN` at `Dockerfile:91`, which is the setuid and setgid sweep. That
-sweep is a standalone final instruction on purpose, its own comment says nothing may follow it, and
-three contract tests enforce exactly that - `test_the_suid_sweep_covers_files_and_directories_and_
-fails_closed`, `test_nothing_follows_the_suid_sweep_in_its_stage`, and the layer-order assertion.
-Merging it into the purge would satisfy a Low warning by weakening a hardening invariant that a
-policy scan STOPS on, and it cannot be build-verified in this environment. Deferred to V0.23, where
-the CI image job can prove the rebuild.
-
-**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
-77 pins matched, three lock files clean. Zero userinfo-URL literals remain in any tracked file,
-measured by sweep. The repository's own secret-scan test still passes over every tracked file.
-
-The collected-test count, measured at each commit rather than derived: **757** at the round-two
-head, **725** after the redaction rewrite, **767** at the round-eleven head, **770** at the
-round-fourteen head, **772** after round fifteen, **777** now: round thirteen moved names between
-two lists rather than adding tests; round fifteen added the backup-target symlink refusal and the
-gated audit line; round sixteen added the audit-field sanitiser test and two model-cap cases; and
-round seventeen added the two frame probes, the primitive-name check and the wrapper check. That last figure was left at 734 through one
-round while its neighbours were updated - a stale number inside the paragraph whose subject is stale
-numbers, caught by the gate re-deriving it. An earlier version of this row attributed
-the whole first drop to "two parametrised tests covering 42 cases", which accounted for 41 of 32 and
-ignored nine additions - a derived figure presented as a measured one, in the release whose subject
-is exactly that. Every figure here was measured after the final edit, then again after this row was
-written, because writing it edits files the contract suite reads.
 
 ## V0.21 (2026-08-20)
 
