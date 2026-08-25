@@ -44,8 +44,14 @@ COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=10001:10001 src ./src
 
-# Fail-CLOSED: strip the package manager and every build artefact from what ships. The
-# scanner judges what is in the image, not what the entrypoint runs.
+# Fail-CLOSED: strip the package manager and every build artefact from what ships, THEN clear
+# every setuid and setgid bit. One instruction, two fail-closed steps, in that order.
+#
+# They were two consecutive `RUN`s and the platform's Dockerfile linter flagged the pair. Merging
+# them keeps the invariant that matters - the suid sweep is still the LAST filesystem mutation in
+# this stage, now as the last command of the last RUN - while removing the smell. What must never
+# happen is an instruction AFTER the sweep re-introducing the class it cleared, and three contract
+# tests enforce exactly that.
 RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip \
            /opt/venv/lib/python3.12/site-packages/pip-*.dist-info \
            /opt/venv/lib/python3.12/site-packages/setuptools \
@@ -69,7 +75,8 @@ RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip \
            /usr/bin/dpkg-maintscript-helper /usr/sbin/dpkg-preconfigure \
            /etc/apt /usr/lib/apt \
            /usr/local/lib/python3.12/ensurepip \
-           /var/lib/apt/lists/* /var/cache/apt/* /root/.cache /tmp/*
+           /var/lib/apt/lists/* /var/cache/apt/* /root/.cache /tmp/* \
+ && find / -xdev -perm /6000 \( -type f -o -type d \) -exec chmod a-s {} +
 
 # ensurepip is removed for a reason a PATH check cannot see. It is not a binary, so
 # `command -v pip` reports nothing, but it vendors a complete pip WHEEL
@@ -83,12 +90,6 @@ RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip \
 # packages present. Deleting it would remove the scanner's evidence rather than the risk,
 # which is suppressing a finding rather than addressing it, and that is forbidden. The
 # tools come out; the truth about what ships stays in.
-
-# Fail-CLOSED and LAST: clear every setuid and setgid bit, on files AND directories. The
-# policy scan stops (it does not warn) on suid_or_guid_set, and a file-only sweep misses
-# the setgid directories. NOTHING may be added after this line: a later instruction can
-# re-introduce the class this just cleared.
-RUN find / -xdev -perm /6000 \( -type f -o -type d \) -exec chmod a-s {} +
 
 # ---- final: one flat layer, no history for the scanner to read ----------------------
 FROM scratch

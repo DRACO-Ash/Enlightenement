@@ -10,7 +10,10 @@ from __future__ import annotations
 import hmac
 
 #: Header carrying the shared team token.
-TOKEN_HEADER = "x-team-token"  # noqa: S105 - a header name, not a credential
+#: A header NAME, not a credential. The `noqa` carries no trailing prose: SonarQube parses
+#: suppression comments and flags `# noqa: CODE - reason` as malformed syntax, so the reason
+#: lives here where a reader finds it and no analyser has to parse it.
+TOKEN_HEADER = "x-team-token"  # noqa: S105
 
 
 def token_ok(given: str | None, expected: str) -> bool:

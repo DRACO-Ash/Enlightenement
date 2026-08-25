@@ -8,7 +8,13 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-green() { printf '\n== %s ==\n' "$1"; }
+# The label is bound to a name before use. SonarQube flags a positional parameter read
+# directly inside a function body, and it is a fair point in shell: `$1` inside a function
+# means the function's argument, which is easy to misread as the script's.
+green() {
+  leg_label="$1"
+  printf '\n== %s ==\n' "$leg_label"
+}
 
 # Every leg runs through ONE interpreter, resolved here, and never through a bare tool name.
 #

@@ -187,7 +187,15 @@ def test_the_base_image_is_pinned_by_digest() -> None:
 
 
 def test_the_suid_sweep_covers_files_and_directories_and_fails_closed() -> None:
-    sweep = re.search(r"^RUN find / -xdev -perm /6000 .*$", DOCKER_INSTRUCTIONS, re.MULTILINE)
+    """Matched by the COMMAND, not by the instruction it sits in.
+
+    The earlier pattern was anchored to `^RUN find / -xdev`, which asserted the sweep was its own
+    standalone `RUN`. That is a shape, not the property. The platform's Dockerfile linter flags
+    consecutive `RUN` instructions, so the sweep is now the last command of the purge `RUN` - the
+    invariant it protects is unchanged and its sibling below still enforces it, but this assertion
+    had to stop caring where the command lives.
+    """
+    sweep = re.search(r"^.*find / -xdev -perm /6000 .*$", DOCKER_INSTRUCTIONS, re.MULTILINE)
     assert sweep, "the suid/sgid sweep is missing"
     line = sweep.group(0)
     assert "-type f" in line
@@ -198,7 +206,7 @@ def test_the_suid_sweep_covers_files_and_directories_and_fails_closed() -> None:
 def test_nothing_follows_the_suid_sweep_in_its_stage() -> None:
     """A later instruction can re-introduce the class the sweep just cleared."""
     prep = DOCKER_INSTRUCTIONS.split("FROM scratch")[0]
-    sweep_index = prep.index("RUN find / -xdev -perm /6000")
+    sweep_index = prep.index("find / -xdev -perm /6000")
     remainder = prep[sweep_index:].split("\n", 1)[1]
     mutating = [
         line for line in remainder.splitlines() if re.match(r"^(RUN|COPY|ADD|USER)\b", line.strip())

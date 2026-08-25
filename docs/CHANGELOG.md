@@ -2,6 +2,47 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.2 (2026-08-24)
+
+**What.** The Code Quality gate rejected V0.23.1 on **12 new issues against a threshold of zero**.
+Every one is closed, plus the Dockerfile Lint warning that does not block yet but will.
+
+**Three bugs, all float equality, and SonarQube is right about the class.**
+`relative.py:90` compared a Euclidean norm to `0.0` before dividing by it, and `times.py:233`
+compared two components to `0.0` to detect a zero equatorial projection. Both now test the property
+the code actually needs - `not separation > 0.0`, and `not math.hypot(x, y) > 0.0` - which takes the
+same branch for every finite input AND refuses NaN, which the equality tests would have divided by.
+The guard should test what the division requires, not one exact value.
+
+**Nine code smells.**
+● `healthcheck.py:74` caught `(urllib.error.URLError, TimeoutError, OSError)`. `URLError` subclasses
+  `OSError`, and since Python 3.10 so does `TimeoutError`, so the tuple caught exactly what `OSError`
+  alone catches while telling a reader they were separate cases. The fail-closed contract is
+  unchanged: any transport failure reads UNHEALTHY.
+● `auth.py:13` had `# noqa: S105 - a header name, not a credential`. SonarQube parses suppression
+  comments and the trailing prose is malformed syntax to it. The reason moved to a `#:` doc comment
+  above, where a reader finds it and no analyser parses it.
+● `verify.sh:11` read `$1` directly inside a function. Bound to a name first.
+● **Five FastAPI dependency sites now use `Annotated`** - and this one was not cosmetic. Converting
+  them broke six tests: every gated write returned **422 instead of 201**. The cause is
+  `from __future__ import annotations`, which turns annotations into STRINGS that FastAPI resolves
+  against module globals. The route dependencies close over `require_token`, a local built inside
+  `create_app`, so the string could not be resolved and `actor` was treated as a request field
+  rather than a dependency. The future import is removed from `app.py`, with the reason recorded at
+  the top of the file: Python 3.12 needs it for none of the syntax here, and the only thing it
+  bought was the lazy evaluation that broke the injection.
+
+**Dockerfile Lint, taken this time rather than deferred.** The suid and sgid sweep was a standalone
+final `RUN`, which made it the second of two consecutive `RUN`s. It is now the last command of the
+purge `RUN`, so it is still the last filesystem mutation in the stage and the warning is gone. Two
+contract tests were asserting the SHAPE - `^RUN find / -xdev` - rather than the property, so they
+were rewritten to match the command wherever it lives. The invariant is mutation-proved intact:
+adding an instruction after the sweep, dropping `-type d`, and making the sweep fail open are all
+measured dead.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Mutations 3 run, 3 killed.
+
 ## V0.23.1 (2026-08-24)
 
 **What.** The platform's `python-test` job failed on MR 5 (`bfa3ce6`) with seven failures, none of

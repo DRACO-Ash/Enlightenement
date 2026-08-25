@@ -71,7 +71,11 @@ def check(port: str | None = None) -> int:
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SECONDS) as response:
             return HEALTHY if response.status == HTTP_OK else UNHEALTHY
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except OSError:
+        # OSError alone, and that is not a narrowing. `urllib.error.URLError` subclasses it, and
+        # since Python 3.10 so does `TimeoutError`, so naming all three caught exactly what this
+        # catches now while telling a reader they were separate cases. The fail-closed contract is
+        # unchanged: any transport failure reads UNHEALTHY, never a pass.
         return UNHEALTHY
 
 

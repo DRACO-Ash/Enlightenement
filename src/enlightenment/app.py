@@ -29,7 +29,15 @@ Route registration is split into small ``_register_*`` helpers rather than one l
 factory, so no function approaches the cognitive-complexity cap the quality gate enforces.
 """
 
-from __future__ import annotations
+# NO `from __future__ import annotations` in this module, deliberately, and it is load-bearing.
+# That import turns every annotation into a STRING, which FastAPI then resolves against module
+# globals. The route dependencies here close over `require_token`, a local built inside
+# `create_app`, so the string cannot be resolved from module scope: FastAPI stopped seeing `actor`
+# as a dependency and treated it as a request field, and every gated write returned 422 instead of
+# 201. Measured across six tests the moment the annotations were converted.
+#
+# Python 3.12 needs no future import for `X | None`, `list[str]` or any syntax used here, so the
+# only thing it bought was lazy evaluation - and lazy evaluation is exactly what broke.
 
 import asyncio
 import logging
@@ -41,7 +49,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
@@ -553,7 +561,7 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
 
     @app.get("/api/v1/sessions")
     async def list_sessions(
-        response: Response, if_none_match: str | None = Header(default=None)
+        response: Response, if_none_match: Annotated[str | None, Header()] = None
     ) -> Any:
         snapshot = await asyncio.to_thread(runtime.store.load)
         etag = f'W/"{snapshot["rev"]}"'
@@ -569,8 +577,8 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         payload: SessionUpsert,
         request: Request,
         response: Response,
-        actor: str = Depends(require_token),
-        if_match: str | None = Header(default=None),
+        actor: Annotated[str, Depends(require_token)],
+        if_match: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
         """Create or fully upsert a session. Gated, strictly rate-limited, boundary
         validated, revision guarded, and audited.
@@ -596,8 +604,8 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         payload: SessionPatch,
         request: Request,
         response: Response,
-        actor: str = Depends(require_token),
-        if_match: str | None = Header(default=None),
+        actor: Annotated[str, Depends(require_token)],
+        if_match: Annotated[str | None, Header()] = None,
     ) -> dict[str, Any]:
         """Apply a partial update. The merge is anti-shrink: a field the caller did not
         send keeps its stored value rather than being deleted.
