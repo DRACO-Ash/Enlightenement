@@ -41,6 +41,29 @@ The `scenario` FIELD on a stored session is still free text and validated only f
   unhealthy pod is a complete diagnosis.
 - **Secrets are server-side only.** Compare the team token in constant time. Validate every request body and every LLM output before storing or returning it; the dataset merge never silently shrinks.
 
+## The two environments, and which one a command is for
+
+**The owner's workstation is Windows, running PowerShell.** Recorded here because it was established
+in conversation, never written down, and then lost to a context compaction - after which the step 4
+runbook told the operator to run `chmod 600` and the tool refused every Windows credentials file on
+synthetic POSIX permission bits. A fact that lives only in a transcript is a fact that will be
+guessed again.
+
+Two environments, and every operator-facing instruction states which one it is for:
+
+● **The build and CI environment is Linux.** `scripts/*.sh`, the verification loop, the container,
+  the pipeline. POSIX shell is correct here and needs no apology.
+● **The owner's workstation is Windows and PowerShell.** Anything in `docs/RUNBOOK-*.md` or `tools/`
+  runs there. So: no line-continuation backslash (PowerShell uses a backtick), no `chmod`, no `less`,
+  and `python` as well as `python3` because the Windows launcher installs both. Give the PowerShell
+  form first, and the POSIX form second where both are useful.
+
+Code that runs in both places branches on the platform and checks something real on each side. It
+never SKIPS a control because the usual mechanism is meaningless on one platform: Windows reports
+synthetic `st_mode` bits, so the credentials check verifies the file sits inside the user profile,
+where Windows access control restricts it. "The bits mean nothing here" is a reason to check
+something else, never nothing.
+
 ## Commands
 
 ```

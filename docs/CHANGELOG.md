@@ -2,6 +2,48 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.7 (2026-08-25)
+
+**What.** The step 4 tool and runbook assumed a POSIX workstation. The owner runs Windows and
+PowerShell. Fixed in the code, the runbook, and `CLAUDE.md`.
+
+**The bug, and it would have stopped step 3 dead.** `load_credentials` refused any file whose
+`st_mode & 0o077` was non-zero. On Windows those bits are SYNTHETIC - `os.stat` reports 0o666 for any
+writable file and 0o444 for a read-only one - so `& 0o077` is 0o066 on a perfectly well-protected
+file and EVERY Windows credentials file was refused. The remedy the error printed, `chmod 600`, is
+not a PowerShell command, so the message could not be followed either. The check now branches: POSIX
+enforces the mode bits, and Windows enforces the control it actually has, requiring the file to sit
+inside the user profile where the default access control list restricts it to that user. Neither
+branch is a skip. "The bits mean nothing here" is a reason to check something else, never nothing.
+
+**Why it happened, which is the part worth recording.** The owner's platform was established in
+conversation and never written down, then lost to a context compaction. So `CLAUDE.md` now carries a
+section naming both environments - Linux for the build, CI, scripts and container; Windows and
+PowerShell for `docs/RUNBOOK-*.md` and `tools/` - because a fact that lives only in a transcript is a
+fact that will be guessed again. This is the same failure the ask-don't-guess rule was added for, one
+layer down: I did not need to ask, I needed to WRITE DOWN what I had already been told.
+
+**The runbook is now PowerShell-first**, with the POSIX form underneath where it differs. Four
+corrections beyond `chmod`: the line continuation is a backtick, not a backslash, which would
+otherwise pass the next line as a separate argument; `--print-profile-template > file` writes UTF-16
+under PowerShell redirection and `configparser` reads that as mojibake, so `Set-Content -Encoding
+utf8` is given instead; `less` becomes `more`; and the credentials file is placed under `.config` in
+the profile ROOT rather than under `Documents`, because a OneDrive-synchronised folder is inside the
+profile and also copied to the cloud.
+
+**Found by the operator running the tool on the machine it is for.** `--self-test` passed 14/14 on
+Windows, which is what it is designed to prove, and it does not exercise the credentials path - only
+a live fetch does. No amount of further testing on Linux would have found this.
+
+**Verified.** Full verification loop green: 813 passed, 1 skipped, coverage 98.90%. Two new tests.
+The POSIX branch is EXECUTED - a 0o640 file is refused and a 0o600 file loads - and the platform
+split is asserted on the source, which is weaker than an execution and is stated as such: this suite
+runs on Linux, so what it holds is that neither branch was deleted, that the Windows branch checks
+something real, and that the Windows message does not mention `chmod`.
+
+**Not yet done for this version:** the `engineering-reviewer` and `security-reviewer` gates have not
+run against V0.23.5, V0.23.6 or this change.
+
 ## V0.23.6 (2026-08-25)
 
 **What.** Flight plan step 4, everything that does not depend on a fact nobody has supplied.

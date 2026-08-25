@@ -3,6 +3,11 @@
 **Who runs this:** Ash, on the networked workstation. Nothing in this runbook runs in the container
 or in CI, and nothing here needs the repository's virtual environment.
 
+**Shell: PowerShell on Windows.** Every command below is written for it. Where a POSIX form differs
+it is given underneath, for anyone running this from Windows Subsystem for Linux or a Mac. The
+earlier draft of this runbook was written for a POSIX shell and told you to run `chmod`, which is
+the reason this note exists.
+
 **Why it exists:** every scenario ENLIGHTENMENT generates has to look like real data or the training
 transfers nothing. That means measuring real UDL noise once - revisit intervals, residual
 distributions, epoch spacing, missing-field and outlier rates, marking mix, correlation quality -
@@ -18,8 +23,8 @@ identifiers, no credentials. The tool refuses to write a file that fails that ch
 
 | Item | Where it comes from | Status |
 |---|---|---|
-| `tools/udl_characterise.py` | this repository, `V0.23.6` | **Ready** |
-| Python 3.11 or newer on the workstation | already there, or the system Python | Check with `python3 --version` |
+| `tools/udl_characterise.py` | this repository, `V0.23.7` | **Ready** |
+| Python 3.11 or newer on the workstation | already there, or the system Python | `python --version` (PowerShell). If `python` opens the Microsoft Store, use `py --version` |
 | UDL credentials at `~/.config/phase_offset/credentials.ini`, mode `600` | your existing file | Check |
 | **A completed endpoint profile** | **you, from the UDL API documentation** | **BLOCKED - see step 2** |
 
@@ -29,9 +34,11 @@ Standard library only, single file, no install step. Copy the one file across an
 
 Do this first. It needs no credentials, no profile, and no network.
 
+```powershell
+python .\tools\udl_characterise.py --self-test
 ```
-python3 tools/udl_characterise.py --self-test
-```
+
+POSIX: `python3 tools/udl_characterise.py --self-test`
 
 Expect `SELF-TEST: PASS (14/14)` on stderr and a JSON assertion manifest on stdout. The manifest is
 the evidence: fourteen named assertions over synthetic records with statistics known by
@@ -43,9 +50,15 @@ If this fails, stop. Send me the manifest; the failing assertion names the probl
 
 ## Step 2. Write the endpoint profile - THIS IS THE PART I CANNOT DO
 
+```powershell
+python .\tools\udl_characterise.py --print-profile-template |
+  Set-Content -Encoding utf8 udl-profile.ini
 ```
-python3 tools/udl_characterise.py --print-profile-template > udl-profile.ini
-```
+
+`Set-Content -Encoding utf8` rather than `>`: PowerShell's redirection writes UTF-16 by default,
+which `configparser` reads as mojibake and reports as a malformed profile.
+
+POSIX: `python3 tools/udl_characterise.py --print-profile-template > udl-profile.ini`
 
 Then fill it in from the UDL API documentation. Every blank is a fact about the UDL API that is not
 in the flight plan, and the tool refuses to guess any of them: an invented endpoint or field name
@@ -76,23 +89,37 @@ blank. Two rules govern them:
   GROUPING only: it is replaced by a per-run salted hash before any statistic is computed and never
   appears in the output.
 
-`chmod 600 udl-profile.ini` and keep it off the repository. It is workstation configuration, not
-content. Nothing in it is a secret, but it is an inventory of endpoints and field names, which is
-the class of thing the redaction discipline keeps out of the content tree.
+Keep the profile off the repository and inside your user profile directory. It is workstation
+configuration, not content. Nothing in it is a secret, but it is an inventory of endpoints and field
+names, which is the class of thing the redaction discipline keeps out of the content tree.
+
+**On permissions, and how Windows differs.** There is no `chmod` in PowerShell, and Windows does not
+have POSIX permission bits - `os.stat` reports synthetic ones, so a bit check there is meaningless.
+The tool therefore checks the thing Windows actually enforces: your credentials file must sit inside
+your user profile, where the default access control list restricts it to you. So
+`C:\Users\<you>\.config\phase_offset\credentials.ini` is accepted, and the same file on a shared
+drive is refused. On a POSIX machine the tool enforces mode `600` instead and tells you to `chmod`.
+
+Note that OneDrive-synchronised folders live inside your profile but are also copied to the cloud.
+Put the credentials file under `.config` in the profile ROOT, not under `Documents`, so it is not
+swept into sync.
 
 ## Step 3. Retrieve and measure
 
 Start with a SHORT window - an hour - to confirm the profile is right before committing to a long
 run.
 
-```
-python3 tools/udl_characterise.py \
-  --profile udl-profile.ini \
-  --start 2026-08-01T00:00:00Z --end 2026-08-01T01:00:00Z \
-  --raw-out udl-raw-1h.json \
-  --emit noise-model-1h.json \
+```powershell
+python .\tools\udl_characterise.py `
+  --profile udl-profile.ini `
+  --start 2026-08-01T00:00:00Z --end 2026-08-01T01:00:00Z `
+  --raw-out udl-raw-1h.json `
+  --emit noise-model-1h.json `
   --verbose
 ```
+
+The line continuation is a **backtick**, not a backslash. A backslash here silently passes the next
+line as a separate argument.
 
 What it does, in order:
 
@@ -107,7 +134,9 @@ What it does, in order:
 4. Measures, then checks the output against the boundary guard, then writes.
 
 `--raw-out` saves the fetched records so you can re-run the analysis offline without re-fetching. It
-is written mode `600` and **stays on the workstation**: raw records are not the thing that crosses.
+**stays on the workstation**: raw records are not the thing that crosses. On POSIX it is written mode
+`600`; on Windows the profile-directory access control is what protects it, so write it inside your
+profile and not into a synchronised folder.
 
 Then widen the window. A representative pass wants enough time to cover a full revisit cycle across
 the provider set; my recommendation is 7 days, and the sensible check is whether the per-sensor
@@ -116,9 +145,11 @@ distribution.
 
 ## Step 4. Read the output before committing it
 
+```powershell
+Get-Content noise-model-7d.json | python -m json.tool | more
 ```
-python3 -m json.tool noise-model-7d.json | less
-```
+
+POSIX: `python3 -m json.tool noise-model-7d.json | less`
 
 Look at four things:
 
@@ -154,7 +185,9 @@ inferred.
 | `no endpoint profile at ...` | no `--profile`, or the path is wrong | step 2 |
 | `... is incomplete. These keys are required and empty: ...` | a required blank | fill exactly the keys it names |
 | `base_url must be an https:// address` | scheme wrong or missing | `https://` and a host, no trailing slash |
-| `... is mode 644, readable beyond its owner` | credentials file permissions | `chmod 600` the file. Refused rather than warned: what this tool can read, another local process can read |
+| `... is mode 644, readable beyond its owner` | POSIX only: credentials file permissions | `chmod 600` the file. Refused rather than warned: what this tool can read, another local process can read |
+| `... is outside your user profile` | Windows only: credentials file location | Move it under your profile, conventionally `C:\Users\<you>\.config\phase_offset\credentials.ini`. Windows has no POSIX permission bits, so location is the control |
+| The profile is reported malformed straight after you wrote it | PowerShell `>` wrote UTF-16 | Re-create it with `Set-Content -Encoding utf8`, as in step 2 |
 | `has no section with both username and password` | credentials layout | a `[udl]` (or `[DEFAULT]`) section with both keys |
 | `the count endpoint returned N characters that are not an integer` | wrong `observation_count_path` | the COUNT path, not the history path |
 | `the history endpoint returned an object with no list under data, results or items` | the list is under another key | send me the key name and I will add it |

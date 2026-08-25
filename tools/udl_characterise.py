@@ -43,6 +43,7 @@ import configparser
 import hashlib
 import json
 import math
+import os
 import re
 import secrets
 import statistics
@@ -253,6 +254,49 @@ class Profile:
 DEFAULT_CREDENTIALS = Path.home() / ".config" / "phase_offset" / "credentials.ini"
 
 
+def _assert_owner_only(path: Path) -> None:
+    """Refuse a credentials file other local users can read. Platform-aware, never skipped.
+
+    **The POSIX bit check does not transfer to Windows, and the first version of this shipped
+    assuming it did.** `os.stat().st_mode` on Windows carries SYNTHETIC permission bits - 0o666 for
+    any writable file, 0o444 for a read-only one - so `mode & 0o077` is 0o066 on a perfectly
+    well-protected file and every Windows credentials file was refused. `chmod 600` is not a
+    PowerShell command either, so the remedy the error printed could not be followed. Caught because
+    the operator ran the tool on the machine it is FOR, which no amount of local testing on Linux
+    would have found.
+
+    So each platform is checked by the control it actually has:
+
+    ● **POSIX**: the mode bits are real. Group-readable or world-readable is refused.
+    ● **Windows**: the mode bits mean nothing, so the file must lie inside the user profile
+      directory, which Windows ACLs restrict to that user by default. A credentials file on a shared
+      drive or a synchronised folder outside the profile is refused.
+
+    Refused rather than warned, on both: a credential this tool can read, another local process can
+    read too. Neither branch is a skip, which matters - a control that cannot be verified is treated
+    as failed, and "the bits are meaningless here" is a reason to check something else, not nothing.
+    """
+    if os.name != "nt":
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            raise RuntimeError(
+                f"{path} is mode {mode:o}, readable beyond its owner."
+                f" Run `chmod 600 {path}` before using it"
+            )
+        return
+
+    home = Path.home().resolve()
+    try:
+        path.resolve().relative_to(home)
+    except ValueError:
+        raise RuntimeError(
+            f"{path} is outside your user profile ({home}), so Windows access control cannot be"
+            " relied on to keep it to you. Windows reports synthetic POSIX permission bits, so"
+            " this tool checks the location instead. Move the credentials file under your profile,"
+            f" conventionally {home / '.config' / 'phase_offset' / 'credentials.ini'}"
+        ) from None
+
+
 def load_credentials(path: Path) -> tuple[str, str]:
     """Read the UDL username and password. `interpolation=None` per CONTEXT-001.
 
@@ -262,13 +306,7 @@ def load_credentials(path: Path) -> tuple[str, str]:
     """
     if not path.is_file():
         raise RuntimeError(f"no credentials file at {path}")
-    mode = path.stat().st_mode & 0o777
-    if mode & 0o077:
-        raise RuntimeError(
-            f"{path} is mode {mode:o}, readable beyond its owner. Run `chmod 600 {path}` before"
-            " using it. Refused rather than warned: a credential this tool can read, another"
-            " local process can read too"
-        )
+    _assert_owner_only(path)
     parser = configparser.ConfigParser(interpolation=None)
     parser.read(path, encoding="utf-8")
     for section in ("udl", "UDL", "DEFAULT"):

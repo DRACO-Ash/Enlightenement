@@ -3528,3 +3528,67 @@ def test_the_characteriser_refuses_a_non_https_endpoint() -> None:
         )
     assert result.returncode == 2, result.stdout[-500:]
     assert "must be an https:// address" in result.stderr
+
+
+def test_the_credentials_permission_check_is_platform_aware() -> None:
+    """The POSIX bit check does not transfer to Windows, and shipping as if it did broke the tool.
+
+    `os.stat().st_mode` on Windows carries SYNTHETIC permission bits - 0o666 for any writable file -
+    so `mode & 0o077` is 0o066 on a perfectly well-protected file. The first version refused EVERY
+    Windows credentials file and told the operator to run `chmod 600`, which is not a PowerShell
+    command. The operator found it by running the tool on the machine it is for.
+
+    Both branches are asserted here, on the source rather than by running it, because this suite
+    runs on Linux and the Windows branch is unreachable from it. A source assertion is weaker than
+    an execution, and it is stated as such: what it holds is that neither branch has been deleted,
+    and that the Windows branch checks something real rather than skipping.
+    """
+    source = UDL_TOOL.read_text(encoding="utf-8")
+    checker = source[source.index("def _assert_owner_only") : source.index("def load_credentials")]
+
+    assert 'if os.name != "nt":' in checker, "the platform split is gone"
+    assert "0o077" in checker, "the POSIX mode check is gone"
+    # The Windows branch must CHECK something, not return early. Its control is location: a file
+    # inside the user profile is ACL-restricted to that user by Windows default.
+    skipped = (
+        "the Windows branch no longer verifies the file is inside the user profile, which would"
+        " make it a skip - and a control that cannot be verified is treated as failed"
+    )
+    assert "Path.home()" in checker, skipped
+    assert "relative_to" in checker, skipped
+    assert "raise RuntimeError" in checker.split('if os.name != "nt":')[1].split("home =")[1], (
+        "the Windows branch does not refuse anything"
+    )
+    # The remedy printed must match the platform it is printed on. `chmod` belongs only to the
+    # POSIX branch; naming it in the Windows message is how the first version misled the operator.
+    windows_branch = checker.split("home = Path.home().resolve()")[1]
+    assert "chmod" not in windows_branch, "the Windows branch tells the operator to run chmod"
+
+
+def test_the_posix_credentials_check_refuses_a_group_readable_file() -> None:
+    """The POSIX branch, EXECUTED rather than read, since this suite runs on POSIX."""
+    if os.name == "nt":  # pragma: no cover - this suite's CI is Linux
+        pytest.skip("the POSIX branch is not reachable on Windows")
+    spec = importlib.util.spec_from_file_location("udl_characterise", UDL_TOOL)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # Registered before execution: `@dataclass(slots=True)` resolves its own module through
+    # `sys.modules`, and an unregistered module raises inside `dataclasses` rather than in the
+    # code under test, which makes the failure look like a bug in the tool.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    with tempfile.TemporaryDirectory() as raw_directory:
+        credentials = Path(raw_directory) / "credentials.ini"
+        credentials.write_text("[udl]\nusername = synthetic\npassword = synthetic\n", "utf-8")
+
+        credentials.chmod(0o640)
+        with pytest.raises(RuntimeError, match="readable beyond its owner"):
+            module.load_credentials(credentials)
+
+        credentials.chmod(0o600)
+        assert module.load_credentials(credentials) == ("synthetic", "synthetic")
