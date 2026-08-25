@@ -23,10 +23,11 @@ identifiers, no credentials. The tool refuses to write a file that fails that ch
 
 | Item | Where it comes from | Status |
 |---|---|---|
-| `tools/udl_characterise.py` | this repository, `V0.23.7` | **Ready** |
+| `tools/udl_characterise.py` | this repository, `V0.23.8` | **Ready** |
 | Python 3.11 or newer on the workstation | already there, or the system Python | `python --version` (PowerShell). If `python` opens the Microsoft Store, use `py --version` |
 | UDL credentials at `~/.config/phase_offset/credentials.ini`, mode `600` | your existing file | Check |
-| **A completed endpoint profile** | **you, from the UDL API documentation** | **BLOCKED - see step 2** |
+| Endpoint profile: `[endpoints]` and `[query]` | the UDL API documentation, supplied 25 August 2026 | **Ready, pre-filled in the template** |
+| Endpoint profile: `[fields]` | the service itself, via `--queryhelp` | **Step 2, about five minutes** |
 
 Standard library only, single file, no install step. Copy the one file across and run it.
 
@@ -48,7 +49,7 @@ catalogue-number shape is refused.
 
 If this fails, stop. Send me the manifest; the failing assertion names the problem.
 
-## Step 2. Write the endpoint profile - THIS IS THE PART I CANNOT DO
+## Step 2. Complete the endpoint profile - now five minutes, not a blocker
 
 ```powershell
 python .\tools\udl_characterise.py --print-profile-template |
@@ -60,26 +61,39 @@ which `configparser` reads as mojibake and reports as a malformed profile.
 
 POSIX: `python3 tools/udl_characterise.py --print-profile-template > udl-profile.ini`
 
-Then fill it in from the UDL API documentation. Every blank is a fact about the UDL API that is not
-in the flight plan, and the tool refuses to guess any of them: an invented endpoint or field name
-produces an integration that looks like it works until it is run against the real service.
+**`[endpoints]` and `[query]` now arrive pre-filled** from the UDL API documentation you supplied on
+25 August 2026: the base address, the `/history` and `/count` path convention, the `from..to` range
+form, `firstResult`, `maxResults`, and the two time-field names. Read them, correct anything the
+documentation has since changed, and move on. The profile is still where a fact about the API is
+fixed, so a change belongs here and not in the source.
 
-**`[endpoints]` - five values.**
+Two of those values are worth knowing about rather than just accepting.
 
-● `base_url` - scheme and host, no trailing slash. **Must be `https://`**; anything else is refused
-  rather than corrected, because `urlopen` honours `file:` and the request carries your credentials.
-● `observation_history_path` - the path returning a LIST of historical observations for a time range.
-● `observation_count_path` - the path returning a BARE INTEGER count for the same range. Queried
-  first, so the tool knows whether it must time-slice before it fetches anything.
-● `elset_history_path` and `elset_count_path` - the same pair for element sets, for epoch spacing.
+● **`observation_history_path` names an ENTITY, and the entity is a choice.** The template ships
+  `/udl/eoobservation/history`. Change it to `radarobservation` or `rfobservation` if that is the
+  sensor phenomenology you want characterised first, and change `observation_count_path` to match.
+  One run measures one entity.
+● **Element sets range on `epoch`, observations on `obTime`.** Both are in the template as separate
+  keys. This matters more than it looks: an unrecognised query parameter returns an EMPTY result
+  rather than an error, so one shared field name would have reported "no element sets in this
+  window" and been believed.
 
-**`[query]` - the parameter names.** `time_field` is pre-filled as `obTime` and
-`first_result_param` as `firstResult`, both from the plan's LEARNED register. Confirm them, and fill
-`max_results_param` and `page_size` (the page size must not exceed the platform maximum). Leave
-`columns_param` blank if the API has no projection support.
+**`[fields]` - the record field names. This is the only part left, and the service will tell you.**
+The documentation covers the query grammar, not the per-entity schemas, so these are the values
+neither of us can responsibly invent. Ask the service:
 
-**`[fields]` - the record field names.** `observation_time` is pre-filled as `obTime`. The rest are
-blank. Two rules govern them:
+```powershell
+python tools/udl_characterise.py --profile udl-profile.ini --queryhelp eoobservation
+```
+
+It prints the queryable parameter names with their descriptions, units of measure and formats, and
+names any parameter the entity REQUIRES - some entities require a search parameter to stop a query
+of millions of objects, and knowing that before a long run is cheaper than discovering it during
+one. The mode reads only `base_url` from the profile, so it runs before `[fields]` is filled.
+
+**The queryhelp output is API metadata, not records, so it is the one retrieval you can paste to me
+without it crossing the boundary.** Send it and I will map the parameter names onto the profile's
+logical fields. Then two rules govern what you fill in:
 
 ● **A blank field is reported as UNAVAILABLE, never estimated.** Fill what you can confirm and leave
   the rest; the output names what it could not measure. An absent measure is honest, an invented one
@@ -132,6 +146,20 @@ What it does, in order:
    list before you trust the numbers**.
 3. Fetches each in-cap slice with `Accept: */*`, paging within it.
 4. Measures, then checks the output against the boundary guard, then writes.
+
+Every request carries `disableCapcoExtensions=true`, and it is worth knowing why, because it changes
+what you will see in the output. UDL extends CAPCO markings on proprietary and limited-distribution
+records to the form `U//PR-OWNER-DATATYPE`, which puts a **data owner's identity inside the marking
+string**. The marking distribution is the one measure that crosses the boundary verbatim, so without
+the flag the noise model would carry a list of every contributing provider under the name of a
+statistic. With it, the service collapses those to `U//PR` and `U//DS`, which keeps exactly what the
+measure is for - what proportion of a scenario's data is restricted - and drops the part that has no
+business leaving the workstation. It is set in the URL builder, not in the profile, because a control
+you can switch off in a configuration file is a default rather than a control.
+
+The flag changes nothing about your obligations on the records themselves. Disabling the extension
+does not disclaim the handling duty on anything retrieved, which is the other reason raw records stay
+on the workstation.
 
 `--raw-out` saves the fetched records so you can re-run the analysis offline without re-fetching. It
 **stays on the workstation**: raw records are not the thing that crosses. On POSIX it is written mode
@@ -189,7 +217,9 @@ inferred.
 | `... is outside your user profile` | Windows only: credentials file location | Move it under your profile, conventionally `C:\Users\<you>\.config\phase_offset\credentials.ini`. Windows has no POSIX permission bits, so location is the control |
 | The profile is reported malformed straight after you wrote it | PowerShell `>` wrote UTF-16 | Re-create it with `Set-Content -Encoding utf8`, as in step 2 |
 | `has no section with both username and password` | credentials layout | a `[udl]` (or `[DEFAULT]`) section with both keys |
-| `the count endpoint returned N characters that are not an integer` | wrong `observation_count_path` | the COUNT path, not the history path |
+| `the count endpoint returned N characters that are not an integer` | wrong count path | a count path is a query path plus `/count`, so `/udl/elset/history` becomes `/udl/elset/history/count` |
+| `... is not an entity name` | `--queryhelp` got something other than a bare lowercase token | `eoobservation`, `radarobservation`, `rfobservation`, `elset`. Refused rather than escaped: the value goes into a URL that carries your credentials |
+| A query returns zero records over a window you know is busy | a query parameter the entity does not recognise | check `time_field` and `elset_time_field` against `--queryhelp`. An unknown parameter returns an empty result rather than an error, which is the one failure mode here that looks like an answer |
 | `the history endpoint returned an object with no list under data, results or items` | the list is under another key | send me the key name and I will add it |
 | `HTTP 401` | credentials, or the account lacks the endpoint | check the credentials file first |
 | `REFUSED: $.… holds a bare 5-to-8 digit run` | something identifier-shaped reached the output | send me the message, not the file. This is the guard doing its job and it means a measure is carrying a value it should not |
@@ -197,7 +227,8 @@ inferred.
 
 ## What I still need from you
 
-1. **The endpoint profile**, or the UDL API documentation to write it from. This is the only thing
-   blocking step 4 end to end.
+1. **The `--queryhelp` output for the entity you want characterised first** (step 2). This is the
+   last unknown: the record field names. Paste it to me - it is API metadata, not records - and I
+   will map it onto the profile's logical fields. Nothing else blocks step 4 end to end.
 2. **The sensor-label decision** in step 4 - pseudonymised or verbatim.
 3. **Open question 14**, the re-run cadence, if you want it settled now rather than at review.

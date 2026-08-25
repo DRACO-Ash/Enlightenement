@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.8 (2026-08-25)
+
+**What.** The owner supplied the UDL API documentation. Step 4 was blocked on facts about the API
+that neither the flight plan nor I could supply, and most of them are now known, so the endpoint
+profile ships mostly pre-filled and the operator's remaining task shrank from "write it from the
+documentation" to one command.
+
+**Now pre-filled in `PROFILE_TEMPLATE`.** The base address, the `/history` and `/count` path
+convention, `firstResult`, `maxResults`, and the two time-field names. Pre-filled rather than
+hardcoded: the profile stays the one place a fact about the API is corrected, and the parameter file
+still records which profile produced it, by hash. A test pins the split - the template must be
+complete on `[endpoints]` and `[query]` and blank on `[fields]` - so a drift either way fails the
+loop. Pre-filling the field names would be a guess wearing the authority of a shipped default.
+
+**New `--queryhelp <entity>` mode, which closes the last gap.** The documentation covers the query
+grammar, not the per-entity schemas, so the record field names are still not guessable. The service
+publishes them at `/udl/<entity>/queryhelp`, along with units, formats, and which parameters an
+entity REQUIRES. The mode reads only `base_url`, because requiring a complete profile first would be
+a loop: the profile needs the fields and the fields come from the service. The entity name is
+validated against a bare-lowercase-token pattern and refused rather than escaped, since it goes into
+a URL carrying live credentials. Its output is API metadata rather than records, so it is the one
+retrieval whose result can leave the workstation.
+
+**A real bug fixed on the way: one time field was used for two entities.** `_range` read
+`[query] time_field` for both the observation and the element-set query. The documentation ranges
+element sets on `epoch` and observations on `obTime`, and an unrecognised query parameter returns an
+EMPTY RESULT rather than an error. So the epoch-spacing measure would have reported no element sets
+in a busy window and been believed. The time field is now passed per entity, logged on each fetch,
+and falls back to the observation field so a profile written before the key existed still runs.
+
+**`disableCapcoExtensions=true` on every query, as a boundary control.** UDL extends CAPCO markings
+on proprietary and limited-distribution records to `U//PR-OWNER-DATATYPE`, embedding a DATA OWNER
+inside the marking string, and the marking distribution is the one measure emitted verbatim. Without
+the flag the noise model would have carried the identity of every contributing provider across the
+boundary under the name of a distribution. The service collapses those to `U//PR` and `U//DS`, which
+preserves what the measure exists to record, the proportion of a scenario's data that is restricted,
+and drops the rest. Set in the URL builder rather than the profile, because a control an operator
+can switch off in a configuration file is a default, not a control. The documentation's own caveat
+stands: disabling the extension does not disclaim the handling duty on any record retrieved, which is
+the other reason raw records never leave the workstation.
+
+**Also.** The time window is now documented as deliberately one `from..to` range parameter rather
+than a `>` bound and a `<` bound, since two bounds can be made to disagree and a half-applied window
+is a silent sampling error; the range form was already what the code sent, and the documentation
+confirms it as the intended between syntax. `Fetcher._request` was extracted to a module-level
+`http_get` so `--queryhelp` shares one authentication header and one error path instead of adding a
+second place a credential could reach a log. The `https`-only check on `base_url` was factored into
+`_checked_base_url`, shared by both profile loaders, because a check that exists twice eventually
+becomes two different checks.
+
+**Verified.** `--self-test` PASS (14/14), unchanged, which is the point: the analysis half is proved
+with no network and no profile, so none of this touched it. Four new tests in
+`tests/test_appstore_contract.py` assert the CAPCO flag on a built URL for both the count and the
+page path, the template's complete/blank split, the elset-on-`epoch` and count-path conventions, and
+that `--queryhelp` refuses a traversal, an embedded slash, an uppercase token and an empty string.
+Full loop below.
+
+**Still needed from the owner.** The `--queryhelp` output for whichever observation entity is to be
+characterised first. That is the only remaining input for step 4 end to end.
+
 ## V0.23.7 (2026-08-25)
 
 **What.** The step 4 tool and runbook assumed a POSIX workstation. The owner runs Windows and

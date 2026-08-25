@@ -9,12 +9,24 @@ identifiers, no credentials. `--emit` refuses to write a file that fails that ch
 Standard library only, one file, no third-party import. That is the Script-mode rule and it is also
 what makes this runnable on a workstation with no build environment.
 
-WHAT THIS TOOL DOES NOT KNOW, AND WILL NOT GUESS
-------------------------------------------------
-The UDL base address, its endpoint paths, and the names of its query parameters and record fields
-are NOT in the flight plan and are not invented here. They live in an *endpoint profile*, an INI
-file the operator writes once from the UDL API documentation. With no profile, every networked mode
-refuses to run and names the exact keys it needs. `--print-profile-template` writes the blank.
+WHAT THIS TOOL KNOWS, AND WHAT IT STILL WILL NOT GUESS
+------------------------------------------------------
+None of the UDL API shape is in the flight plan, so none of it is invented here. It lives in an
+*endpoint profile*, an INI file the operator holds on the workstation. What that file has to carry
+shrank on 25 August 2026, when the owner supplied the UDL API documentation:
+
+● **Now pre-filled in the template, from the documentation.** The base address, the `/history` and
+  `/count` path convention, and every built-in query parameter name. Pre-filled rather than
+  hardcoded: the profile is still the single place the operator can correct a fact, and the
+  parameter file still records which profile produced it, by hash.
+● **Still operator-supplied: the record FIELD names.** The documentation covers the query grammar,
+  not the per-entity schemas, and a residual field named wrong is a measure of nothing. Discover
+  them from the service itself with `--queryhelp <entity>`, which needs only `base_url` and
+  credentials, so it runs BEFORE the profile is complete. Every field left blank is reported
+  UNAVAILABLE and never estimated.
+
+With no profile, every networked mode refuses to run and names the exact keys it needs.
+`--print-profile-template` writes the pre-filled starting point.
 
 Everything that does NOT depend on those facts is finished and provable today:
 
@@ -34,6 +46,20 @@ THE LEARNED REGISTER, wired rather than described
   which is the failure mode that produces a confident answer from a third of the data. A slice whose
   own count still exceeds the cap is bisected until it fits, and a slice that cannot be bisected
   further is reported as a gap rather than silently sampled.
+● The time window is sent as ONE range parameter, `from..to`, which the documented dynamic-query
+  grammar defines as an inclusive between query. One parameter rather than a `>` bound and a `<`
+  bound, because two bounds can be made to disagree and a half-applied window is a silent
+  sampling error.
+● `disableCapcoExtensions=true` on EVERY query. This is a boundary control, not a preference. The
+  marking distribution is the one measure emitted verbatim, and UDL extends CAPCO markings on
+  proprietary and limited-distribution records to `U//PR-OWNER-DATATYPE`, which carries a DATA
+  OWNER inside the marking string. Without the flag, the emitted parameter file would carry the
+  identity of every contributing provider across the boundary under the name of a distribution.
+  With it, the service collapses those to `U//PR` and `U//DS`, which preserves exactly what the
+  measure is for - the proportion of a scenario's data that is restricted - and drops the part
+  that has no business crossing. Note the documentation's own caveat: disabling the extensions
+  does not disclaim the handling obligation on any record retrieved, which is why raw records stay
+  on the workstation regardless.
 """
 
 from __future__ import annotations
@@ -70,6 +96,23 @@ _EMPTY_WINDOW = {"from": "", "to": ""}
 
 #: The platform's hard ceiling on offset pagination. Above it, slice time.
 FIRST_RESULT_CAP = 10_000
+
+#: Set to true on every query. The documented UDL extension to CAPCO markings embeds the DATA
+#: OWNER in the marking string (`U//PR-OWNER-DATATYPE`), and the marking distribution is the one
+#: measure that crosses the boundary verbatim. Disabling the extension collapses those to `U//PR`
+#: and `U//DS`, which keeps the proportion the measure exists to record and drops the provider
+#: identity. Not a profile key: it is a control, and a control an operator can switch off in a
+#: configuration file is a default, not a control.
+CAPCO_EXTENSIONS_PARAM = "disableCapcoExtensions"
+
+#: The per-entity query-parameter reference the service publishes at `/udl/<entity>/queryhelp`.
+#: Read by `--queryhelp`, which is how the operator fills `[fields]` from the service rather than
+#: from a guess. Needs only `base_url` and credentials, so it runs before the profile is complete.
+QUERYHELP_PATH_TEMPLATE = "/udl/{entity}/queryhelp"
+
+#: An entity name is a bare lowercase token in every documented path. Validated before it is put
+#: into a URL, so `--queryhelp` cannot be used to reach an arbitrary path on the host.
+ENTITY_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,63}$")
 
 #: Robust outlier bound: median plus or minus this many median-absolute-deviations. Robust rather
 #: than standard-deviation based, because the thing being measured IS the outlier rate, and a
@@ -117,30 +160,42 @@ class BoundaryError(RuntimeError):
 PROFILE_TEMPLATE = """\
 # UDL endpoint profile for tools/udl_characterise.py
 #
-# Fill every value from the UDL API documentation. This tool will not guess any of them.
+# [endpoints] and [query] are pre-filled from the UDL API documentation. Check them, and correct
+# anything the documentation has since changed: this file, not the source, is where a fact about
+# the API is fixed. [fields] is yours to fill, from `--queryhelp <entity>` against the service.
 # Keep this file OUT of the repository: it is workstation configuration, not content.
 #
 # Nothing here is a secret. Credentials live in ~/.config/phase_offset/credentials.ini.
 
 [endpoints]
-# Scheme and host only, no trailing slash.
-base_url =
-# Path returning a LIST of historical observations for a time range.
-observation_history_path =
-# Path returning a BARE INTEGER count for the same time range. Queried first, so the tool knows
-# whether it must time-slice before it fetches anything.
-observation_count_path =
+# Scheme and host only, no trailing slash. https is required and is not inferred from a bare host.
+base_url = https://unifieddatalibrary.com
+# Path returning a LIST of historical observations for a time range. `/history` appends to any
+# standard entity path. The entity here is the one being characterised: change it if you are
+# characterising radarobservation or rfobservation instead, and confirm it with
+# `--queryhelp eoobservation` before committing to a long window.
+observation_history_path = /udl/eoobservation/history
+# Path returning a BARE INTEGER count for the same time range. Queried FIRST, so the tool knows
+# whether it must time-slice before it fetches anything. `/count` appends to a query path, so the
+# count of a history query is the history path plus `/count`.
+observation_count_path = /udl/eoobservation/history/count
 # The same pair for element sets, used for the epoch-spacing measure.
-elset_history_path =
-elset_count_path =
+elset_history_path = /udl/elset/history
+elset_count_path = /udl/elset/history/count
 
 [query]
-# The query parameter carrying the observation time RANGE. The plan records this as obTime.
+# The query parameter carrying the observation time RANGE, sent as one `from..to` range. Two
+# entities, two different names: observations are ranged on obTime, element sets on epoch. A
+# parameter an entity does not recognise returns an empty result rather than an error, which is
+# why these are separate keys instead of one shared value.
 time_field = obTime
-# The parameter names for offset pagination within one time slice.
+elset_time_field = epoch
+# The built-in parameter names for offset pagination within one time slice. Documented, and the
+# same across every entity.
 first_result_param = firstResult
 max_results_param = maxResults
-# How many records to request per page. Must not exceed the platform maximum.
+# How many records to request per page. The documentation states no ceiling, so treat this as a
+# request size rather than a limit; 1000 is the size its own worked example uses.
 page_size = 1000
 # The parameter naming which columns to return, and its separator, if the API supports projection.
 # Leave columns_param blank if it does not; the tool then requests whole records.
@@ -152,6 +207,16 @@ columns_separator = ,
 # Leave a value blank and the measures depending on it are reported as unavailable rather
 # than estimated. That is the fail-closed behaviour: an absent measure is honest, and an
 # invented one is not.
+#
+# THESE ARE THE ONLY VALUES STILL UNKNOWN, and they are not guessable: the API documentation
+# covers the query grammar, not the per-entity schemas. Get them from the service:
+#
+#     python tools/udl_characterise.py --queryhelp eoobservation
+#
+# (forward slashes, which PowerShell accepts as readily as a POSIX shell does)
+#
+# which lists the queryable parameter names, their descriptions, units and formats, and names any
+# parameter the entity REQUIRES. Fill what you can match with confidence and leave the rest blank.
 sensor_id =
 observation_time = obTime
 azimuth_residual =
@@ -178,6 +243,46 @@ _PROFILE_REQUIRED: dict[str, tuple[str, ...]] = {
     "query": ("time_field", "first_result_param", "max_results_param", "page_size"),
     "fields": ("sensor_id", "observation_time", "object_identifier"),
 }
+
+
+def _checked_base_url(parser: configparser.ConfigParser, path: Path) -> str:
+    """The base address, refused unless it is https.
+
+    A REAL finding, raised by the pinned linter and fixed rather than suppressed: `urlopen`
+    honours `file:` and every other registered scheme, so an operator typo or a copied-in path
+    would turn a retrieval into a local file read against a header carrying live credentials.
+    Allowlisted to one scheme, refused rather than corrected, because silently rewriting `http`
+    to `https` hides a profile that is wrong.
+
+    Shared by `Profile.load` and `load_base_url` so the two entry points cannot drift: a check
+    that exists twice is a check that will eventually be two different checks.
+    """
+    base = parser.get("endpoints", "base_url", fallback="").strip()
+    scheme = urllib.parse.urlsplit(base).scheme.lower()
+    if scheme != "https":
+        raise ProfileError(
+            f"{path}: [endpoints] base_url must be an https:// address; found scheme"
+            f" {scheme!r}. Only https is allowed, and it is not inferred from a bare host"
+        )
+    return base
+
+
+def load_base_url(path: Path) -> str:
+    """Read ONLY the base address, for `--queryhelp`.
+
+    `--queryhelp` is what the operator runs to discover the field names, so requiring a complete
+    profile first would be a loop: the profile needs the fields, and the fields come from the
+    service. This reads the one key that discovery needs and validates it the same way.
+    """
+    if not path.is_file():
+        raise ProfileError(
+            f"no endpoint profile at {path}. Write one with"
+            " `--print-profile-template > udl-profile.ini`; --queryhelp needs only its"
+            " [endpoints] base_url, which the template already carries"
+        )
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(path.read_text(encoding="utf-8"))
+    return _checked_base_url(parser, path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,18 +319,7 @@ class Profile:
                 + ". Every one is a fact about the UDL API that this tool will not invent"
             )
 
-        base = parser.get("endpoints", "base_url", fallback="").strip()
-        scheme = urllib.parse.urlsplit(base).scheme.lower()
-        if scheme != "https":
-            # A REAL finding, raised by the pinned linter and fixed rather than suppressed:
-            # `urlopen` honours `file:` and every other registered scheme, so an operator typo or
-            # a copied-in path would turn a retrieval into a local file read against a header
-            # carrying live credentials. Allowlisted to one scheme, refused rather than corrected,
-            # because silently rewriting `http` to `https` hides a profile that is wrong.
-            raise ProfileError(
-                f"{path}: [endpoints] base_url must be an https:// address; found scheme"
-                f" {scheme!r}. Only https is allowed, and it is not inferred from a bare host"
-            )
+        _checked_base_url(parser, path)
 
         section_map = {
             name: {key: value.strip() for key, value in parser.items(name)}
@@ -331,6 +425,39 @@ def _utc_stamp(moment: datetime) -> str:
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
+def http_get(url: str, accept: str, credentials: tuple[str, str], timeout: float) -> str:
+    """One authenticated GET. The only place this tool opens a connection.
+
+    A module function rather than a `Fetcher` method because `--queryhelp` runs before a complete
+    profile exists and must not need one. One function means one auth header and one error path:
+    a second request path is a second chance to log a credential.
+    """
+    user, secret = credentials
+    # The scheme is allowlisted to https before any request is built, so the audit this rule
+    # raises is answered at the only place a scheme can enter: the operator-written profile.
+    request = urllib.request.Request(url, method="GET")  # noqa: S310
+    request.add_header("Accept", accept)
+    token = f"{user}:{secret}".encode()
+    import base64  # noqa: PLC0415 - stdlib, imported at use so the header is the only user
+
+    request.add_header("Authorization", "Basic " + base64.b64encode(token).decode("ascii"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+            body: bytes = response.read()
+        return body.decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        # The URL is echoed WITHOUT its query string. A query carries the time window, which is
+        # harmless, but this is the one place a credential could reach a log if the profile ever
+        # grew a token parameter, and a rule that holds only for today's profile is not a rule.
+        raise RuntimeError(
+            f"HTTP {exc.code} from {urllib.parse.urlsplit(url).path}: {exc.reason}"
+        ) from None
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            f"cannot reach {urllib.parse.urlsplit(url).netloc}: {exc.reason}"
+        ) from None
+
+
 @dataclass(slots=True)
 class Fetcher:
     """Retrieves records for a time window, honouring the LEARNED register."""
@@ -342,53 +469,37 @@ class Fetcher:
     gaps: list[dict[str, str]] = field(default_factory=list)
 
     def _request(self, url: str, accept: str) -> str:
-        user, secret = self.credentials
-        # The scheme is allowlisted to https in `Profile.load`, which runs before any request
-        # is built, so the audit this rule raises is answered at the only place a scheme can
-        # enter: the operator-written profile.
-        request = urllib.request.Request(url, method="GET")  # noqa: S310
-        request.add_header("Accept", accept)
-        token = f"{user}:{secret}".encode()
-        import base64  # noqa: PLC0415 - stdlib, imported at use so the header is the only user
-
-        request.add_header("Authorization", "Basic " + base64.b64encode(token).decode("ascii"))
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-                body: bytes = response.read()
-            return body.decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:
-            # The URL is echoed WITHOUT its query string. A query carries the time window, which is
-            # harmless, but this is the one place a credential could reach a log if the profile ever
-            # grew a token parameter, and a rule that holds only for today's profile is not a rule.
-            raise RuntimeError(
-                f"HTTP {exc.code} from {urllib.parse.urlsplit(url).path}: {exc.reason}"
-            ) from None
-        except urllib.error.URLError as exc:
-            raise RuntimeError(
-                f"cannot reach {urllib.parse.urlsplit(url).netloc}: {exc.reason}"
-            ) from None
+        return http_get(url, accept, self.credentials, self.timeout)
 
     def _url(self, path: str, params: dict[str, str]) -> str:
         base = self.profile.endpoints["base_url"].rstrip("/")
-        return f"{base}/{path.lstrip('/')}?{urllib.parse.urlencode(params)}"
+        # `disableCapcoExtensions` is added here, on the single path every request is built
+        # through, rather than at each call site. A control that has to be remembered per call is
+        # a control that will be missed by the next call added.
+        query = {**params, CAPCO_EXTENSIONS_PARAM: "true"}
+        return f"{base}/{path.lstrip('/')}?{urllib.parse.urlencode(query)}"
 
-    def _range(self, start: datetime, end: datetime) -> dict[str, str]:
-        time_field = self.profile.query["time_field"]
+    def _range(self, start: datetime, end: datetime, time_field: str) -> dict[str, str]:
+        """One `from..to` range parameter, per the documented between syntax."""
         return {time_field: f"{_utc_stamp(start)}..{_utc_stamp(end)}"}
 
-    def count(self, count_path: str, start: datetime, end: datetime) -> int:
+    def count(self, count_path: str, start: datetime, end: datetime, time_field: str) -> int:
         """The count endpoint returns a BARE INTEGER under `Accept: text/plain`, not JSON."""
-        body = self._request(self._url(count_path, self._range(start, end)), "text/plain").strip()
+        url = self._url(count_path, self._range(start, end, time_field))
+        body = self._request(url, "text/plain").strip()
         try:
             return int(body)
         except ValueError:
             raise RuntimeError(
                 f"the count endpoint returned {len(body)} characters that are not an integer."
-                " Check [endpoints] observation_count_path in the profile"
+                f" Check the count path for {count_path} in the profile: a count path is a query"
+                " path plus /count, so /udl/elset/history becomes /udl/elset/history/count"
             ) from None
 
-    def _page(self, history_path: str, start: datetime, end: datetime, offset: int) -> list[Record]:
-        params = self._range(start, end)
+    def _page(
+        self, history_path: str, start: datetime, end: datetime, offset: int, time_field: str
+    ) -> list[Record]:
+        params = self._range(start, end, time_field)
         params[self.profile.query["first_result_param"]] = str(offset)
         params[self.profile.query["max_results_param"]] = self.profile.query.get(
             "page_size", "1000"
@@ -410,10 +521,22 @@ class Fetcher:
         return [row for row in payload if isinstance(row, dict)]
 
     def fetch(
-        self, history_path: str, count_path: str, start: datetime, end: datetime, depth: int = 0
+        self,
+        history_path: str,
+        count_path: str,
+        start: datetime,
+        end: datetime,
+        time_field: str,
+        depth: int = 0,
     ) -> list[Record]:
-        """Every record in the window, time-sliced whenever the count exceeds the offset cap."""
-        total = self.count(count_path, start, end)
+        """Every record in the window, time-sliced whenever the count exceeds the offset cap.
+
+        `time_field` is passed in rather than read from the profile because it is per-entity:
+        observations are ranged on `obTime` and element sets on `epoch`. One field for both would
+        send a parameter the entity does not have, and a query parameter an entity does not
+        recognise is the kind of mistake that returns an empty result rather than an error.
+        """
+        total = self.count(count_path, start, end, time_field)
         if self.verbose:
             print(f"  {_utc_stamp(start)} to {_utc_stamp(end)}: {total} records", file=sys.stderr)
         if total == 0:
@@ -434,15 +557,15 @@ class Fetcher:
                 )
                 return []
             middle = start + span / 2
-            return self.fetch(history_path, count_path, start, middle, depth + 1) + self.fetch(
-                history_path, count_path, middle, end, depth + 1
-            )
+            return self.fetch(
+                history_path, count_path, start, middle, time_field, depth + 1
+            ) + self.fetch(history_path, count_path, middle, end, time_field, depth + 1)
 
         page_size = max(1, int(self.profile.query.get("page_size") or "1000"))
         rows: list[Record] = []
         offset = 0
         while offset < total and offset < FIRST_RESULT_CAP:
-            page = self._page(history_path, start, end, offset)
+            page = self._page(history_path, start, end, offset, time_field)
             if not page:
                 break
             rows.extend(page)
@@ -987,7 +1110,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--print-profile-template",
         action="store_true",
-        help="write the blank endpoint profile to stdout and exit",
+        help="write the pre-filled endpoint profile to stdout and exit",
+    )
+    parser.add_argument(
+        "--queryhelp",
+        metavar="ENTITY",
+        help="print the service's query-parameter reference for one entity, for example"
+        " eoobservation, and exit. Needs only [endpoints] base_url and credentials, so it runs"
+        " BEFORE the profile's [fields] are filled. This is how you fill them",
     )
     parser.add_argument("--credentials", type=Path, default=DEFAULT_CREDENTIALS)
     parser.add_argument("--start", type=_parse_window, help="window start, ISO-8601")
@@ -1074,19 +1204,26 @@ def _live_inputs(args: argparse.Namespace) -> Inputs:
         credentials=load_credentials(args.credentials),
         verbose=args.verbose,
     )
-    print("fetching observations", file=sys.stderr)
+    observation_time_field = profile.query["time_field"]
+    # Falls back to the observation field rather than failing, so a profile written before
+    # `elset_time_field` existed still runs. Named in the log either way, because a fallback the
+    # operator cannot see is a fallback that gets blamed on the data.
+    elset_time_field = profile.query.get("elset_time_field", "").strip() or observation_time_field
+    print(f"fetching observations, ranged on {observation_time_field}", file=sys.stderr)
     observations = fetcher.fetch(
         profile.endpoints["observation_history_path"],
         profile.endpoints["observation_count_path"],
         args.start,
         args.end,
+        observation_time_field,
     )
-    print("fetching element sets", file=sys.stderr)
+    print(f"fetching element sets, ranged on {elset_time_field}", file=sys.stderr)
     elsets = fetcher.fetch(
         profile.endpoints["elset_history_path"],
         profile.endpoints["elset_count_path"],
         args.start,
         args.end,
+        elset_time_field,
     )
     window = {"from": _utc_stamp(args.start), "to": _utc_stamp(args.end)}
     if args.raw_out:
@@ -1114,6 +1251,51 @@ def _live_inputs(args: argparse.Namespace) -> Inputs:
     )
 
 
+def queryhelp_url(base_url: str, entity: str) -> str:
+    """The queryhelp address for one entity, with the entity name validated first.
+
+    Refused rather than escaped. `--queryhelp` takes an operator-typed token and puts it into a
+    URL that carries live credentials; a value containing a slash or a dot-dot would reach a
+    different path on the host, and quoting it into something harmless would hide a typo instead
+    of reporting it.
+    """
+    if not ENTITY_NAME_PATTERN.match(entity):
+        raise RuntimeError(
+            f"{entity!r} is not an entity name. Expected a bare lowercase token, for example"
+            " eoobservation, radarobservation, rfobservation or elset"
+        )
+    return base_url.rstrip("/") + QUERYHELP_PATH_TEMPLATE.format(entity=entity)
+
+
+def _cmd_queryhelp(args: argparse.Namespace) -> int:
+    """Print the service's own query-parameter reference for one entity.
+
+    This is the step that closes the last gap in the profile. The output is API METADATA - names,
+    descriptions, units, formats, and which parameters the entity requires - not records, so it is
+    the one retrieval whose output is safe to quote outside the workstation.
+    """
+    if not args.profile:
+        raise RuntimeError(
+            "--profile is required for --queryhelp; only its [endpoints] base_url is read, and"
+            " `--print-profile-template` already carries it"
+        )
+    url = queryhelp_url(load_base_url(args.profile), args.queryhelp)
+    body = http_get(url, "*/*", load_credentials(args.credentials), 60.0)
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        sys.stdout.write(body if body.endswith("\n") else body + "\n")
+    else:
+        json.dump(parsed, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+    print(
+        f"queryhelp for {args.queryhelp}: fill [fields] in the profile from the parameter names"
+        " above. Nothing here is a record, so nothing here is bound to this workstation",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def _cmd_self_test() -> int:
     passed, manifest = self_test()
     json.dump(manifest, sys.stdout, indent=2, sort_keys=True)
@@ -1136,6 +1318,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_self_test()
 
     try:
+        if args.queryhelp:
+            return _cmd_queryhelp(args)
         inputs = _offline_inputs(args) if args.analyse_only else _live_inputs(args)
     except (ProfileError, RuntimeError, TypeError, OSError, json.JSONDecodeError) as exc:
         print(f"{exc}", file=sys.stderr)

@@ -3496,17 +3496,21 @@ def test_the_characteriser_refuses_a_non_https_endpoint() -> None:
             cwd=ROOT,
             timeout=60,
         ).stdout
+        # The base address and the paths are pre-filled in the shipped template, so the base
+        # address is REPLACED rather than filled in, and only the two required field names are
+        # added. Every substitution is asserted, because this test previously used a `str.replace`
+        # whose anchor stopped matching once the template gained pre-filled values: the no-op left
+        # a perfectly valid https profile, the run failed later on a missing credentials file, and
+        # a green-looking test was asserting nothing whatsoever about the scheme.
         filled = template
-        for key, value in (
-            ("base_url", "file:///etc"),
-            ("observation_history_path", "a"),
-            ("observation_count_path", "b"),
-            ("elset_history_path", "c"),
-            ("elset_count_path", "d"),
-            ("sensor_id", "sensorId"),
-            ("object_identifier", "idOnOrbit"),
+        for old, new in (
+            ("base_url = https://unifieddatalibrary.com", "base_url = file:///etc"),
+            ("sensor_id =", "sensor_id = sensorId"),
+            ("object_identifier =", "object_identifier = idOnOrbit"),
         ):
-            filled = filled.replace(f"\n{key} =\n", f"\n{key} = {value}\n")
+            assert old in filled, f"the profile template no longer contains {old!r}"
+            filled = filled.replace(old, new, 1)
+        assert "file:///etc" in filled
         profile.write_text(filled, encoding="utf-8")
 
         result = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
@@ -3592,3 +3596,124 @@ def test_the_posix_credentials_check_refuses_a_group_readable_file() -> None:
 
         credentials.chmod(0o600)
         assert module.load_credentials(credentials) == ("synthetic", "synthetic")
+
+
+def _load_udl_tool() -> Any:
+    """Load `tools/udl_characterise.py` as a module, the way the POSIX credentials test does.
+
+    Registered in `sys.modules` before execution: `@dataclass(slots=True)` resolves its own module
+    through `sys.modules`, and an unregistered module raises inside `dataclasses` rather than in the
+    code under test, which makes the failure look like a bug in the tool.
+    """
+    spec = importlib.util.spec_from_file_location("udl_characterise", UDL_TOOL)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    return module
+
+
+def _udl_profile(module: Any, directory: str) -> Any:
+    """The shipped template, with only the [fields] keys a profile REQUIRES filled in.
+
+    Filled here rather than in the template because they are the half the documentation does not
+    cover: the operator reads them off `--queryhelp`. Everything else comes from the template
+    unedited, so these tests assert what actually ships.
+    """
+    profile_path = Path(directory) / "udl-profile.ini"
+    profile_path.write_text(
+        module.PROFILE_TEMPLATE.replace("sensor_id =", "sensor_id = senId").replace(
+            "object_identifier =", "object_identifier = idOnOrbit"
+        ),
+        encoding="utf-8",
+    )
+    return module.Profile.load(profile_path)
+
+
+def test_the_udl_profile_template_is_complete_except_for_the_record_field_names() -> None:
+    """The template must need nothing from the operator but the per-entity FIELD names.
+
+    The API mechanics are documented, so leaving an endpoint or a pagination parameter blank in the
+    template is work handed back to the operator for no reason. The field names are the opposite
+    case: the documentation does not carry them, so pre-filling them would be a guess wearing the
+    authority of a shipped default. This test pins that split, and fails if the template ever
+    drifts either way.
+    """
+    module = _load_udl_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        profile_path = Path(directory) / "udl-profile.ini"
+        profile_path.write_text(module.PROFILE_TEMPLATE, encoding="utf-8")
+        with pytest.raises(module.ProfileError) as raised:
+            module.Profile.load(profile_path)
+
+    message = str(raised.value)
+    assert "[endpoints]" not in message, f"the template ships an unfilled endpoint: {message}"
+    assert "[query]" not in message, f"the template ships an unfilled query parameter: {message}"
+    assert "[fields] sensor_id" in message
+    assert "[fields] object_identifier" in message
+
+
+def test_every_udl_query_disables_the_capco_marking_extensions() -> None:
+    """The URL builder must carry `disableCapcoExtensions=true`, on every path, always.
+
+    This is a BOUNDARY control, not a preference. UDL extends CAPCO markings on proprietary and
+    limited-distribution records to `U//PR-OWNER-DATATYPE`, and the marking distribution is the one
+    measure the tool emits verbatim. Without the flag the emitted parameter file would carry the
+    identity of every contributing provider across the boundary under the name of a distribution.
+
+    Asserted on the built URL rather than by reading the source, because the point is that the
+    parameter survives into the request, and asserted for both the count and the page path, since
+    they are separate call sites and either one alone would leak.
+    """
+    module = _load_udl_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        fetcher = module.Fetcher(
+            profile=_udl_profile(module, directory),
+            credentials=("synthetic", "synthetic"),
+        )
+        for path in ("/udl/elset/history", "/udl/elset/history/count"):
+            url = fetcher._url(path, {"epoch": "a..b"})  # the URL builder is the unit under test
+            assert "disableCapcoExtensions=true" in url, (
+                f"{path} is queried without disabling the CAPCO marking extensions, so a data"
+                f" owner can reach the emitted marking distribution: {url}"
+            )
+
+
+def test_the_udl_profile_template_ranges_elsets_on_epoch_not_obtime() -> None:
+    """Two entities, two time fields. One shared field would silently return nothing.
+
+    The documented query grammar ranges element sets on `epoch` and observations on `obTime`, and
+    an unrecognised query parameter yields an EMPTY result rather than an error. That failure mode
+    is invisible: the epoch-spacing measure would simply report no element sets, and a parameter
+    file with a missing measure looks the same as a quiet window.
+    """
+    module = _load_udl_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        profile = _udl_profile(module, directory)
+
+    assert profile.query["time_field"] == "obTime"
+    assert profile.query["elset_time_field"] == "epoch", (
+        "the shipped template does not range element sets on epoch"
+    )
+    assert profile.endpoints["elset_count_path"] == profile.endpoints["elset_history_path"] + (
+        "/count"
+    ), "a count path is a query path plus /count; the template no longer follows the convention"
+
+
+def test_the_queryhelp_entity_name_is_validated_before_it_reaches_a_url() -> None:
+    """`--queryhelp` takes an operator-typed token and puts it into a credentialled URL.
+
+    Refused rather than escaped: quoting a traversal into something harmless would hide a typo
+    instead of reporting it, and the tool's whole stance is that an unverifiable input fails closed.
+    """
+    module = _load_udl_tool()
+    assert module.queryhelp_url("https://example.invalid", "eoobservation") == (
+        "https://example.invalid/udl/eoobservation/queryhelp"
+    )
+    for hostile in ("../../udl/elset", "eo/observation", "EOObservation", "", "a"):
+        with pytest.raises(RuntimeError, match="is not an entity name"):
+            module.queryhelp_url("https://example.invalid", hostile)
