@@ -2,6 +2,72 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.6 (2026-08-25)
+
+**What.** Flight plan step 4, everything that does not depend on a fact nobody has supplied.
+`tools/udl_characterise.py` (single file, standard library only, Script mode per CONTEXT-001) plus
+`docs/RUNBOOK-UDL-CHARACTERISATION.md`, the runbook for the networked workstation. Four contract
+tests.
+
+**The shape of the deliverable, because it is the decision worth explaining.** The UDL base address,
+its endpoint paths, and its query-parameter and record-field names are NOT in the flight plan.
+Inventing them would produce an integration that looks like it works until it is run, so they live in
+an *endpoint profile* the operator writes once from the UDL API documentation, and every networked
+mode refuses to run without it, naming the exact keys it needs. `--print-profile-template` writes the
+blank. Everything that does NOT depend on those facts is finished and provable today: `--self-test`
+proves the analyser against synthetic records with statistics known by construction, and
+`--analyse-only` runs it over a saved dump. Both need no network, no credentials and no profile, so
+the analysis half is verified BEFORE anything touches a live service.
+
+**The LEARNED register is wired, not described.** `Accept: */*` on the history list; `Accept:
+text/plain` on the count endpoint, which returns a bare integer; trailing-Z microsecond time ranges;
+and above the 10,000 `firstResult` cap the window is BISECTED in time rather than paged past the cap.
+A slice that cannot be narrowed below the cap is recorded in `provenance.unrepresented_windows` and
+excluded, never silently sampled: offset pagination past the cap is the failure mode that produces a
+confident answer from a third of the data.
+
+**Only distributions cross the boundary, enforced rather than intended.** `assert_crossable` walks
+the whole output and refuses any string matching the catalogue-number or URL shape, and `--emit`
+returns exit 3 rather than writing. Object identifiers are replaced by a per-run salted hash before
+any statistic is computed, so grouping works and no identifier can reach the file. Sensor labels are
+pseudonymised BY DEFAULT, with `--sensor-labels verbatim` as the owner's explicit choice: a more
+useful noise model against a less shareable one, defaulted closed.
+
+**A real finding from the pinned linter, fixed rather than suppressed.** `S310` on the `urlopen`
+call. `base_url` is operator-written text and `urlopen` honours `file:`, so a typo or a pasted path
+would turn a retrieval into a local file read against a header carrying live credentials. The scheme
+is now allowlisted to `https` in the profile loader, before any request is built, and refused rather
+than corrected - silently rewriting `http` to `https` hides a profile that is wrong about more than
+its scheme. A contract test drives a `file:///etc` profile through the command line and asserts the
+refusal. Two oversized functions were split rather than exempted; `T201` is the single per-file
+ignore, because a command-line tool's output is its interface.
+
+**The self-test caught my own assertion before anything else did.** I expected a median of 5.0 on a
+12-value sample; nearest-rank never invents a value, so the median is an observed 6 and the
+interpolated 5.5 does not occur. The assertion was wrong, not the code. Both facts are now written
+into the assertion, and a companion assertion shows the mean of the same sample is above 80, so the
+median assertion is measuring outlier resistance rather than coincidence.
+
+**Credentials.** Read from `~/.config/phase_offset/credentials.ini` with `interpolation=None`, which
+is not cosmetic: a password containing a percent sign raises `InterpolationSyntaxError` under the
+default parser, and the failure looks like a bad password. A credentials file readable beyond its
+owner is REFUSED, not warned about - what this tool can read, another local process can read. No
+credential is echoed in any error, and an HTTP error reports the path without its query string.
+
+**It never ships.** `tools/` is excluded from the upload allowlist in
+`scripts/package-appstore.sh` and from the image build context in `.dockerignore`, with one contract
+test asserting both, because either exclusion alone would let the file through the other. It IS
+checked at full strictness by `ruff` and `mypy` in the verification loop: it does not ship, but it is
+the code that holds real credentials and writes the artefact that crosses the boundary, so it is the
+last place to relax a check.
+
+**Verified.** Full verification loop green. `--self-test` 14/14. Four new contract tests: the
+double exclusion from both shipping contracts, the self-test running with no network, the refusal to
+fetch without a profile, and the refusal of a non-https endpoint.
+
+**Not yet done for this version:** the `engineering-reviewer` and `security-reviewer` gates have not
+run against this change, and step 4 cannot complete end to end until the endpoint profile exists.
+
 ## V0.23.5 (2026-08-25)
 
 **What.** Flight plan step 5, the engineering half: content schemas, loader and suite. Four

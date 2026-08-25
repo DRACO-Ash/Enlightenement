@@ -25,3 +25,8 @@ build
 docs
 tests
 *.zip
+# Workstation scripts. `tools/udl_characterise.py` reads real UDL credentials and runs on the
+# networked workstation, per the flight plan: "Runs on the networked workstation, never in the
+# container." Excluded from the image context here and from the upload allowlist in
+# scripts/package-appstore.sh, with a contract test holding both.
+tools

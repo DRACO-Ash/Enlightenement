@@ -3392,3 +3392,139 @@ def test_the_physics_core_is_unreachable_from_any_http_route() -> None:
         "building the application imported the physics core, so it is now reachable from the"
         f" HTTP edge: {reached}. The boundary needs input validation before that is safe."
     )
+
+
+# --- workstation tools: built, proved, and never shipped -----------------------------
+
+
+UDL_TOOL = ROOT / "tools" / "udl_characterise.py"
+
+
+def test_the_workstation_tools_never_reach_the_upload_or_the_image() -> None:
+    """`tools/` runs on the networked workstation and must not ship, in either contract.
+
+    The flight plan is explicit - "Runs on the networked workstation, never in the container" - and
+    this is the file that reads real UDL credentials. Both exclusions are asserted, because they are
+    separate mechanisms and either one alone would let the file through the other: the upload
+    allowlist in `scripts/package-appstore.sh` shapes the ZIP, and `.dockerignore` shapes the
+    image build context.
+    """
+    script = (ROOT / "scripts" / "package-appstore.sh").read_text(encoding="utf-8")
+    directory_loop = re.search(r"^for dir in (.+); do$", script, re.MULTILINE)
+    assert directory_loop is not None, "the packaging script's directory allowlist moved"
+    staged = directory_loop.group(1).split()
+    assert "tools" not in staged, f"tools/ is in the upload allowlist: {staged}"
+
+    ignored = {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "tools" in ignored, "tools/ is not excluded from the image build context"
+
+
+def test_the_udl_characteriser_proves_itself_with_no_network_and_no_credentials() -> None:
+    """`--self-test` must pass here, where there is no UDL and no credential file.
+
+    The point of the mode is that the ANALYSIS half is verifiable before anything touches a live
+    service, so this test is also the check that it stayed that way: a self-test that quietly grew a
+    network dependency would fail here rather than on the workstation, halfway through a
+    characterisation run.
+    """
+    if not UDL_TOOL.is_file():
+        pytest.fail(f"{UDL_TOOL} is missing; flight plan step 4 depends on it")
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [sys.executable, str(UDL_TOOL), "--self-test"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+        timeout=120,
+    )
+    assert result.returncode == 0, f"self-test failed:\n{result.stderr[-2000:]}"
+    manifest = json.loads(result.stdout)
+    assert manifest["passed"] is True
+    assert manifest["failed"] == []
+    # A manifest with no assertions in it would also report `passed`. The floor is a measurement,
+    # not a guess: the suite carries fourteen and a drop below ten means assertions were deleted
+    # rather than the tool improved.
+    assert manifest["count"] >= 10, f"the assertion manifest shrank to {manifest['count']}"
+
+
+def test_the_characteriser_refuses_to_fetch_without_an_endpoint_profile() -> None:
+    """No profile means no request. The tool does not guess a UDL API shape, and says so.
+
+    This is the mechanical half of the ask: the missing base address, endpoint paths and field names
+    are facts about the UDL API that nobody has supplied, and inventing them would be a fabricated
+    integration that looks like a working one until it is run.
+    """
+    result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
+        [
+            sys.executable,
+            str(UDL_TOOL),
+            "--start",
+            "2026-01-01T00:00:00Z",
+            "--end",
+            "2026-01-02T00:00:00Z",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+        timeout=60,
+    )
+    assert result.returncode == 2, result.stdout[-500:]
+    assert "--profile is required" in result.stderr
+    assert "does not guess an API shape" in result.stderr
+
+
+def test_the_characteriser_refuses_a_non_https_endpoint() -> None:
+    """An operator typo must not turn a retrieval into a local file read.
+
+    `urllib.request.urlopen` honours `file:` and every other registered scheme, and the request
+    carries live credentials in an Authorization header. The scheme is allowlisted to https in the
+    profile loader, refused rather than silently corrected, because rewriting `http` to `https`
+    would hide a profile that is wrong about more than its scheme.
+    """
+    with tempfile.TemporaryDirectory() as raw_directory:
+        profile = Path(raw_directory) / "profile.ini"
+        template = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
+            [sys.executable, str(UDL_TOOL), "--print-profile-template"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=ROOT,
+            timeout=60,
+        ).stdout
+        filled = template
+        for key, value in (
+            ("base_url", "file:///etc"),
+            ("observation_history_path", "a"),
+            ("observation_count_path", "b"),
+            ("elset_history_path", "c"),
+            ("elset_count_path", "d"),
+            ("sensor_id", "sensorId"),
+            ("object_identifier", "idOnOrbit"),
+        ):
+            filled = filled.replace(f"\n{key} =\n", f"\n{key} = {value}\n")
+        profile.write_text(filled, encoding="utf-8")
+
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
+            [
+                sys.executable,
+                str(UDL_TOOL),
+                "--profile",
+                str(profile),
+                "--start",
+                "2026-01-01T00:00:00Z",
+                "--end",
+                "2026-01-02T00:00:00Z",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=ROOT,
+            timeout=60,
+        )
+    assert result.returncode == 2, result.stdout[-500:]
+    assert "must be an https:// address" in result.stderr

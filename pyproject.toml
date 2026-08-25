@@ -1,6 +1,6 @@
 [project]
 name = "enlightenment"
-version = "0.23.5"
+version = "0.23.6"
 description = "Orbital warfare training application for the Bluestaq App Store."
 requires-python = ">=3.12,<3.13"
 
@@ -90,10 +90,25 @@ max-complexity = 10
 # values under test; SLF001 lets a test assert a private memory bound directly.
 "tests/*" = ["S101", "S104", "S105", "S106", "PLR2004", "ARG001", "SLF001", "PLC0415"]
 
+# `tools/` holds workstation scripts that never ship: they are excluded from the upload allowlist
+# in `scripts/package-appstore.sh` and from the image build context in `.dockerignore`, and a
+# contract test holds both. T201 is the only exemption: a command-line tool reports progress and
+# results on stdout and stderr, which is its interface, not a stray debug print. Everything else
+# ruff raises against them is fixed rather than exempted - the pinned linter found a real
+# `file://` scheme hole in `udl_characterise.py` and that was closed, not suppressed.
+"tools/*" = ["T201"]
+
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src"
-packages = ["enlightenment"]
+# One `files` list rather than `packages` plus `files`: mypy accepts exactly one of module,
+# package or file targets and errors out on the pair, which is how this was found.
+#
+# `tools/` is checked at the same strictness as the application. It does not ship - it is excluded
+# from the upload allowlist and the image context, with a contract test on both - but it is the code
+# that holds real UDL credentials and writes the one artefact that crosses the boundary, so it is
+# the last place to relax a check.
+files = ["src/enlightenment", "tools"]
 strict = true
 warn_unreachable = true
 
