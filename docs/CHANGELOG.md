@@ -2,6 +2,54 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.10 (2026-08-25)
+
+**What.** The engineering gate returned FAIL on V0.23.9 with a blocker and three majors. It
+mutation-tested the remediation and found that three of the fixes were still reintroducible with all
+824 tests green. Every one of those tests named the thing it was supposed to protect and tested
+something adjacent to it. That is the same defect three times, so it is worth naming rather than
+listing.
+
+**The pattern: a test that exercises the plumbing and calls it the control.**
+
+● `test_the_udl_time_field_reaches_the_request_per_entity` passed the time field to `fetch` as a
+  LITERAL argument, so it pinned `Fetcher` and never touched `_live_inputs`, which is the line that
+  chooses the field and the line the original defect lived on. Reverting that one line restored the
+  V0.23.8 bug against a green suite. `_live_inputs` is now driven directly with the transport and
+  the credentials patched, and the URLs it produced are read.
+● `test_the_queryhelp_body_passes_the_boundary_guard_before_it_is_printed` called
+  `assert_crossable` directly and never entered `_cmd_queryhelp`, and the only end-to-end queryhelp
+  test returns 2 at `load_base_url` before the guard is reached. So deleting the guard CALL left the
+  suite green, which restores the finding in full: an unvalidated remote body printed to stdout
+  under a runbook promise. There is now a test that patches the transport to return a body carrying
+  a catalogue-number shape, runs `main`, and asserts exit 3, empty stdout, `REFUSED` on stderr, the
+  body saved locally at mode 600, and a clean body still printing at exit 0.
+● `_write_private` had no test at all, so reverting it to write-then-chmod was invisible. Now
+  asserted with `Path.chmod` sabotaged, so a 0600 file proves the mode came from `os.open`.
+
+All three mutants confirmed KILLED before this row was written.
+
+**And a real gap the mutation work exposed.** `os.open`'s mode argument applies only on CREATION, so
+a pre-existing world-readable `queryhelp-<entity>.json` at a predictable path in the working
+directory would be truncated, rewritten, and left readable. `os.fchmod` on the descriptor now
+follows the open: on the descriptor rather than the path, so there is no window and no symlink to
+race. The test covers this case separately from the fresh-file one.
+
+**The runbook described a design that was never shipped.** It told the operator a `--queryhelp` hit
+"prints CHECK BEFORE SENDING with a count" and was "reported rather than refused" - the warn design
+that was replaced during the V0.23.9 work, and the string appears nowhere in the tool. The shipped
+behaviour refuses, prints nothing, saves to `queryhelp-<entity>.json` and exits 3. Step 2 now says
+that, and the troubleshooting table has a row for it. Operator-facing prose that describes a control
+the code does not implement is worse than no prose: it teaches the operator to expect a warning and
+carry on.
+
+**The V0.23.9 audit row has been amended** to record that its own claim about the call-site test was
+an overstatement, rather than leaving a release record that certifies work the diff did not contain.
+
+**Verified.** Loop green under the pinned toolchain: 827 passed, 1 skipped, coverage 98.90%, 77 pins
+matched, three lock files clean. `--self-test` 15/15. Three mutants re-run against the whole
+contract suite and all three now red.
+
 ## V0.23.9 (2026-08-25)
 
 **What.** Both binding gates returned FAIL on V0.23.8. Seven findings, three of them serious, and
@@ -54,11 +102,13 @@ missing key names itself and stops.
 
 **The headline fix from V0.23.8 had no test that could fail.** Both reviewers mutation-tested it and
 found the same hole: reverting the live call site to one shared field, and making `_range` ignore its
-argument, each left the suite green. The template test asserted strings, never a request. There is
-now a test that drives real fetches with the transport patched and reads the URLs, including a
-forced bisection so the recursive path is exercised too. Same for the new `load_base_url`: removing
-its https check had left the suite green, because the existing scheme test only reaches
-`Profile.load`.
+argument, each left the suite green. The template test asserted strings, never a request. A test now
+drives real fetches with the transport patched and reads the URLs, including a forced bisection so
+the recursive path is exercised too. Same for the new `load_base_url`: removing its https check had
+left the suite green, because the existing scheme test only reaches `Profile.load`.
+**This row overstated the result and V0.23.10 corrects it:** that test passes the field to `fetch` as
+a literal, so it pinned the plumbing and NOT the call site where the defect lived, which stayed
+reintroducible against a green suite. See V0.23.10.
 
 **Smaller, all real.** `base_url` was scheme-checked and nothing else, so
 `https://unifieddatalibrary.com@evil.example` passed, read as the documented host and connected to

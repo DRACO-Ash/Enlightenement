@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import tomllib
+import unittest.mock
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
@@ -3784,8 +3785,10 @@ def test_the_live_fetch_ranges_elsets_on_the_elset_field_and_refuses_a_profile_w
 
     It briefly carried a fallback to `time_field`, justified by "a profile written before the key
     existed". No such profile has ever existed, and the fallback failed OPEN into the exact defect
-    the key was added to prevent. Both halves are pinned here: the loader refuses the key's absence,
-    and the live path reads the elset key rather than the observation one.
+    the key was added to prevent. This pins the LOADER half only - that the key's absence is
+    refused. The live path reading the right key is pinned separately, by
+    `test_the_live_fetch_ranges_each_entity_on_its_own_time_field`, because a mutation at the call
+    site survived this test and its name was the reason nobody noticed.
     """
     module = _load_udl_tool()
     assert "elset_time_field" in module._PROFILE_REQUIRED["query"], (
@@ -3963,3 +3966,137 @@ def test_the_queryhelp_body_passes_the_boundary_guard_before_it_is_printed() -> 
         module.assert_crossable(schema)
     with pytest.raises(module.BoundaryError, match="catalogue number"):
         module.assert_crossable({"example": "satNo 25544 for instance"}, check_urls=False)
+
+
+def _udl_profile_path(module: Any, directory: str) -> Path:
+    """A COMPLETE profile on disk: the shipped template plus the two required field names."""
+    path = Path(directory) / "udl-profile.ini"
+    path.write_text(
+        module.PROFILE_TEMPLATE.replace("sensor_id =", "sensor_id = senId").replace(
+            "object_identifier =", "object_identifier = idOnOrbit"
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_the_live_fetch_ranges_each_entity_on_its_own_time_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CALL SITE, not the plumbing. This is where the defect actually lived.
+
+    `test_the_udl_time_field_reaches_the_request_per_entity` passes the field to `fetch` as a
+    literal, so it pins `Fetcher` and says nothing about which field `_live_inputs` chooses. That
+    left the original bug reintroducible with all 824 tests green: change one line in `_live_inputs`
+    back to the shared field and element sets are ranged on `obTime` again, which returns an empty
+    result rather than an error and reads as a quiet window.
+
+    So this drives `_live_inputs` itself with the transport and the credentials patched, and reads
+    the URLs it actually produced.
+    """
+    module = _load_udl_tool()
+    seen: list[str] = []
+
+    def _stub(url: str, accept: str, credentials: tuple[str, str], timeout: float) -> str:
+        seen.append(url)
+        return "1" if url.partition("?")[0].endswith("/count") else "[]"
+
+    monkeypatch.setattr(module, "http_get", _stub)
+    monkeypatch.setattr(module, "load_credentials", lambda _path: ("synthetic", "synthetic"))
+
+    with tempfile.TemporaryDirectory() as directory:
+        args = module._build_parser().parse_args(
+            [
+                "--profile",
+                str(_udl_profile_path(module, directory)),
+                "--start",
+                "2026-01-01T00:00:00Z",
+                "--end",
+                "2026-01-02T00:00:00Z",
+            ]
+        )
+        module._live_inputs(args)
+
+    observation = [url for url in seen if "/eoobservation/" in url]
+    elset = [url for url in seen if "/elset/" in url]
+    assert observation, f"the observation entity was never fetched: {seen}"
+    assert elset, f"the element-set entity was never fetched: {seen}"
+    for url in observation:
+        assert "obTime=" in url, f"an observation request lost obTime: {url}"
+        assert "epoch=" not in url, f"an observation request was ranged on epoch: {url}"
+    for url in elset:
+        assert "epoch=" in url, f"an element-set request lost epoch: {url}"
+        assert "obTime=" not in url, f"an element-set request was ranged on obTime: {url}"
+
+
+def test_queryhelp_refuses_and_saves_a_body_that_fails_the_boundary_guard(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`_cmd_queryhelp` end to end, both branches, because deleting its guard call left the suite
+    green.
+
+    `test_the_queryhelp_body_passes_the_boundary_guard_before_it_is_printed` exercises
+    `assert_crossable` directly and never enters the command, and the only end-to-end queryhelp test
+    returns 2 at `load_base_url` before reaching the guard. So the enforcement point itself was
+    unprotected: remove the call and an unvalidated remote body goes to stdout under a runbook
+    promise that it is safe to forward.
+    """
+    module = _load_udl_tool()
+    monkeypatch.setattr(module, "load_credentials", lambda _path: ("synthetic", "synthetic"))
+    monkeypatch.chdir(tmp_path)
+    profile = _udl_profile_path(module, str(tmp_path))
+
+    dirty = json.dumps({"parameter": "satNo", "description": "for example 25544"})
+    monkeypatch.setattr(module, "http_get", lambda *_args, **_kwargs: dirty)
+    assert module.main(["--profile", str(profile), "--queryhelp", "elset"]) == 3
+    captured = capsys.readouterr()
+    assert captured.out == "", "the refused body was printed anyway"
+    assert "REFUSED" in captured.err
+    saved = tmp_path / "queryhelp-elset.json"
+    assert saved.read_text(encoding="utf-8") == dirty, "the refused body was not saved locally"
+    if os.name != "nt":
+        assert saved.stat().st_mode & 0o777 == 0o600, "the saved body is readable beyond its owner"
+
+    # And the clean branch still prints, or the control would be a denial of the whole mode.
+    clean = json.dumps({"parameter": "obTime", "format": "ISO-8601"})
+    monkeypatch.setattr(module, "http_get", lambda *_args, **_kwargs: clean)
+    assert module.main(["--profile", str(profile), "--queryhelp", "elset"]) == 0
+    captured = capsys.readouterr()
+    assert "obTime" in captured.out
+    assert "REFUSED" not in captured.err
+
+
+def test_write_private_creates_the_file_narrow_rather_than_narrowing_it_after() -> None:
+    """The mode must come from the open, not from a chmod after the fact.
+
+    `write_text` then `chmod` creates at the ambient umask, typically 0644, and narrows afterwards;
+    another local user can open it in between, and this writes raw UDL records and unfiltered
+    service responses. Reverting to that pattern left the suite green, so the fix was unprotected.
+
+    Both halves are checked: that a fresh file is 0600 with `chmod` sabotaged, so the mode can only
+    have come from `os.open`, and that an ALREADY world-readable file is narrowed too, since
+    `os.open`'s mode argument applies on creation only.
+    """
+    if os.name == "nt":  # pragma: no cover - this suite's CI is Linux
+        pytest.skip("Windows has no meaningful POSIX mode bits; location is the control there")
+    module = _load_udl_tool()
+    previous = os.umask(0o000)
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            fresh = Path(directory) / "fresh.json"
+            with unittest.mock.patch.object(
+                Path, "chmod", side_effect=AssertionError("_write_private fell back to chmod")
+            ):
+                module._write_private(fresh, "{}")
+            assert fresh.stat().st_mode & 0o777 == 0o600, "the mode did not come from os.open"
+
+            stale = Path(directory) / "stale.json"
+            stale.write_text("old", encoding="utf-8")
+            stale.chmod(0o644)
+            module._write_private(stale, "{}")
+            assert stale.stat().st_mode & 0o777 == 0o600, (
+                "an existing world-readable file was rewritten and left readable: os.open's mode"
+                " applies on creation only"
+            )
+    finally:
+        os.umask(previous)

@@ -474,6 +474,13 @@ def _write_private(path: Path, text: str) -> None:
     is where the build and CI run.
     """
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # The mode argument to `os.open` applies ONLY on creation, so an existing file keeps whatever
+    # mode it already had: `queryhelp-<entity>.json` sits at a predictable path in the working
+    # directory, and a stale world-readable one would be truncated, rewritten, and left readable.
+    # `fchmod` acts on the descriptor rather than the path, so there is no window and no way to
+    # race a symlink in between.
+    if hasattr(os, "fchmod"):  # pragma: no branch - POSIX; Windows has no meaningful mode
+        os.fchmod(descriptor, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(text)
 

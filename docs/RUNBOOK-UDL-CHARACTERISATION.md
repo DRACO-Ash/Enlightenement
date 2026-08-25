@@ -23,7 +23,7 @@ identifiers, no credentials. The tool refuses to write a file that fails that ch
 
 | Item | Where it comes from | Status |
 |---|---|---|
-| `tools/udl_characterise.py` | this repository, `V0.23.9` | **Ready** |
+| `tools/udl_characterise.py` | this repository, `V0.23.10` | **Ready** |
 | Python 3.11 or newer on the workstation | already there, or the system Python | `python --version` (PowerShell). If `python` opens the Microsoft Store, use `py --version` |
 | UDL credentials at `~/.config/phase_offset/credentials.ini`, mode `600` | your existing file | Check |
 | Endpoint profile: `[endpoints]` and `[query]` | the UDL API documentation, supplied 25 August 2026 | **Ready, pre-filled in the template** |
@@ -92,16 +92,25 @@ names any parameter the entity REQUIRES - some entities require a search paramet
 of millions of objects, and knowing that before a long run is cheaper than discovering it during
 one. The mode reads only `base_url` from the profile, so it runs before `[fields]` is filled.
 
-**The queryhelp output is API metadata rather than records, so it is the one retrieval you can
-normally paste to me.** The tool does not ask you to take that on trust: it scans the response for
-the catalogue-number shape and tells you what it found. A clean scan says so. A hit prints
-`CHECK BEFORE SENDING` with a count, which usually means a version string or an example value in the
-schema and occasionally means something you would rather not forward - read it either way. Reported
-rather than refused, because this is the command that lets you fill the profile at all, and a
-discovery step that can refuse to show you the schema is a discovery step that blocks the work.
+**The queryhelp output is API metadata rather than records, so it is normally the one retrieval you
+can paste to me - and the tool checks that rather than asking you to trust it.** The response goes
+through the same boundary guard as the parameter file before you ever see it, minus the URL rule,
+which is switched off here for a stated reason: a schema legitimately carries `$ref` addresses, so
+leaving that rule on would refuse every correct response and the guard would end up deleted rather
+than relaxed. The catalogue-number rule, which is the one that matters here, stays on.
 
-Send it and I will map the parameter names onto the profile's logical fields. Then two rules govern
-what you fill in:
+● **Clean response:** printed to your terminal, and the closing line says it was checked. Fill
+  `[fields]` from it and send it to me.
+● **A hit:** the response is **not printed**. It is written to `queryhelp-<entity>.json` in the
+  current directory, mode `600` on POSIX, and the command exits `3`. That file is on your
+  workstation and has crossed nothing. Read it there, fill `[fields]` from it, and send me the
+  **field names** rather than the file.
+
+Refused rather than printed-with-a-caution, because a caution is not a control; saved rather than
+simply refused, because a discovery step that will not show you the schema blocks the work. A local
+file is neither.
+
+Then two rules govern what you fill in:
 
 ● **A blank field is reported as UNAVAILABLE, never estimated.** Fill what you can confirm and leave
   the rest; the output names what it could not measure. An absent measure is honest, an invented one
@@ -226,6 +235,7 @@ inferred.
 | The profile is reported malformed straight after you wrote it | PowerShell `>` wrote UTF-16 | Re-create it with `Set-Content -Encoding utf8`, as in step 2 |
 | `has no section with both username and password` | credentials layout | a `[udl]` (or `[DEFAULT]`) section with both keys |
 | `the count endpoint returned N characters that are not an integer` | wrong count path | a count path is a query path plus `/count`, so `/udl/elset/history` becomes `/udl/elset/history/count` |
+| `REFUSED: ...` from `--queryhelp`, exit `3` | the response held something identifier-shaped | Nothing was printed. Read `queryhelp-<entity>.json` in the current directory: usually a version string or an example value, occasionally not. Send me the field names, not the file |
 | `... is not an entity name` | `--queryhelp` got something other than a bare lowercase token | `eoobservation`, `radarobservation`, `rfobservation`, `elset`. Refused rather than escaped: the value goes into a URL that carries your credentials |
 | A query returns zero records over a window you know is busy | a query parameter the entity does not recognise | check `time_field` and `elset_time_field` against `--queryhelp`. An unknown parameter returns an empty result rather than an error, which is the one failure mode here that looks like an answer |
 | `the history endpoint returned an object with no list under data, results or items` | the list is under another key | send me the key name and I will add it |
