@@ -49,7 +49,15 @@ for file in Dockerfile .dockerignore .gitignore .python-version .env.example \
             requirements.txt requirements-dev.txt requirements-runtime.txt \
             requirements.in requirements-dev.in requirements-runtime.in \
             pyproject.toml sonar-project.properties README.md CLAUDE.md; do
-  cp "$file" "$STAGE/$file"
+  # Copy what is present. The platform's checkout does not carry sonar-project.properties -
+  # it generates and owns its own pipeline configuration - and an unconditional `cp` killed
+  # this script inside the platform's test job with `cp: cannot stat`. A missing file is
+  # NAMED rather than silently skipped, so a genuine omission is still visible in the log.
+  if [ -f "$file" ]; then
+    cp "$file" "$STAGE/$file"
+  else
+    echo "  note: $file absent from this checkout, not staged"
+  fi
 done
 
 # Directories: source, the suite the platform runs, the loop scripts, the runbooks, and

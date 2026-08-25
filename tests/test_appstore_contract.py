@@ -46,6 +46,47 @@ def _instructions(text: str) -> str:
 DOCKER_INSTRUCTIONS = _instructions(DOCKERFILE)
 
 
+#: Files this repository commits that the PLATFORM CHECKOUT does not carry. The App Store
+#: generates and owns its own pipeline configuration, and its test job runs against a checkout
+#: with `sonar-project.properties` absent - measured, in the `python-test` job of MR 5: five tests
+#: and the packaging script died on `FileNotFoundError` for a file that is tracked here and ships
+#: in the artefact. Same classification as `.gitlab-ci.yml`, which the platform also adds and this
+#: suite already refuses to assert about: a check that cannot run in an environment must SKIP with
+#: a written reason, never fail. The local run still asserts every one of them.
+PLATFORM_MANAGED_ABSENCES = ("sonar-project.properties",)
+
+
+def _require_local_file(name: str) -> Path:
+    """Return the path, or skip when the platform checkout does not carry the file."""
+    path = ROOT / name
+    if not path.is_file():
+        if name in PLATFORM_MANAGED_ABSENCES:
+            pytest.skip(
+                f"{name} is absent: the platform manages its own copy and its test job runs"
+                " without one, so this assertion is not answerable here. It runs locally and in"
+                " the pipeline simulation."
+            )
+        raise AssertionError(f"{name} is missing from the repository root")
+    return path
+
+
+def _git_or_skip() -> str:
+    """The `git` binary, or skip. It is NOT present in the platform's test container.
+
+    Measured in MR 5: two tests died on `FileNotFoundError: 'git'`. Note that `check=False` does
+    not protect against this - `subprocess.run` raises before there is any exit code to inspect,
+    so the fallback branch those tests already had was unreachable. The guard has to be the
+    binary's presence, not the command's result.
+    """
+    binary = shutil.which("git")
+    if binary is None:
+        pytest.skip(
+            "git is absent, which is the platform test container. The assertion this guards is"
+            " answered by the artefact-walking branch or by the local run."
+        )
+    return binary
+
+
 def _properties(path: Path) -> dict[str, str]:
     """Parse a `.properties` file into live key-value pairs, ignoring comments.
 
@@ -250,7 +291,7 @@ def test_the_package_manager_check_in_ci_covers_the_class() -> None:
 
 
 def test_sonar_configuration_scopes_sources_tests_and_the_coverage_report() -> None:
-    settings = _properties(ROOT / "sonar-project.properties")
+    settings = _properties(_require_local_file("sonar-project.properties"))
     assert settings.get("sonar.sources") == "src"
     assert settings.get("sonar.tests") == "tests"
     assert settings.get("sonar.python.coverage.reportPaths") == "coverage.xml"
@@ -1807,7 +1848,7 @@ def test_no_tracked_file_trips_this_repositorys_own_secret_scan() -> None:
         pytest.skip("node is absent, so the JavaScript hook cannot run here; CI covers it")
 
     tracked = subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
-        ["git", "-C", str(ROOT), "ls-files", "-z"],  # noqa: S607
+        [_git_or_skip(), "-C", str(ROOT), "ls-files", "-z"],
         capture_output=True,
         text=True,
         check=True,
@@ -2929,14 +2970,23 @@ def test_the_repository_tracks_no_prebuilt_binary_or_build_output() -> None:
     a test about what the upload may contain, failing on the upload. Walking is the right answer
     there anyway: in an extracted artefact, everything present IS what was uploaded.
     """
-    listing = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
-        ["git", "-C", str(ROOT), "ls-files", "-z"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
+    # `shutil.which` FIRST. This call had `check=False` and a documented no-git fallback, and the
+    # fallback was still unreachable when git is absent entirely: `subprocess.run` raises
+    # `FileNotFoundError` before producing a return code. Measured in the platform's test job,
+    # where this test died rather than taking the branch written for exactly that case.
+    git = shutil.which("git")
+    listing = (
+        subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
+            [git, "-C", str(ROOT), "ls-files", "-z"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if git is not None
+        else None
     )
-    if listing.returncode == 0 and listing.stdout:
+    if listing is not None and listing.returncode == 0 and listing.stdout:
         # A git checkout: TRACKED files are the whole question. Untracked bytecode is a normal
         # consequence of running the suite and is gitignored.
         candidates = [name for name in listing.stdout.split("\0") if name]

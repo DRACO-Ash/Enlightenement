@@ -34,6 +34,7 @@ from __future__ import annotations
 import ast
 import math
 import random
+import shutil
 import string
 import subprocess
 from pathlib import Path
@@ -817,19 +818,33 @@ def test_the_census_answer_does_not_depend_on_what_git_has_been_told() -> None:
         # exactly the mistake this file has already made once, when a no-binaries test asserted
         # that `git ls-files` succeeded and then died on the platform runner. The assertion above
         # is the one that must hold everywhere, and it needs no git: an untracked file is counted.
-        if not (root / ".git").exists():
+        # Conditional on a repository AND on the binary. The first version guarded only on
+        # `.git` being absent, on the assumption that the platform runs against an extracted
+        # archive. It does not: the App Store creates a GitLab repository, so `.git` is present
+        # and this branch ran - then died on `FileNotFoundError: 'git'`, because the platform's
+        # test container has no git binary at all. Measured in the `python-test` job of MR 5.
+        #
+        # The assertion that must hold everywhere is the one above, and it needs no git: an
+        # UNTRACKED file is counted by the census. This half is the cross-check, and a
+        # cross-check that cannot run is skipped rather than failed.
+        git = shutil.which("git")
+        if git is None or not (root / ".git").exists():
             return
-        subprocess.run(  # noqa: S603 - a fixed argument vector, no shell, no external input
-            ["git", "add", "--intent-to-add", str(probe)],  # noqa: S607
+        staging = subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
+            [git, "add", "--intent-to-add", str(probe)],
             cwd=root,
-            check=True,
+            check=False,
             capture_output=True,
         )
+        if staging.returncode != 0:
+            # A checkout git can read but not stage - a read-only or foreign-owned CI clone.
+            # Nothing to assert, and nothing wrong with the code under test.
+            return
         try:
             staged = {path.resolve() for path in _repository_python_files()}
         finally:
             subprocess.run(  # noqa: S603 - a fixed argument vector, no shell
-                ["git", "reset", "--quiet", "--", str(probe)],  # noqa: S607
+                [git, "reset", "--quiet", "--", str(probe)],
                 cwd=root,
                 check=False,
                 capture_output=True,

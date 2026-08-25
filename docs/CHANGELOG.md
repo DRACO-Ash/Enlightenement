@@ -2,6 +2,49 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.1 (2026-08-24)
+
+**What.** The platform's `python-test` job failed on MR 5 (`bfa3ce6`) with seven failures, none of
+them a defect in the application and all of them my tests asserting things that are not answerable
+in the platform's test container. Two distinct causes, and the second is the more serious.
+
+**Cause 1: `git` is not installed in the test container.** Two tests died on
+`FileNotFoundError: [Errno 2] No such file or directory: 'git'`. One of them,
+`test_the_repository_tracks_no_prebuilt_binary_or_build_output`, already had `check=False` and a
+written no-git fallback branch - and that branch was UNREACHABLE, because `subprocess.run` raises
+before there is any exit code to inspect. A guard on the command's RESULT cannot protect against
+the command not existing. Both sites now guard on `shutil.which("git")`, which is the condition
+that was actually in question.
+
+The other, `test_the_census_answer_does_not_depend_on_what_git_has_been_told`, guarded on
+`.git` being ABSENT, written on the belief that the platform runs the suite against an extracted
+archive. It does not: the App Store creates a GitLab repository, so `.git` is present and the branch
+ran. The load-bearing half of that test - an untracked file is counted by the census - needs no git
+and always ran; only the cross-check is skipped.
+
+**Cause 2, and this is the one that matters beyond the test job: the platform's checkout does not
+carry `sonar-project.properties`.** It is tracked here and it ships in the artefact, but the
+platform generates and owns its own pipeline configuration, exactly as it does `.gitlab-ci.yml` -
+which this suite already refused to assert about, for the same reason, and I did not generalise the
+lesson. Five tests and the packaging script died on a file that exists in every environment I had
+tested. `PLATFORM_MANAGED_ABSENCES` records the class, `_require_local_file` skips with a written
+reason, and `scripts/package-appstore.sh` copies what is present and NAMES what is not, so a
+genuine omission is still visible in the log rather than silently tolerated.
+
+**How this was verified, because "it passes locally" is what produced the failure.** A PATH farm of
+1,285 binaries with `git` removed, plus `sonar-project.properties` moved aside: the full suite runs
+**zero failures, zero errors, six skips**, each naming why. That is the platform's shape, reproduced
+rather than reasoned about. The local run still asserts all seven.
+
+**What I should have done differently.** `docs/DEPLOYMENT.md` already classified `.gitlab-ci.yml` as
+platform-managed and `NOT_IN_A_STOCK_PYTHON_IMAGE` at `tests/test_appstore_contract.py` already
+listed `git` as absent from a stock Python image. Both facts were written down in this repository
+before the upload, and neither was applied to the tests that depended on them. The pipeline
+simulation runs from an extracted zip with a full PATH, so it could not see either.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. Platform-shaped run: 0 failed, 0 errors.
+
 ## V0.23 (2026-08-24)
 
 **What.** V0.22.0 was uploaded to the App Store and **failed Secret Detection**, the first of the
