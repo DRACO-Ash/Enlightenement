@@ -6,7 +6,11 @@ Always-true conventions for this project. Procedures live in `.claude/skills/`. 
 
 Enlightenment is an orbital warfare training application. Archetype: `server` (a container running an HTTP API). Deployment target: the Bluestaq App Store at `enlightenment.apps.bluestaq.com`, detected template `python` (a root `requirements.txt` with a root `Dockerfile`), so the SonarQube quality gate is binding.
 
-Stack: Python 3.12, FastAPI on gunicorn with the uvicorn worker. Source under `src/enlightenment/`, built by the `create_app(...)` factory. The training scenario vocabulary is `TBC, re-verify` with the project owner; the boundary model keeps that field open rather than inventing terms.
+Stack: Python 3.12, FastAPI on gunicorn with the uvicorn worker. Source under `src/enlightenment/`, built by the `create_app(...)` factory.
+
+**`docs/FLIGHT-PLAN.md` is the authority on what this product is and what order it is built in.** Read it before proposing any feature, sequence or interface. It carries the vision, the six competency axes, the thirteen-step build plan, the measured palette contrast figures, the performance budget, the out-of-scope list, and the definition of done. Where this file and the flight plan disagree on WHAT to build, the flight plan wins; this file governs HOW to build it.
+
+The `scenario` FIELD on a stored session is still free text and validated only for shape, because a session record is not the procedure library. The training vocabulary itself is NOT open: the flight plan names the fifteen procedures, the three wired for v1 (Manoeuvre, RPO, Separation versus Breakup), and the six competency axes.
 
 ## Hard rules (never violate)
 
@@ -15,6 +19,7 @@ Stack: Python 3.12, FastAPI on gunicorn with the uvicorn worker. Source under `s
 - **No client-side access gate.** A hardcoded Personal Identification Number (PIN), flag, or hidden field in the browser is a User Experience gate, never security. Real gates are server-side.
 - **Surgical edits only.** Change the smallest region that satisfies the request. Do not reformat, re-indent, or reconstruct regions you were not asked to touch.
 - **Never invent a name, title, date, organisation, or figure** in user-facing content or data. If a fact is not verifiable, mark it with the explicit unknown marker (`TBC, re-verify`); do not assert it.
+- **ASK for a missing document; never infer around it.** Owner instruction, after a plan was built by inference from the code and the DPIA while `docs/FLIGHT-PLAN.md` existed but was not in the repository. Noting an absence in a footer is not asking. If a governing document, figure or decision cannot be found, stop and request it by name - the cost of one question is always lower than the cost of a plan built on a guess.
 - **Every untrusted value is escaped or validated at the boundary**, and a control that cannot be verified is treated as failed (fail closed).
 
 **Static archetype**

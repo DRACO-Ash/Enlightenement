@@ -2,6 +2,53 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.4 (2026-08-24)
+
+**What.** `docs/FLIGHT-PLAN.md` committed. The owner supplied it after I built an interface plan by
+inference from the code and the DPIA, having found no plan in the repository.
+
+**The instruction, recorded because it is a standing rule now and not a one-off:** ask for a missing
+document, never infer around it. I searched, found nothing, noted the absence in a footer, and
+proceeded on inference anyway. A footnote is not a question. `CLAUDE.md` now carries the rule under
+the hard rules, where it survives a session boundary.
+
+**What the plan changed, and it is not marginal.** Four things I had reasoned my way to were already
+decided in it, and one recommendation of mine was a detour:
+
+● **The physics boundary is settled.** I had framed "does the physics core become HTTP-reachable" as
+  an open architectural decision with three options. The plan decided it: the server ships
+  PRE-COMPUTED track segments and the client interpolates. Client-side propagation is deliberately
+  not used, which removes the client/server divergence failure mode and drops `satellite.js` from
+  the bundle. My "port it to JavaScript" option was the one the plan had already rejected, for the
+  reason I gave for rejecting it myself.
+● **SQLite is settled**, not a question: the storage add-on is confirmed writable by uid 10001, so
+  operator state is a single WAL-mode SQLite file with no fallback path to maintain.
+● **Identity is decided**, not open: an `IdentityProvider` adapter with `itsdangerous` and `bcrypt`.
+  If the shell later passes identity in a header, that is a second implementation of the same
+  adapter and nothing else changes.
+● **The vocabulary was never open.** `CLAUDE.md` said the training scenario vocabulary was
+  `TBC, re-verify`, which I then reported to the owner as the single biggest blocker. The plan names
+  the fifteen procedures, the three wired for v1 (Manoeuvre, RPO, Separation versus Breakup), and
+  all six competency axes. That line in `CLAUDE.md` was stale and is corrected: the `scenario` FIELD
+  on a session record is free text, which is a different thing from the vocabulary being undecided.
+● **An operator console is not the next step.** I recommended one. The plan's Phase 1 order is
+  content schemas, then the scoring engine, then the drill loop, then the debrief, and the SPA at
+  step 9 - after the engines it renders. Building a session-management console first would have been
+  a detour that renders nothing the product needs.
+
+**One item the plan marks as a Phase 0 prerequisite is not done:** step 4, the offline UDL
+characterisation pass. It runs on the owner's networked workstation in Script mode, never in the
+container, and what crosses the boundary is a noise-model parameter file rather than data. The plan
+is explicit that clean training data is negative training, so this is a prerequisite and not a
+refinement.
+
+**Also corrected:** open question 1 in the plan, slug uniqueness, is now answered by observation
+rather than assertion. `enlightenment` deployed and is live, so the slug is unique in the store.
+
+**Verified.** Loop green under the pinned toolchain: **777 passed, 1 skipped**, coverage **99.06%**,
+77 pins matched, three lock files clean. The flight plan carries no credential shape and no
+userinfo URL; scanned before commit.
+
 ## V0.23.3 (2026-08-24)
 
 **What.** 12 new issues down to 3, and all 3 closed. Two of them were V0.23.2's own fix tripping a
