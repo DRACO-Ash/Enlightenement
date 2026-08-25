@@ -17,9 +17,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import tomllib
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import Counter
+from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib.metadata import version as installed_version
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -3717,3 +3721,245 @@ def test_the_queryhelp_entity_name_is_validated_before_it_reaches_a_url() -> Non
     for hostile in ("../../udl/elset", "eo/observation", "EOObservation", "", "a"):
         with pytest.raises(RuntimeError, match="is not an entity name"):
             module.queryhelp_url("https://example.invalid", hostile)
+
+
+def test_the_udl_time_field_reaches_the_request_per_entity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The headline fix, asserted on the WIRE rather than on the template's strings.
+
+    `test_the_udl_profile_template_ranges_elsets_on_epoch_not_obtime` reads the shipped template
+    and proves nothing about what is sent, so both mutations that matter survived it: reverting the
+    live call site to one shared field, and making `_range` ignore its argument and re-read the
+    profile. Either would restore the defect - an unrecognised UDL parameter returns an EMPTY
+    RESULT rather than an error, so epoch spacing reports UNAVAILABLE and reads as a quiet window -
+    with the suite still green.
+
+    So this drives real fetches with the transport stubbed and reads the URLs. The observation
+    count is over the offset cap to force one bisection, which is the other path `time_field` is
+    threaded through and the one a recursive call could quietly drop.
+    """
+    module = _load_udl_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        fetcher = module.Fetcher(
+            profile=_udl_profile(module, directory),
+            credentials=("synthetic", "synthetic"),
+        )
+
+    seen: list[str] = []
+
+    def _stub(url: str, accept: str, credentials: tuple[str, str], timeout: float) -> str:
+        seen.append(url)
+        if url.partition("?")[0].endswith("/count"):
+            # Over the cap on the first, whole-window call; under it once bisected.
+            return "20000" if len(seen) == 1 else "1"
+        return "[]"
+
+    # The module-level `http_get` is patched rather than the bound method: `Fetcher` is a
+    # slots dataclass, so an instance attribute cannot be assigned, and this is the single
+    # transport function the extraction created for exactly this reason.
+    monkeypatch.setattr(module, "http_get", _stub)
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    fetcher.fetch(
+        "/udl/eoobservation/history", "/udl/eoobservation/history/count", start, end, "obTime"
+    )
+    observation_urls = list(seen)
+    assert len(observation_urls) > 2, "the over-cap window did not bisect, so recursion is untested"
+    for url in observation_urls:
+        assert "obTime=" in url, f"an observation request is not ranged on obTime: {url}"
+        assert "epoch=" not in url, f"an observation request is ranged on epoch: {url}"
+
+    seen.clear()
+    fetcher.fetch("/udl/elset/history", "/udl/elset/history/count", start, end, "epoch")
+    assert seen, "no element-set request was made"
+    for url in seen:
+        assert "epoch=" in url, f"an element-set request is not ranged on epoch: {url}"
+        assert "obTime=" not in url, f"an element-set request is ranged on obTime: {url}"
+
+
+def test_the_live_fetch_ranges_elsets_on_the_elset_field_and_refuses_a_profile_without_it() -> None:
+    """`elset_time_field` is required, and the live path must actually read it.
+
+    It briefly carried a fallback to `time_field`, justified by "a profile written before the key
+    existed". No such profile has ever existed, and the fallback failed OPEN into the exact defect
+    the key was added to prevent. Both halves are pinned here: the loader refuses the key's absence,
+    and the live path reads the elset key rather than the observation one.
+    """
+    module = _load_udl_tool()
+    assert "elset_time_field" in module._PROFILE_REQUIRED["query"], (
+        "elset_time_field is optional again, so a profile missing it silently ranges element sets"
+        " on obTime and reports an empty result as a quiet window"
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        profile_path = Path(directory) / "udl-profile.ini"
+        profile_path.write_text(
+            module.PROFILE_TEMPLATE.replace("sensor_id =", "sensor_id = senId")
+            .replace("object_identifier =", "object_identifier = idOnOrbit")
+            .replace("elset_time_field = epoch", "elset_time_field ="),
+            encoding="utf-8",
+        )
+        with pytest.raises(module.ProfileError, match=r"\[query\] elset_time_field"):
+            module.Profile.load(profile_path)
+
+
+def test_queryhelp_refuses_a_non_https_base_url() -> None:
+    """The https allowlist on the NEW loader, which the existing scheme test does not reach.
+
+    `test_the_characteriser_refuses_a_non_https_endpoint` drives `Profile.load` through --start and
+    --end. `--queryhelp` uses `load_base_url` instead, and removing its `_checked_base_url` call
+    left the suite green: a `file:` base_url would have reached `urlopen` on a request carrying live
+    credentials, which is the precise case that check exists for.
+    """
+    module = _load_udl_tool()
+    with tempfile.TemporaryDirectory() as directory:
+        profile_path = Path(directory) / "udl-profile.ini"
+        profile_path.write_text(
+            module.PROFILE_TEMPLATE.replace(
+                "base_url = https://unifieddatalibrary.com", "base_url = file:///etc"
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(module.ProfileError, match="must be an https:// address"):
+            module.load_base_url(profile_path)
+
+        # And end to end, so the CLI cannot route around the loader.
+        result = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
+            [sys.executable, str(UDL_TOOL), "--profile", str(profile_path), "--queryhelp", "elset"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=ROOT,
+            timeout=60,
+        )
+    assert result.returncode == 2, result.stdout[-500:]
+    assert "must be an https:// address" in result.stderr
+
+
+def test_the_udl_tool_follows_no_redirect_with_a_credential_in_hand() -> None:
+    """A reproduced exfiltration, closed and pinned.
+
+    `urlopen`'s default opener copies every header except content-length and content-type into a
+    redirected request and permits http, https and ftp to ANY host, so a 302 from the configured
+    host delivered a live Basic credential to an attacker-chosen host in cleartext and returned
+    that host's body as if it were UDL's. The https allowlist on `base_url` constrains hop one only.
+
+    Driven against a real local server rather than by reading the source, because the defect lived
+    in stdlib behaviour the source does not mention.
+    """
+    module = _load_udl_tool()
+    received: list[tuple[str, str | None]] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            received.append((self.path, self.headers.get("Authorization")))
+            if self.path.startswith("/redirect"):
+                self.send_response(302)
+                self.send_header("Location", f"http://{self.server.server_address[0]}:{port}/steal")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"[]")
+
+        def log_message(self, *_args: Any) -> None:
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(RuntimeError, match="follows no redirects"):
+            module.http_get(
+                f"http://127.0.0.1:{port}/redirect",
+                "*/*",
+                ("udl-user", "S3cretPassw0rd"),
+                10.0,
+            )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert [path for path, _ in received] == ["/redirect"], (
+        f"the redirect was followed, so the credential reached a second host: {received}"
+    )
+
+
+def test_the_marking_distribution_withholds_an_owner_bearing_marking() -> None:
+    """The local half of the CAPCO control, which is the half that can be verified here.
+
+    `disableCapcoExtensions=true` is a request-side hint to a system on the far side of the trust
+    boundary. If the service renames the parameter, an entity ignores it, a record already stores an
+    extended marking, or the operator points `classification_marking` at another field, then
+    `U//PR-OWNER-DATATYPE` is emitted verbatim under the name of a distribution and the boundary
+    guard does not object: it hunts catalogue numbers and URLs, and an owner token is neither.
+
+    So the shape is enforced where it can be tested. The withheld records are COUNTED, because the
+    measure exists to state what proportion of the data is restricted and a silent drop would bias
+    that towards unrestricted.
+    """
+    module = _load_udl_tool()
+    result = module._allowlisted_markings(
+        Counter(
+            {
+                "UNCLASSIFIED": 40,
+                "U//PR": 7,
+                "S//REL TO USA, GBR": 2,
+                "U//PR-ACMEDEFENCE-EO": 41,
+                "U//DS-SOMEALLIEDNATION-RF": 3,
+            }
+        )
+    )
+    distribution = result["classification_marking_distribution"]
+    assert distribution == {"UNCLASSIFIED": 40, "U//PR": 7, "S//REL TO USA, GBR": 2}
+    assert not any("ACMEDEFENCE" in key or "SOMEALLIEDNATION" in key for key in distribution), (
+        f"a data owner reached the emitted distribution: {distribution}"
+    )
+    assert result["classification_markings_withheld"]["records"] == 44
+    assert result["classification_markings_withheld"]["distinct_markings"] == 2
+
+
+def test_the_udl_base_url_refuses_userinfo_and_a_path() -> None:
+    """Scheme-only was not enough, and that gap was real.
+
+    `https://unifieddatalibrary.com@evil.example` passes a scheme check, reads as the documented
+    host, and connects to the attacker's, on a request holding the credential header.
+    """
+    module = _load_udl_tool()
+    hostile = {
+        "https://unifieddatalibrary.com@evil.example": "userinfo section",
+        "https:/x": "no host",
+        "https://unifieddatalibrary.com/udl": "no path, query or fragment",
+        "https://unifieddatalibrary.com?a=b": "no path, query or fragment",
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        profile_path = Path(directory) / "udl-profile.ini"
+        for base, expected in hostile.items():
+            profile_path.write_text(
+                module.PROFILE_TEMPLATE.replace(
+                    "base_url = https://unifieddatalibrary.com", f"base_url = {base}"
+                ),
+                encoding="utf-8",
+            )
+            with pytest.raises(module.ProfileError, match=re.escape(expected)):
+                module.load_base_url(profile_path)
+
+
+def test_the_queryhelp_body_passes_the_boundary_guard_before_it_is_printed() -> None:
+    """An untrusted remote body is checked, not assumed, before the operator is told to forward it.
+
+    The runbook tells the operator this response can be pasted to me. That claim was made in four
+    places and enforced nowhere, while the repository already owned the guard that tests it. A
+    schema legitimately carries `$ref` addresses, so only the catalogue-number half applies, and
+    that exemption is asserted here too: a guard quietly widened to let everything through is the
+    failure mode a boolean flag invites.
+    """
+    module = _load_udl_tool()
+    schema = {"$ref": "https://unifieddatalibrary.com/schema", "field": "obTime"}
+    module.assert_crossable(schema, check_urls=False)
+    with pytest.raises(module.BoundaryError, match="holds a URL"):
+        module.assert_crossable(schema)
+    with pytest.raises(module.BoundaryError, match="catalogue number"):
+        module.assert_crossable({"example": "satNo 25544 for instance"}, check_urls=False)

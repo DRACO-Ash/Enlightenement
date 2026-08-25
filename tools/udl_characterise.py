@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -88,7 +89,7 @@ from typing import Any
 #: rather than written as a bare `dict` so strict typing has something to check against.
 Record = dict[str, Any]
 
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 PARAMETER_FILE_SCHEMA = "enlightenment.noise-model/1"
 
 #: The window recorded when there is no window: an offline dump that carried none.
@@ -110,9 +111,19 @@ CAPCO_EXTENSIONS_PARAM = "disableCapcoExtensions"
 #: from a guess. Needs only `base_url` and credentials, so it runs before the profile is complete.
 QUERYHELP_PATH_TEMPLATE = "/udl/{entity}/queryhelp"
 
+#: The plain CAPCO shape: uppercase letters with `/`, spaces and commas, and NO HYPHEN. `U`,
+#: `UNCLASSIFIED`, `U//PR`, `U//DS`, `TOP SECRET` and `S//REL TO USA, GBR` match.
+#: `U//PR-ACMEDEFENCE-EO` does not, and the hyphen is why: the documented UDL extension is
+#: `U//PR-OWNER-DATATYPE`, so the hyphenated tail is precisely the part that carries a data owner.
+#: Written to exclude that form rather than to enumerate the permitted markings, because a fixed
+#: token list would withhold every legitimate marking nobody thought of, and a measure that
+#: withholds most of its input is not a measure. Applied at emission by `_allowlisted_markings`;
+#: see there for why the request-side flag is not sufficient on its own.
+MARKING_PATTERN = re.compile(r"\A[A-Z][A-Z /,]{0,63}\Z")
+
 #: An entity name is a bare lowercase token in every documented path. Validated before it is put
 #: into a URL, so `--queryhelp` cannot be used to reach an arbitrary path on the host.
-ENTITY_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,63}$")
+ENTITY_NAME_PATTERN = re.compile(r"\A[a-z][a-z0-9]{1,63}\Z")
 
 #: Robust outlier bound: median plus or minus this many median-absolute-deviations. Robust rather
 #: than standard-deviation based, because the thing being measured IS the outlier rate, and a
@@ -173,7 +184,7 @@ base_url = https://unifieddatalibrary.com
 # Path returning a LIST of historical observations for a time range. `/history` appends to any
 # standard entity path. The entity here is the one being characterised: change it if you are
 # characterising radarobservation or rfobservation instead, and confirm it with
-# `--queryhelp eoobservation` before committing to a long window.
+# `--profile udl-profile.ini --queryhelp eoobservation` before committing to a long window.
 observation_history_path = /udl/eoobservation/history
 # Path returning a BARE INTEGER count for the same time range. Queried FIRST, so the tool knows
 # whether it must time-slice before it fetches anything. `/count` appends to a query path, so the
@@ -211,7 +222,7 @@ columns_separator = ,
 # THESE ARE THE ONLY VALUES STILL UNKNOWN, and they are not guessable: the API documentation
 # covers the query grammar, not the per-entity schemas. Get them from the service:
 #
-#     python tools/udl_characterise.py --queryhelp eoobservation
+#     python tools/udl_characterise.py --profile udl-profile.ini --queryhelp eoobservation
 #
 # (forward slashes, which PowerShell accepts as readily as a POSIX shell does)
 #
@@ -240,7 +251,19 @@ _PROFILE_REQUIRED: dict[str, tuple[str, ...]] = {
         "elset_history_path",
         "elset_count_path",
     ),
-    "query": ("time_field", "first_result_param", "max_results_param", "page_size"),
+    # `elset_time_field` is REQUIRED, not defaulted. It was briefly given a fallback to
+    # `time_field` "for a profile written before the key existed", which was a profile that has
+    # never existed - step 2 was blocked until the key shipped - and the fallback failed OPEN into
+    # the exact defect the key was added to fix: an unrecognised UDL parameter returns an empty
+    # result rather than an error, so epoch spacing would report UNAVAILABLE and read as a quiet
+    # window. A missing key now names itself and stops.
+    "query": (
+        "time_field",
+        "elset_time_field",
+        "first_result_param",
+        "max_results_param",
+        "page_size",
+    ),
     "fields": ("sensor_id", "observation_time", "object_identifier"),
 }
 
@@ -258,11 +281,29 @@ def _checked_base_url(parser: configparser.ConfigParser, path: Path) -> str:
     that exists twice is a check that will eventually be two different checks.
     """
     base = parser.get("endpoints", "base_url", fallback="").strip()
-    scheme = urllib.parse.urlsplit(base).scheme.lower()
-    if scheme != "https":
+    split = urllib.parse.urlsplit(base)
+    if split.scheme.lower() != "https":
         raise ProfileError(
             f"{path}: [endpoints] base_url must be an https:// address; found scheme"
-            f" {scheme!r}. Only https is allowed, and it is not inferred from a bare host"
+            f" {split.scheme!r}. Only https is allowed, and it is not inferred from a bare host"
+        )
+    # The scheme alone is not enough, and checking only the scheme was a real gap. `https://` plus
+    # a userinfo section reads as the documented host and CONNECTS to another one:
+    # `https://unifieddatalibrary.com@evil.example` sends the credential header to
+    # `evil.example`. A path, query or fragment on the base is a different fault - every path in
+    # this tool is joined onto it - but it is equally a profile that is wrong about more than it
+    # looks, so it is refused rather than trimmed.
+    if not split.netloc:
+        raise ProfileError(f"{path}: [endpoints] base_url has no host")
+    if "@" in split.netloc:
+        raise ProfileError(
+            f"{path}: [endpoints] base_url carries a userinfo section before the host. That reads"
+            " as one host and connects to another, on a request holding your credentials"
+        )
+    if split.path or split.query or split.fragment:
+        raise ProfileError(
+            f"{path}: [endpoints] base_url must be scheme and host only, with no path, query or"
+            " fragment; the endpoint paths are joined onto it"
         )
     return base
 
@@ -420,9 +461,67 @@ def load_credentials(path: Path) -> tuple[str, str]:
 # --------------------------------------------------------------------------------------
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Write a file only its owner can read, with no window in which that is untrue.
+
+    `write_text` then `chmod` creates the file at the ambient umask, typically 0644, and narrows it
+    afterwards. Another local user can open it in between, and this writes raw UDL records and
+    unfiltered service responses. The mode goes in `os.open`, so the file is never briefly wide.
+
+    On Windows the mode argument is close to meaningless - `os.open` honours only the read-only
+    bit - so the check that matters there is location, which is what `_assert_owner_only` enforces
+    for the credentials file. Passing the mode anyway costs nothing and is correct on POSIX, which
+    is where the build and CI run.
+    """
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def _utc_stamp(moment: datetime) -> str:
     """Trailing-Z with microseconds, which is the form the service was measured accepting."""
     return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow nothing. A redirect here is a misconfiguration or an attack, never a feature.
+
+    **This closes a reproduced credential exfiltration.** `urlopen` uses the default opener, whose
+    `HTTPRedirectHandler` copies every header except content-length and content-type into the
+    redirected request and permits http, https and ftp to ANY host. A 302 from the configured host
+    to `http://attacker/steal` therefore delivered a live UDL Basic credential to that host in
+    cleartext, and returned the attacker's body to the caller as if it were UDL's. The https
+    allowlist on `base_url` did not help: it constrains hop one and says nothing about hop two.
+
+    Refused outright rather than filtered down to same-host-https, because this tool talks to a
+    fixed set of documented paths on one API. There is no legitimate redirect to distinguish from
+    an illegitimate one, and a handler that permits some redirects is a handler whose rule has to
+    be right. A handler that permits none only has to be present.
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,  # noqa: ARG002 - the stdlib's signature; overriding it is the whole point
+        headers: Any,
+        newurl: str,  # noqa: ARG002 - deliberately unused: no redirect target is ever followed
+    ) -> None:
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            "the service redirected, and this tool follows no redirects: the request carries a"
+            " live credential and a redirect can send it to another host. Check base_url and the"
+            " paths in the profile",
+            headers,
+            fp,
+        )
+
+
+#: One opener, built once, used by every request. Built explicitly rather than relying on
+#: `urlopen`'s default so the redirect refusal cannot be lost to a global default changing.
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
 
 
 def http_get(url: str, accept: str, credentials: tuple[str, str], timeout: float) -> str:
@@ -431,6 +530,9 @@ def http_get(url: str, accept: str, credentials: tuple[str, str], timeout: float
     A module function rather than a `Fetcher` method because `--queryhelp` runs before a complete
     profile exists and must not need one. One function means one auth header and one error path:
     a second request path is a second chance to log a credential.
+
+    Every hop is https and on the configured host, because there is only ever one hop: see
+    `_RefuseRedirects`.
     """
     user, secret = credentials
     # The scheme is allowlisted to https before any request is built, so the audit this rule
@@ -442,7 +544,7 @@ def http_get(url: str, accept: str, credentials: tuple[str, str], timeout: float
 
     request.add_header("Authorization", "Basic " + base64.b64encode(token).decode("ascii"))
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with _OPENER.open(request, timeout=timeout) as response:
             body: bytes = response.read()
         return body.decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
@@ -577,6 +679,44 @@ class Fetcher:
 # The analyser. Pure functions over records; no network, no credentials, no profile needed
 # beyond the field map.
 # --------------------------------------------------------------------------------------
+
+
+def _allowlisted_markings(markings: Counter[str]) -> dict[str, Any]:
+    """Emit only markings matching the plain CAPCO shape; count the rest without naming them.
+
+    **The local half of a control whose other half is on the far side of the boundary.**
+    `disableCapcoExtensions=true` asks UDL not to return `U//PR-OWNER-DATATYPE`, which embeds a
+    DATA OWNER inside the marking string. That request is honoured by a system this tool does not
+    control: rename the parameter, add an entity that ignores it, store an already-extended marking
+    in the field, or point `classification_marking` at a different field in the profile, and the
+    provider identity is emitted verbatim under the name of a distribution. A control whose
+    enforcement point sits outside the boundary cannot be verified here, and an unverifiable
+    control is a failed one.
+
+    So the shape is enforced at the point of emission, where it is local, testable, and provable by
+    deleting it and watching a test go red. Anything not matching is withheld and COUNTED, which is
+    the part that matters: the measure exists to say what proportion of a scenario's data is
+    restricted, and a withheld marking is still a restricted record. Dropping them silently would
+    quietly bias the proportion towards unrestricted, which is the wrong direction to be wrong in.
+    """
+    emitted: Counter[str] = Counter()
+    withheld = 0
+    withheld_distinct = 0
+    for marking, count in markings.items():
+        if MARKING_PATTERN.match(marking):
+            emitted[marking] = count
+        else:
+            withheld += count
+            withheld_distinct += 1
+    return {
+        "classification_marking_distribution": dict(sorted(emitted.items())),
+        "classification_markings_withheld": {
+            "records": withheld,
+            "distinct_markings": withheld_distinct,
+            "why": "the marking did not match the plain CAPCO shape, so it may carry a data owner"
+            " or another extension. Counted so the restricted proportion stays right, not named",
+        },
+    }
 
 
 def _numbers(values: list[Any]) -> list[float]:
@@ -813,7 +953,7 @@ class Analyser:
             "sensors": self._sensor_measures(gathered["per_sensor"], gathered["revisit"]),
             **self._elset_measures(elsets),
             "missing_field_rate": self._missing_rates(gathered["present"], total),
-            "classification_marking_distribution": dict(sorted(gathered["markings"].items())),
+            **_allowlisted_markings(gathered["markings"]),
             "correlation_quality": summarise(gathered["correlation"]),
             "measures_unavailable": sorted(
                 name for name, value in self.fields.items() if not value
@@ -827,7 +967,7 @@ class Analyser:
 # --------------------------------------------------------------------------------------
 
 
-def assert_crossable(payload: Any, path: str = "$") -> None:
+def assert_crossable(payload: Any, path: str = "$", *, check_urls: bool = True) -> None:
     """Refuse to emit anything that looks like an identifier rather than a distribution.
 
     Walks the whole structure. Numbers are fine: a distribution is numbers. STRINGS are where an
@@ -838,11 +978,11 @@ def assert_crossable(payload: Any, path: str = "$") -> None:
     """
     if isinstance(payload, dict):
         for key, value in payload.items():
-            assert_crossable(key, f"{path}.{key}")
-            assert_crossable(value, f"{path}.{key}")
+            assert_crossable(key, f"{path}.{key}", check_urls=check_urls)
+            assert_crossable(value, f"{path}.{key}", check_urls=check_urls)
     elif isinstance(payload, list):
         for index, value in enumerate(payload):
-            assert_crossable(value, f"{path}[{index}]")
+            assert_crossable(value, f"{path}[{index}]", check_urls=check_urls)
     elif isinstance(payload, str):
         if CATALOGUE_NUMBER_PATTERN.search(payload):
             raise BoundaryError(
@@ -850,7 +990,7 @@ def assert_crossable(payload: Any, path: str = "$") -> None:
                 " A parameter file of distributions has no reason to contain one. The value is"
                 " deliberately not echoed"
             )
-        if re.search(r"\b[a-z][a-z0-9+.-]*://", payload):
+        if check_urls and re.search(r"\b[a-z][a-z0-9+.-]*://", payload):
             raise BoundaryError(f"{path} holds a URL. Only distributions cross the boundary")
 
 
@@ -1012,10 +1152,23 @@ def self_test() -> tuple[bool, dict[str, Any]]:
             "why": "the plan calls for near-duplicate epochs specifically",
         },
         {
-            "assertion": "both synthetic markings appear in the distribution",
-            "expected": {"SYNTHETIC-MARKING": 1, "UNCLASSIFIED": 12},
+            "assertion": "the plain marking is emitted and the hyphenated one is not",
+            "expected": {"UNCLASSIFIED": 12},
             "actual": measures["classification_marking_distribution"],
-            "why": "the marking mix drives what a scenario is allowed to show",
+            "why": "the marking mix drives what a scenario is allowed to show, but the UDL"
+            " extension `U//PR-OWNER-DATATYPE` carries a data owner in the hyphenated tail, and"
+            " the marking distribution is the one measure that crosses verbatim. The synthetic"
+            " sample plants `SYNTHETIC-MARKING` for this: it must not appear here",
+        },
+        {
+            "assertion": "the withheld marking is COUNTED, so the restricted proportion stays true",
+            "expected": {"records": 1, "distinct_markings": 1},
+            "actual": {
+                key: measures["classification_markings_withheld"][key]
+                for key in ("records", "distinct_markings")
+            },
+            "why": "dropping a withheld marking silently would bias the restricted proportion"
+            " towards unrestricted, which is the wrong direction for this measure to be wrong in",
         },
         {
             "assertion": "correlation quality is summarised across every record that carries it",
@@ -1204,11 +1357,11 @@ def _live_inputs(args: argparse.Namespace) -> Inputs:
         credentials=load_credentials(args.credentials),
         verbose=args.verbose,
     )
+    # Both required, so both are present: `Profile.load` refuses a profile missing either, rather
+    # than substituting one for the other. Named in the log because a range field the operator
+    # cannot see is a range field that gets blamed on the data.
     observation_time_field = profile.query["time_field"]
-    # Falls back to the observation field rather than failing, so a profile written before
-    # `elset_time_field` existed still runs. Named in the log either way, because a fallback the
-    # operator cannot see is a fallback that gets blamed on the data.
-    elset_time_field = profile.query.get("elset_time_field", "").strip() or observation_time_field
+    elset_time_field = profile.query["elset_time_field"]
     print(f"fetching observations, ranged on {observation_time_field}", file=sys.stderr)
     observations = fetcher.fetch(
         profile.endpoints["observation_history_path"],
@@ -1227,7 +1380,8 @@ def _live_inputs(args: argparse.Namespace) -> Inputs:
     )
     window = {"from": _utc_stamp(args.start), "to": _utc_stamp(args.end)}
     if args.raw_out:
-        args.raw_out.write_text(
+        _write_private(
+            args.raw_out,
             json.dumps(
                 {
                     "observations": observations,
@@ -1237,9 +1391,7 @@ def _live_inputs(args: argparse.Namespace) -> Inputs:
                 },
                 indent=1,
             ),
-            encoding="utf-8",
         )
-        args.raw_out.chmod(0o600)
         print(f"raw records saved to {args.raw_out} (stays on this workstation)", file=sys.stderr)
     return Inputs(
         observations=observations,
@@ -1268,11 +1420,23 @@ def queryhelp_url(base_url: str, entity: str) -> str:
 
 
 def _cmd_queryhelp(args: argparse.Namespace) -> int:
-    """Print the service's own query-parameter reference for one entity.
+    """Print the service's own query-parameter reference for one entity, and CHECK it.
 
     This is the step that closes the last gap in the profile. The output is API METADATA - names,
-    descriptions, units, formats, and which parameters the entity requires - not records, so it is
-    the one retrieval whose output is safe to quote outside the workstation.
+    descriptions, units, formats, and which parameters the entity requires - rather than records,
+    which is why it is the one retrieval an operator is told they may quote off the workstation.
+
+    That claim used to be made in four places and enforced in none, which by this project's own
+    rule makes it a failed control: every other emission passes a boundary check and this one went
+    straight to stdout under a promise. So the body is scanned for the catalogue-number shape
+    before the claim is made, and the closing line reports what the scan FOUND rather than
+    repeating a reassurance. Only the catalogue-number half of the guard applies: a schema
+    reference legitimately carries URLs, so the URL half would refuse a correct response.
+
+    On a hit the response is REFUSED rather than printed, and written to a file on the workstation
+    instead. Printing it with a caution attached is what a warning does, and a warning is not a
+    control; but refusing to show the operator the schema at all would block the only route to a
+    complete profile. A local file is neither: it has crossed nothing, and it is still readable.
     """
     if not args.profile:
         raise RuntimeError(
@@ -1282,15 +1446,40 @@ def _cmd_queryhelp(args: argparse.Namespace) -> int:
     url = queryhelp_url(load_base_url(args.profile), args.queryhelp)
     body = http_get(url, "*/*", load_credentials(args.credentials), 60.0)
     try:
-        parsed = json.loads(body)
+        parsed: Any = json.loads(body)
     except json.JSONDecodeError:
-        sys.stdout.write(body if body.endswith("\n") else body + "\n")
+        parsed = body
+
+    try:
+        # `check_urls=False`, and the reason is specific rather than convenient: a JSON SCHEMA
+        # legitimately carries `$schema` and `$ref` addresses, so the URL half would refuse every
+        # correct response and the guard would be removed rather than relaxed. The
+        # catalogue-number half is the half that matters here, and it stays on.
+        assert_crossable(parsed, check_urls=False)
+    except BoundaryError as exc:
+        # Refused, not warned. But refusing to SHOW the operator the schema would block the only
+        # route to a complete profile, so the body is written to the workstation instead, where it
+        # has not crossed anything. Printing it and telling them to be careful is what a warning
+        # would do, and a warning is not a control.
+        fallback = Path(f"queryhelp-{args.queryhelp}.json").resolve()
+        _write_private(fallback, body)
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        print(
+            f"The response was NOT printed. It is saved at {fallback}, which is on this"
+            " workstation and has crossed nothing. Read it there, fill [fields] from it, and send"
+            " me the field names rather than the file",
+            file=sys.stderr,
+        )
+        return 3
+
+    if isinstance(parsed, str):
+        sys.stdout.write(parsed if parsed.endswith("\n") else parsed + "\n")
     else:
         json.dump(parsed, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     print(
-        f"queryhelp for {args.queryhelp}: fill [fields] in the profile from the parameter names"
-        " above. Nothing here is a record, so nothing here is bound to this workstation",
+        f"queryhelp for {args.queryhelp}: checked against the boundary guard and clean, so this is"
+        " metadata only. Fill [fields] in the profile from the parameter names above",
         file=sys.stderr,
     )
     return 0
@@ -1318,10 +1507,21 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_self_test()
 
     try:
-        if args.queryhelp:
+        if args.queryhelp is not None:
             return _cmd_queryhelp(args)
         inputs = _offline_inputs(args) if args.analyse_only else _live_inputs(args)
-    except (ProfileError, RuntimeError, TypeError, OSError, json.JSONDecodeError) as exc:
+    # `HTTPException` is in the tuple because `http.client` raises `InvalidURL` for a control
+    # character in a URL. The entity pattern refuses those now, so it should be unreachable, but
+    # an unreachable branch that prints a traceback instead of a message is one refactor away
+    # from being reachable again.
+    except (
+        ProfileError,
+        RuntimeError,
+        TypeError,
+        OSError,
+        http.client.HTTPException,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"{exc}", file=sys.stderr)
         return 2
 

@@ -2,6 +2,92 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.9 (2026-08-25)
+
+**What.** Both binding gates returned FAIL on V0.23.8. Seven findings, three of them serious, and
+one was a credential exfiltration the security reviewer reproduced end to end. All are fixed here.
+The gates earned their keep on this one, so the findings are recorded rather than summarised away.
+
+**A live credential could be sent to an attacker-chosen host, and it was demonstrated.**
+`urllib.request.urlopen` uses the default opener, whose redirect handler copies every header except
+content-length and content-type into the redirected request and permits http, https and ftp to ANY
+host. A 302 from the configured host to `http://attacker/steal` therefore delivered a live UDL Basic
+credential in cleartext and returned the attacker's body as if it were UDL's. The https allowlist on
+`base_url` did not help, because it constrains hop one and says nothing about hop two, and
+`--queryhelp` had just doubled the number of credentialled request paths reaching it. The tool now
+builds its own opener that follows NO redirect. Refused outright rather than narrowed to
+same-host-https, because this tool talks to a fixed set of documented paths on one API: there is no
+legitimate redirect to tell from an illegitimate one, and a handler that permits some redirects has
+to have its rule right, while a handler that permits none only has to be present. Pinned by a test
+that stands up a real local server, issues a real 302, and asserts the second host was never
+contacted.
+
+**The CAPCO control had its enforcement point on the wrong side of the boundary.** V0.23.8 sent
+`disableCapcoExtensions=true` and called it a boundary control. It is a request-side hint to a system
+this tool does not control: rename the parameter, add an entity that ignores it, store an
+already-extended marking in the field, or point `classification_marking` at another field in the
+profile, and `U//PR-OWNER-DATATYPE` is emitted verbatim under the name of a distribution. The
+existing guard would not object, because it hunts catalogue numbers and URLs and an owner token is
+neither. The reviewer proved that by putting `U//PR-ACMEDEFENCE-EO` through it. So the shape is now
+enforced at the point of emission, where it is local and testable: a marking must be uppercase
+letters with slashes, spaces and commas and NO HYPHEN, the hyphenated tail being exactly what the
+documented extension uses to carry an owner. Anything else is withheld and **counted**, because the
+measure exists to say what proportion of the data is restricted and a silent drop would bias that
+towards unrestricted, which is the wrong direction to be wrong in. The request flag stays: two
+independent halves are better than either.
+
+**An unvalidated remote body was declared safe to forward.** `--queryhelp` printed the service
+response straight to stdout while the runbook told the operator it could be pasted to me. The claim
+was made in four places and enforced in none, and this repository already owned the guard that tests
+it. The body now goes through `assert_crossable` before printing, with the URL half switched off for
+a specific reason rather than a convenient one: a JSON schema legitimately carries `$ref` addresses,
+so the URL half would refuse every correct response and the guard would end up deleted rather than
+relaxed. On a refusal the response is NOT printed; it is written to a file on the workstation, which
+has crossed nothing and is still readable. Printing it with a caution attached is what a warning
+does, and a warning is not a control, but refusing to show the operator the schema at all would block
+the only route to a complete profile.
+
+**A fallback that failed open into the defect it was added to prevent.** `elset_time_field` carried a
+fallback to `time_field`, justified as "a profile written before the key existed" - a profile that
+has never existed, because step 2 was blocked until the key shipped. The key is now REQUIRED. A
+missing key names itself and stops.
+
+**The headline fix from V0.23.8 had no test that could fail.** Both reviewers mutation-tested it and
+found the same hole: reverting the live call site to one shared field, and making `_range` ignore its
+argument, each left the suite green. The template test asserted strings, never a request. There is
+now a test that drives real fetches with the transport patched and reads the URLs, including a
+forced bisection so the recursive path is exercised too. Same for the new `load_base_url`: removing
+its https check had left the suite green, because the existing scheme test only reaches
+`Profile.load`.
+
+**Smaller, all real.** `base_url` was scheme-checked and nothing else, so
+`https://unifieddatalibrary.com@evil.example` passed, read as the documented host and connected to
+the attacker's; userinfo, a missing host, and a path, query or fragment are all now refused.
+`ENTITY_NAME_PATTERN` used `$`, which matches before a trailing newline, so `"elset\n"` reached the
+URL builder and produced an unhandled traceback instead of the clean refusal; `\A`/`\Z` now, with
+`http.client.HTTPException` added to the top-level handler so an unreachable branch that prints a
+traceback cannot quietly become reachable. `--queryhelp ""` dispatched on truthiness and fell through
+to the fetch path, so the empty-string case the tests and the V0.23.8 row both claimed to cover was
+unreachable; `is not None` now. `--raw-out` wrote at the ambient umask and narrowed afterwards,
+leaving a window another local user could read raw UDL records in; a new `_write_private` puts the
+mode in `os.open`. `TOOL_VERSION` is 1.1.0, because the emitted parameter file records it as
+provenance and two files with different marking semantics must not claim one tool identity. The
+template printed a `--queryhelp` command missing its `--profile`, which simply exits 2.
+`.gitignore` now covers `udl-profile.ini`, `credentials.ini`, `queryhelp-*.json` and
+`noise-model*.json`, since the template asks the operator to keep them out of the repository and
+nothing was enforcing it.
+
+**Verified.** Loop green under the pinned toolchain: 824 passed, 1 skipped, coverage 98.90%, 77 pins
+matched, three lock files clean. `--self-test` is now 15/15, and the extra assertion is the point:
+the synthetic sample's planted hyphenated marking must be absent from the emitted distribution and
+present in the withheld count, so the marking control is proved with no network and no profile like
+everything else in that manifest. Seven new contract tests covering the redirect refusal, the marking
+allowlist, the `base_url` tightening, the queryhelp guard and its documented exemption, the
+per-entity time field on the wire, and the required `elset_time_field`.
+
+**Still needed from the owner.** Unchanged: the `--queryhelp` output for whichever observation entity
+is to be characterised first.
+
 ## V0.23.8 (2026-08-25)
 
 **What.** The owner supplied the UDL API documentation. Step 4 was blocked on facts about the API
@@ -56,8 +142,9 @@ becomes two different checks.
 with no network and no profile, so none of this touched it. Four new tests in
 `tests/test_appstore_contract.py` assert the CAPCO flag on a built URL for both the count and the
 page path, the template's complete/blank split, the elset-on-`epoch` and count-path conventions, and
-that `--queryhelp` refuses a traversal, an embedded slash, an uppercase token and an empty string.
-Full loop below.
+that `--queryhelp` refuses a traversal, an embedded slash and an uppercase token. Loop green under
+the pinned toolchain: 817 passed, 1 skipped, coverage 98.90%, 77 pins matched, three lock files
+clean. **Both gates returned FAIL on this row; see V0.23.9, which is the build that answers them.**
 
 **Still needed from the owner.** The `--queryhelp` output for whichever observation entity is to be
 characterised first. That is the only remaining input for step 4 end to end.

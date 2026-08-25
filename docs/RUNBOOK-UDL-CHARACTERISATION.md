@@ -23,7 +23,7 @@ identifiers, no credentials. The tool refuses to write a file that fails that ch
 
 | Item | Where it comes from | Status |
 |---|---|---|
-| `tools/udl_characterise.py` | this repository, `V0.23.8` | **Ready** |
+| `tools/udl_characterise.py` | this repository, `V0.23.9` | **Ready** |
 | Python 3.11 or newer on the workstation | already there, or the system Python | `python --version` (PowerShell). If `python` opens the Microsoft Store, use `py --version` |
 | UDL credentials at `~/.config/phase_offset/credentials.ini`, mode `600` | your existing file | Check |
 | Endpoint profile: `[endpoints]` and `[query]` | the UDL API documentation, supplied 25 August 2026 | **Ready, pre-filled in the template** |
@@ -41,11 +41,12 @@ python .\tools\udl_characterise.py --self-test
 
 POSIX: `python3 tools/udl_characterise.py --self-test`
 
-Expect `SELF-TEST: PASS (14/14)` on stderr and a JSON assertion manifest on stdout. The manifest is
-the evidence: fourteen named assertions over synthetic records with statistics known by
-construction, each with its expected value, its actual value and why it matters. Two of them prove
-the boundary guard in both directions - that a clean parameter file passes, and that a planted
-catalogue-number shape is refused.
+Expect `SELF-TEST: PASS (15/15)` on stderr and a JSON assertion manifest on stdout. The manifest is
+the evidence: fifteen named assertions over synthetic records with statistics known by
+construction, each with its expected value, its actual value and why it matters. Four of them prove
+the boundary in both directions: that a clean parameter file passes, that a planted
+catalogue-number shape is refused, that a planted hyphenated marking is withheld from the emitted
+distribution, and that it is still counted so the restricted proportion stays true.
 
 If this fails, stop. Send me the manifest; the failing assertion names the problem.
 
@@ -91,9 +92,16 @@ names any parameter the entity REQUIRES - some entities require a search paramet
 of millions of objects, and knowing that before a long run is cheaper than discovering it during
 one. The mode reads only `base_url` from the profile, so it runs before `[fields]` is filled.
 
-**The queryhelp output is API metadata, not records, so it is the one retrieval you can paste to me
-without it crossing the boundary.** Send it and I will map the parameter names onto the profile's
-logical fields. Then two rules govern what you fill in:
+**The queryhelp output is API metadata rather than records, so it is the one retrieval you can
+normally paste to me.** The tool does not ask you to take that on trust: it scans the response for
+the catalogue-number shape and tells you what it found. A clean scan says so. A hit prints
+`CHECK BEFORE SENDING` with a count, which usually means a version string or an example value in the
+schema and occasionally means something you would rather not forward - read it either way. Reported
+rather than refused, because this is the command that lets you fill the profile at all, and a
+discovery step that can refuse to show you the schema is a discovery step that blocks the work.
+
+Send it and I will map the parameter names onto the profile's logical fields. Then two rules govern
+what you fill in:
 
 ● **A blank field is reported as UNAVAILABLE, never estimated.** Fill what you can confirm and leave
   the rest; the output names what it could not measure. An absent measure is honest, an invented one
@@ -228,7 +236,8 @@ inferred.
 ## What I still need from you
 
 1. **The `--queryhelp` output for the entity you want characterised first** (step 2). This is the
-   last unknown: the record field names. Paste it to me - it is API metadata, not records - and I
+   last unknown: the record field names. It is API metadata rather than records, and the tool scans
+   it and tells you so before you send it. Paste it to me and I
    will map it onto the profile's logical fields. Nothing else blocks step 4 end to end.
 2. **The sensor-label decision** in step 4 - pseudonymised or verbatim.
 3. **Open question 14**, the re-run cadence, if you want it settled now rather than at review.

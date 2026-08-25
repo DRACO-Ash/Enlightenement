@@ -33,3 +33,11 @@ dist/
 build/
 *.egg-info/
 enlightenment-appstore-*.zip
+
+# Workstation-only UDL files. Neither belongs in the repository: the profile is an inventory of
+# endpoints and field names, the credentials file is a credential, and queryhelp responses and raw
+# record dumps stay on the machine that fetched them.
+udl-profile.ini
+credentials.ini
+queryhelp-*.json
+noise-model*.json
