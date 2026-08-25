@@ -230,11 +230,13 @@ def sub_satellite_longitude_degrees(
     # for an input that has none. A plausible wrong answer is the worst kind in a trainer whose
     # purpose is teaching people to distrust a plotted position. Every sibling in this package
     # documents or refuses its degenerate case; this one silently had one.
-    # `x or y` rather than two float equalities. A zero equatorial projection is the degenerate
-    # case; `math.hypot` states it as one magnitude, refuses NaN in the same branch, and carries
-    # no exact-equality comparison for SonarQube to flag as a bug. The behaviour is unchanged for
-    # every finite input, because hypot(x, y) is zero exactly when both components are.
-    if not math.hypot(x, y) > 0.0:
+    # One magnitude rather than two float equalities, and the NaN clause written out rather than
+    # folded into a negation. `hypot(x, y)` is zero exactly when both components are, so finite
+    # behaviour is unchanged; `<= 0.0` alone would let a NaN projection through, because
+    # `not x > 0.0` is True for NaN and `x <= 0.0` is False. Sonar's suggested operator is right
+    # about the negation and silent about that difference, so the difference is stated here.
+    projection = math.hypot(x, y)
+    if projection <= 0.0 or math.isnan(projection):
         raise ValueError(
             "a position on the spin axis has no longitude; the equatorial projection of"
             f" {position_km!r} is zero"

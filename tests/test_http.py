@@ -24,14 +24,14 @@ from enlightenment.app import (
     _expected_rev,
     create_app,
 )
-from enlightenment.auth import TOKEN_HEADER
+from enlightenment.auth import AUTH_HEADER
 from enlightenment.config import Config
 from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import ProbeResult, TrainingStore
 
 VALID_SESSION = {"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"}
-AUTH = {TOKEN_HEADER: TEST_PLACEHOLDER}
+AUTH = {AUTH_HEADER: TEST_PLACEHOLDER}
 
 #: Every method the API exposes, so the cross-origin policy cannot silently omit one.
 EXPOSED_METHODS = ("GET", "POST", "PATCH")
@@ -288,7 +288,7 @@ def test_a_write_with_a_wrong_token_of_the_same_length_is_refused(
 ) -> None:
     wrong = TEST_PLACEHOLDER[:-1] + "X"
     response = gated_client.post(
-        "/api/v1/sessions", json=VALID_SESSION, headers={TOKEN_HEADER: wrong}
+        "/api/v1/sessions", json=VALID_SESSION, headers={AUTH_HEADER: wrong}
     )
     assert response.status_code == 401
 
@@ -654,7 +654,7 @@ def test_every_exposed_method_survives_a_preflight_from_the_allowed_origin(
         headers={
             "origin": TEST_ORIGIN,
             "access-control-request-method": method,
-            "access-control-request-headers": TOKEN_HEADER,
+            "access-control-request-headers": AUTH_HEADER,
         },
     )
     assert response.status_code == 200, response.text

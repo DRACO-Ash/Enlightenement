@@ -10,10 +10,17 @@ from __future__ import annotations
 import hmac
 
 #: Header carrying the shared team token.
-#: A header NAME, not a credential. The `noqa` carries no trailing prose: SonarQube parses
-#: suppression comments and flags `# noqa: CODE - reason` as malformed syntax, so the reason
-#: lives here where a reader finds it and no analyser has to parse it.
-TOKEN_HEADER = "x-team-token"  # noqa: S105
+#: The header NAME the shared team token arrives in. Not a credential.
+#:
+#: There is no suppression comment on this line, and getting there took two attempts. The constant
+#: was named after the token, which trips ruff's hardcoded-password rule (it keys on a variable name
+#: containing "token"), so the line carried a ruff suppression directive with a trailing reason.
+#: SonarQube flags a suppression directive with trailing prose as malformed syntax; trimming the
+#: prose did not satisfy it either. Renaming solved both at once: this name trips no ruff rule, so
+#: the line needs no directive and leaves nothing for either analyser to parse. Writing the old
+#: directive out in this comment then tripped ruff's unused-directive rule, which is why it is
+#: described here rather than quoted. The wire value is unchanged: it is all a client can see.
+AUTH_HEADER = "x-team-token"
 
 
 def token_ok(given: str | None, expected: str) -> bool:

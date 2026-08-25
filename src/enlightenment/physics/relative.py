@@ -87,13 +87,16 @@ class RelativeState:
         zero in a plotted closing rate is worse than a defensible convention.
         """
         separation = self.range_km
-        # `not separation > 0.0` rather than `separation == 0.0`. Same branch for the same
-        # inputs - `range_km` is a Euclidean norm, so it is non-negative or NaN - but it states
-        # the real precondition (a division needs a strictly positive divisor) and it also
-        # refuses NaN, which an equality test would have divided by. SonarQube flags float
-        # equality as a bug class and it is right to: the guard should test the property the
-        # division needs, not one exact value.
-        if not separation > 0.0:
+        # The precondition a division needs, stated positively. Three forms have been through
+        # here: `separation == 0.0` (float equality, a Sonar bug class), then
+        # `not separation > 0.0` (Sonar's S1940, negated comparison), and now this.
+        #
+        # `separation <= 0.0` ALONE would not do, and that is the whole point of the `isnan`
+        # clause: `not x > 0.0` is True for NaN while `x <= 0.0` is False, so taking Sonar's
+        # suggested operator literally would have let a NaN separation reach the division and
+        # returned NaN as a closing rate. Writing the NaN case out is both analyser-clean and
+        # the honest statement of what a divisor must be.
+        if separation <= 0.0 or math.isnan(separation):
             return 0.0
         return sum(p * v for p, v in zip(self.position_km, self.velocity_km_s, strict=True)) / (
             separation

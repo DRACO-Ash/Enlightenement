@@ -58,7 +58,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from enlightenment import __version__
 from enlightenment.audit import ANONYMOUS_ACTOR, audit, log_event, sanitise_log_value
-from enlightenment.auth import TOKEN_HEADER, token_ok
+from enlightenment.auth import AUTH_HEADER, token_ok
 from enlightenment.config import Config, load_config, token_length_bucket
 from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
@@ -347,7 +347,7 @@ def _install_cors(app: FastAPI, runtime: _Runtime) -> None:
             # Every method the API actually exposes. Kept in one place with a test that
             # parametrises over the real route table, so the two cannot drift.
             allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-            allow_headers=[TOKEN_HEADER, "content-type", "if-match", "if-none-match"],
+            allow_headers=[AUTH_HEADER, "content-type", "if-match", "if-none-match"],
         )
 
 
