@@ -2,6 +2,85 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.5 (2026-08-25)
+
+**What.** Flight plan step 5, the engineering half: content schemas, loader and suite. Four
+versioned content kinds (`Procedure`, `ScenarioTemplate`, `Rubric`, `ExpertTrace`) under
+`src/enlightenment/content/`, a `ContentStore` that loads, validates, hashes and hot-reloads the
+`content/` tree, and 30 tests in `tests/test_content.py`. The tree itself is created with its
+authoring contract in `content/README.md`, baked into the image, and shipped in the upload zip.
+
+**Why these decisions, since each is a deviation a reviewer will ask about.**
+
+● **Pydantic rather than a `jsonschema` runtime dependency.** The plan says "JSON Schema validated
+  on load". Pydantic 2 is already a runtime dependency, validates strictly with `extra="forbid"`,
+  produces author-facing error paths, and EMITS JSON Schema from the same models via
+  `json_schemas()`. Authors get a schema artefact to validate against; the image gains no
+  dependency. One definition, two consumers, so the schema an author reads cannot drift from the
+  schema the loader enforces.
+● **JSON rather than YAML.** The plan permits either. JSON is in the standard library, so the choice
+  costs nothing and rules out a second parser in the image.
+● **A threshold's `condition` is prose, not an expression.** A threshold in a Protect and Defend
+  procedure is a judgement stated in operational terms. Encoding it here would invent a semantics
+  the source procedure does not have. Step 6's decision tables bind to the criterion by `name`,
+  which is where machine-readable logic belongs.
+● **A competency axis is a string, not an enum.** The plan says the six axes "are ours, so they are
+  also revisable; version them like content". A Python enum would make a content revision a code
+  deployment, which is the thing step 5 exists to prevent.
+● **Step ordinals are authored, not inferred from list position**, so a reorder shows up in a diff
+  as a change to the ordinals rather than as an invisible re-index. The loader asserts they are a
+  contiguous run from one.
+● **Content is root-owned in the image, not chowned to uid 10001.** The process reads its own
+  scoring rules and can never rewrite them. Changing content is a deploy or an overlay mount, never
+  a running process writing to itself.
+
+**Safe failure, which is the behaviour worth naming.** One bad file yields NO store, not a partial
+library: a partially loaded procedure library scores against whichever rules happened to parse. A
+failed reload leaves the last good tree serving, so an authoring typo is not an outage. Two tests
+pin exactly that, by name.
+
+**The redaction gate runs BEFORE schema validation** and refuses four shapes anywhere in a file:
+catalogue-number, url, windows-path, chat-channel. A file holding a protected-object identifier is
+a disclosure risk whether or not it also parses, and reporting the schema error first would bury
+the finding that matters. A finding names the rule and never echoes the offending text.
+
+**A measured correction inside this change.** The first catalogue-number pattern excluded a
+following full stop outright, to let `0.05` through, and so let `object 25544.` through as well.
+Sentence-final is the more likely way an exclusion list actually gets written. The lookahead now
+blocks only when a DIGIT follows the stop, verified against nine prose cases, and the
+sentence-final case has a regression test of its own.
+
+**A stated limit rather than a hidden one.** A five-digit altitude such as the geostationary belt is
+refused, because a bare five-digit run is indistinguishable from a catalogue number by shape alone.
+The gate fails closed; the author writes `35,786 km` or uses words.
+`test_a_five_digit_altitude_is_refused_a_known_and_accepted_false_positive` pins the limit so a
+later change that quietly widens the pattern has to change a test that says why.
+
+**What this change does NOT do.** The plan's step 5 also asks for all fifteen procedures seeded as
+data. The fifteen names, and the text of the three v1 procedures, are the owner's to supply and are
+not inferred here. `content/README.md` records that the tree is empty and why.
+
+**The completeness machinery caught the new suite before a gate did**, which is what it is for.
+`test_every_security_test_is_cited_by_the_policy` failed on an unaccounted `tests/test_content.py`.
+The suite is now SWEPT, nine content controls have register rows in `docs/SECURITY.md`, and the
+thirteen content-correctness tests are exempted individually with the reason written down - including
+why the draft-status and referential-integrity cases sit BELOW the line and why the version-pinning
+case sits above it. Exempted per test, not per file, so a new security test in this suite still fails
+the sweep until somebody decides.
+
+Six test names lost their capitals to `N802` in the same pass. The capitals were my emphasis device;
+the pinned linter does not accept them, and one of the renamed names is cited by `content/README.md`
+and by this entry, so all three were updated together rather than left to drift.
+
+**Verified.** Full verification loop green through the resolved interpreter: environment check,
+`ruff format --check`, `ruff check`, `mypy` strict, 807 passed and 1 skipped with coverage 98.90%,
+`pip-audit` clean on both lockfiles. 30 of those tests are new. The packaging script and the
+Dockerfile both carry the content tree, with the suid sweep still the last filesystem mutation in
+its stage and three contract tests holding that invariant.
+
+**Not yet done for this version:** the `engineering-reviewer` and `security-reviewer` gates have not
+run against this change.
+
 ## V0.23.4 (2026-08-24)
 
 **What.** `docs/FLIGHT-PLAN.md` committed. The owner supplied it after I built an interface plan by

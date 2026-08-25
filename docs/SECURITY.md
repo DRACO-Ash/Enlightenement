@@ -48,6 +48,15 @@ state-changing route.
 | The probe pool SERIALISES its work, which is what orders publication | `app.py` | `test_the_probe_pool_serialises_its_work` |
 | A probe after shutdown fails closed instead of using the shared executor | `app.py` | `test_a_probe_after_shutdown_fails_closed_rather_than_using_the_shared_executor` |
 | Every control this document cites resolves to a test that exists | docs | `test_every_test_named_in_the_security_policy_exists` |
+| The content redaction gate refuses four forbidden shapes anywhere in an authored file: catalogue-number, url, windows-path, chat-channel | `content/loader.py`, `content/models.py` | `test_the_redaction_gate_refuses_a_forbidden_shape_anywhere_in_the_file`, `test_a_catalogue_number_at_the_end_of_a_sentence_is_still_refused` |
+| A redaction finding names the RULE and never echoes the offending text | `content/loader.py` | `test_a_redaction_finding_never_echoes_the_offending_text` |
+| Redaction runs BEFORE schema validation, so a leak is not buried under a parse error | `content/loader.py` | `test_the_redaction_gate_runs_before_schema_validation` |
+| The gate fails CLOSED on an ambiguous five-digit run, and the false positive is a stated limit rather than a widened pattern | `content/models.py` | `test_a_five_digit_altitude_is_refused_a_known_and_accepted_false_positive`, `test_a_plausible_operational_sentence_is_not_refused` |
+| One bad content file yields NO store, never a partial library, and a failed reload keeps the last good tree serving | `content/loader.py` | `test_one_bad_file_yields_no_store_rather_than_a_partial_library`, `test_a_failed_reload_keeps_the_last_good_tree_serving` |
+| Unknown keys rejected in every content schema, so a typed key cannot silently score nothing | `content/models.py` | `test_an_unknown_key_is_rejected_rather_than_ignored` |
+| A malformed content file yields a line and column, never a traceback | `content/loader.py` | `test_malformed_json_is_rejected_with_a_line_and_column_not_a_traceback` |
+| The store hands out copies, so a caller cannot mutate the loaded library in place | `content/loader.py` | `test_the_store_returns_copies_so_a_caller_cannot_mutate_the_library` |
+| A rubric scores the procedure VERSION it pins, so a content edit cannot silently rescore history | `content/loader.py` | `test_a_rubric_pinned_to_an_older_version_does_not_float_to_the_newer_one` |
 | The edit helper refuses a missing or ambiguous anchor | `scripts/verified-edit.py` | `test_the_edit_helper_refuses_a_missing_anchor`, `test_the_edit_helper_refuses_an_ambiguous_anchor` |
 | The snapshot is not read through a symlink | `storage.py` | `test_the_snapshot_is_not_read_through_a_symlink` |
 | The cap runs ahead of authentication | `middleware.py` | `test_an_oversize_chunked_body_is_refused_before_authentication` |

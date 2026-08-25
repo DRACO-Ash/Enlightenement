@@ -60,15 +60,23 @@ for file in Dockerfile .dockerignore .gitignore .python-version .env.example \
   fi
 done
 
-# Directories: source, the suite the platform runs, the loop scripts, the runbooks, and
-# .github. The workflow is included because the SUITE READS IT: two contract tests assert
-# that the binding image checks run as root and cover the package-manager class, and an
-# assertion that cannot run on the machine gating the deploy is worse than no assertion.
-# The platform generates and commits its own pipeline regardless and ignores this one.
-for dir in src tests scripts docs .github; do
+# Directories: source, the suite the platform runs, the loop scripts, the runbooks, the
+# training content tree, and .github. The workflow is included because the SUITE READS IT: two
+# contract tests assert that the binding image checks run as root and cover the package-manager
+# class, and an assertion that cannot run on the machine gating the deploy is worse than no
+# assertion. The platform generates and commits its own pipeline regardless and ignores this one.
+#
+# `content` is DATA the running server loads, so it ships with the source or the deployed
+# container has no procedures to score against. Absence is NAMED rather than fatal, matching the
+# file loop above: an unconditional copy of a directory that a given checkout does not carry is
+# how this script was once killed inside the platform's own test job.
+for dir in src tests scripts docs content .github; do
   python3 -c '
 import pathlib, shutil, sys
 source, stage = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+if not source.is_dir():
+    print(f"  note: {source}/ absent from this checkout, not staged")
+    raise SystemExit(0)
 shutil.copytree(
     source,
     stage / source,

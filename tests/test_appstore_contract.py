@@ -781,6 +781,7 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     "test_audit.py",
     "test_auth.py",
     "test_config.py",
+    "test_content.py",
     "test_healthcheck.py",
     "test_http.py",
     "test_middleware.py",
@@ -841,6 +842,37 @@ UNSWEPT_CITED_SUITES: frozenset[str] = frozenset({"test_appstore_contract.py"})
 #: surface and the backup symlink refusal - and those four are now cited rather than exempted.
 UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
     {
+        # --- test_content.py. The suite IS swept, because the redaction gate is a disclosure
+        # control and the fail-closed load is an integrity one, and both carry register rows. These
+        # thirteen are content-CORRECTNESS: does a version resolve, is a hash canonical, is an
+        # ordinal contiguous, is the schema artefact emitted. Each is a real property and none is an
+        # access control, so a register row for it would dilute a document whose promise is
+        # "controls, each with a test that fails if it regresses".
+        #
+        # Two are close enough to the line to say why they are BELOW it.
+        # `test_a_draft_is_loaded_but_never_counted_as_active` reads like an authorisation check and
+        # is not: `status` governs which content SCORES a run, and nothing about it decides who may
+        # read or write. `test_a_reference_to_content_that_is_not_loaded_is_refused` is referential
+        # integrity at load, so its failure mode is an unscoreable run, not a disclosure or a
+        # bypass. The version-pinning case in the same area IS cited, because a rubric floating to a
+        # newer procedure silently rescores history, which is a record-integrity property.
+        #
+        # Listed individually rather than exempted by file, deliberately: a new SECURITY test in
+        # this suite still fails the sweep until somebody decides about it, which is the whole
+        # reason this set exists per-test.
+        "test_a_complete_tree_loads_and_every_item_is_addressable",
+        "test_a_draft_is_loaded_but_never_counted_as_active",
+        "test_a_json_schema_is_emitted_for_every_content_kind",
+        "test_a_reference_to_content_that_is_not_loaded_is_refused",
+        "test_a_schema_failure_names_the_field_path_for_the_author",
+        "test_an_absent_content_root_loads_empty_rather_than_raising",
+        "test_content_status_is_exactly_the_three_the_plan_names",
+        "test_every_loaded_item_carries_a_content_hash_a_run_can_record",
+        "test_redaction_error_is_a_content_error_so_one_except_clause_covers_both",
+        "test_step_ordinals_must_be_a_contiguous_run_from_one",
+        "test_the_hash_is_over_the_canonical_form_not_the_raw_bytes",
+        "test_the_loaded_model_type_matches_the_directory_it_came_from",
+        "test_two_files_claiming_one_version_is_refused",
         # A unit-level half of the nosniff rows, which cite the integration tests.
         "test_a_non_http_scope_passes_through_untouched",
         # Unit-level cases of controls the register cites at SOURCE granularity - the

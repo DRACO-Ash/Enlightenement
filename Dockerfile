@@ -44,6 +44,14 @@ COPY --from=build /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=10001:10001 src ./src
 
+# The training content tree: procedures, scenario templates, rubrics, expert traces. DATA the
+# server reads, so it is baked in rather than fetched, and deliberately NOT chowned to the
+# application user. Root-owned and world-readable means the process can read its own scoring
+# rules and can never rewrite them, which is the same fail-closed posture the storage probe
+# takes. Changing content is a deploy or an overlay mount, never a running process writing to
+# itself. Placed BEFORE the sweep below, because nothing may follow it.
+COPY content ./content
+
 # Fail-CLOSED: strip the package manager and every build artefact from what ships, THEN clear
 # every setuid and setgid bit. One instruction, two fail-closed steps, in that order.
 #
