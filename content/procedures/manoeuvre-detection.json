@@ -1,0 +1,103 @@
+{
+  "meta": {
+    "id": "manoeuvre-detection",
+    "version": "v1",
+    "status": "active",
+    "title": "Manoeuvre detection and characterisation",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "purpose": "Establish whether an observed change in an object's orbit is a deliberate manoeuvre, characterise it, and decide whether it meets the threshold for reporting.",
+  "entry_conditions": [
+    "An element set update places the object outside the predicted along-track position beyond sensor residual expectation.",
+    "A longitude drift rate change is observed on a geostationary object across consecutive fits.",
+    "An external cue reports a possible orbit change and correlation is requested."
+  ],
+  "roles": [
+    "Analyst on watch",
+    "Watch lead",
+    "Reporting cell"
+  ],
+  "steps": [
+    {
+      "ordinal": 1,
+      "action": "Confirm the change is present in more than one independent fit before treating it as real.",
+      "responsible_role": "Analyst on watch",
+      "note": "A single fit can move on data quality alone. Two fits from different epochs is the cheapest discriminator available."
+    },
+    {
+      "ordinal": 2,
+      "action": "Rule out a data artefact: check epoch spacing, near-duplicate epochs, and whether the residuals are consistent with the contributing sensors.",
+      "responsible_role": "Analyst on watch",
+      "warning": "A very small epoch gap between fits produces an implied drift rate that is physically impossible. Treat an implausible rate as an artefact hypothesis of equal standing, not a footnote."
+    },
+    {
+      "ordinal": 3,
+      "action": "Estimate the along-track and radial change and derive an approximate delta-v.",
+      "responsible_role": "Analyst on watch",
+      "note": "Judge the figure against what the platform class could plausibly produce."
+    },
+    {
+      "ordinal": 4,
+      "action": "Classify the manoeuvre as station-keeping, repositioning, or unattributed.",
+      "responsible_role": "Analyst on watch",
+      "note": "Station-keeping is periodic and small. Repositioning changes the drift rate and holds the change."
+    },
+    {
+      "ordinal": 5,
+      "action": "Check the object against the protected-object criteria held outside this application before deciding the reporting threshold.",
+      "responsible_role": "Watch lead",
+      "warning": "This application never holds that list. Knowing the check exists and is mandatory is the trained behaviour; performing it requires the authoritative source."
+    },
+    {
+      "ordinal": 6,
+      "action": "Raise the report at the threshold the criteria set, with the evidence and the stated confidence.",
+      "responsible_role": "Reporting cell"
+    },
+    {
+      "ordinal": 7,
+      "action": "Task follow-up observations to confirm the new orbit and detect any second burn.",
+      "responsible_role": "Watch lead"
+    }
+  ],
+  "threshold_criteria": [
+    {
+      "name": "two-fit-confirmation",
+      "condition": "The orbit change is present in at least two independent fits from different epochs."
+    },
+    {
+      "name": "artefact-excluded",
+      "condition": "Epoch spacing and residuals are consistent with a real change rather than a fit artefact."
+    },
+    {
+      "name": "plausible-delta-v",
+      "condition": "The implied delta-v is within the plausible capability of the platform class."
+    },
+    {
+      "name": "drift-rate-change-held",
+      "condition": "A geostationary drift rate change persists across subsequent fits rather than reverting."
+    }
+  ],
+  "reporting_requirements": [
+    "Object designator, epoch of the pre-manoeuvre and post-manoeuvre fits, and the contributing sensors.",
+    "Estimated delta-v with an uncertainty, never a bare number.",
+    "Classification with a stated confidence and the evidence it rests on.",
+    "Whether the protected-object check was performed, and by whom."
+  ],
+  "transition_rules": [
+    {
+      "when": "The manoeuvre closes range on another object and the closing geometry is controlled.",
+      "to_procedure_id": "rpo-response"
+    },
+    {
+      "when": "The apparent orbit change is accompanied by new associated objects.",
+      "to_procedure_id": "separation-versus-breakup"
+    }
+  ],
+  "closure_criteria": [
+    "The new orbit is confirmed by follow-up observation and the object is back under routine custody.",
+    "The change is determined to be an artefact and the fit is corrected."
+  ],
+  "sparta_technique_ids": []
+}

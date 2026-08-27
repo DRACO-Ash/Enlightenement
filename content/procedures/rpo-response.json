@@ -1,0 +1,99 @@
+{
+  "meta": {
+    "id": "rpo-response",
+    "version": "v1",
+    "status": "active",
+    "title": "Rendezvous and proximity operations response",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "purpose": "Recognise a controlled close approach, distinguish it from an uncontrolled conjunction, and run the response while the geometry is still developing.",
+  "entry_conditions": [
+    "Relative range between two objects is closing in a manner consistent with control rather than natural drift.",
+    "An object holds a bounded relative position with respect to another across multiple revolutions.",
+    "A manoeuvre assessment concludes the burn was targeted at another object."
+  ],
+  "roles": [
+    "Analyst on watch",
+    "Watch lead",
+    "Reporting cell"
+  ],
+  "steps": [
+    {
+      "ordinal": 1,
+      "action": "Establish the relative motion in the along-track, cross-track and radial frame rather than reasoning from range alone.",
+      "responsible_role": "Analyst on watch",
+      "note": "Range alone cannot distinguish a natural drift-by from a held station. The relative track shape can."
+    },
+    {
+      "ordinal": 2,
+      "action": "Determine whether relative motion is bounded or unbounded.",
+      "responsible_role": "Analyst on watch",
+      "note": "A closed relative track that repeats is being maintained. An open hyperbolic-looking pass is drifting through."
+    },
+    {
+      "ordinal": 3,
+      "action": "Estimate time and distance at closest approach with an uncertainty band.",
+      "responsible_role": "Analyst on watch"
+    },
+    {
+      "ordinal": 4,
+      "action": "Classify as controlled proximity operations, uncontrolled conjunction, or indeterminate.",
+      "responsible_role": "Analyst on watch",
+      "warning": "Indeterminate is a valid and often correct answer early. Do not force a classification the evidence does not support."
+    },
+    {
+      "ordinal": 5,
+      "action": "Check the object of interest against the protected-object criteria held outside this application.",
+      "responsible_role": "Watch lead"
+    },
+    {
+      "ordinal": 6,
+      "action": "Increase observation tasking on both objects to shorten the revisit interval.",
+      "responsible_role": "Watch lead",
+      "note": "The value of a shorter revisit is highest while the geometry is still changing."
+    },
+    {
+      "ordinal": 7,
+      "action": "Report the approach with the relative geometry, the classification, and the confidence.",
+      "responsible_role": "Reporting cell"
+    },
+    {
+      "ordinal": 8,
+      "action": "Maintain custody until relative range opens and stays open.",
+      "responsible_role": "Analyst on watch"
+    }
+  ],
+  "threshold_criteria": [
+    {
+      "name": "bounded-relative-motion",
+      "condition": "The relative track is closed or repeating, indicating maintained relative position."
+    },
+    {
+      "name": "control-authority-evident",
+      "condition": "Relative motion is corrected in a way natural dynamics do not explain."
+    },
+    {
+      "name": "closest-approach-inside-band",
+      "condition": "Predicted closest approach falls inside the distance band the criteria set."
+    }
+  ],
+  "reporting_requirements": [
+    "Both object designators and the relative geometry at the time of report.",
+    "Time and distance at closest approach, with uncertainty.",
+    "Whether relative motion is bounded, and the evidence for that judgement.",
+    "Classification and confidence, with indeterminate stated plainly where it applies."
+  ],
+  "transition_rules": [
+    {
+      "when": "New associated objects appear during the approach.",
+      "to_procedure_id": "separation-versus-breakup"
+    }
+  ],
+  "closure_criteria": [
+    "Relative range opens and continues to open across subsequent fits.",
+    "The approach is reclassified as an uncontrolled conjunction and handed to routine conjunction handling."
+  ],
+  "sparta_technique_ids": []
+}

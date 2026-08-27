@@ -26,6 +26,7 @@ from pydantic import BaseModel, ValidationError
 from enlightenment.content.models import (
     CATALOGUE_NUMBER_PATTERN,
     ContentStatus,
+    DrillItem,
     ExpertTrace,
     Procedure,
     Rubric,
@@ -36,6 +37,7 @@ from enlightenment.content.models import (
 #: adding a kind is one entry here rather than a branch in the loader.
 CONTENT_KINDS: Final[dict[str, type[BaseModel]]] = {
     "procedures": Procedure,
+    "drills": DrillItem,
     "scenarios": ScenarioTemplate,
     "rubrics": Rubric,
     "traces": ExpertTrace,
@@ -312,6 +314,11 @@ class ContentStore:
             target = f"{rubric.procedure_id}@{rubric.procedure_version}"  # type: ignore[attr-defined]
             if target not in procedures:
                 errors.append(f"rubrics/{key}: names procedure {target}, which is not loaded")
+
+        for key, drill in items.get("drills", {}).items():
+            target = f"{drill.procedure_id}@{drill.procedure_version}"  # type: ignore[attr-defined]
+            if target not in procedures:
+                errors.append(f"drills/{key}: names procedure {target}, which is not loaded")
 
         for key, trace in items.get("traces", {}).items():
             target = f"{trace.scenario_id}@{trace.scenario_version}"  # type: ignore[attr-defined]

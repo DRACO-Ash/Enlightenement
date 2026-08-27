@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "id": "rubric-separation-versus-breakup",
+    "version": "v1",
+    "status": "active",
+    "title": "Rubric: New objects near a controlled parent",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "procedure_id": "separation-versus-breakup",
+  "procedure_version": "v1",
+  "criteria": [
+    {
+      "name": "cue-noticed",
+      "axis": "cue-detection",
+      "weight": 15.0,
+      "evidence": "The operator remarked on the anomalous feature before being prompted."
+    },
+    {
+      "name": "event-named",
+      "axis": "event-classification",
+      "weight": 30.0,
+      "evidence": "The classification given matches an accepted answer for this item."
+    },
+    {
+      "name": "first-action-named",
+      "axis": "procedure-recall",
+      "weight": 25.0,
+      "evidence": "The first action given matches an accepted first action for the governing procedure."
+    },
+    {
+      "name": "physics-plausible",
+      "axis": "physical-reasoning",
+      "weight": 10.0,
+      "evidence": "Any quantitative judgement offered is consistent with orbital mechanics and the platform class."
+    },
+    {
+      "name": "confidence-calibrated",
+      "axis": "uncertainty-calibration",
+      "weight": 15.0,
+      "evidence": "Stated confidence matched the outcome, scored by a proper scoring rule."
+    },
+    {
+      "name": "report-content",
+      "axis": "reporting",
+      "weight": 5.0,
+      "evidence": "The reported content covers the procedure's reporting requirements."
+    }
+  ]
+}

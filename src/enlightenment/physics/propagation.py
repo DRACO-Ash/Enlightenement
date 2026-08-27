@@ -23,9 +23,23 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-from sgp4.api import Satrec
+if TYPE_CHECKING:  # pragma: no cover - annotations only; see the note below
+    from sgp4.api import Satrec
+
+# **The `sgp4` import is deferred, and it is an architectural control rather than a start-up
+# optimisation.** `tests/test_appstore_contract.py` asserts that building the application does not
+# import the extension: its measured non-determinism has no business on a request path, and a
+# fabricated state vector must not be reachable from the HTTP edge. When the drill layer began
+# using the pure Clohessy-Wiltshire helpers - which the flight plan requires it to - importing
+# `enlightenment.physics.relative` pulled in this module through the package aggregate, and this
+# module pulled in the extension. That test caught it.
+#
+# So the extension is imported inside `load_elements`, the only function that constructs a
+# `Satrec`. `from __future__ import annotations` makes every annotation here a string, so the
+# TYPE_CHECKING import is enough for the type checker and nothing is deferred that is needed at
+# run time except by the one caller that actually propagates.
 
 #: The frame SGP4 produces. Carried in the type so it cannot be assumed to be J2000.
 TEME_OF_DATE: Final = "TEME_OF_DATE"
@@ -233,6 +247,8 @@ def load_elements(line1: str, line2: str, *, verify_checksum: bool = True) -> Sa
     and the changelog said three. The function was telling a maintainer the wrong thing about
     itself.
     """
+    from sgp4.api import Satrec  # noqa: PLC0415 - deferred on purpose; see the module note
+
     first = _check_element_line(line1, 1)
     second = _check_element_line(line2, 2)
     # `is not False`, not truthiness. A parameter documented as a strict fail-closed default

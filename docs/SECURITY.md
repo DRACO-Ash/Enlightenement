@@ -18,6 +18,19 @@ state-changing route.
 
 | Control | Where | Test |
 |---|---|---|
+| **The answer key never crosses the wire before the operator commits.** The served drill has no answer field; the reveal is the response to the scored POST | `training/engine.py`, `training_api.py` | `test_an_unanswered_drill_carries_no_answer_key_in_its_raw_body`, `test_a_served_drill_carries_no_answer_key` |
+| Interface served with a strict Content Security Policy: `script-src 'self'`, no external origin, `frame-ancestors 'none'` | `training_api.py` | `test_the_interface_is_served_with_a_strict_policy` |
+| Interface files served from a two-entry allowlist, never a path join | `training_api.py` | `test_the_interface_script_is_served_from_an_allowlist` |
+| No markup-parsing or dynamic-code sink in the client; every content value written as text | `ui/app.js` | `test_the_interface_never_writes_an_untrusted_value_with_innerhtml` |
+| Air-gap posture: no CDN, no external request in any shipped asset | `ui/` | `test_the_interface_makes_no_external_request` |
+| Every drill answer validated at the boundary, `extra="forbid"`, every field capped | `models.py` | `test_a_malformed_answer_is_refused_at_the_boundary` |
+| Produced-answer length bounded before any normalisation work | `training/answers.py` | `test_a_pathological_answer_is_bounded_before_any_work_is_done` |
+| Scoring endpoint strictly rate limited, as a write | `app.py`, `training_api.py` | `test_answering_is_strictly_rate_limited` |
+| Redaction gate re-asserted at the EDGE: no catalogue-number shape in any served procedure | `content/`, `training_api.py` | `test_the_library_never_holds_a_protected_object_identifier` |
+| Progress file, which will hold personal performance data, never world-readable | `training/progress.py` | `test_the_progress_file_is_never_world_readable` |
+| Damaged progress file degrades to defaults rather than returning a 500 with internal detail | `training/progress.py` | `test_a_damaged_progress_file_degrades_to_defaults_rather_than_a_500` |
+| Run history capped, so a free-text field cannot grow a file read whole on every request | `training/progress.py` | `test_run_history_is_capped_so_the_file_cannot_grow_without_limit` |
+| A content fault is a 503 on the training routes and never takes the health paths down | `app.py`, `training_api.py` | `test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_down` |
 | Token compared in constant time with a length guard | `auth.py` | `tests/test_auth.py` |
 | No configured token cannot authorise (fail closed) | `auth.py` | `test_no_configured_token_cannot_authorise` |
 | Every cost-incurring and state-changing route gated | `app.py` | `test_a_write_without_a_token_is_refused...` |

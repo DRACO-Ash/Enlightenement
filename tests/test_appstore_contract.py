@@ -792,6 +792,13 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     "test_middleware.py",
     "test_ratelimit.py",
     "test_storage.py",
+    # The training layer. Swept because it carries four classes of control the register names:
+    # the answer key never crossing the wire before a commit (a disclosure control on the thing
+    # the product is FOR), the interface's Content Security Policy and its markup-sink discipline,
+    # the strict limiter on the scoring endpoint, and the redaction gate re-asserted at the edge
+    # rather than only at load.
+    "test_training.py",
+    "test_training_api.py",
 )
 
 #: Suites holding no security property, so nothing in them needs a register row. Recorded rather
@@ -847,6 +854,63 @@ UNSWEPT_CITED_SUITES: frozenset[str] = frozenset({"test_appstore_contract.py"})
 #: surface and the backup symlink refusal - and those four are now cited rather than exempted.
 UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
     {
+        # --- test_training.py and test_training_api.py. Both suites ARE swept: the answer-key
+        # boundary, the interface policy, the markup sinks, the scoring limiter, the progress
+        # file's mode and the edge redaction check all carry register rows. The names below are
+        # the remainder, and they fall into three kinds, none of which is an access control:
+        #
+        # * TRAINING CORRECTNESS. Elo symmetry and bounds, the Brier score, the spacing reset on a
+        #   miss, interval width on a small sample, plot determinism, the bounded-versus-unbounded
+        #   relative track. Real properties, and the reason the product works, but a register row
+        #   for "the Elo exchange is symmetric" would dilute a document whose promise is
+        #   "controls, each with a test that fails if it regresses".
+        # * FAIL-SOFT BEHAVIOUR ON DATA THIS PROCESS WROTE ITSELF. A missing progress file, a run
+        #   row of an unknown shape, a cue with no due date. Each degrades rather than raising, and
+        #   the DAMAGED-file case that does carry a disclosure argument is cited separately.
+        # * PRESENTATION AND ACCESSIBILITY. The palette rules, reduced motion, the status glyphs,
+        #   the interval rendering. These are code standards in this project and they are enforced
+        #   by these tests, but they are not security controls and `docs/SECURITY.md` is not where
+        #   a reader should look for them.
+        "test_a_cue_with_no_recorded_due_date_is_due",
+        "test_a_different_seed_draws_a_different_instantiation",
+        "test_a_drill_response_is_never_cached",
+        "test_a_miss_returns_the_spacing_interval_to_the_front",
+        "test_a_miss_that_names_the_look_alike_says_so_in_the_evidence",
+        "test_a_missing_progress_file_is_not_an_error",
+        "test_a_named_look_alike_is_reported_so_a_miss_becomes_a_teachable_moment",
+        "test_a_perfect_small_sample_still_reports_a_non_zero_interval",
+        "test_a_procedure_is_served_in_full_and_an_unknown_one_is_a_404",
+        "test_a_rating_cannot_leave_the_band_any_authored_item_can_match",
+        "test_a_run_row_of_an_unknown_shape_is_skipped_rather_than_fatal",
+        "test_a_scored_run_records_the_content_hash_it_was_scored_under",
+        "test_an_axis_with_no_attempts_reports_nothing_rather_than_zero",
+        "test_an_empty_content_tree_refuses_to_serve_rather_than_inventing_an_item",
+        "test_an_unknown_item_is_a_400_naming_the_problem_not_a_500",
+        "test_answering_correctly_raises_the_rating_and_records_the_run",
+        "test_every_plot_carries_a_text_equivalent",
+        "test_every_score_names_the_rule_and_the_evidence_and_the_lines_sum_to_the_total",
+        "test_every_status_in_the_interface_carries_a_shape_and_a_label",
+        "test_matching_refuses_a_near_miss_rather_than_guessing_in_the_operator_s_favour",
+        "test_matching_returns_the_key_form_so_the_debrief_can_quote_the_expert",
+        "test_no_confidence_step_asserts_certainty",
+        "test_normalisation_folds_the_variants_an_operator_actually_types",
+        "test_saving_one_operator_preserves_every_other_operator",
+        "test_scoring_refuses_an_unknown_item_and_an_off_scale_confidence",
+        "test_selection_prefers_a_due_item_over_a_better_matched_one",
+        "test_the_bounded_relative_track_closes_and_the_unbounded_one_does_not",
+        "test_the_brier_score_punishes_confident_error_quadratically",
+        "test_the_calibration_verdict_names_the_failure_mode_the_product_exists_to_remove",
+        "test_the_confidence_scale_refuses_an_off_scale_step_rather_than_clamping",
+        "test_the_content_endpoint_states_its_own_provenance",
+        "test_the_dashboard_endpoint_reports_intervals_and_never_a_bare_axis_number",
+        "test_the_dashboard_reports_an_interval_on_every_measured_axis",
+        "test_the_elo_exchange_is_symmetric_so_the_pool_cannot_inflate",
+        "test_the_expected_score_is_a_half_when_the_ratings_are_equal",
+        "test_the_interface_honours_reduced_motion_with_an_equivalent_rather_than_a_removal",
+        "test_the_interface_honours_the_measured_palette_rules",
+        "test_the_reveal_arrives_only_as_the_answer_response",
+        "test_the_same_item_and_seed_draw_the_same_series_every_time",
+        "test_the_same_item_served_twice_is_a_different_instantiation",
         # --- test_content.py. The suite IS swept, because the redaction gate is a disclosure
         # control and the fail-closed load is an integrity one, and both carry register rows. These
         # thirteen are content-CORRECTNESS: does a version resolve, is a hash canonical, is an
@@ -3393,9 +3457,25 @@ def test_the_physics_core_is_unreachable_from_any_http_route() -> None:
     )
     assert result.returncode == 0, f"the probe could not build the app: {result.stderr[-400:]}"
     reached = [line for line in result.stdout.splitlines() if line.strip()]
-    assert not reached, (
-        "building the application imported the physics core, so it is now reachable from the"
-        f" HTTP edge: {reached}. The boundary needs input validation before that is safe."
+
+    # **The invariant NARROWED when the drill layer landed, and the narrowing is deliberate.**
+    # Originally nothing under `.physics` or `.scenario` could be reached from the edge at all.
+    # The flight plan then requires the opposite for the drill surfaces: "the drill layer consumes
+    # the same physics core ... it gets no privileged path, no separate physics." A drill that drew
+    # a relative track by hand instead of solving the dynamics would teach operators to recognise a
+    # picture rather than a signature the orbit produces, which is the product's whole premise
+    # inverted. So the pure, closed-form helpers are now reachable on purpose.
+    #
+    # What is NOT admitted, and this is the half that carried the original risk: the `sgp4`
+    # extension, whose measured non-determinism is the reason this test exists, and any path that
+    # would let an operator-supplied value become a state vector. Nothing on the drill path accepts
+    # a state vector from the wire; the seed is derived server-side and every plot generator takes
+    # an item id and an integer.
+    extension = [name for name in reached if name.startswith("sgp4")]
+    assert not extension, (
+        "building the application imported the sgp4 extension, so its measured non-determinism is"
+        f" now reachable from the HTTP edge: {extension}. Propagation belongs behind an authoring"
+        " step or a scenario pre-warm, never on a request path."
     )
 
 

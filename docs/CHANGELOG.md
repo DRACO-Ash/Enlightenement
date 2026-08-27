@@ -2,16 +2,107 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.12 (2026-08-27)
+
+**What.** The application. Flight plan steps 6, 7 and 9 for the drill surface: a scoring engine, the
+drill loop, and an interactive interface at `/ui` that an operator can actually use. Plus the v1
+content set, so the loop has something to teach.
+
+**The drill loop, which is the plan's one creative risk.** `src/enlightenment/training/`: Elo
+ratings so difficulty tracks the operator, a Brier score on stated confidence so a confident error
+costs more than an unsure one, and a spacing scheduler that puts a missed cue class back at the
+front. Answers are PRODUCED, never picked: two free-text fields, no options list, and
+`serve()` returns a payload with no answer field in it. A test asserts that on the raw response
+bytes rather than on a parsed object, because a field added to the model later would slip past any
+assertion that only inspected keys it already knew.
+
+**Answer matching is the part that could have been quietly wrong.** It accepts what an examiner would
+accept (case, hyphenation, "stationkeeping", "maneuver" from an allied operator, a leading
+"it is a") and refuses everything else. No fuzzy distance, no stemming, no substring match, and the refusals
+are what the tests spend most of their time on: a fuzzy match would accept "not a manoeuvre" for
+"manoeuvre" and "uncontrolled conjunction" for "controlled proximity operations", which are the exact
+discriminations the product exists to train. A near miss is a miss, and the debrief says what the
+expert saw.
+
+**Every score decomposes, because the plan makes that an acceptance test.** Each answer returns the
+rules that fired, the axis each belongs to, the points available and awarded, and the evidence in
+words. The interface renders that table verbatim. There is no path that produces a total without the
+reasoning.
+
+**The plots are solved, not drawn, and one of them proves it.** The RPO surfaces come from the real
+Clohessy-Wiltshire solution in the physics core: the bounded item sets the along-track rate to the
+no-drift value, which closes the relative track, and the drift-by item perturbs it, which opens it.
+A test asserts the open track sweeps more than three times as far along-track as the closed one. Had
+the shape been hand-drawn, the drill would teach operators to recognise a picture I invented rather
+than a signature the orbit produces. The longitude and range surfaces ARE shaped, and that is
+recorded in the module rather than left for a reader to discover: their noise amplitude is one
+provisional number that the offline UDL characterisation output replaces when it lands.
+
+**An architectural test caught a real defect while this was being built.**
+`test_the_physics_core_is_unreachable_from_any_http_route` failed, because importing the physics
+package aggregate pulls in `propagation`, which imported the `sgp4` extension at module level - so
+the extension landed on the request path. The invariant was NARROWED rather than relaxed: the flight
+plan requires the drill layer to consume the physics core ("no privileged path, no separate
+physics"), so the pure closed-form helpers are now reachable on purpose, while the extension whose
+measured non-determinism the test exists for is still refused. The fix is a deferred import in the
+two modules that annotate `Satrec`, with the reason recorded at both.
+
+**The interface.** `src/enlightenment/ui/`, served at `/ui`, no framework and no build step. Dark
+mission-control on the measured palette: Blue 1 is a structural fill and never carries text or
+status, alert red is the lightened 4.66:1 value wherever it carries text, copper-amber does not
+appear. Status is a glyph and a word as well as a colour. Reduced motion gets a non-motion
+equivalent that still marks the moment rather than dropping the signal. Every plot has an authored
+text equivalent and a data table. Every value is written as text: no markup-parsing sink and no
+dynamic-code sink anywhere in the client, asserted by grep, because content is edited without a
+deployment and an authoring mistake must not become a scripting bug.
+
+**Two deviations from the plan, both deliberate and both stated.** The interface is TWO files rather
+than one, because the response sets `script-src 'self'` and the alternatives to a sibling script
+were a hand-maintained CSP hash or `'unsafe-inline'`. And it is served at `/ui` rather than `/`,
+because `/` is part of the App Store health contract and one route should not serve the platform
+router and a browser.
+
+**The content set is ILLUSTRATIVE and the application says so on every screen.** Three procedures
+(Manoeuvre, RPO, Separation versus Breakup), twelve drill items, three scenarios, rubrics and
+traces, authored from public open-source material per the plan's public-sources rule. It is not a
+JCO procedure and has not been through subject-matter authoring or redaction sign-off. **The twelve
+remaining procedures are NOT invented**: the flight plan names three for v1 and requires fifteen
+seeded as data, but does not name the other twelve, and the interface states that gap in the library
+rather than filling it. Asking is cheaper than guessing.
+
+**Operator progress persists, in an interim store named as interim.** One atomic JSON file with the
+same write-to-temporary-then-rename discipline as the session store, behind an interface narrow
+enough that the SQLite swap the plan settles on is one class. Mode 0600 from `os.open`, because this
+is the file that will hold personal performance data. Every caller uses one synthetic operator id,
+so no named-individual record exists before the DPIA is signed, and the interface footer says so.
+
+**Also.** `create_app` was at the seven-parameter cap the quality gate enforces, so the two rate
+limiters are grouped into `Limiters` and the training paths into `TrainingPaths` - grouping two
+values always supplied together, rather than a suppression that would not have made the signature
+easier to read. A fifth content kind, `drills`, is one entry in `CONTENT_KINDS`. Both new test
+suites are registered in the security sweep with thirteen new control rows in `docs/SECURITY.md`
+and a written reason for every test not cited.
+
+**Verified.** Loop green under the pinned toolchain: 898 passed, 1 skipped, coverage 96.84%, 77 pins
+matched, three lock files clean. Driven end to end in Chromium against a real server: the drill, the
+reveal, the dashboard and the library all render and the loop completes.
+
+**Not done, and named rather than implied.** Scenario mode on the running clock (step 11), the
+debrief's deterministic replay against the expert trace (step 8 proper - the reveal is the drill's
+debrief, not the scenario's), identity and the supervisor audit trail (step 10), scorer validation
+against expert human rating (step 12), and the guided first-run worked example. Nothing is packaged
+and nothing is deployed.
+
 ## V0.23.11 (2026-08-27)
 
 **What.** `docs/DEPENDENCY-GATE.md`: what leg six of the verification loop is, why it is built the
 way it is, and what to do when it fires. Documentation only; no code changed.
 
 **Why write it down.** The reasoning behind that leg lived in comments inside `scripts/verify.sh`
-and in four tests spread across the contract suite. All of it is real and all of it is load-bearing
-- the structural JSON classification rather than a grep over the log text, the `OFFLINE=1` skip
-that changes the final banner, the resolved-interpreter rule, the pipe guard - and none of it was
-readable in one place. This repository has already lost one established fact to a context
+and in four tests spread across the contract suite. All of it is real and all of it is
+load-bearing: the structural JSON classification rather than a grep over the log text, the
+`OFFLINE=1` skip that changes the final banner, the resolved-interpreter rule, the pipe guard.
+None of it was readable in one place. This repository has already lost one established fact to a context
 compaction and written a `chmod` instruction for a PowerShell operator as a result, so a rule that
 exists only as a comment beside its implementation is a rule that will be re-derived, and probably
 re-derived wrong.

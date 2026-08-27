@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "id": "drill-fragmentation",
+    "version": "v1",
+    "status": "active",
+    "title": "A count that keeps climbing",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "procedure_id": "separation-versus-breakup",
+  "procedure_version": "v1",
+  "axis": "event-classification",
+  "plot_kind": "range-time",
+  "prompt": "A parent object with new associated objects. Name the event, and the first action the governing procedure requires.",
+  "plot_description": "Range from the parent against time for each associated object. Many pieces depart in both directions at a wide range of rates, and new pieces keep appearing at each sensor revisit.",
+  "accepted_classifications": [
+    "fragmentation",
+    "breakup",
+    "break up",
+    "debris event",
+    "fragmentation event",
+    "breakup event"
+  ],
+  "accepted_first_actions": [
+    "count the associated objects",
+    "count the associated objects and characterise the growth",
+    "characterise how the count is growing",
+    "examine the spread in period and altitude"
+  ],
+  "confusable_with": [
+    "deliberate separation",
+    "separation"
+  ],
+  "expert_cue": "Wide, roughly symmetric energy spread and a count that has not stopped growing. Both point the same way, and neither alone would be enough.",
+  "difficulty": 950,
+  "sparta_technique_ids": []
+}

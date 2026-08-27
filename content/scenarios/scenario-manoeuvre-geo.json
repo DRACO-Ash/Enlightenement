@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "id": "scenario-manoeuvre-geo",
+    "version": "v1",
+    "status": "active",
+    "title": "Unattributed geostationary drift rate change",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "procedure_id": "manoeuvre-detection",
+  "procedure_version": "v1",
+  "event_class": "manoeuvre",
+  "briefing": "A geostationary object under routine custody has moved outside its predicted along-track position. Establish whether this is a manoeuvre, characterise it, and take it to the reporting threshold.",
+  "expected_response": [
+    "Confirm the change in two independent fits before treating it as real.",
+    "Exclude a fit artefact by checking epoch spacing and residuals.",
+    "Estimate the delta-v and judge it against the platform class.",
+    "Classify the manoeuvre and state a confidence.",
+    "Confirm the protected-object check was performed before reporting."
+  ],
+  "seeded_parameters": [
+    "regime",
+    "longitude",
+    "sensor availability",
+    "noise level",
+    "event timing"
+  ],
+  "sparta_technique_ids": []
+}

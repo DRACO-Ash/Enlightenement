@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "id": "drill-corrected-hold",
+    "version": "v1",
+    "status": "active",
+    "title": "A loop that is being corrected",
+    "authored_by": "Claude Opus (illustrative draft, pending Ash authoring)",
+    "authored_on": "2026-08-27",
+    "change_reason": "ILLUSTRATIVE content authored to exercise the drill loop, the scoring engine and the interface end to end. Derived only from public open-source material on space domain awareness practice, per the flight plan's public-sources rule. It is NOT a JCO procedure and has not been authored or validated by a subject-matter expert. Ash owns authoring and redaction sign-off; every step, threshold and answer key here is TBC, re-verify."
+  },
+  "procedure_id": "rpo-response",
+  "procedure_version": "v1",
+  "axis": "cue-detection",
+  "plot_kind": "hill-relative",
+  "prompt": "Two objects. Name the event, and the first action the governing procedure requires.",
+  "plot_description": "Relative position of a secondary about a primary. The loop drifts slowly outward for several revolutions, then snaps back to its original size, then drifts out again.",
+  "accepted_classifications": [
+    "controlled proximity operations",
+    "proximity operations",
+    "rpo",
+    "controlled rpo",
+    "station keeping in the relative frame",
+    "maintained relative position",
+    "co-orbital hold"
+  ],
+  "accepted_first_actions": [
+    "establish the relative motion in the hill frame",
+    "determine whether relative motion is bounded",
+    "increase observation tasking",
+    "check whether the relative motion is bounded"
+  ],
+  "confusable_with": [
+    "uncontrolled conjunction",
+    "natural drift"
+  ],
+  "expert_cue": "The snap-back is the cue. Natural dynamics let the loop grow; only control returns it. That is control authority made visible.",
+  "difficulty": 1300,
+  "sparta_technique_ids": []
+}

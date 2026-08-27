@@ -60,6 +60,7 @@ from enlightenment import __version__
 from enlightenment.audit import ANONYMOUS_ACTOR, audit, log_event, sanitise_log_value
 from enlightenment.auth import AUTH_HEADER, token_ok
 from enlightenment.config import Config, load_config, token_length_bucket
+from enlightenment.content import ContentStore
 from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
 from enlightenment.ratelimit import RateLimiter
@@ -71,6 +72,8 @@ from enlightenment.storage import (
     UnknownSessionError,
     probe_writable,
 )
+from enlightenment.training import DrillEngine, ProgressStore
+from enlightenment.training_api import register_training_routes, resolve_content_root
 
 #: Liveness paths. Cheap, dependency-free, always 200: a downstream outage must never
 #: restart a healthy container.
@@ -135,6 +138,35 @@ class ProbeSettings:
 
     timeout: float = PROBE_TIMEOUT_SECONDS
     cache_seconds: float = PROBE_CACHE_SECONDS
+
+
+@dataclass(frozen=True, slots=True)
+class Limiters:
+    """The two rate limiters one app instance shares.
+
+    Grouped rather than passed separately, and the reason is the same one recorded on
+    `ProbeSettings`: `create_app` sits at the seven-parameter cap the platform's quality gate
+    enforces (Sonar S107), and the training layer needed a parameter. Grouping two values that
+    are always supplied together is the honest way to make room; a suppression would not have
+    made the signature any easier to read.
+    """
+
+    coarse: RateLimiter | None = None
+    strict: RateLimiter | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingPaths:
+    """Where the training layer reads content and writes progress.
+
+    One parameter object rather than two more keyword arguments on `create_app`, which was
+    already at the seven-parameter cap the platform's quality gate enforces (Sonar S107). Both
+    default to None and resolve at registration, so a test overrides one without naming the
+    other.
+    """
+
+    content_root: Path | None = None
+    progress_path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -662,14 +694,16 @@ def create_app(
     store: TrainingStore | None = None,
     probe: ProbeFn | None = None,
     probe_settings: ProbeSettings | None = None,
-    global_limiter: RateLimiter | None = None,
-    write_limiter: RateLimiter | None = None,
+    limiters: Limiters | None = None,
     clock: Callable[[], float] | None = None,
+    training: TrainingPaths | None = None,
 ) -> FastAPI:
     """Build the application without listening.
 
     Every dependency is injectable, so the suite needs no network, no real clock, and no
-    filesystem beyond a temporary directory.
+    filesystem beyond a temporary directory. `content_root` and `progress_path` extend that to the
+    training layer: a test points them at a temporary tree and never touches the shipped content
+    or an operator's stored progress.
     """
     settings = config if config is not None else load_config()
     ticks = clock if clock is not None else time.monotonic
@@ -678,8 +712,10 @@ def create_app(
         store=store if store is not None else TrainingStore(settings.data_dir),
         probe=probe if probe is not None else probe_writable,
         probe_settings=probe_settings if probe_settings is not None else ProbeSettings(),
-        coarse=global_limiter or RateLimiter(GLOBAL_LIMIT, GLOBAL_WINDOW_SECONDS),
-        strict=write_limiter or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
+        coarse=(limiters.coarse if limiters else None)
+        or RateLimiter(GLOBAL_LIMIT, GLOBAL_WINDOW_SECONDS),
+        strict=(limiters.strict if limiters else None)
+        or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
         started=ticks(),
         clock=ticks,
         probe_pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe"),
@@ -748,4 +784,41 @@ def create_app(
     _register_probe_routes(app, runtime)
     _register_diagnostics_route(app, runtime)
     _register_session_routes(app, runtime)
+    _register_training(app, runtime, paths=training or TrainingPaths())
     return app
+
+
+def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths) -> None:
+    """Mount the training layer, and never let a content fault stop the container starting.
+
+    The content tree is loaded HERE, at construction, and a failure is logged and carried rather
+    than raised. That is the plan's safe-failure rule applied at the right altitude: a malformed
+    procedure file must produce an author-facing error on the drill endpoints, not a container that
+    will not boot. A container that refuses to start over a content typo cannot serve the health
+    paths that would tell an operator why.
+    """
+    root = paths.content_root if paths.content_root is not None else resolve_content_root()
+    store = ContentStore(root)
+    result = store.reload()
+    if not result.ok:
+        log_event("content.load_failed", root=str(root), errors=len(result.errors))
+    else:
+        log_event(
+            "content.loaded",
+            root=str(root),
+            counts={kind: len(items) for kind, items in result.items.items()},
+        )
+    engine = DrillEngine(
+        content=store,
+        progress=ProgressStore(
+            paths.progress_path
+            if paths.progress_path is not None
+            else runtime.settings.data_dir / "progress.json"
+        ),
+    )
+    register_training_routes(
+        app,
+        content=store,
+        engine=engine,
+        guard_write=lambda request: _guard_write_rate(runtime, request),
+    )

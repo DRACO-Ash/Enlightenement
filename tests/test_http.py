@@ -20,6 +20,7 @@ from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
 from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
+    Limiters,
     ProbeSettings,
     _expected_rev,
     create_app,
@@ -595,7 +596,12 @@ def test_an_unparsable_if_match_is_ignored_rather_than_failing_the_request(
 def test_the_strict_tier_returns_429_after_its_limit_on_a_post(
     config: Config, store: TrainingStore
 ) -> None:
-    app = create_app(config=config, store=store, probe=ok_probe, write_limiter=RateLimiter(2, 60.0))
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(strict=RateLimiter(2, 60.0)),
+    )
     with TestClient(app) as client:
         codes = [client.post("/api/v1/sessions", json=VALID_SESSION).status_code for _ in range(3)]
     assert codes == [201, 201, 429]
@@ -608,7 +614,12 @@ def test_the_strict_tier_returns_429_after_its_limit_on_a_patch(
     stay green, which means it asserts nothing. Each PATCH is a full snapshot
     read-modify-write plus a backup copy, so an unlimited one is real volume churn.
     """
-    app = create_app(config=config, store=store, probe=ok_probe, write_limiter=RateLimiter(3, 60.0))
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(strict=RateLimiter(3, 60.0)),
+    )
     with TestClient(app) as client:
         assert client.post("/api/v1/sessions", json=VALID_SESSION).status_code == 201
         first = client.patch("/api/v1/sessions/alpha-one", json={"title": "one"})
@@ -620,7 +631,10 @@ def test_the_strict_tier_returns_429_after_its_limit_on_a_patch(
 
 def test_the_coarse_tier_returns_429_after_its_limit(config: Config, store: TrainingStore) -> None:
     app = create_app(
-        config=config, store=store, probe=ok_probe, global_limiter=RateLimiter(2, 60.0)
+        config=config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(coarse=RateLimiter(2, 60.0)),
     )
     with TestClient(app) as client:
         assert client.get("/api/v1/sessions").status_code == 200
@@ -630,7 +644,10 @@ def test_the_coarse_tier_returns_429_after_its_limit(config: Config, store: Trai
 
 def test_probe_paths_are_never_rate_limited(config: Config, store: TrainingStore) -> None:
     app = create_app(
-        config=config, store=store, probe=ok_probe, global_limiter=RateLimiter(1, 3600.0)
+        config=config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(coarse=RateLimiter(1, 3600.0)),
     )
     with TestClient(app) as client:
         for path in ("/", "/livez", "/ping", "/health", "/healthz", "/readyz"):
@@ -678,7 +695,10 @@ def test_a_rate_limited_response_still_carries_the_cross_origin_header(
 ) -> None:
     """Without the header a browser client sees an opaque network error rather than a 429."""
     app = create_app(
-        config=token_config, store=store, probe=ok_probe, global_limiter=RateLimiter(1, 3600.0)
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(coarse=RateLimiter(1, 3600.0)),
     )
     with TestClient(app) as client:
         client.get("/api/v1/sessions", headers={"origin": TEST_ORIGIN})
@@ -809,7 +829,7 @@ def test_an_oversize_request_still_spends_rate_limit_budget(
     64 KB-body requests without ever being refused.
     """
     limiter = RateLimiter(2, 60.0)
-    app = create_app(config=config, store=store, probe=ok_probe, global_limiter=limiter)
+    app = create_app(config=config, store=store, probe=ok_probe, limiters=Limiters(coarse=limiter))
     with TestClient(app) as client:
         oversize = b"x" * (MAX_BODY_BYTES + 1)
         headers = {"content-type": "application/json"}

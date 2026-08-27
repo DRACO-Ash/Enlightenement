@@ -141,6 +141,57 @@ class Procedure(BaseModel):
     sparta_technique_ids: list[str] = Field(default_factory=list, max_length=40)
 
 
+class PlotKind(StrEnum):
+    """Which surface a drill item renders its cue on.
+
+    An enum rather than free text, and this is the one place in the content tree where a closed
+    vocabulary is right: each value names a RENDERER that exists in the client and a generator that
+    exists in the physics layer. An author who invents a fourth value has authored a drill that
+    cannot be drawn, and the plan's rule is that a malformed file is rejected with an author-facing
+    error rather than serving a broken scenario.
+    """
+
+    LONGITUDE_DRIFT = "longitude-drift"
+    HILL_RELATIVE = "hill-relative"
+    RANGE_TIME = "range-time"
+
+
+class DrillItem(BaseModel):
+    """One cue-recognition item: a data presentation, and what a correct answer looks like.
+
+    **The answer is never on screen.** The plan is explicit that this is production, not
+    recognition, so there is no options list in this model and there is nothing for the client to
+    render as a multiple choice. `accepted_classifications` and `accepted_first_actions` are
+    ANSWER KEYS, held server-side and compared against what the operator typed. They reach the
+    client only after the operator has committed an answer.
+
+    `difficulty` is the item's starting Elo rating. It moves as operators meet it, so this is a
+    seed value rather than a fixed property, which is why it is authored as an integer with a wide
+    band rather than as a three-level enum.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
+
+    meta: _Content
+    procedure_id: str = Field(min_length=1, max_length=64, pattern=CONTENT_ID_PATTERN)
+    procedure_version: str = Field(pattern=CONTENT_VERSION_PATTERN)
+    axis: str = Field(min_length=1, max_length=64, pattern=CONTENT_ID_PATTERN)
+    plot_kind: PlotKind
+    prompt: str = Field(min_length=1, max_length=_MAX_PROSE)
+    #: What the operator is looking at, in words, for the screen-reader path and for the debrief.
+    #: Mandatory rather than optional: a plot with no text equivalent fails the accessibility floor,
+    #: and the floors are code standards here, not polish.
+    plot_description: str = Field(min_length=1, max_length=_MAX_PROSE)
+    accepted_classifications: list[str] = Field(min_length=1, max_length=20)
+    accepted_first_actions: list[str] = Field(min_length=1, max_length=20)
+    #: The look-alike this item discriminates against, named so the debrief can say what the
+    #: operator probably confused it with rather than only that they were wrong.
+    confusable_with: list[str] = Field(default_factory=list, max_length=10)
+    expert_cue: str = Field(min_length=1, max_length=_MAX_PROSE)
+    difficulty: int = Field(ge=600, le=2400)
+    sparta_technique_ids: list[str] = Field(default_factory=list, max_length=40)
+
+
 class ScenarioTemplate(BaseModel):
     """A parameterised scenario: the expected response is fixed, the instantiation is seeded.
 

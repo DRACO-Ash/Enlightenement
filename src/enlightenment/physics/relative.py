@@ -28,9 +28,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
-from sgp4.api import Satrec
+if TYPE_CHECKING:  # pragma: no cover - annotation only
+    # Deferred for the same architectural reason recorded in `propagation.py`: building the
+    # application must not import the `sgp4` extension, and this module is on the request path
+    # because the drill layer solves relative motion with it. `Satrec` appears here only as an
+    # annotation, and `from __future__ import annotations` makes that a string, so nothing is
+    # needed at run time. `mean_motion_from_elements` reads an attribute off whatever it is
+    # handed and never constructs one.
+    from sgp4.api import Satrec
+
 
 #: Earth's gravitational parameter, cubic kilometres per second squared, as SGP4 uses it.
 #:
