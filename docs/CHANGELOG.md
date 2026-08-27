@@ -2,6 +2,33 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.11 (2026-08-27)
+
+**What.** `docs/DEPENDENCY-GATE.md`: what leg six of the verification loop is, why it is built the
+way it is, and what to do when it fires. Documentation only; no code changed.
+
+**Why write it down.** The reasoning behind that leg lived in comments inside `scripts/verify.sh`
+and in four tests spread across the contract suite. All of it is real and all of it is load-bearing
+- the structural JSON classification rather than a grep over the log text, the `OFFLINE=1` skip
+that changes the final banner, the resolved-interpreter rule, the pipe guard - and none of it was
+readable in one place. This repository has already lost one established fact to a context
+compaction and written a `chmod` instruction for a PowerShell operator as a result, so a rule that
+exists only as a comment beside its implementation is a rule that will be re-derived, and probably
+re-derived wrong.
+
+**It states its own limits, which is the part that makes it usable.** The clean path is observed
+and its figures are recorded. The real-advisory branch and the unreachable-endpoint branch have
+never fired in this repository, so they are described from the implementation and labelled as
+designed and reviewed rather than field-tested. Also recorded: leg one is one-directional by
+decision and why asserting the reverse would fail every runner; `tools/` sits outside both the
+coverage gate and `sonar.sources=src`, so mutation testing at the review gates is the only check on
+it; and a clean advisory scan is a statement about today, not a proof, which is why the leg runs on
+every change rather than once per release.
+
+**Verified.** Loop green under the pinned toolchain: 827 passed, 1 skipped, coverage 98.90%, 77
+pins matched, three lock files clean. No source file was touched, so the figures are unchanged from
+V0.23.10 by design rather than by coincidence.
+
 ## V0.23.10 (2026-08-25)
 
 **What.** The engineering gate returned FAIL on V0.23.9 with a blocker and three majors. It
