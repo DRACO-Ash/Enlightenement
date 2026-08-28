@@ -1,0 +1,57 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "The loop", "x": 0, "y": 0, "w": 1440, "h": 860 },
+    { "file": "Reveal.dc.html", "title": "The reveal", "x": 1580, "y": 0, "w": 1440, "h": 1000 },
+    { "file": "SessionClose.dc.html", "title": "Run closed", "x": 0, "y": 1180, "w": 1440, "h": 960 },
+    { "file": "Progress.dc.html", "title": "Your shape", "x": 1580, "y": 1180, "w": 1440, "h": 920 },
+    { "file": "FirstContact.dc.html", "title": "First contact", "x": 0, "y": 2320, "w": 1440, "h": 980 },
+    { "file": "Debrief.dc.html", "title": "Scenario debrief", "x": 1580, "y": 2320, "w": 1440, "h": 1150 }
+  ],
+  "annotations": [
+    {
+      "id": "thesis", "x": 0, "y": -330, "w": 1440,
+      "text": "PHOSPHOR\n\nThe thesis: in this domain the thing that pulls people back is not celebration, it is CONSEQUENCE. Operators lean in because something is happening and they are the one who has to call it. So the interface is built as an instrument, not a quiz.\n\nLight means attribution. AMBER is you - your trace, your call, your marks. CYAN is the system, and the expert's read. That is not decoration: it solves the debrief's whole information problem at the palette level, because when the expert's trace blooms over yours you see the difference without reading a legend.\n\nThe design risk I took is emissive light: glow, bloom, scanline, calibration furniture. It is authentic - space domain analysts read displays descended from phosphor instruments - and it gives the reveal somewhere to go."
+    },
+    {
+      "id": "not-done", "x": 1580, "y": -330, "w": 1440,
+      "text": "WHAT I DELIBERATELY DID NOT DO, and why\n\nNo streaks. No badges. No points-as-currency. No confetti. No leaderboard. No cohort comparison.\n\nTwo reasons, and neither is squeamishness. First, your own user research: operators are \"motivated by competence and mission readiness, not by trivia or streaks\" and are \"highly allergic to anything that feels childish or like surveillance\". Second, the overjustification effect - extrinsic rewards reliably crowd out intrinsic motivation for a task someone already finds meaningful, and these people already find this meaningful.\n\nSo everything below builds engagement out of competence, curiosity and consequence instead. That is harder and it lasts longer."
+    },
+    {
+      "id": "m1", "x": 3160, "y": 0, "w": 860,
+      "text": "MECHANISM 1 - THE OPEN LOOP (Zeigarnik)\n\nAn unresolved task occupies attention. So there is never a \"start next?\" button: the next signal is already sweeping in at the bottom of the drill, and the run shows five marks so you can see the end.\n\nYou do not decide to do one more. You are already in it.\n\nThis is the single biggest lever on your acceptance line - \"tight enough that I do one more without deciding to\"."
+    },
+    {
+      "id": "m2", "x": 3160, "y": 420, "w": 860,
+      "text": "MECHANISM 2 - VOCABULARY, NOT BADGES\n\nThe strongest intrinsic hook available here is becoming an insider. So every discriminating cue has a NAME an experienced analyst would actually say out loud: \"the count that stops\", \"the impossible rate\", \"the snap-back\".\n\nYou collect phrases, not trophies. Eleven of thirty-four. It reads as apprenticeship rather than a loyalty card, and it does real cognitive work: a named pattern is retrieved faster than an unnamed one.\n\nThis is the mechanism I would fight hardest to keep."
+    },
+    {
+      "id": "m3", "x": 3160, "y": 840, "w": 860,
+      "text": "MECHANISM 3 - THE EXPERT IS THE RELATEDNESS\n\nSelf-Determination Theory says motivation needs autonomy, competence and relatedness. Leaderboards are banned by the plan, and would be wrong for this audience anyway.\n\nSo relatedness comes from a named, dated human instead: \"Ash knew at 02:08.\" You are apprenticing to a specific person's read, not competing with a scoreboard.\n\nThe data model already supports it - every expert trace records its author and date. Nothing new is needed but the decision to put the name on screen."
+    },
+    {
+      "id": "m4", "x": 3160, "y": 1260, "w": 860,
+      "text": "MECHANISM 4 - TIME RECORDED, NOT THREATENED\n\nA sweep, not a countdown. Nothing expires and nothing fails you for being slow.\n\nSpeed reappears in the reveal as your time-to-call against the expert's - and the copy makes the honest point that faster is not better, because on the debrief screen the expert WAITED and the waiting was the skill.\n\nTension without punishment, which is what \"errors are learning events\" has to mean in an interface rather than in a policy."
+    },
+    {
+      "id": "m5", "x": 3160, "y": 1680, "w": 860,
+      "text": "MECHANISM 5 - DESIRABLE DIFFICULTY, MADE VISIBLE\n\nFlow needs challenge matched to skill; Bjork's desirable difficulty says the productive zone is just past comfortable. The Elo rating already puts items there. Nothing showed the operator that.\n\nNow it does: \"this signal sat +236 above your reach, and you took it on\". Stretching becomes visibly creditable even when the answer was wrong.\n\nThat one sentence turns a miss from a failure into evidence of range."
+    },
+    {
+      "id": "m6", "x": 3160, "y": 2100, "w": 860,
+      "text": "MECHANISM 6 - THE PEAK-END RULE\n\nPeople judge an experience by its peak and its ending, not its average. A drill loop with no ending has no ending to judge.\n\nSo a run is five signals with a deliberate close: the arc of what happened, the phrase you added, what is coming back and when, and the calibration line. It closes on something you landed.\n\n\"Four from five, and the one you missed is the one you will remember\" is the design in one sentence."
+    },
+    {
+      "id": "m7", "x": 3160, "y": 2520, "w": 860,
+      "text": "MECHANISM 7 - COMPETENCE AS A SHAPE\n\n\"1,241 points\" is not identity. \"This is my shape\" is.\n\nSix axes as a figure with the confidence interval drawn as a BAND rather than a spike, so it cannot lie about a small sample. Two axes read NOT MEASURED and are drawn outside the figure entirely - a different statement from zero, and the difference matters when a supervisor is reading it.\n\nThe precise table sits beside it. The figure is for recognition; the table is for reading."
+    },
+    {
+      "id": "palette", "x": 3160, "y": 2940, "w": 860,
+      "text": "THE PALETTE, MEASURED\n\nEvery accent sits at oklch(0.845 0.145 h) - one lightness, one chroma, hue doing the work. Measured on the ground: amber 11.77:1, cyan 12.90:1, green 12.97:1, coral 10.43:1, violet 11.37:1. Grounds are warm near-blacks, never #000.\n\nThe figure that shaped the design: those accents are only 1.10 to 1.24 : 1 AGAINST EACH OTHER. So hue is free to carry attribution and can never be trusted to carry meaning. Hence your trace is dashed where the expert's is solid, and every status has a glyph and a word as well as a colour.\n\nGrid furniture is 1.39:1 and therefore never carries meaning."
+    },
+    {
+      "id": "shipping", "x": 3160, "y": 3360, "w": 860,
+      "text": "WHAT THIS COSTS TO SHIP, honestly\n\nMostly nothing new. The glow is a wide low-opacity stroke under a tight bright one, which is what canvas shadowBlur already gives; the scanline is one repeating-linear-gradient; the bloom is four staggered CSS keyframes with a non-motion equivalent that still marks the moment.\n\nThe real cost is TYPE. Saira, Saira Condensed and Azeret Mono are webfonts, and the air-gap forbids a font host - so they ship subset and embedded as woff2 data URIs, which is permitted (\"all assets vendored\") and adds roughly 60 to 90 KB. If you would rather not, the whole design holds on a system stack with the condensed drama coming from letter-spacing instead. Say which.\n\nUnchanged: no CDN, no external request, script-src 'self', WCAG 2.2 AA, 18px body floor, reduced motion honoured."
+    }
+  ],
+  "launch": { "view": "focused", "file": "Reveal.dc.html" }
+}

@@ -1,0 +1,337 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <style>
+    :root {
+      /* Grounds: warm near-blacks, deliberately not #000. */
+      --void: #0A0A0C; --deck: #141419; --raised: #1D1D24; --inset: #050506;
+      /* One accent family. Fixed lightness and chroma; hue carries attribution. */
+      --you: #FFBB55;        /* amber phosphor - the operator */
+      --sys: #00E6FA;        /* cyan phosphor - the system, and the expert */
+      --ok: #7CE79C; --no: #FFA4A1; --sig: #DBB5FF;
+      /* Text ramp: warm-tinted, never pure grey. */
+      --ink: #F2F0F4; --ink2: #B9B6C2; --ink3: #807D8C; --ink4: #5A5866;
+      /* Furniture. 1.39:1 - decorative only, never carries meaning. */
+      --grid: #2A2A34; --grid2: #3C3C4A;
+      --display: "Saira Condensed", "Arial Narrow", sans-serif;
+      --body: Saira, system-ui, sans-serif;
+      --data: "Azeret Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--void); color: var(--ink);
+      font-family: var(--body); font-size: 18px; line-height: 1.5;
+      font-weight: 300; letter-spacing: 0.005em;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--sys); } a:hover { color: var(--ink); }
+
+    /* ---- type ---------------------------------------------------------- */
+    .kicker {
+      font-family: var(--data); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink3); margin: 0;
+    }
+    h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; line-height: 1.02;
+                 letter-spacing: -0.005em; text-wrap: balance; }
+    h1 { font-size: 3.1rem; }
+    h2 { font-size: 2.05rem; }
+    h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase;
+         color: var(--ink2); }
+    .num { font-family: var(--data); font-variant-numeric: tabular-nums; font-weight: 400; }
+    p { margin: 0; }
+    .prose { max-width: 62ch; color: var(--ink2); }
+    em { font-style: normal; color: var(--ink); }
+
+    /* ---- chrome: a thin instrument rail, not a web header ---------------- */
+    .rail {
+      display: flex; align-items: center; gap: 28px;
+      padding: 14px 28px; border-bottom: 1px solid var(--grid);
+      background: linear-gradient(180deg, var(--deck), var(--void));
+    }
+    .mark { font-family: var(--display); font-size: 1rem; font-weight: 700;
+            letter-spacing: 0.34em; text-transform: uppercase; color: var(--ink); }
+    .rail nav { display: flex; gap: 22px; margin-left: 8px; }
+    .rail nav span { font-family: var(--data); font-size: 0.68rem; font-weight: 500;
+                     letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink4);
+                     padding-bottom: 2px; border-bottom: 1px solid transparent; }
+    .rail nav span.on { color: var(--you); border-bottom-color: var(--you); }
+    .rail .push { flex: 1; }
+    .rail .stat { font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.1em;
+                  color: var(--ink3); display: flex; gap: 6px; align-items: baseline; }
+    .rail .stat b { color: var(--ink); font-weight: 500; }
+
+    /* ---- layout --------------------------------------------------------- */
+    main { padding: 34px 28px 28px; }
+    .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+             align-items: start; }
+    .stack { display: grid; gap: 22px; }
+    .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- the scope: an emissive instrument panel ------------------------- */
+    .scope { position: relative; background: var(--inset); border: 1px solid var(--grid);
+             border-radius: 2px; overflow: hidden; }
+    .scope::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px,
+                                            transparent 1px 3px);
+    }
+    .scope-head { display: flex; align-items: baseline; gap: 18px; padding: 10px 14px;
+                  border-bottom: 1px solid var(--grid); font-family: var(--data);
+                  font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+                  color: var(--ink3); }
+    .scope-head b { color: var(--ink2); font-weight: 500; }
+    .scope-head .push { flex: 1; }
+
+    /* ---- controls -------------------------------------------------------- */
+    .lab { font-family: var(--data); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.2em;
+           text-transform: uppercase; color: var(--ink3); display: block; margin-bottom: 7px; }
+    .entry { border: 0; border-bottom: 2px solid var(--grid2); background: transparent;
+             padding: 6px 0 9px; font-family: var(--display); font-size: 1.5rem;
+             font-weight: 500; color: var(--ink); min-height: 2.2rem; letter-spacing: 0.01em; }
+    .entry.live { border-bottom-color: var(--you); color: var(--you);
+                  text-shadow: 0 0 18px rgba(255,187,85,0.35); }
+    .entry .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--you);
+                    vertical-align: -0.16em; }
+    .under { font-size: 0.8rem; color: var(--ink4); margin-top: 8px; }
+
+    .steps { display: flex; gap: 4px; }
+    .steps div { flex: 1; text-align: center; padding: 9px 4px 7px; border: 1px solid var(--grid);
+                 border-radius: 2px; font-family: var(--data); font-size: 0.62rem;
+                 letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+    .steps div .p { display: block; font-size: 0.9rem; letter-spacing: 0; color: var(--ink4);
+                    margin-top: 3px; }
+    .steps div.on { border-color: var(--you); color: var(--you);
+                    box-shadow: inset 0 0 22px rgba(255,187,85,0.10); }
+    .steps div.on .p { color: var(--you); }
+
+    .act { display: inline-flex; align-items: center; gap: 12px; font-family: var(--display);
+           font-size: 1.05rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+           padding: 13px 24px; border: 1px solid var(--you); border-radius: 2px;
+           color: var(--void); background: var(--you); }
+    .act.quiet { background: transparent; color: var(--ink2); border-color: var(--grid2);
+                 font-weight: 500; }
+    .act .k { font-family: var(--data); font-size: 0.6rem; letter-spacing: 0.1em;
+              opacity: 0.7; border: 1px solid currentColor; border-radius: 2px; padding: 1px 4px; }
+
+    /* ---- verdict: colour, AND a shape, AND a word ------------------------ */
+    .verdict { display: flex; align-items: flex-start; gap: 14px; }
+    .verdict .glyph { font-family: var(--data); font-size: 1.5rem; line-height: 1; flex: none;
+                      margin-top: 2px; }
+    .verdict.hit { color: var(--ok); } .verdict.miss { color: var(--no); }
+    .verdict h2 { color: inherit; }
+
+    /* ---- the signature: vocabulary you collect, not a badge -------------- */
+    .sig {
+      border: 1px solid var(--sig); border-radius: 2px; padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(219,181,255,0.07), transparent);
+    }
+    .sig .kicker { color: var(--sig); }
+    .sig .name { font-family: var(--display); font-size: 1.7rem; font-weight: 600;
+                 color: var(--ink); margin: 5px 0 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--data);
+            font-size: 0.66rem; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 2px;
+            border: 1px solid var(--grid2); color: var(--ink3); }
+    .chip.have { border-color: var(--sig); color: var(--sig); }
+
+    /* ---- receipt -------------------------------------------------------- */
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { font-family: var(--data); font-size: 0.6rem; font-weight: 500; letter-spacing: 0.18em;
+         text-transform: uppercase; color: var(--ink4); text-align: left;
+         padding: 0 12px 8px 0; border-bottom: 1px solid var(--grid); }
+    td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--grid); vertical-align: top;
+         color: var(--ink2); }
+    td.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums;
+           color: var(--ink); white-space: nowrap; }
+    td b { color: var(--ink); font-weight: 500; }
+
+    .meter { display: flex; align-items: center; gap: 10px; }
+    .meter .t { position: relative; height: 3px; flex: 1; background: var(--grid);
+                border-radius: 2px; }
+    .meter .t i { position: absolute; inset: 0 auto 0 0; background: currentColor;
+                  border-radius: 2px; }
+    .meter .v { font-family: var(--data); font-size: 0.72rem; color: var(--ink3);
+                font-variant-numeric: tabular-nums; }
+
+    /* ---- motion: ONE orchestrated moment, the reveal bloom -------------- */
+    @keyframes bloom {
+      0% { opacity: 0; transform: translateY(9px) scale(0.994); filter: brightness(2.6); }
+      55% { filter: brightness(1.25); }
+      100% { opacity: 1; transform: none; filter: none; }
+    }
+    @keyframes trace { from { stroke-dashoffset: 2400; } to { stroke-dashoffset: 0; } }
+    @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(var(--w, 700px)); } }
+    .b1 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) both; }
+    .b2 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 130ms both; }
+    .b3 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 260ms both; }
+    .b4 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 390ms both; }
+    @media (prefers-reduced-motion: reduce) {
+      .b1, .b2, .b3, .b4 { animation: none; }
+      /* Not a removal: the moment is still MARKED, with a rule that arrives instead of a bloom. */
+      .b1, .b2, .b3, .b4 { border-left: 2px solid var(--sys); padding-left: 14px; }
+      * { animation-duration: 0s !important; transition: none !important; }
+    }
+
+    .proposal { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.2em;
+                text-transform: uppercase; color: var(--sig); border: 1px solid var(--sig);
+                border-radius: 2px; padding: 3px 9px; }
+
+    .overlay { position: relative; }
+    .legend { display: flex; gap: 22px; padding: 10px 14px; border-top: 1px solid var(--grid);
+              font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.13em;
+              text-transform: uppercase; }
+    .legend span { display: flex; align-items: center; gap: 8px; color: var(--ink3); }
+    .legend svg { flex: none; }
+    .clock-cmp { display: grid; grid-template-columns: auto 1fr auto; gap: 10px 14px;
+                 align-items: center; font-family: var(--data); font-size: 0.72rem;
+                 color: var(--ink3); }
+    .clock-cmp .who { letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.62rem; }
+    .clock-cmp .t { height: 3px; background: var(--grid); position: relative; border-radius: 2px; }
+    .clock-cmp .t i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
+    .stretch { border: 1px solid var(--grid2); border-radius: 2px; padding: 13px 15px;
+               font-family: var(--data); font-size: 0.7rem; letter-spacing: 0.06em;
+               color: var(--ink2); line-height: 1.6; }
+    .stretch b { color: var(--you); font-weight: 500; }
+
+  </style>
+</helmet>
+<div class="rail">
+  <span class="mark">Enlightenment</span>
+  <nav>
+    <span class='on'>Drill</span>
+    <span>Scenario</span>
+    <span>Progress</span>
+    <span>Library</span>
+    <span>Sandbox</span>
+  </nav>
+  <span class="push"></span>
+  <span class="stat">Reach <b>1207</b> <span style="color:var(--no)">&#9660; 7</span></span>
+</div>
+<main>
+  <div class="split">
+    <div>
+      <div class="verdict miss b1">
+        <span class="glyph">&#9660;</span>
+        <div>
+          <h2>Deliberate separation. You called fragmentation.</h2>
+          <p class="prose" style="margin-top:9px">You had the discriminating evidence
+            <em>26 seconds before you committed</em>. The cost was not knowledge, it was calling
+            it before the revisit.</p>
+        </div>
+      </div>
+
+      <div class="scope b2" style="margin-top:24px">
+        <div class="scope-head"><span><b>Range from parent</b></span><span class="push"></span>
+          <span>with the expert read marked</span></div>
+        <svg viewBox="0 0 860 300" width="100%" style="display:block" role="img" aria-label="Range from parent against time, with the expert read overlaid on yours">
+<g stroke="#2A2A34" stroke-width="1">
+<line x1="62" y1="20.0" x2="838" y2="20.0"/>
+<line x1="62" y1="69.6" x2="838" y2="69.6"/>
+<line x1="62" y1="119.2" x2="838" y2="119.2"/>
+<line x1="62" y1="168.8" x2="838" y2="168.8"/>
+<line x1="62" y1="218.4" x2="838" y2="218.4"/>
+<line x1="62" y1="268.0" x2="838" y2="268.0"/>
+</g>
+<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" text-anchor="end">
+<text x="53" y="23.5">12.1</text>
+<text x="53" y="73.1">6.5</text>
+<text x="53" y="122.7">0.8</text>
+<text x="53" y="172.3">-4.9</text>
+<text x="53" y="221.9">-10.6</text>
+<text x="53" y="271.5">-16.2</text>
+</g>
+<polyline points="62.0,126.0 70.2,125.3 78.3,124.4 86.5,123.6 94.7,122.7 102.8,121.7 111.0,121.0 119.2,120.0 127.3,119.2 135.5,118.4 143.7,117.5 151.9,116.5 160.0,115.7 168.2,115.0 176.4,114.0 184.5,113.2 192.7,112.2 200.9,111.3 209.0,110.4 217.2,109.6 225.4,108.7 233.5,107.8 241.7,107.0 249.9,106.2 258.0,105.2 266.2,104.5 274.4,103.5 282.5,102.7 290.7,101.9 298.9,101.0 307.1,100.1 315.2,99.3 323.4,98.5 331.6,97.5 339.7,96.6 347.9,95.7 356.1,94.9 364.2,94.1 372.4,93.2 380.6,92.4 388.7,91.4 396.9,90.6 405.1,89.8 413.2,89.0 421.4,88.0 429.6,87.2 437.7,86.3 445.9,85.4 454.1,84.6 462.3,83.8 470.4,82.8 478.6,82.0 486.8,81.2 494.9,80.3 503.1,79.4 511.3,78.6 519.4,77.6 527.6,76.7 535.8,75.9 543.9,75.0 552.1,74.1 560.3,73.4 568.4,72.5 576.6,71.5 584.8,70.6 592.9,69.8 601.1,69.1 609.3,68.1 617.5,67.2 625.6,66.3 633.8,65.5 642.0,64.7 650.1,63.7 658.3,63.0 666.5,62.0 674.6,61.3 682.8,60.2 691.0,59.4 699.1,58.6 707.3,57.8 715.5,56.8 723.6,56.0 731.8,55.1 740.0,54.3 748.1,53.4 756.3,52.6 764.5,51.7 772.7,50.9 780.8,49.9 789.0,49.2 797.2,48.3 805.3,47.5 813.5,46.5 821.7,45.6 829.8,44.7 838.0,44.0" fill="none" stroke="#00E6FA" stroke-width="7" opacity="0.11"/>
+<polyline points="62.0,126.0 70.2,125.3 78.3,124.4 86.5,123.6 94.7,122.7 102.8,121.7 111.0,121.0 119.2,120.0 127.3,119.2 135.5,118.4 143.7,117.5 151.9,116.5 160.0,115.7 168.2,115.0 176.4,114.0 184.5,113.2 192.7,112.2 200.9,111.3 209.0,110.4 217.2,109.6 225.4,108.7 233.5,107.8 241.7,107.0 249.9,106.2 258.0,105.2 266.2,104.5 274.4,103.5 282.5,102.7 290.7,101.9 298.9,101.0 307.1,100.1 315.2,99.3 323.4,98.5 331.6,97.5 339.7,96.6 347.9,95.7 356.1,94.9 364.2,94.1 372.4,93.2 380.6,92.4 388.7,91.4 396.9,90.6 405.1,89.8 413.2,89.0 421.4,88.0 429.6,87.2 437.7,86.3 445.9,85.4 454.1,84.6 462.3,83.8 470.4,82.8 478.6,82.0 486.8,81.2 494.9,80.3 503.1,79.4 511.3,78.6 519.4,77.6 527.6,76.7 535.8,75.9 543.9,75.0 552.1,74.1 560.3,73.4 568.4,72.5 576.6,71.5 584.8,70.6 592.9,69.8 601.1,69.1 609.3,68.1 617.5,67.2 625.6,66.3 633.8,65.5 642.0,64.7 650.1,63.7 658.3,63.0 666.5,62.0 674.6,61.3 682.8,60.2 691.0,59.4 699.1,58.6 707.3,57.8 715.5,56.8 723.6,56.0 731.8,55.1 740.0,54.3 748.1,53.4 756.3,52.6 764.5,51.7 772.7,50.9 780.8,49.9 789.0,49.2 797.2,48.3 805.3,47.5 813.5,46.5 821.7,45.6 829.8,44.7 838.0,44.0" fill="none" stroke="#00E6FA" stroke-width="1.6"/>
+<polyline points="62.0,126.2 70.2,127.2 78.3,128.7 86.5,129.9 94.7,131.1 102.8,132.3 111.0,133.6 119.2,134.8 127.3,136.0 135.5,137.2 143.7,138.6 151.9,139.8 160.0,141.0 168.2,142.1 176.4,143.4 184.5,144.7 192.7,145.9 200.9,147.2 209.0,148.5 217.2,149.7 225.4,150.8 233.5,152.1 241.7,153.4 249.9,154.6 258.0,155.8 266.2,157.1 274.4,158.3 282.5,159.6 290.7,160.9 298.9,162.1 307.1,163.4 315.2,164.6 323.4,165.9 331.6,167.0 339.7,168.3 347.9,169.4 356.1,170.7 364.2,172.1 372.4,173.1 380.6,174.5 388.7,175.7 396.9,176.9 405.1,178.2 413.2,179.5 421.4,180.7 429.6,182.0 437.7,183.0 445.9,184.5 454.1,185.5 462.3,186.9 470.4,188.1 478.6,189.4 486.8,190.7 494.9,191.9 503.1,193.1 511.3,194.3 519.4,195.4 527.6,196.7 535.8,198.1 543.9,199.2 552.1,200.6 560.3,201.7 568.4,203.0 576.6,204.1 584.8,205.4 592.9,206.8 601.1,208.0 609.3,209.2 617.5,210.3 625.6,211.7 633.8,212.9 642.0,214.2 650.1,215.4 658.3,216.5 666.5,217.9 674.6,219.0 682.8,220.3 691.0,221.5 699.1,222.8 707.3,224.0 715.5,225.3 723.6,226.5 731.8,227.7 740.0,228.9 748.1,230.2 756.3,231.6 764.5,232.8 772.7,234.0 780.8,235.1 789.0,236.4 797.2,237.7 805.3,238.8 813.5,240.2 821.7,241.5 829.8,242.8 838.0,244.0" fill="none" stroke="#00E6FA" stroke-width="7" opacity="0.11"/>
+<polyline points="62.0,126.2 70.2,127.2 78.3,128.7 86.5,129.9 94.7,131.1 102.8,132.3 111.0,133.6 119.2,134.8 127.3,136.0 135.5,137.2 143.7,138.6 151.9,139.8 160.0,141.0 168.2,142.1 176.4,143.4 184.5,144.7 192.7,145.9 200.9,147.2 209.0,148.5 217.2,149.7 225.4,150.8 233.5,152.1 241.7,153.4 249.9,154.6 258.0,155.8 266.2,157.1 274.4,158.3 282.5,159.6 290.7,160.9 298.9,162.1 307.1,163.4 315.2,164.6 323.4,165.9 331.6,167.0 339.7,168.3 347.9,169.4 356.1,170.7 364.2,172.1 372.4,173.1 380.6,174.5 388.7,175.7 396.9,176.9 405.1,178.2 413.2,179.5 421.4,180.7 429.6,182.0 437.7,183.0 445.9,184.5 454.1,185.5 462.3,186.9 470.4,188.1 478.6,189.4 486.8,190.7 494.9,191.9 503.1,193.1 511.3,194.3 519.4,195.4 527.6,196.7 535.8,198.1 543.9,199.2 552.1,200.6 560.3,201.7 568.4,203.0 576.6,204.1 584.8,205.4 592.9,206.8 601.1,208.0 609.3,209.2 617.5,210.3 625.6,211.7 633.8,212.9 642.0,214.2 650.1,215.4 658.3,216.5 666.5,217.9 674.6,219.0 682.8,220.3 691.0,221.5 699.1,222.8 707.3,224.0 715.5,225.3 723.6,226.5 731.8,227.7 740.0,228.9 748.1,230.2 756.3,231.6 764.5,232.8 772.7,234.0 780.8,235.1 789.0,236.4 797.2,237.7 805.3,238.8 813.5,240.2 821.7,241.5 829.8,242.8 838.0,244.0" fill="none" stroke="#00E6FA" stroke-width="1.6"/>
+<circle cx="388.7" cy="91.4" r="26" fill="none" stroke="#DBB5FF" stroke-width="1.2" opacity="0.85"/>
+<circle cx="388.7" cy="91.4" r="26" fill="none" stroke="#DBB5FF" stroke-width="7" opacity="0.10"/>
+<line x1="415.7" y1="99.4" x2="480.7" y2="143.4" stroke="#DBB5FF" stroke-width="1"/>
+<text x="486.7" y="141.4" fill="#DBB5FF" font-size="10.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em">THE COUNT HAD NOT</text>
+<text x="486.7" y="155.4" fill="#DBB5FF" font-size="10.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em">STOPPED GROWING YET</text>
+<rect x="62" y="20" width="325.9" height="248" fill="#FFA4A1" opacity="0.055"/>
+<text x="73" y="35" fill="#FFA4A1" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.13em">YOU CALLED IT IN HERE</text>
+<line x1="387.9" y1="20" x2="387.9" y2="268" stroke="#00E6FA" stroke-width="1.3" opacity="0.9"/>
+<text x="395.9" y="35" fill="#00E6FA" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.13em">SENSOR REVISIT &#183; COUNT STOPS</text>
+</svg>
+        <div class="legend">
+          <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#00E6FA"
+            stroke-width="2"/></svg> The data you had</span>
+          <span><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none"
+            stroke="#DBB5FF" stroke-width="1.2"/></svg> The cue you passed</span>
+          <span><svg width="14" height="9"><rect width="14" height="9" fill="#FFA4A1"
+            opacity="0.35"/></svg> Before the revisit</span>
+        </div>
+      </div>
+
+      <h3 class="b3" style="margin-top:30px">Where the 43.75 went</h3>
+      <table class="b3" style="margin-top:12px">
+        <thead><tr><th>Rule</th><th>What it saw</th><th style="text-align:right">Points</th></tr></thead>
+        <tbody>
+          <tr><td><b>Named the event</b><br><span style="font-family:var(--data);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink4)">event classification</span></td><td>You said <b>fragmentation</b>. That is the look-alike this signal exists to separate.</td><td class="r">0 / 45</td></tr>
+          <tr><td><b>First action</b><br><span style="font-family:var(--data);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink4)">procedure recall</span></td><td><b>Count the associated objects.</b> Straight to it, unprompted.</td><td class="r">35 / 35</td></tr>
+          <tr><td><b>Confidence</b><br><span style="font-family:var(--data);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink4)">calibration</span></td><td>You said <b>75% sure</b> and were wrong. That is the expensive combination.</td><td class="r">8.75 / 20</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="stack">
+      <div class="sig b2">
+        <p class="kicker">Signature learned</p>
+        <p class="name">The count that stops</p>
+        <p class="prose" style="font-size:0.9rem">A separation puts out a few pieces and the count
+          <em>stops</em>. A fragmentation keeps producing them as sensors work through the field.
+          In the first hour neither has happened yet, so the honest call is indeterminate.</p>
+        <div class="row" style="margin-top:14px; gap:7px">
+          <span class="chip have">&#10003; 11 of 34 signatures</span>
+          <span class="chip">+1 today</span>
+        </div>
+      </div>
+
+      <div class="b3">
+        <p class="kicker" style="margin-bottom:11px">Time to call</p>
+        <div class="clock-cmp">
+          <span class="who" style="color:var(--you)">You</span>
+          <span class="t"><i style="width:62%;background:var(--you)"></i></span>
+          <span style="color:var(--you)">02:36</span>
+          <span class="who" style="color:var(--sys)">Ash</span>
+          <span class="t"><i style="width:100%;background:var(--sys)"></i></span>
+          <span style="color:var(--sys)">04:08</span>
+        </div>
+        <p class="under" style="margin-top:12px">Faster is not better. Ash waited for the revisit,
+          and the wait is the skill.</p>
+      </div>
+
+      <div class="stretch b4">
+        This signal sat <b>+236 above your reach</b>. You took it on and got the action right.
+        That is the band where learning actually happens.
+      </div>
+
+      <div class="row b4">
+        <span class="act">Next signal<span class="k">&#9166;</span></span>
+        <span class="act quiet">Replay from 01:44</span>
+      </div>
+      <p class="under">Two more in this run.</p>
+    </div>
+  </div>
+</main>
+<script data-dc-script data-props='{"attribution":{"editor":"enum","options":["dual-phosphor","single-hue"],"default":"dual-phosphor","section":"Direction test"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    // The one real question this direction asks. Amber-you against cyan-expert is the whole idea,
+    // and the measured figure says hue alone can never be trusted: the accents are 1.10:1 against
+    // EACH OTHER. So the dash and the words carry the meaning either way. Flip it and see whether
+    // the second phosphor is earning its place or just decorating.
+    return {};
+  }
+}
+</script>
+</x-dc>
+</body>
+</html>

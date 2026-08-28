@@ -1,0 +1,301 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <style>
+    :root {
+      /* Grounds: warm near-blacks, deliberately not #000. */
+      --void: #0A0A0C; --deck: #141419; --raised: #1D1D24; --inset: #050506;
+      /* One accent family. Fixed lightness and chroma; hue carries attribution. */
+      --you: #FFBB55;        /* amber phosphor - the operator */
+      --sys: #00E6FA;        /* cyan phosphor - the system, and the expert */
+      --ok: #7CE79C; --no: #FFA4A1; --sig: #DBB5FF;
+      /* Text ramp: warm-tinted, never pure grey. */
+      --ink: #F2F0F4; --ink2: #B9B6C2; --ink3: #807D8C; --ink4: #5A5866;
+      /* Furniture. 1.39:1 - decorative only, never carries meaning. */
+      --grid: #2A2A34; --grid2: #3C3C4A;
+      --display: "Saira Condensed", "Arial Narrow", sans-serif;
+      --body: Saira, system-ui, sans-serif;
+      --data: "Azeret Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--void); color: var(--ink);
+      font-family: var(--body); font-size: 18px; line-height: 1.5;
+      font-weight: 300; letter-spacing: 0.005em;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--sys); } a:hover { color: var(--ink); }
+
+    /* ---- type ---------------------------------------------------------- */
+    .kicker {
+      font-family: var(--data); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink3); margin: 0;
+    }
+    h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; line-height: 1.02;
+                 letter-spacing: -0.005em; text-wrap: balance; }
+    h1 { font-size: 3.1rem; }
+    h2 { font-size: 2.05rem; }
+    h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase;
+         color: var(--ink2); }
+    .num { font-family: var(--data); font-variant-numeric: tabular-nums; font-weight: 400; }
+    p { margin: 0; }
+    .prose { max-width: 62ch; color: var(--ink2); }
+    em { font-style: normal; color: var(--ink); }
+
+    /* ---- chrome: a thin instrument rail, not a web header ---------------- */
+    .rail {
+      display: flex; align-items: center; gap: 28px;
+      padding: 14px 28px; border-bottom: 1px solid var(--grid);
+      background: linear-gradient(180deg, var(--deck), var(--void));
+    }
+    .mark { font-family: var(--display); font-size: 1rem; font-weight: 700;
+            letter-spacing: 0.34em; text-transform: uppercase; color: var(--ink); }
+    .rail nav { display: flex; gap: 22px; margin-left: 8px; }
+    .rail nav span { font-family: var(--data); font-size: 0.68rem; font-weight: 500;
+                     letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink4);
+                     padding-bottom: 2px; border-bottom: 1px solid transparent; }
+    .rail nav span.on { color: var(--you); border-bottom-color: var(--you); }
+    .rail .push { flex: 1; }
+    .rail .stat { font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.1em;
+                  color: var(--ink3); display: flex; gap: 6px; align-items: baseline; }
+    .rail .stat b { color: var(--ink); font-weight: 500; }
+
+    /* ---- layout --------------------------------------------------------- */
+    main { padding: 34px 28px 28px; }
+    .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+             align-items: start; }
+    .stack { display: grid; gap: 22px; }
+    .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- the scope: an emissive instrument panel ------------------------- */
+    .scope { position: relative; background: var(--inset); border: 1px solid var(--grid);
+             border-radius: 2px; overflow: hidden; }
+    .scope::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px,
+                                            transparent 1px 3px);
+    }
+    .scope-head { display: flex; align-items: baseline; gap: 18px; padding: 10px 14px;
+                  border-bottom: 1px solid var(--grid); font-family: var(--data);
+                  font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+                  color: var(--ink3); }
+    .scope-head b { color: var(--ink2); font-weight: 500; }
+    .scope-head .push { flex: 1; }
+
+    /* ---- controls -------------------------------------------------------- */
+    .lab { font-family: var(--data); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.2em;
+           text-transform: uppercase; color: var(--ink3); display: block; margin-bottom: 7px; }
+    .entry { border: 0; border-bottom: 2px solid var(--grid2); background: transparent;
+             padding: 6px 0 9px; font-family: var(--display); font-size: 1.5rem;
+             font-weight: 500; color: var(--ink); min-height: 2.2rem; letter-spacing: 0.01em; }
+    .entry.live { border-bottom-color: var(--you); color: var(--you);
+                  text-shadow: 0 0 18px rgba(255,187,85,0.35); }
+    .entry .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--you);
+                    vertical-align: -0.16em; }
+    .under { font-size: 0.8rem; color: var(--ink4); margin-top: 8px; }
+
+    .steps { display: flex; gap: 4px; }
+    .steps div { flex: 1; text-align: center; padding: 9px 4px 7px; border: 1px solid var(--grid);
+                 border-radius: 2px; font-family: var(--data); font-size: 0.62rem;
+                 letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+    .steps div .p { display: block; font-size: 0.9rem; letter-spacing: 0; color: var(--ink4);
+                    margin-top: 3px; }
+    .steps div.on { border-color: var(--you); color: var(--you);
+                    box-shadow: inset 0 0 22px rgba(255,187,85,0.10); }
+    .steps div.on .p { color: var(--you); }
+
+    .act { display: inline-flex; align-items: center; gap: 12px; font-family: var(--display);
+           font-size: 1.05rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+           padding: 13px 24px; border: 1px solid var(--you); border-radius: 2px;
+           color: var(--void); background: var(--you); }
+    .act.quiet { background: transparent; color: var(--ink2); border-color: var(--grid2);
+                 font-weight: 500; }
+    .act .k { font-family: var(--data); font-size: 0.6rem; letter-spacing: 0.1em;
+              opacity: 0.7; border: 1px solid currentColor; border-radius: 2px; padding: 1px 4px; }
+
+    /* ---- verdict: colour, AND a shape, AND a word ------------------------ */
+    .verdict { display: flex; align-items: flex-start; gap: 14px; }
+    .verdict .glyph { font-family: var(--data); font-size: 1.5rem; line-height: 1; flex: none;
+                      margin-top: 2px; }
+    .verdict.hit { color: var(--ok); } .verdict.miss { color: var(--no); }
+    .verdict h2 { color: inherit; }
+
+    /* ---- the signature: vocabulary you collect, not a badge -------------- */
+    .sig {
+      border: 1px solid var(--sig); border-radius: 2px; padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(219,181,255,0.07), transparent);
+    }
+    .sig .kicker { color: var(--sig); }
+    .sig .name { font-family: var(--display); font-size: 1.7rem; font-weight: 600;
+                 color: var(--ink); margin: 5px 0 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--data);
+            font-size: 0.66rem; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 2px;
+            border: 1px solid var(--grid2); color: var(--ink3); }
+    .chip.have { border-color: var(--sig); color: var(--sig); }
+
+    /* ---- receipt -------------------------------------------------------- */
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { font-family: var(--data); font-size: 0.6rem; font-weight: 500; letter-spacing: 0.18em;
+         text-transform: uppercase; color: var(--ink4); text-align: left;
+         padding: 0 12px 8px 0; border-bottom: 1px solid var(--grid); }
+    td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--grid); vertical-align: top;
+         color: var(--ink2); }
+    td.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums;
+           color: var(--ink); white-space: nowrap; }
+    td b { color: var(--ink); font-weight: 500; }
+
+    .meter { display: flex; align-items: center; gap: 10px; }
+    .meter .t { position: relative; height: 3px; flex: 1; background: var(--grid);
+                border-radius: 2px; }
+    .meter .t i { position: absolute; inset: 0 auto 0 0; background: currentColor;
+                  border-radius: 2px; }
+    .meter .v { font-family: var(--data); font-size: 0.72rem; color: var(--ink3);
+                font-variant-numeric: tabular-nums; }
+
+    /* ---- motion: ONE orchestrated moment, the reveal bloom -------------- */
+    @keyframes bloom {
+      0% { opacity: 0; transform: translateY(9px) scale(0.994); filter: brightness(2.6); }
+      55% { filter: brightness(1.25); }
+      100% { opacity: 1; transform: none; filter: none; }
+    }
+    @keyframes trace { from { stroke-dashoffset: 2400; } to { stroke-dashoffset: 0; } }
+    @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(var(--w, 700px)); } }
+    .b1 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) both; }
+    .b2 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 130ms both; }
+    .b3 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 260ms both; }
+    .b4 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 390ms both; }
+    @media (prefers-reduced-motion: reduce) {
+      .b1, .b2, .b3, .b4 { animation: none; }
+      /* Not a removal: the moment is still MARKED, with a rule that arrives instead of a bloom. */
+      .b1, .b2, .b3, .b4 { border-left: 2px solid var(--sys); padding-left: 14px; }
+      * { animation-duration: 0s !important; transition: none !important; }
+    }
+
+    .proposal { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.2em;
+                text-transform: uppercase; color: var(--sig); border: 1px solid var(--sig);
+                border-radius: 2px; padding: 3px 9px; }
+
+    .vocab { display: flex; flex-wrap: wrap; gap: 7px; }
+    .axtab td { padding: 9px 12px 9px 0; }
+    .decay { display: flex; align-items: center; gap: 12px; padding: 12px 0;
+             border-bottom: 1px solid var(--grid); }
+    .decay .nm { flex: 1; font-size: 0.92rem; color: var(--ink2); }
+    .decay .st { font-family: var(--data); font-size: 0.64rem; letter-spacing: 0.12em;
+                 text-transform: uppercase; }
+
+  </style>
+</helmet>
+<div class="rail">
+  <span class="mark">Enlightenment</span>
+  <nav>
+    <span>Drill</span>
+    <span>Scenario</span>
+    <span class='on'>Progress</span>
+    <span>Library</span>
+    <span>Sandbox</span>
+  </nav>
+  <span class="push"></span>
+  <span class="stat">Reach <b>1214</b></span>
+</div>
+<main>
+  <div class="split">
+    <div>
+      <p class="kicker">Your shape, 28 August</p>
+      <h2 style="margin-top:9px">Strong on recall. Cue detection is the<br>edge that is still soft.</h2>
+      <div style="max-width:480px; margin:20px auto 0">
+        <svg viewBox="0 0 440 440" width="100%" style="display:block" role="img" aria-label="Competence figure across six axes, each with a confidence band">
+<polygon points="220.0,182.6 252.4,201.3 252.4,238.7 220.0,257.4 187.6,238.7 187.6,201.3" fill="none" stroke="#2A2A34" stroke-width="1"/>
+<polygon points="220.0,145.2 284.8,182.6 284.8,257.4 220.0,294.8 155.2,257.4 155.2,182.6" fill="none" stroke="#2A2A34" stroke-width="1"/>
+<polygon points="220.0,107.8 317.2,163.9 317.2,276.1 220.0,332.2 122.8,276.1 122.8,163.9" fill="none" stroke="#2A2A34" stroke-width="1"/>
+<polygon points="220.0,70.4 349.6,145.2 349.6,294.8 220.0,369.6 90.4,294.8 90.4,145.2" fill="none" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="220.0" y2="70.4" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="349.6" y2="145.2" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="349.6" y2="294.8" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="220.0" y2="369.6" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="90.4" y2="294.8" stroke="#2A2A34" stroke-width="1"/>
+<line x1="220.0" y1="220.0" x2="90.4" y2="145.2" stroke="#2A2A34" stroke-width="1"/>
+<path d="M220.0,91.3 340.5,150.4 344.4,291.8 106.0,285.8 L148.7,261.1 312.0,273.1 301.6,172.9 220.0,154.2 Z" fill="#FFBB55" opacity="0.14"/>
+<polyline points="220.0,118.3 324.9,159.4 334.0,285.8 124.1,275.4" fill="none" stroke="#FFBB55" stroke-width="6" opacity="0.14"/>
+<polyline points="220.0,118.3 324.9,159.4 334.0,285.8 124.1,275.4" fill="none" stroke="#FFBB55" stroke-width="1.8"/>
+<circle cx="220.0" cy="118.3" r="3.2" fill="#FFBB55"/>
+<circle cx="324.9" cy="159.4" r="3.2" fill="#FFBB55"/>
+<circle cx="334.0" cy="285.8" r="3.2" fill="#FFBB55"/>
+<circle cx="124.1" cy="275.4" r="3.2" fill="#FFBB55"/>
+<text x="220.0" y="31.5" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">CUE DETECTION</text>
+<text x="385.8" y="127.3" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">CLASSIFICATION</text>
+<text x="385.8" y="318.7" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">PROCEDURE RECALL</text>
+<text x="220.0" y="414.5" fill="#5A5866" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">PHYSICAL REASONING</text>
+<text x="220.0" y="392.0" fill="#5A5866" font-size="8.5" font-family="Azeret Mono, monospace" text-anchor="middle">NOT MEASURED</text>
+<text x="54.2" y="318.7" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">CALIBRATION</text>
+<text x="54.2" y="127.3" fill="#5A5866" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">REPORTING</text>
+<text x="73.6" y="138.5" fill="#5A5866" font-size="8.5" font-family="Azeret Mono, monospace" text-anchor="end">NOT MEASURED</text>
+</svg>
+      </div>
+      <p class="under" style="text-align:center; max-width:56ch; margin:8px auto 0">The band is the
+        confidence interval, not decoration. Narrow means measured; wide means you have not done
+        enough for anyone to claim a figure. Two axes are not measured at all, which is a different
+        statement from zero.</p>
+    </div>
+
+    <div class="stack">
+      <div>
+        <h3>The numbers behind it</h3>
+        <table class="axtab" style="margin-top:12px">
+          <thead><tr><th>Axis</th><th>Interval</th><th style="text-align:right">%</th></tr></thead>
+          <tbody>
+          <tr><td><b>Cue detection</b></td><td><div class="meter" style="color:var(--you)"><span class="t"><i style="width:68%"></i></span><span class="v">44 to 86</span></div></td><td class="r" style="color:var(--you)">68</td></tr>
+          <tr><td><b>Classification</b></td><td><div class="meter" style="color:var(--you)"><span class="t"><i style="width:81%"></i></span><span class="v">63 to 93</span></div></td><td class="r" style="color:var(--you)">81</td></tr>
+          <tr><td><b>Procedure recall</b></td><td><div class="meter" style="color:var(--you)"><span class="t"><i style="width:88%"></i></span><span class="v">71 to 96</span></div></td><td class="r" style="color:var(--you)">88</td></tr>
+          <tr><td><b>Physical reasoning</b></td><td><div class="meter" style="color:var(--ink4)"><span class="t"><i style="width:0%"></i></span><span class="v">not measured</span></div></td><td class="r" style="color:var(--ink4)">&mdash;</td></tr>
+          <tr><td><b>Calibration</b></td><td><div class="meter" style="color:var(--you)"><span class="t"><i style="width:74%"></i></span><span class="v">55 to 88</span></div></td><td class="r" style="color:var(--you)">74</td></tr>
+          <tr><td><b>Reporting</b></td><td><div class="meter" style="color:var(--ink4)"><span class="t"><i style="width:0%"></i></span><span class="v">not measured</span></div></td><td class="r" style="color:var(--ink4)">&mdash;</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="border-top:1px solid var(--grid); padding-top:22px">
+        <h3>Vocabulary</h3>
+        <p class="under" style="margin:8px 0 14px">Eleven of thirty-four. These are the phrases an
+          experienced analyst uses out loud. Collecting them is the point; the rating is just a way
+          of handing you the right next one.</p>
+        <div class="vocab">
+          <span class="chip have">The impossible rate</span>
+          <span class="chip have">The snap-back</span>
+          <span class="chip have">The count that stops</span>
+          <span class="chip have">Drift-by</span>
+          <span class="chip have">The held box</span>
+          <span class="chip have">Two fits or nothing</span>
+          <span class="chip have">Wrong-object delta-v</span>
+          <span class="chip have">The narrow spread</span>
+          <span class="chip have">Piece under control</span>
+          <span class="chip have">Parent survives</span>
+          <span class="chip have">Revisit first</span>
+          <span class="chip">The Gabbard fan</span>
+          <span class="chip">Tumble period</span>
+          <span class="chip">Specular glint</span>
+          <span class="chip">Uncorrelated cluster</span>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--grid); padding-top:22px">
+        <h3>Going soft</h3>
+        <div class="decay"><span class="nm">Separation versus breakup</span>
+          <span class="st" style="color:var(--no)">&#9660; 14 days</span></div>
+        <div class="decay"><span class="nm">Photometric cues</span>
+          <span class="st" style="color:var(--ink4)">&#9633; never</span></div>
+        <div class="decay" style="border-bottom:0"><span class="nm">Manoeuvre characterisation</span>
+          <span class="st" style="color:var(--ok)">&#9650; current</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+</x-dc>
+</body>
+</html>

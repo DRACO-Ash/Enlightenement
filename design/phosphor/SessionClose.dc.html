@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <style>
+    :root {
+      /* Grounds: warm near-blacks, deliberately not #000. */
+      --void: #0A0A0C; --deck: #141419; --raised: #1D1D24; --inset: #050506;
+      /* One accent family. Fixed lightness and chroma; hue carries attribution. */
+      --you: #FFBB55;        /* amber phosphor - the operator */
+      --sys: #00E6FA;        /* cyan phosphor - the system, and the expert */
+      --ok: #7CE79C; --no: #FFA4A1; --sig: #DBB5FF;
+      /* Text ramp: warm-tinted, never pure grey. */
+      --ink: #F2F0F4; --ink2: #B9B6C2; --ink3: #807D8C; --ink4: #5A5866;
+      /* Furniture. 1.39:1 - decorative only, never carries meaning. */
+      --grid: #2A2A34; --grid2: #3C3C4A;
+      --display: "Saira Condensed", "Arial Narrow", sans-serif;
+      --body: Saira, system-ui, sans-serif;
+      --data: "Azeret Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--void); color: var(--ink);
+      font-family: var(--body); font-size: 18px; line-height: 1.5;
+      font-weight: 300; letter-spacing: 0.005em;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--sys); } a:hover { color: var(--ink); }
+
+    /* ---- type ---------------------------------------------------------- */
+    .kicker {
+      font-family: var(--data); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink3); margin: 0;
+    }
+    h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; line-height: 1.02;
+                 letter-spacing: -0.005em; text-wrap: balance; }
+    h1 { font-size: 3.1rem; }
+    h2 { font-size: 2.05rem; }
+    h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase;
+         color: var(--ink2); }
+    .num { font-family: var(--data); font-variant-numeric: tabular-nums; font-weight: 400; }
+    p { margin: 0; }
+    .prose { max-width: 62ch; color: var(--ink2); }
+    em { font-style: normal; color: var(--ink); }
+
+    /* ---- chrome: a thin instrument rail, not a web header ---------------- */
+    .rail {
+      display: flex; align-items: center; gap: 28px;
+      padding: 14px 28px; border-bottom: 1px solid var(--grid);
+      background: linear-gradient(180deg, var(--deck), var(--void));
+    }
+    .mark { font-family: var(--display); font-size: 1rem; font-weight: 700;
+            letter-spacing: 0.34em; text-transform: uppercase; color: var(--ink); }
+    .rail nav { display: flex; gap: 22px; margin-left: 8px; }
+    .rail nav span { font-family: var(--data); font-size: 0.68rem; font-weight: 500;
+                     letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink4);
+                     padding-bottom: 2px; border-bottom: 1px solid transparent; }
+    .rail nav span.on { color: var(--you); border-bottom-color: var(--you); }
+    .rail .push { flex: 1; }
+    .rail .stat { font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.1em;
+                  color: var(--ink3); display: flex; gap: 6px; align-items: baseline; }
+    .rail .stat b { color: var(--ink); font-weight: 500; }
+
+    /* ---- layout --------------------------------------------------------- */
+    main { padding: 34px 28px 28px; }
+    .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+             align-items: start; }
+    .stack { display: grid; gap: 22px; }
+    .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- the scope: an emissive instrument panel ------------------------- */
+    .scope { position: relative; background: var(--inset); border: 1px solid var(--grid);
+             border-radius: 2px; overflow: hidden; }
+    .scope::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px,
+                                            transparent 1px 3px);
+    }
+    .scope-head { display: flex; align-items: baseline; gap: 18px; padding: 10px 14px;
+                  border-bottom: 1px solid var(--grid); font-family: var(--data);
+                  font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+                  color: var(--ink3); }
+    .scope-head b { color: var(--ink2); font-weight: 500; }
+    .scope-head .push { flex: 1; }
+
+    /* ---- controls -------------------------------------------------------- */
+    .lab { font-family: var(--data); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.2em;
+           text-transform: uppercase; color: var(--ink3); display: block; margin-bottom: 7px; }
+    .entry { border: 0; border-bottom: 2px solid var(--grid2); background: transparent;
+             padding: 6px 0 9px; font-family: var(--display); font-size: 1.5rem;
+             font-weight: 500; color: var(--ink); min-height: 2.2rem; letter-spacing: 0.01em; }
+    .entry.live { border-bottom-color: var(--you); color: var(--you);
+                  text-shadow: 0 0 18px rgba(255,187,85,0.35); }
+    .entry .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--you);
+                    vertical-align: -0.16em; }
+    .under { font-size: 0.8rem; color: var(--ink4); margin-top: 8px; }
+
+    .steps { display: flex; gap: 4px; }
+    .steps div { flex: 1; text-align: center; padding: 9px 4px 7px; border: 1px solid var(--grid);
+                 border-radius: 2px; font-family: var(--data); font-size: 0.62rem;
+                 letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+    .steps div .p { display: block; font-size: 0.9rem; letter-spacing: 0; color: var(--ink4);
+                    margin-top: 3px; }
+    .steps div.on { border-color: var(--you); color: var(--you);
+                    box-shadow: inset 0 0 22px rgba(255,187,85,0.10); }
+    .steps div.on .p { color: var(--you); }
+
+    .act { display: inline-flex; align-items: center; gap: 12px; font-family: var(--display);
+           font-size: 1.05rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+           padding: 13px 24px; border: 1px solid var(--you); border-radius: 2px;
+           color: var(--void); background: var(--you); }
+    .act.quiet { background: transparent; color: var(--ink2); border-color: var(--grid2);
+                 font-weight: 500; }
+    .act .k { font-family: var(--data); font-size: 0.6rem; letter-spacing: 0.1em;
+              opacity: 0.7; border: 1px solid currentColor; border-radius: 2px; padding: 1px 4px; }
+
+    /* ---- verdict: colour, AND a shape, AND a word ------------------------ */
+    .verdict { display: flex; align-items: flex-start; gap: 14px; }
+    .verdict .glyph { font-family: var(--data); font-size: 1.5rem; line-height: 1; flex: none;
+                      margin-top: 2px; }
+    .verdict.hit { color: var(--ok); } .verdict.miss { color: var(--no); }
+    .verdict h2 { color: inherit; }
+
+    /* ---- the signature: vocabulary you collect, not a badge -------------- */
+    .sig {
+      border: 1px solid var(--sig); border-radius: 2px; padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(219,181,255,0.07), transparent);
+    }
+    .sig .kicker { color: var(--sig); }
+    .sig .name { font-family: var(--display); font-size: 1.7rem; font-weight: 600;
+                 color: var(--ink); margin: 5px 0 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--data);
+            font-size: 0.66rem; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 2px;
+            border: 1px solid var(--grid2); color: var(--ink3); }
+    .chip.have { border-color: var(--sig); color: var(--sig); }
+
+    /* ---- receipt -------------------------------------------------------- */
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { font-family: var(--data); font-size: 0.6rem; font-weight: 500; letter-spacing: 0.18em;
+         text-transform: uppercase; color: var(--ink4); text-align: left;
+         padding: 0 12px 8px 0; border-bottom: 1px solid var(--grid); }
+    td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--grid); vertical-align: top;
+         color: var(--ink2); }
+    td.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums;
+           color: var(--ink); white-space: nowrap; }
+    td b { color: var(--ink); font-weight: 500; }
+
+    .meter { display: flex; align-items: center; gap: 10px; }
+    .meter .t { position: relative; height: 3px; flex: 1; background: var(--grid);
+                border-radius: 2px; }
+    .meter .t i { position: absolute; inset: 0 auto 0 0; background: currentColor;
+                  border-radius: 2px; }
+    .meter .v { font-family: var(--data); font-size: 0.72rem; color: var(--ink3);
+                font-variant-numeric: tabular-nums; }
+
+    /* ---- motion: ONE orchestrated moment, the reveal bloom -------------- */
+    @keyframes bloom {
+      0% { opacity: 0; transform: translateY(9px) scale(0.994); filter: brightness(2.6); }
+      55% { filter: brightness(1.25); }
+      100% { opacity: 1; transform: none; filter: none; }
+    }
+    @keyframes trace { from { stroke-dashoffset: 2400; } to { stroke-dashoffset: 0; } }
+    @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(var(--w, 700px)); } }
+    .b1 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) both; }
+    .b2 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 130ms both; }
+    .b3 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 260ms both; }
+    .b4 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 390ms both; }
+    @media (prefers-reduced-motion: reduce) {
+      .b1, .b2, .b3, .b4 { animation: none; }
+      /* Not a removal: the moment is still MARKED, with a rule that arrives instead of a bloom. */
+      .b1, .b2, .b3, .b4 { border-left: 2px solid var(--sys); padding-left: 14px; }
+      * { animation-duration: 0s !important; transition: none !important; }
+    }
+
+    .proposal { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.2em;
+                text-transform: uppercase; color: var(--sig); border: 1px solid var(--sig);
+                border-radius: 2px; padding: 3px 9px; }
+
+    .arc { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .arc div { border-top: 2px solid var(--grid2); padding-top: 12px; }
+    .arc div.hit { border-top-color: var(--ok); }
+    .arc div.miss { border-top-color: var(--no); }
+    .arc .g { font-family: var(--data); font-size: 1.05rem; line-height: 1; }
+    .arc .n { font-family: var(--data); font-size: 0.6rem; letter-spacing: 0.14em;
+              text-transform: uppercase; color: var(--ink4); margin-top: 7px; display: block; }
+    .arc .s { font-size: 0.82rem; color: var(--ink2); margin-top: 5px; display: block;
+              line-height: 1.35; }
+    .big { font-family: var(--display); font-size: 4.6rem; font-weight: 700; line-height: 0.9;
+           letter-spacing: -0.02em; }
+    .lede { font-size: 1.15rem; color: var(--ink2); max-width: 54ch; }
+    .lede em { color: var(--ink); }
+    .card { border: 1px solid var(--grid); border-radius: 2px; padding: 20px 22px;
+            background: linear-gradient(180deg, var(--deck), transparent); }
+    .card .kicker { margin-bottom: 10px; }
+    .due { display: flex; align-items: baseline; gap: 12px; padding: 11px 0;
+           border-bottom: 1px solid var(--grid); }
+    .due .w { font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.1em;
+              color: var(--sig); flex: none; width: 5.5rem; }
+    .due .t { font-size: 0.9rem; color: var(--ink2); }
+
+  </style>
+</helmet>
+<div class="rail">
+  <span class="mark">Enlightenment</span>
+  <nav>
+    <span class='on'>Drill</span>
+    <span>Scenario</span>
+    <span>Progress</span>
+    <span>Library</span>
+    <span>Sandbox</span>
+  </nav>
+  <span class="push"></span>
+  <span class="stat">Reach <b>1241</b> <span style="color:var(--ok)">&#9650; 27</span></span>
+</div>
+<main style="max-width:1180px;margin:0 auto">
+  <div class="b1">
+    <p class="kicker">Run closed &middot; 4 minutes 51 seconds</p>
+    <h1 style="margin-top:10px">Four from five, and the one you<br>missed is the one you will remember.</h1>
+  </div>
+
+  <div class="arc b2" style="margin-top:34px">
+        <div class="hit"><span class="g" style="color:var(--ok)">&#9650;</span><span class="n">Signal 01</span><span class="s">Station keeping. Straight through.</span></div>
+        <div class="hit"><span class="g" style="color:var(--ok)">&#9650;</span><span class="n">Signal 02</span><span class="s">The impossible rate. Caught the artefact.</span></div>
+        <div class="miss"><span class="g" style="color:var(--no)">&#9660;</span><span class="n">Signal 03</span><span class="s">Called fragmentation. Learned the count that stops.</span></div>
+        <div class="hit"><span class="g" style="color:var(--ok)">&#9650;</span><span class="n">Signal 04</span><span class="s">Held indeterminate under pressure. Hardest call here.</span></div>
+        <div class="hit"><span class="g" style="color:var(--ok)">&#9650;</span><span class="n">Signal 05</span><span class="s">The snap-back. Named it in nine seconds.</span></div>
+  </div>
+
+  <div class="split b3" style="margin-top:44px">
+    <div class="stack">
+      <div class="card">
+        <p class="kicker">Added to your vocabulary</p>
+        <div class="row" style="gap:9px">
+          <span class="chip have" style="font-size:0.78rem;padding:7px 13px">The count that stops</span>
+        </div>
+        <p class="prose" style="margin-top:14px; font-size:0.95rem">Eleven of the thirty-four cue
+          signatures in the active set. Not a badge and not a score: it is the phrase an experienced
+          analyst would use on the watch floor, and now you would use it too.</p>
+      </div>
+      <div class="card">
+        <p class="kicker">Coming back to you</p>
+        <div class="due"><span class="w">TOMORROW</span>
+          <span class="t">The count that stops &middot; inside a full scenario, not as a flashcard</span></div>
+        <div class="due"><span class="w">IN 4 DAYS</span>
+          <span class="t">The impossible rate</span></div>
+        <div class="due" style="border-bottom:0"><span class="w">IN 9 DAYS</span>
+          <span class="t">Bounded versus unbounded relative motion</span></div>
+        <p class="under" style="margin-top:12px">You do not schedule this. Missing something moves
+          it to the front; landing it three times pushes it three weeks out.</p>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div>
+        <p class="kicker">Reach</p>
+        <p class="big" style="color:var(--you); text-shadow:0 0 40px rgba(255,187,85,0.24)">1241</p>
+        <p class="lede" style="font-size:0.95rem; margin-top:12px">Up 27. You are now being handed
+          signals that would have been above you last week.</p>
+      </div>
+      <div style="border-top:1px solid var(--grid); padding-top:20px">
+        <p class="kicker">Calibration</p>
+        <p class="lede" style="margin-top:9px"><em>You overclaimed once.</em> On signal 03 you said
+          75% and were wrong. Everywhere else your confidence matched the outcome. That is the
+          number worth watching, and it is trending the right way.</p>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <span class="act">One more run<span class="k">R</span></span>
+        <span class="act quiet">See where you stand</span>
+      </div>
+    </div>
+  </div>
+</main>
+</x-dc>
+</body>
+</html>

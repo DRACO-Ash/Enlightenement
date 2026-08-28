@@ -2,6 +2,81 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.14 (2026-08-28)
+
+**What.** A second design direction, `design/phosphor/`, after the owner's verdict on the first:
+"that design does not inspire me at all". Style and colour were explicitly released from the
+Bluestaq template, with the brief that trainees should WANT to engage and that the engagement
+research should be the focus rather than a garnish. No application code changed; the only source
+edit is the version stamp.
+
+**The thesis, because it is the part worth keeping even if the visuals change again.** In this
+domain what pulls people back is not celebration, it is CONSEQUENCE: operators lean in because
+something is happening and they are the one who has to call it. So the interface is built as an
+instrument rather than a quiz, and light means ATTRIBUTION - amber is the operator, cyan is the
+system and the expert. That is not decoration. It solves the debrief's central information problem
+at the palette level, because an expert trace blooming over yours needs no legend.
+
+**Seven named engagement mechanisms, each with what it changes on screen.** They are annotations on
+the canvas rather than a document nobody opens.
+
+● **The open loop (Zeigarnik).** No "start next?" button; the next signal is already sweeping in and
+  the run shows five marks. You do not decide to do one more.
+● **Vocabulary, not badges.** Every discriminating cue has a name an analyst would say out loud -
+  "the count that stops", "the impossible rate", "the snap-back". You collect phrases, eleven of
+  thirty-four. Apprenticeship rather than a loyalty card, and a named pattern retrieves faster than
+  an unnamed one.
+● **The expert is the relatedness.** Leaderboards are banned by the plan and wrong for this
+  audience, so Self-Determination Theory's third leg comes from a named, dated human instead: "Ash
+  knew at 02:08." The data model already signs and dates every trace.
+● **Time recorded, not threatened.** A sweep, never a countdown, and the copy says plainly that
+  faster is not better - on the debrief the expert WAITED and the waiting was the skill.
+● **Desirable difficulty, made visible.** "This signal sat +236 above your reach, and you took it
+  on." A miss becomes evidence of range.
+● **The peak-end rule.** A run has a deliberate close: the arc, the phrase added, what returns and
+  when, the calibration line.
+● **Competence as a shape.** Six axes as a figure with the interval drawn as a BAND, not a spike, so
+  it cannot lie about a small sample; unmeasured axes sit outside the figure rather than being drawn
+  as zero.
+
+**Deliberately absent: streaks, badges, points-as-currency, confetti, leaderboards.** Two reasons,
+neither squeamish. The plan's own user research says operators are motivated by competence and
+mission readiness "not by trivia or streaks" and are "highly allergic to anything that feels
+childish or like surveillance"; and the overjustification effect says extrinsic rewards reliably
+crowd out intrinsic motivation for work someone already finds meaningful. These people already do.
+
+**The palette was computed, not chosen.** Every accent sits at `oklch(0.845 0.145 h)` - one
+lightness, one chroma, hue doing the work - measuring 10.4 to 13.0 : 1 on the ground. The figure
+that shaped the whole direction: those accents are only **1.10 to 1.24 : 1 against each other**. So
+hue is free to carry attribution and can never be trusted to carry meaning, which is why the
+operator's trace is dashed where the expert's is solid and every status still has a glyph and a
+word. Grid furniture measures 1.39:1 and therefore never carries meaning.
+
+**I looked at it before handing it over, and found three defects.** The reach caption wrapped into a
+one-word-per-line column; the inbound-signal thumbnail rendered axis numerals at forty pixels tall,
+which is clutter rather than a small chart; and one incoherence of my own making - I had put
+wall-clock "you called it" markers on a scenario-HOURS axis, which is two different clocks on one
+scale. That last one is now what it should have been from the start: the scenario event the lesson
+actually turns on, the sensor revisit, with the region before it shaded and the cue anchored to a
+real point on a real trace.
+
+**Recorded so nobody re-derives it: what I checked was the FALLBACK.** The headless browser has no
+route to a font host, so the screenshots render in the fallback stack rather than in Saira
+Condensed. The layout and the system hold either way, which is the useful half of that finding, but
+the typography has not been seen as it will ship.
+
+**One decision left with the owner.** The type is webfonts, so shipping means subsetting and
+embedding them as woff2 data URIs - permitted under the plan's "all assets vendored" and costing
+roughly 60 to 90 KB - or dropping to a pure system stack with the condensed drama coming from
+letter-spacing instead. Everything else in the direction is unchanged by that choice.
+
+**Unchanged by this direction:** no CDN, no external request at runtime, `script-src 'self'`, WCAG
+2.2 AA, the 18px body floor, status never by colour alone, and `prefers-reduced-motion` honoured
+with a non-motion equivalent that still marks the reveal rather than removing the signal.
+
+**Verified.** Loop green: 898 passed, 1 skipped, coverage 96.84%, 77 pins matched, three lock files
+clean. The canvas was checked as a parsable document before publishing.
+
 ## V0.23.13 (2026-08-28)
 
 **What.** A design brief and a design canvas, so the interface can be worked on by someone other

@@ -1,0 +1,283 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <style>
+    :root {
+      /* Grounds: warm near-blacks, deliberately not #000. */
+      --void: #0A0A0C; --deck: #141419; --raised: #1D1D24; --inset: #050506;
+      /* One accent family. Fixed lightness and chroma; hue carries attribution. */
+      --you: #FFBB55;        /* amber phosphor - the operator */
+      --sys: #00E6FA;        /* cyan phosphor - the system, and the expert */
+      --ok: #7CE79C; --no: #FFA4A1; --sig: #DBB5FF;
+      /* Text ramp: warm-tinted, never pure grey. */
+      --ink: #F2F0F4; --ink2: #B9B6C2; --ink3: #807D8C; --ink4: #5A5866;
+      /* Furniture. 1.39:1 - decorative only, never carries meaning. */
+      --grid: #2A2A34; --grid2: #3C3C4A;
+      --display: "Saira Condensed", "Arial Narrow", sans-serif;
+      --body: Saira, system-ui, sans-serif;
+      --data: "Azeret Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--void); color: var(--ink);
+      font-family: var(--body); font-size: 18px; line-height: 1.5;
+      font-weight: 300; letter-spacing: 0.005em;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--sys); } a:hover { color: var(--ink); }
+
+    /* ---- type ---------------------------------------------------------- */
+    .kicker {
+      font-family: var(--data); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink3); margin: 0;
+    }
+    h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; line-height: 1.02;
+                 letter-spacing: -0.005em; text-wrap: balance; }
+    h1 { font-size: 3.1rem; }
+    h2 { font-size: 2.05rem; }
+    h3 { font-size: 1.15rem; font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase;
+         color: var(--ink2); }
+    .num { font-family: var(--data); font-variant-numeric: tabular-nums; font-weight: 400; }
+    p { margin: 0; }
+    .prose { max-width: 62ch; color: var(--ink2); }
+    em { font-style: normal; color: var(--ink); }
+
+    /* ---- chrome: a thin instrument rail, not a web header ---------------- */
+    .rail {
+      display: flex; align-items: center; gap: 28px;
+      padding: 14px 28px; border-bottom: 1px solid var(--grid);
+      background: linear-gradient(180deg, var(--deck), var(--void));
+    }
+    .mark { font-family: var(--display); font-size: 1rem; font-weight: 700;
+            letter-spacing: 0.34em; text-transform: uppercase; color: var(--ink); }
+    .rail nav { display: flex; gap: 22px; margin-left: 8px; }
+    .rail nav span { font-family: var(--data); font-size: 0.68rem; font-weight: 500;
+                     letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink4);
+                     padding-bottom: 2px; border-bottom: 1px solid transparent; }
+    .rail nav span.on { color: var(--you); border-bottom-color: var(--you); }
+    .rail .push { flex: 1; }
+    .rail .stat { font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.1em;
+                  color: var(--ink3); display: flex; gap: 6px; align-items: baseline; }
+    .rail .stat b { color: var(--ink); font-weight: 500; }
+
+    /* ---- layout --------------------------------------------------------- */
+    main { padding: 34px 28px 28px; }
+    .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+             align-items: start; }
+    .stack { display: grid; gap: 22px; }
+    .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ---- the scope: an emissive instrument panel ------------------------- */
+    .scope { position: relative; background: var(--inset); border: 1px solid var(--grid);
+             border-radius: 2px; overflow: hidden; }
+    .scope::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px,
+                                            transparent 1px 3px);
+    }
+    .scope-head { display: flex; align-items: baseline; gap: 18px; padding: 10px 14px;
+                  border-bottom: 1px solid var(--grid); font-family: var(--data);
+                  font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
+                  color: var(--ink3); }
+    .scope-head b { color: var(--ink2); font-weight: 500; }
+    .scope-head .push { flex: 1; }
+
+    /* ---- controls -------------------------------------------------------- */
+    .lab { font-family: var(--data); font-size: 0.64rem; font-weight: 500; letter-spacing: 0.2em;
+           text-transform: uppercase; color: var(--ink3); display: block; margin-bottom: 7px; }
+    .entry { border: 0; border-bottom: 2px solid var(--grid2); background: transparent;
+             padding: 6px 0 9px; font-family: var(--display); font-size: 1.5rem;
+             font-weight: 500; color: var(--ink); min-height: 2.2rem; letter-spacing: 0.01em; }
+    .entry.live { border-bottom-color: var(--you); color: var(--you);
+                  text-shadow: 0 0 18px rgba(255,187,85,0.35); }
+    .entry .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--you);
+                    vertical-align: -0.16em; }
+    .under { font-size: 0.8rem; color: var(--ink4); margin-top: 8px; }
+
+    .steps { display: flex; gap: 4px; }
+    .steps div { flex: 1; text-align: center; padding: 9px 4px 7px; border: 1px solid var(--grid);
+                 border-radius: 2px; font-family: var(--data); font-size: 0.62rem;
+                 letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3); }
+    .steps div .p { display: block; font-size: 0.9rem; letter-spacing: 0; color: var(--ink4);
+                    margin-top: 3px; }
+    .steps div.on { border-color: var(--you); color: var(--you);
+                    box-shadow: inset 0 0 22px rgba(255,187,85,0.10); }
+    .steps div.on .p { color: var(--you); }
+
+    .act { display: inline-flex; align-items: center; gap: 12px; font-family: var(--display);
+           font-size: 1.05rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+           padding: 13px 24px; border: 1px solid var(--you); border-radius: 2px;
+           color: var(--void); background: var(--you); }
+    .act.quiet { background: transparent; color: var(--ink2); border-color: var(--grid2);
+                 font-weight: 500; }
+    .act .k { font-family: var(--data); font-size: 0.6rem; letter-spacing: 0.1em;
+              opacity: 0.7; border: 1px solid currentColor; border-radius: 2px; padding: 1px 4px; }
+
+    /* ---- verdict: colour, AND a shape, AND a word ------------------------ */
+    .verdict { display: flex; align-items: flex-start; gap: 14px; }
+    .verdict .glyph { font-family: var(--data); font-size: 1.5rem; line-height: 1; flex: none;
+                      margin-top: 2px; }
+    .verdict.hit { color: var(--ok); } .verdict.miss { color: var(--no); }
+    .verdict h2 { color: inherit; }
+
+    /* ---- the signature: vocabulary you collect, not a badge -------------- */
+    .sig {
+      border: 1px solid var(--sig); border-radius: 2px; padding: 16px 18px;
+      background: linear-gradient(180deg, rgba(219,181,255,0.07), transparent);
+    }
+    .sig .kicker { color: var(--sig); }
+    .sig .name { font-family: var(--display); font-size: 1.7rem; font-weight: 600;
+                 color: var(--ink); margin: 5px 0 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--data);
+            font-size: 0.66rem; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 2px;
+            border: 1px solid var(--grid2); color: var(--ink3); }
+    .chip.have { border-color: var(--sig); color: var(--sig); }
+
+    /* ---- receipt -------------------------------------------------------- */
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th { font-family: var(--data); font-size: 0.6rem; font-weight: 500; letter-spacing: 0.18em;
+         text-transform: uppercase; color: var(--ink4); text-align: left;
+         padding: 0 12px 8px 0; border-bottom: 1px solid var(--grid); }
+    td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--grid); vertical-align: top;
+         color: var(--ink2); }
+    td.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums;
+           color: var(--ink); white-space: nowrap; }
+    td b { color: var(--ink); font-weight: 500; }
+
+    .meter { display: flex; align-items: center; gap: 10px; }
+    .meter .t { position: relative; height: 3px; flex: 1; background: var(--grid);
+                border-radius: 2px; }
+    .meter .t i { position: absolute; inset: 0 auto 0 0; background: currentColor;
+                  border-radius: 2px; }
+    .meter .v { font-family: var(--data); font-size: 0.72rem; color: var(--ink3);
+                font-variant-numeric: tabular-nums; }
+
+    /* ---- motion: ONE orchestrated moment, the reveal bloom -------------- */
+    @keyframes bloom {
+      0% { opacity: 0; transform: translateY(9px) scale(0.994); filter: brightness(2.6); }
+      55% { filter: brightness(1.25); }
+      100% { opacity: 1; transform: none; filter: none; }
+    }
+    @keyframes trace { from { stroke-dashoffset: 2400; } to { stroke-dashoffset: 0; } }
+    @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(var(--w, 700px)); } }
+    .b1 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) both; }
+    .b2 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 130ms both; }
+    .b3 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 260ms both; }
+    .b4 { animation: bloom 620ms cubic-bezier(.16,1,.3,1) 390ms both; }
+    @media (prefers-reduced-motion: reduce) {
+      .b1, .b2, .b3, .b4 { animation: none; }
+      /* Not a removal: the moment is still MARKED, with a rule that arrives instead of a bloom. */
+      .b1, .b2, .b3, .b4 { border-left: 2px solid var(--sys); padding-left: 14px; }
+      * { animation-duration: 0s !important; transition: none !important; }
+    }
+
+    .proposal { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.2em;
+                text-transform: uppercase; color: var(--sig); border: 1px solid var(--sig);
+                border-radius: 2px; padding: 3px 9px; }
+
+    .hero { min-height: 190px; display: flex; flex-direction: column; justify-content: flex-end; }
+    .beat { display: flex; gap: 5px; margin-bottom: 20px; }
+    .beat i { height: 2px; width: 46px; background: var(--grid2); }
+    .beat i.on { background: var(--you); box-shadow: 0 0 12px var(--you); }
+    .point { border-left: 2px solid var(--sig); padding: 3px 0 3px 18px; }
+    .point .kicker { color: var(--sig); }
+    .point p { font-size: 1.1rem; color: var(--ink); margin-top: 8px; max-width: 52ch; }
+    .point b { color: var(--sig); font-weight: 500; }
+    .ask { border: 1px solid var(--you); border-radius: 2px; padding: 22px 24px;
+           background: linear-gradient(180deg, rgba(255,187,85,0.07), transparent); }
+
+  </style>
+</helmet>
+<div class="rail">
+  <span class="mark">Enlightenment</span>
+  <nav>
+    <span class='on'>Drill</span>
+    <span>Scenario</span>
+    <span>Progress</span>
+    <span>Library</span>
+    <span>Sandbox</span>
+  </nav>
+    <span class="proposal">not built</span>
+  <span class="push"></span>
+  <span class="stat">First contact</span>
+</div>
+<main style="max-width:1120px;margin:0 auto">
+  <div class="hero b1">
+    <div class="beat"><i class="on"></i><i></i><i></i><i></i></div>
+    <p class="kicker">Ninety seconds. No jargon. Nothing scored.</p>
+    <h1 style="margin-top:12px">Something in this line is<br>about to be your job.</h1>
+  </div>
+
+  <div class="b2" style="margin-top:30px"><div class="scope"><div class="scope-head"><span><b>One number, over two days</b></span><span class="push"></span><span>sub-satellite longitude · degrees east</span></div><svg viewBox="0 0 980 300" width="100%" style="display:block" role="img" aria-label="One number, over two days">
+<g stroke="#2A2A34" stroke-width="1">
+<line x1="62" y1="22.0" x2="958" y2="22.0"/>
+<line x1="62" y1="70.8" x2="958" y2="70.8"/>
+<line x1="62" y1="119.6" x2="958" y2="119.6"/>
+<line x1="62" y1="168.4" x2="958" y2="168.4"/>
+<line x1="62" y1="217.2" x2="958" y2="217.2"/>
+<line x1="62" y1="266.0" x2="958" y2="266.0"/>
+<line x1="62.0" y1="22" x2="62.0" y2="266"/>
+<line x1="174.0" y1="22" x2="174.0" y2="266"/>
+<line x1="286.0" y1="22" x2="286.0" y2="266"/>
+<line x1="398.0" y1="22" x2="398.0" y2="266"/>
+<line x1="510.0" y1="22" x2="510.0" y2="266"/>
+<line x1="622.0" y1="22" x2="622.0" y2="266"/>
+<line x1="734.0" y1="22" x2="734.0" y2="266"/>
+<line x1="846.0" y1="22" x2="846.0" y2="266"/>
+<line x1="958.0" y1="22" x2="958.0" y2="266"/>
+</g>
+<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="end">
+<text x="53" y="25.5">-4.7</text>
+<text x="53" y="74.3">-4.9</text>
+<text x="53" y="123.1">-5.2</text>
+<text x="53" y="171.9">-5.4</text>
+<text x="53" y="220.7">-5.6</text>
+<text x="53" y="269.5">-5.8</text>
+</g>
+<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="middle">
+<text x="62.0" y="282">0.00</text>
+<text x="286.0" y="282">11.9</text>
+<text x="510.0" y="282">23.8</text>
+<text x="734.0" y="282">35.6</text>
+<text x="958.0" y="282">47.5</text>
+</g>
+<polyline points="62.0,245.4 71.4,244.4 80.9,245.3 90.3,244.0 99.7,244.3 109.2,243.7 118.6,244.2 128.0,243.5 137.5,243.7 146.9,242.7 156.3,241.8 165.7,242.0 175.2,241.8 184.6,241.9 194.0,241.5 203.5,240.7 212.9,240.6 222.3,240.3 231.8,239.7 241.2,240.8 250.6,240.6 260.1,238.7 269.5,239.0 278.9,238.4 288.4,245.7 297.8,244.9 307.2,245.3 316.7,245.0 326.1,244.6 335.5,244.8 344.9,244.4 354.4,243.1 363.8,243.3 373.2,242.7 382.7,241.8 392.1,245.1 401.5,241.5 411.0,237.2 420.4,234.2 429.8,231.7 439.3,227.4 448.7,224.8 458.1,221.4 467.6,217.7 477.0,214.7 486.4,211.4 495.9,206.9 505.3,204.3 514.7,199.7 524.1,197.9 533.6,193.9 543.0,189.9 552.4,187.0 561.9,183.4 571.3,180.7 580.7,176.4 590.2,173.7 599.6,170.3 609.0,167.5 618.5,163.4 627.9,159.1 637.3,157.1 646.8,152.7 656.2,150.6 665.6,146.4 675.1,143.0 684.5,139.2 693.9,136.7 703.3,132.8 712.8,128.5 722.2,125.5 731.6,122.8 741.1,119.5 750.5,116.1 759.9,111.6 769.4,110.0 778.8,105.1 788.2,101.5 797.7,98.8 807.1,94.7 816.5,93.1 826.0,89.4 835.4,84.5 844.8,81.9 854.3,78.5 863.7,76.1 873.1,72.5 882.5,68.6 892.0,66.0 901.4,61.6 910.8,57.8 920.3,55.2 929.7,52.4 939.1,48.7 948.6,44.6 958.0,42.3" fill="none" stroke="#00E6FA" stroke-width="7" opacity="0.13" stroke-linejoin="round"/>
+<polyline points="62.0,245.4 71.4,244.4 80.9,245.3 90.3,244.0 99.7,244.3 109.2,243.7 118.6,244.2 128.0,243.5 137.5,243.7 146.9,242.7 156.3,241.8 165.7,242.0 175.2,241.8 184.6,241.9 194.0,241.5 203.5,240.7 212.9,240.6 222.3,240.3 231.8,239.7 241.2,240.8 250.6,240.6 260.1,238.7 269.5,239.0 278.9,238.4 288.4,245.7 297.8,244.9 307.2,245.3 316.7,245.0 326.1,244.6 335.5,244.8 344.9,244.4 354.4,243.1 363.8,243.3 373.2,242.7 382.7,241.8 392.1,245.1 401.5,241.5 411.0,237.2 420.4,234.2 429.8,231.7 439.3,227.4 448.7,224.8 458.1,221.4 467.6,217.7 477.0,214.7 486.4,211.4 495.9,206.9 505.3,204.3 514.7,199.7 524.1,197.9 533.6,193.9 543.0,189.9 552.4,187.0 561.9,183.4 571.3,180.7 580.7,176.4 590.2,173.7 599.6,170.3 609.0,167.5 618.5,163.4 627.9,159.1 637.3,157.1 646.8,152.7 656.2,150.6 665.6,146.4 675.1,143.0 684.5,139.2 693.9,136.7 703.3,132.8 712.8,128.5 722.2,125.5 731.6,122.8 741.1,119.5 750.5,116.1 759.9,111.6 769.4,110.0 778.8,105.1 788.2,101.5 797.7,98.8 807.1,94.7 816.5,93.1 826.0,89.4 835.4,84.5 844.8,81.9 854.3,78.5 863.7,76.1 873.1,72.5 882.5,68.6 892.0,66.0 901.4,61.6 910.8,57.8 920.3,55.2 929.7,52.4 939.1,48.7 948.6,44.6 958.0,42.3" fill="none" stroke="#00E6FA" stroke-width="1.7" stroke-linejoin="round" style="animation: trace 1500ms ease-out both" stroke-dasharray="2400"/>
+</svg></div></div>
+
+  <div class="split b3" style="margin-top:30px; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr)">
+    <div class="stack">
+      <div class="point">
+        <p class="kicker">What you are looking at</p>
+        <p>How far east a spacecraft sits, in degrees, sampled over two days. That is the whole
+          plot. <b>You do not need to know anything else yet.</b></p>
+      </div>
+      <div class="point">
+        <p class="kicker">The cue</p>
+        <p>It held one position, then began sliding, and <b>kept sliding</b>. The change of rate,
+          and the fact that it stayed changed, is the entire signal.</p>
+      </div>
+    </div>
+
+    <div class="ask">
+      <p class="kicker" style="color:var(--you)">Step 4 of 4, in about a minute</p>
+      <p style="font-family:var(--display); font-size:1.5rem; font-weight:600; margin:9px 0 12px;
+                line-height:1.1">You will see one of these on your own,<br>and you will name it.</p>
+      <p class="under" style="font-size:0.88rem">Not multiple choice. You type it. Getting it wrong
+        is expected and costs nothing &mdash; it is how the thing works.</p>
+      <div class="row" style="margin-top:18px">
+        <span class="act">Keep going<span class="k">&#9166;</span></span>
+      </div>
+    </div>
+  </div>
+</main>
+</x-dc>
+</body>
+</html>
