@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .cue { border-radius: 3px; padding: calc(var(--step) * 1.5); background: var(--navy-deep); }
+    .cue b { font-size: 0.85rem; }
+    .cue p { margin: 6px 0 0; font-size: 0.9rem; }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel">
+    <h2>Reveal</h2>
+    <p class="verdict miss">
+      <span class="glyph">&#9660;</span>
+      <span>Not this one. You called it &ldquo;fragmentation&rdquo;, which is the look-alike this
+        item discriminates against. Confident and wrong, which is the costliest combination on a
+        real watch.</span>
+    </p>
+    <p class="meta-row">
+      <span>Points <b>43.75 of 100</b></span>
+      <span>Rating <b>1207 (&minus;7)</b></span>
+      <span>Next due <b>1 day</b></span>
+    </p>
+
+    <div class="cue" style="border: {{cueBorder}}; box-shadow: {{cueGlow}}">
+      <b style="color: {{cueInk}}">What the expert saw</b>
+      <p>Opposite directions is weak evidence for fragmentation and two pieces is weak evidence for
+        separation. In the first hour the count has not had time to stop growing, so the honest
+        answer is indeterminate.</p>
+    </div>
+
+    <h3>Why that score</h3>
+    <table>
+      <thead><tr><th>Rule</th><th>Axis</th><th class="num">Awarded</th><th>Evidence</th></tr></thead>
+      <tbody>
+          <tr><td>event-named</td><td>event-classification</td><td class="num">0 / 45</td><td>answer matched &lsquo;fragmentation&rsquo;, which is the look-alike this item discriminates against</td></tr>
+          <tr><td>first-action-named</td><td>procedure-recall</td><td class="num">35 / 35</td><td>first action matched &lsquo;count the associated objects&rsquo;</td></tr>
+          <tr><td>confidence-calibrated</td><td>uncertainty-calibration</td><td class="num">8.75 / 20</td><td>stated confidence 75%, outcome incorrect: confident and wrong, which is the costliest combination on a real watch</td></tr>
+          <tr><td>expert-cue</td><td>cue-detection</td><td class="num">&mdash;</td><td>Opposite directions is weak evidence for fragmentation and two pieces is weak evidence for separation.</td></tr>
+      </tbody>
+    </table>
+    <p class="hint">Every point names the rule and the evidence. A score the debrief cannot explain
+      is a bug in this project, not a feature.</p>
+
+    <h3>Governing procedure</h3>
+    <p class="plot-desc" style="margin-top:0">Separation versus breakup discrimination. Step one:
+      Count the associated objects and characterise how the count is growing over time. Accepted
+      answers for this item included: indeterminate, insufficient data, cannot determine.</p>
+    <p style="display:flex; gap:var(--step); flex-wrap:wrap; margin:calc(var(--step) * 2) 0 0">
+      <span class="primary">Next drill</span>
+      <span class="ghost">Read the full procedure</span>
+    </p>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+<script data-dc-script data-props='{"highlight":{"editor":"enum","options":["ink-outline","copper-amber"],"default":"ink-outline","section":"Open question A"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    // Open question 13 in the flight plan, made switchable so it can be judged rather than argued.
+    // Red is alert, green is nominal and Blue 2 is structure, so nothing in the palette is free to
+    // mean "attention, but not an alarm". Two candidates, and the tweak flips between them.
+    const amber = this.props.highlight === 'copper-amber';
+    return {
+      cueBorder: amber ? '2px solid #C67C00' : '2px solid #E8EDF5',
+      cueGlow: amber ? '0 0 0 6px rgba(198, 124, 0, 0.16)' : '0 0 0 6px rgba(232, 237, 245, 0.09)',
+      cueInk: amber ? '#E9A33A' : '#E8EDF5',
+    };
+  }
+}
+</script>
+</x-dc>
+</body>
+</html>

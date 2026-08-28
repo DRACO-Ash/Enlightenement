@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="grid two">
+    <div class="panel">
+      <h2>A relative track that closes</h2>
+      <p class="meta-row">
+        <span>Procedure <b>Rendezvous and proximity operations response</b></span>
+        <span>Axis <b>event-classification</b></span>
+        <span>Item rating <b>1150</b></span>
+        <span>Your rating <b>1190</b></span>
+      </p>
+      <svg viewBox="0 0 760 300" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="hill-relative plot">
+<g stroke="#385FAF" stroke-width="1">
+<line x1="74" y1="258.0" x2="742" y2="258.0"/>
+<line x1="74" y1="197.5" x2="742" y2="197.5"/>
+<line x1="74" y1="137.0" x2="742" y2="137.0"/>
+<line x1="74" y1="76.5" x2="742" y2="76.5"/>
+<line x1="74" y1="16.0" x2="742" y2="16.0"/>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">
+<text x="66" y="262.0">-1.2</text>
+<text x="66" y="201.5">-0.575</text>
+<text x="66" y="141.0">0.001</text>
+<text x="66" y="80.5">0.578</text>
+<text x="66" y="20.0">1.2</text>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">
+<text x="74.0" y="274">-2.0</text>
+<text x="241.0" y="274">-0.991</text>
+<text x="408.0" y="274">0.000</text>
+<text x="575.0" y="274">0.991</text>
+<text x="742.0" y="274">2.0</text>
+<text x="408.0" y="294">Along-track offset, kilometres</text>
+</g>
+<text x="16" y="137.0" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" transform="rotate(-90 16 137.0)">Radial offset, kilometres</text>
+<path d="M74 16 L74 258 L742 258" fill="none" stroke="#739BCF" stroke-width="1"/>
+<polyline points="408.5,34.3 364.1,35.4 319.0,37.4 277.3,41.5 238.0,47.8 203.0,56.3 168.9,63.6 142.1,75.5 117.9,85.2 100.4,98.9 86.3,112.8 75.5,125.7 74.0,139.8 77.1,151.7 88.4,165.7 103.0,179.1 121.3,192.0 149.1,202.9 177.5,212.4 211.9,220.8 250.5,228.8 288.3,233.6 331.6,237.9 375.8,239.4 420.9,241.3 462.4,240.4 504.2,235.6 545.0,231.4 586.6,224.5 622.7,216.6 653.8,207.8 681.0,196.5 704.9,185.1 721.1,171.3 731.7,158.8 740.6,145.2 742.0,130.8 735.2,118.9 722.9,104.7 707.1,92.4 685.1,81.4 658.9,68.8 629.1,60.3 593.1,50.3 556.9,44.5 517.4,38.1 472.7,34.5 429.4,33.9 387.7,32.7 340.9,36.3 298.7,39.7 259.5,44.4 219.1,51.8 185.8,59.9 157.3,69.3 129.0,79.9 108.1,92.1 92.6,106.2 81.7,117.7 74.7,131.2 74.3,145.9 80.6,158.9 93.4,173.5 111.7,185.8 133.2,197.8 161.2,208.2 192.8,217.2 230.8,223.9 268.1,232.3 309.7,236.7 354.5,240.4 396.8,239.6 439.3,240.4 483.7,239.1 527.8,234.6 564.6,229.2 603.9,219.9 637.8,213.1 667.6,203.4 694.2,189.8 712.1,178.3 726.7,166.2 737.6,151.8 740.4,138.1 740.1,125.8 732.3,110.5 718.6,97.9 697.2,85.7 673.6,74.7 643.6,65.6 611.6,55.8 577.9,47.1 538.5,41.6 496.9,35.8 450.8,34.7 406.7,34.1" fill="none" stroke="#739BCF" stroke-width="2"/>
+</svg>
+      <p class="plot-desc">Relative position of a secondary object about a primary, in the
+        along-track and radial plane. The track is a closed loop that repeats each revolution,
+        staying within a few kilometres and returning to the same place.</p>
+      <p style="margin:calc(var(--step) * 1.5) 0 0"><span class="ghost">Read the data as a table</span></p>
+    </div>
+    <div class="panel">
+      <h2>Your call</h2>
+      <p class="plot-desc" style="margin-top:0">Two objects, relative motion in the along-track and
+        radial plane. Name the event, and the first action the governing procedure requires.</p>
+      <div class="field" style="margin-top:calc(var(--step) * 2)">
+        <label>Name the event</label>
+        <div class="box focus"></div>
+        <p class="hint">Type it. There is no list, and that is deliberate: recall, not recognition.</p>
+      </div>
+      <div class="field">
+        <label>First action the governing procedure requires</label>
+        <div class="box"></div>
+        <p class="hint">Unprompted. Looking it up in the Library is never penalised, but try first.</p>
+      </div>
+      <fieldset>
+        <legend>How confident are you?</legend>
+        <div class="conf">
+          <div>Guessing<span class="pct">15%</span></div>
+          <div>Leaning<span class="pct">35%</span></div>
+          <div class="on">Fairly sure<span class="pct">55%</span></div>
+          <div>Confident<span class="pct">75%</span></div>
+          <div>Certain<span class="pct">93%</span></div>
+        </div>
+        <p class="hint">Scored by a proper rule, so state what you actually believe. Hedging costs more.</p>
+      </fieldset>
+      <span class="primary">Commit answer</span>
+    </div>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

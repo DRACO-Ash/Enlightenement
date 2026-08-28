@@ -1,0 +1,211 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .said { border-left: 3px solid var(--label); padding-left: calc(var(--step) * 1.5);
+            font-size: 0.95rem; color: var(--ink); margin: 0 0 calc(var(--step) * 2); }
+    .said cite { display: block; font-size: 0.76rem; color: var(--ink-dim); font-style: normal;
+                 margin-top: 6px; }
+    .key { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; font-size: 0.76rem;
+           color: var(--ink-dim); margin: var(--step) 0 0; }
+    .key span { display: flex; align-items: center; gap: 6px; }
+    .key i { width: 10px; height: 10px; display: inline-block; }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="proposal">Proposal &middot; Scenario debrief &middot; not built &middot; open question C</p>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel">
+    <h2>Debrief: new objects near a controlled parent</h2>
+    <p class="said">&ldquo;I saw two pieces going opposite ways and went straight to
+      fragmentation. I did not wait for the revisit.&rdquo;
+      <cite>Your explanation, written before the reveal. It is not scored, and it is not reported.</cite></p>
+
+    <h3>What was seen, and when</h3>
+    <svg viewBox="0 0 1060 250" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="Expert and operator timelines on a shared scenario clock">
+<line x1="96" y1="126" x2="1036" y2="126" stroke="#739BCF" stroke-width="1"/>
+<line x1="96.0" y1="121" x2="96.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="96.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">00:00</text>
+<line x1="284.0" y1="121" x2="284.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="284.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">01:00</text>
+<line x1="472.0" y1="121" x2="472.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="472.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">02:00</text>
+<line x1="660.0" y1="121" x2="660.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="660.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">03:00</text>
+<line x1="848.0" y1="121" x2="848.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="848.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">04:00</text>
+<line x1="1036.0" y1="121" x2="1036.0" y2="131" stroke="#739BCF" stroke-width="1"/>
+<text x="1036.0" y="146" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">05:00</text>
+<text x="84" y="72" fill="#739BCF" font-size="12" text-anchor="end" font-weight="600" font-family="Segoe UI, system-ui, sans-serif">Expert</text>
+<text x="84" y="188" fill="#739BCF" font-size="12" text-anchor="end" font-weight="600" font-family="Segoe UI, system-ui, sans-serif">You</text>
+<rect x="497.1" y="34" width="125.3" height="176" fill="rgba(224,108,105,0.10)"/>
+<text x="559.7" y="46" fill="#E06C69" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">40 s behind, and wrong when you arrived</text>
+<line x1="183.7" y1="68" x2="183.7" y2="126" stroke="#9FB0CC" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="183.7" cy="68" r="4" fill="#9FB0CC"/>
+<text x="183.7" y="54" fill="#9FB0CC" font-size="11" text-anchor="start" font-family="Segoe UI, system-ui, sans-serif">Count is 1</text>
+<line x1="321.6" y1="68" x2="321.6" y2="126" stroke="#9FB0CC" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="321.6" cy="68" r="4" fill="#9FB0CC"/>
+<text x="321.6" y="54" fill="#9FB0CC" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Count is 2</text>
+<line x1="421.9" y1="68" x2="421.9" y2="126" stroke="#E8EDF5" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="421.9" cy="68" r="4" fill="#E8EDF5"/>
+<text x="421.9" y="54" fill="#E8EDF5" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Spread is narrow, one direction</text>
+<line x1="497.1" y1="68" x2="497.1" y2="126" stroke="#27AE60" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<polygon points="497.1,62 491.1,73 503.1,73" fill="#27AE60"/>
+<text x="497.1" y="54" fill="#27AE60" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Deliberate separation, 70%</text>
+<line x1="772.8" y1="68" x2="772.8" y2="126" stroke="#E8EDF5" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="772.8" cy="68" r="4" fill="#E8EDF5"/>
+<text x="772.8" y="54" fill="#E8EDF5" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Piece 2 changes rate: under control</text>
+<line x1="822.9" y1="68" x2="822.9" y2="126" stroke="#27AE60" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<polygon points="822.9,62 816.9,73 828.9,73" fill="#27AE60"/>
+<text x="822.9" y="54" fill="#27AE60" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Deliberate separation, 93%</text>
+<line x1="396.8" y1="184" x2="396.8" y2="126" stroke="#9FB0CC" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="396.8" cy="184" r="4" fill="#9FB0CC"/>
+<text x="396.8" y="204" fill="#9FB0CC" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Count is 2</text>
+<line x1="622.4" y1="184" x2="622.4" y2="126" stroke="#E06C69" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<polygon points="622.4,190 616.4,179 628.4,179" fill="#E06C69"/>
+<text x="622.4" y="204" fill="#E06C69" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Fragmentation, 75%</text>
+<line x1="860.5" y1="184" x2="860.5" y2="126" stroke="#E8EDF5" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<circle cx="860.5" cy="184" r="4" fill="#E8EDF5"/>
+<text x="860.5" y="204" fill="#E8EDF5" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">Piece 2 manoeuvring?</text>
+<line x1="960.8" y1="184" x2="960.8" y2="126" stroke="#27AE60" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>
+<polygon points="960.8,178 954.8,189 966.8,189" fill="#27AE60"/>
+<text x="960.8" y="204" fill="#27AE60" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">Deliberate separation, 55%</text>
+</svg>
+    <p class="key">
+      <span><i style="background:#9FB0CC;border-radius:50%"></i> observation</span>
+      <span><i style="background:#E8EDF5;border-radius:50%"></i> cue taken</span>
+      <span><i style="background:#27AE60;clip-path:polygon(50% 0,100% 100%,0 100%)"></i> call made</span>
+      <span><i style="background:#E06C69;clip-path:polygon(50% 100%,100% 0,0 0)"></i> call made, incorrect</span>
+    </p>
+
+    <h3>Which rule fired, on what evidence, and what it cost</h3>
+    <table>
+      <thead><tr><th>At</th><th>Rule</th><th>Evidence the expert used</th>
+        <th class="num">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>01:44</td><td>narrow-energy-spread</td>
+          <td>Two pieces, one direction, low rate. You had the same data 32 s earlier.</td>
+          <td class="num">&minus;15</td></tr>
+        <tr><td>02:08</td><td>event-classification</td>
+          <td>Called deliberate separation at 70%. You called fragmentation at 75%.</td>
+          <td class="num">&minus;45</td></tr>
+        <tr><td>03:36</td><td>piece-under-control</td>
+          <td>Piece 2 changed its own rate. Debris does not. You reached this 28 s later and
+            hedged.</td>
+          <td class="num">&minus;10</td></tr>
+        <tr><td>04:32</td><td>piece-count-stable</td>
+          <td>Count stopped growing after the revisit. Neither of you cited it.</td>
+          <td class="num">0</td></tr>
+      </tbody>
+    </table>
+
+    <h3>The one thing to take away</h3>
+    <p class="plot-desc" style="margin-top:0">You had the discriminating evidence before you made
+      the call. The cost was not knowledge, it was <b>committing before the revisit</b>. The
+      procedure's first step exists for that: count the associated objects and characterise how the
+      count is growing.</p>
+    <p style="display:flex; gap:var(--step); flex-wrap:wrap; margin:calc(var(--step) * 2) 0 0">
+      <span class="primary">Replay from 01:44</span>
+      <span class="ghost">Drill this discrimination now</span>
+      <span class="ghost">Read the procedure</span>
+    </p>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

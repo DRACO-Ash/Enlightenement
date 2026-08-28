@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span>Drill</span>
+    <span class="on">Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel">
+    <h2>Where you stand</h2>
+    <p class="meta-row">
+      <span>Rating <b>1214</b></span>
+      <span>Answers recorded <b>7</b></span>
+      <span>Due now <b>5</b></span>
+      <span>Items in the set <b>12</b></span>
+    </p>
+    <h3>Competency axes</h3>
+    <p class="hint" style="margin-bottom:var(--step)">Every axis reports an interval, never a bare
+      number. An axis with no attempts reports &ldquo;not measured&rdquo;, which is a different fact
+      from &ldquo;measured at zero&rdquo;.</p>
+    <table>
+      <thead><tr><th>Axis</th><th class="num">Attempts</th><th class="num">Accuracy</th>
+        <th>Interval</th><th class="num">Brier</th></tr></thead>
+      <tbody>
+          <tr><td>cue-detection</td><td class="num">0</td><td class="num">not measured</td><td class="empty">no attempts yet</td><td class="num">&mdash;</td></tr>
+          <tr><td>event-classification</td><td class="num">7</td><td class="num">71%</td><td><div class="track"><i style="width:71%"></i><u style="left:36%;width:62%"></u></div><span class="ci">36% to 98%</span></td><td class="num">0.000</td></tr>
+          <tr><td>procedure-recall</td><td class="num">7</td><td class="num">86%</td><td><div class="track"><i style="width:86%"></i><u style="left:51%;width:49%"></u></div><span class="ci">51% to 100%</span></td><td class="num">0.000</td></tr>
+          <tr><td>physical-reasoning</td><td class="num">0</td><td class="num">not measured</td><td class="empty">no attempts yet</td><td class="num">&mdash;</td></tr>
+          <tr><td>uncertainty-calibration</td><td class="num">7</td><td class="num">100%</td><td><div class="track"><i style="width:100%"></i><u style="left:68%;width:32%"></u></div><span class="ci">68% to 100%</span></td><td class="num">0.303</td></tr>
+          <tr><td>reporting</td><td class="num">0</td><td class="num">not measured</td><td class="empty">no attempts yet</td><td class="num">&mdash;</td></tr>
+      </tbody>
+    </table>
+    <h3>Procedure coverage</h3>
+    <table>
+      <thead><tr><th>Procedure</th><th class="num">Items</th><th class="num">Attempted</th>
+        <th class="num">Demonstrated</th></tr></thead>
+      <tbody>
+          <tr><td>manoeuvre-detection</td><td class="num">4</td><td class="num">3</td><td class="num">3</td></tr>
+          <tr><td>rpo-response</td><td class="num">4</td><td class="num">2</td><td class="num">1</td></tr>
+          <tr><td>separation-versus-breakup</td><td class="num">4</td><td class="num">2</td><td class="num">1</td></tr>
+      </tbody>
+    </table>
+    <h3>Recent answers</h3>
+    <table>
+      <thead><tr><th>When</th><th>Item</th><th>Outcome</th><th class="num">Confidence</th>
+        <th class="num">Points</th></tr></thead>
+      <tbody>
+          <tr><td>2026-08-27 22:49</td><td>drill-drift-by</td><td class="verdict miss" style="font-size:0.88rem">&#9660; missed</td><td class="num">5</td><td class="num">37.7</td></tr>
+          <tr><td>2026-08-27 22:49</td><td>drill-bounded-rpo</td><td class="verdict hit" style="font-size:0.88rem">&#9650; correct</td><td class="num">3</td><td class="num">96.0</td></tr>
+          <tr><td>2026-08-27 22:49</td><td>drill-epoch-artefact</td><td class="verdict hit" style="font-size:0.88rem">&#9650; correct</td><td class="num">4</td><td class="num">98.8</td></tr>
+          <tr><td>2026-08-27 22:49</td><td>drill-repositioning</td><td class="verdict hit" style="font-size:0.88rem">&#9650; correct</td><td class="num">4</td><td class="num">98.8</td></tr>
+          <tr><td>2026-08-27 22:49</td><td>drill-station-keeping</td><td class="verdict hit" style="font-size:0.88rem">&#9650; correct</td><td class="num">5</td><td class="num">99.9</td></tr>
+          <tr><td>2026-08-27 22:48</td><td>drill-fragmentation</td><td class="verdict miss" style="font-size:0.88rem">&#9660; missed</td><td class="num">5</td><td class="num">2.7</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

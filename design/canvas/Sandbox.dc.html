@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .unscored-bar { margin: 0; padding: var(--step) calc(var(--step) * 2);
+                    background: var(--navy-deep); border-bottom: 1px solid var(--label);
+                    display: flex; align-items: center; gap: calc(var(--step) * 1.5);
+                    flex-wrap: wrap; font-size: 0.85rem; color: var(--ink); }
+    .param { display: grid; grid-template-columns: 12rem 1fr 5rem; gap: var(--step);
+             align-items: center; margin-bottom: var(--step); font-size: 0.85rem; }
+    .param label { margin: 0; }
+    .slider { position: relative; height: 4px; background: var(--structure); border-radius: 2px; }
+    .slider i { position: absolute; top: -6px; width: 16px; height: 16px; border-radius: 50%;
+                background: var(--ink); border: 1px solid var(--label); }
+    .param output { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-dim); }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="proposal">Proposal &middot; Sandbox &middot; not built &middot; open question D</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<p class="unscored-bar">
+  <span class="pill unscored">Unscored</span>
+  <span>Nothing here is recorded, rated, scheduled or reported. Change anything, break anything.
+    Your rating and your coverage are untouched.</span>
+</p>
+<main>
+  <div class="grid two">
+    <div class="panel">
+      <h2>Relative motion, along-track and radial</h2>
+      <svg viewBox="0 0 620 280" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="hill-relative plot">
+<g stroke="#385FAF" stroke-width="1">
+<line x1="74" y1="238.0" x2="602" y2="238.0"/>
+<line x1="74" y1="182.5" x2="602" y2="182.5"/>
+<line x1="74" y1="127.0" x2="602" y2="127.0"/>
+<line x1="74" y1="71.5" x2="602" y2="71.5"/>
+<line x1="74" y1="16.0" x2="602" y2="16.0"/>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">
+<text x="66" y="242.0">-14.9</text>
+<text x="66" y="186.5">-10.7</text>
+<text x="66" y="131.0">-6.5</text>
+<text x="66" y="75.5">-2.3</text>
+<text x="66" y="20.0">2.0</text>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">
+<text x="74.0" y="254">-2.7</text>
+<text x="206.0" y="254">13.9</text>
+<text x="338.0" y="254">30.5</text>
+<text x="470.0" y="254">47.1</text>
+<text x="602.0" y="254">63.7</text>
+<text x="338.0" y="274">Along-track offset, kilometres</text>
+</g>
+<text x="16" y="127.0" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" transform="rotate(-90 16 127.0)">Radial offset, kilometres</text>
+<path d="M74 16 L74 238 L602 238" fill="none" stroke="#739BCF" stroke-width="1"/>
+<polyline points="95.2,31.3 92.7,31.6 90.2,32.1 87.7,33.2 85.4,34.8 83.1,36.5 81.1,38.7 79.2,41.5 77.7,44.3 76.3,47.7 75.2,51.6 74.4,55.6 74.0,59.8 74.0,64.7 74.3,69.6 75.0,74.7 76.1,80.1 77.6,85.8 79.7,91.4 82.2,97.4 85.3,103.4 88.7,109.6 92.7,115.9 97.2,122.3 102.1,128.5 107.7,134.8 113.6,141.2 120.1,147.4 127.1,153.4 134.5,159.7 142.6,165.4 151.0,171.1 159.9,176.6 169.1,182.0 178.9,187.0 188.9,191.8 199.5,196.3 210.3,200.5 221.3,204.4 232.9,208.0 244.5,211.0 256.5,213.9 268.8,216.3 281.1,218.5 293.6,220.0 306.1,221.2 318.8,222.2 331.5,222.5 344.4,222.7 357.1,222.1 369.7,221.2 382.4,220.1 394.9,218.4 407.2,216.5 419.5,213.8 431.4,211.0 443.2,208.0 454.6,204.4 465.7,200.6 476.6,196.2 487.0,191.7 497.1,187.0 506.8,181.8 516.1,176.6 524.9,171.0 533.5,165.4 541.4,159.7 548.9,153.5 555.8,147.4 562.4,141.2 568.3,134.8 573.7,128.7 578.8,122.4 583.3,116.0 587.2,109.6 590.7,103.5 593.7,97.4 596.2,91.6 598.3,85.7 599.8,80.1 601.0,74.6 601.7,69.4 602.0,64.7 602.0,60.0 601.5,55.6 600.8,51.6 599.6,47.8 598.3,44.5 596.6,41.3 594.8,38.8 592.7,36.4 590.6,34.6 588.3,33.2 585.8,32.2 583.3,31.5 580.8,31.5" fill="none" stroke="#739BCF" stroke-width="2"/>
+</svg>
+      <p class="plot-desc">Two objects. Along-track rate is currently 2.6&times; the no-drift value,
+        so the relative track does not close: the secondary sweeps in, reaches a minimum range, and
+        sweeps out.</p>
+    </div>
+    <div class="panel">
+      <h2>Parameters</h2>
+      <p class="hint" style="margin-bottom:calc(var(--step) * 1.5)">Drag one and watch the geometry
+        change. The physics is the same code the drills use.</p>
+      <div class="param">
+        <label>Radial offset</label>
+        <div class="slider"><i style="left:32%"></i></div>
+        <output>1.24 km</output>
+      </div>
+      <div class="param">
+        <label>Along-track rate</label>
+        <div class="slider"><i style="left:64%"></i></div>
+        <output>2.6 &times;</output>
+      </div>
+      <div class="param">
+        <label>Cross-track offset</label>
+        <div class="slider"><i style="left:0%"></i></div>
+        <output>0.00 km</output>
+      </div>
+      <div class="param">
+        <label>Revisit interval</label>
+        <div class="slider"><i style="left:18%"></i></div>
+        <output>11 min</output>
+      </div>
+      <div class="param">
+        <label>Observation noise</label>
+        <div class="slider"><i style="left:24%"></i></div>
+        <output>1.2 %</output>
+      </div>
+      <h3>Try this</h3>
+      <p class="plot-desc" style="margin-top:0">Set the along-track rate to exactly
+        &minus;2&#8239;n&#8239;x (the no-drift condition) and the track closes into a
+        repeating loop. That single value is the discrimination the RPO drills turn on.</p>
+      <p style="display:flex; gap:var(--step); flex-wrap:wrap; margin:calc(var(--step) * 2) 0 0">
+        <span class="ghost">Load a scenario to fork</span>
+        <span class="ghost">Reset</span>
+      </p>
+    </div>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

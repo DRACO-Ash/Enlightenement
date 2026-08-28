@@ -1,0 +1,245 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .ops { display: grid; gap: var(--step); grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+    .tile { background: var(--panel); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); }
+    .tile h4 { margin: 0 0 6px; font-size: 0.8rem; color: var(--label); font-weight: 600; }
+    .feed { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
+    .feed li { display: flex; gap: var(--step); padding: 4px 0; border-bottom: 1px solid var(--structure); }
+    .feed b { color: var(--label); font-variant-numeric: tabular-nums; flex: none; width: 4.2rem; }
+    .decision { display: flex; gap: var(--step); flex-wrap: wrap; }
+    .decision span { flex: 1 1 180px; }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="proposal">Proposal &middot; Scenario run on the authoritative clock &middot; not built</p>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel" style="margin-bottom:var(--step)">
+    <div style="display:flex; align-items:baseline; gap:calc(var(--step) * 2); flex-wrap:wrap">
+      <div>
+        <p class="hint" style="margin:0">Scenario clock</p>
+        <p class="clock" style="margin:0">00:04:12</p>
+      </div>
+      <div>
+        <p class="hint" style="margin:0">Event class</p>
+        <p style="margin:0; font-weight:600">Withheld</p>
+      </div>
+      <div>
+        <p class="hint" style="margin:0">Governing procedure</p>
+        <p style="margin:0; font-weight:600">Not yet identified</p>
+      </div>
+      <span class="spacer" style="flex:1"></span>
+      <span class="pill live">&#9679; Live &middot; server authoritative</span>
+    </div>
+  </div>
+
+  <div class="ops">
+    <div class="tile">
+      <h4>Range from parent against time</h4>
+      <svg viewBox="0 0 520 210" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="range-time plot">
+<g stroke="#385FAF" stroke-width="1">
+<line x1="74" y1="168.0" x2="502" y2="168.0"/>
+<line x1="74" y1="130.0" x2="502" y2="130.0"/>
+<line x1="74" y1="92.0" x2="502" y2="92.0"/>
+<line x1="74" y1="54.0" x2="502" y2="54.0"/>
+<line x1="74" y1="16.0" x2="502" y2="16.0"/>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">
+<text x="66" y="172.0">-90.1</text>
+<text x="66" y="134.0">-47.6</text>
+<text x="66" y="96.0">-5.1</text>
+<text x="66" y="58.0">37.3</text>
+<text x="66" y="20.0">79.8</text>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">
+<text x="74.0" y="184">0.000</text>
+<text x="181.0" y="184">5.9</text>
+<text x="288.0" y="184">11.9</text>
+<text x="395.0" y="184">17.8</text>
+<text x="502.0" y="184">23.8</text>
+<text x="288.0" y="204">Hours since first detection</text>
+</g>
+<text x="16" y="92.0" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" transform="rotate(-90 16 92.0)">Range from parent, kilometres</text>
+<path d="M74 16 L74 168 L502 168" fill="none" stroke="#739BCF" stroke-width="1"/>
+<polyline points="74.0,87.4 78.5,87.2 83.0,87.0 87.5,86.7 92.0,86.5 96.5,86.3 101.0,86.1 105.5,85.9 110.0,85.7 114.5,85.4 119.1,85.2 123.6,85.0 128.1,84.8 132.6,84.5 137.1,84.3 141.6,84.1 146.1,83.9 150.6,83.7 155.1,83.4 159.6,83.3 164.1,83.0 168.6,82.8 173.1,82.6 177.6,82.3 182.1,82.2 186.6,81.9 191.1,81.7 195.6,81.5 200.1,81.3 204.7,81.1 209.2,80.9 213.7,80.6 218.2,80.4 222.7,80.2 227.2,79.9 231.7,79.8 236.2,79.5 240.7,79.3 245.2,79.1 249.7,78.9 254.2,78.6 258.7,78.4 263.2,78.2 267.7,78.0 272.2,77.8 276.7,77.5 281.2,77.3 285.7,77.1 290.3,76.9 294.8,76.7 299.3,76.4 303.8,76.2 308.3,76.0 312.8,75.8 317.3,75.6 321.8,75.3 326.3,75.1 330.8,74.9 335.3,74.7 339.8,74.5 344.3,74.3 348.8,74.0 353.3,73.8 357.8,73.6 362.3,73.4 366.8,73.1 371.3,72.9 375.9,72.7 380.4,72.5 384.9,72.3 389.4,72.1 393.9,71.8 398.4,71.6 402.9,71.4 407.4,71.2 411.9,71.0 416.4,70.7 420.9,70.5 425.4,70.3 429.9,70.1 434.4,69.8 438.9,69.7 443.4,69.4 447.9,69.2 452.4,69.0 456.9,68.8 461.5,68.5 466.0,68.4 470.5,68.1 475.0,67.9 479.5,67.7 484.0,67.4 488.5,67.2 493.0,67.0 497.5,66.8 502.0,66.6" fill="none" stroke="#739BCF" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.5 83.0,87.6 87.5,87.7 92.0,87.8 96.5,87.9 101.0,87.9 105.5,88.0 110.0,88.1 114.5,88.3 119.1,88.4 123.6,88.4 128.1,88.5 132.6,88.6 137.1,88.7 141.6,88.8 146.1,88.9 150.6,89.0 155.1,89.1 159.6,89.2 164.1,89.3 168.6,89.3 173.1,89.4 177.6,89.6 182.1,89.6 186.6,89.7 191.1,89.8 195.6,89.9 200.1,90.0 204.7,90.1 209.2,90.2 213.7,90.3 218.2,90.3 222.7,90.5 227.2,90.6 231.7,90.6 236.2,90.7 240.7,90.9 245.2,90.9 249.7,91.0 254.2,91.1 258.7,91.2 263.2,91.3 267.7,91.4 272.2,91.5 276.7,91.6 281.2,91.7 285.7,91.8 290.3,91.8 294.8,91.9 299.3,92.0 303.8,92.1 308.3,92.2 312.8,92.3 317.3,92.4 321.8,92.5 326.3,92.6 330.8,92.7 335.3,92.8 339.8,92.8 344.3,93.0 348.8,93.1 353.3,93.2 357.8,93.2 362.3,93.3 366.8,93.4 371.3,93.5 375.9,93.6 380.4,93.7 384.9,93.8 389.4,93.8 393.9,94.0 398.4,94.0 402.9,94.2 407.4,94.3 411.9,94.4 416.4,94.5 420.9,94.5 425.4,94.6 429.9,94.7 434.4,94.8 438.9,94.9 443.4,95.0 447.9,95.1 452.4,95.2 456.9,95.3 461.5,95.3 466.0,95.4 470.5,95.5 475.0,95.6 479.5,95.7 484.0,95.8 488.5,95.9 493.0,96.0 497.5,96.1 502.0,96.2" fill="none" stroke="#27AE60" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,86.9 83.0,86.4 87.5,85.9 92.0,85.5 96.5,84.9 101.0,84.5 105.5,84.0 110.0,83.5 114.5,83.0 119.1,82.5 123.6,82.1 128.1,81.5 132.6,81.1 137.1,80.6 141.6,80.1 146.1,79.6 150.6,79.1 155.1,78.6 159.6,78.1 164.1,77.6 168.6,77.2 173.1,76.7 177.6,76.2 182.1,75.7 186.6,75.2 191.1,74.8 195.6,74.3 200.1,73.7 204.7,73.3 209.2,72.8 213.7,72.3 218.2,71.8 222.7,71.3 227.2,70.8 231.7,70.4 236.2,69.9 240.7,69.4 245.2,68.9 249.7,68.4 254.2,67.9 258.7,67.5 263.2,66.9 267.7,66.4 272.2,66.0 276.7,65.5 281.2,65.0 285.7,64.5 290.3,64.0 294.8,63.5 299.3,63.0 303.8,62.6 308.3,62.0 312.8,61.6 317.3,61.1 321.8,60.6 326.3,60.1 330.8,59.6 335.3,59.2 339.8,58.7 344.3,58.2 348.8,57.7 353.3,57.2 357.8,56.7 362.3,56.2 366.8,55.7 371.3,55.2 375.9,54.8 380.4,54.3 384.9,53.8 389.4,53.3 393.9,52.8 398.4,52.4 402.9,51.9 407.4,51.4 411.9,50.9 416.4,50.4 420.9,49.9 425.4,49.4 429.9,48.9 434.4,48.4 438.9,47.9 443.4,47.4 447.9,47.0 452.4,46.5 456.9,46.0 461.5,45.5 466.0,45.0 470.5,44.5 475.0,44.0 479.5,43.6 484.0,43.1 488.5,42.6 493.0,42.1 497.5,41.6 502.0,41.1" fill="none" stroke="#E06C69" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.5 83.0,87.6 87.5,87.6 92.0,87.6 96.5,87.7 101.0,87.7 105.5,87.8 110.0,87.8 114.5,87.9 119.1,87.9 123.6,88.0 128.1,88.0 132.6,88.1 137.1,88.1 141.6,88.2 146.1,88.3 150.6,88.3 155.1,88.3 159.6,88.4 164.1,88.5 168.6,88.5 173.1,88.6 177.6,88.7 182.1,88.7 186.6,88.7 191.1,88.8 195.6,88.8 200.1,88.9 204.7,89.0 209.2,89.0 213.7,89.0 218.2,89.1 222.7,89.2 227.2,89.2 231.7,89.3 236.2,89.3 240.7,89.4 245.2,89.4 249.7,89.5 254.2,89.6 258.7,89.5 263.2,89.6 267.7,89.7 272.2,89.8 276.7,89.8 281.2,89.8 285.7,89.9 290.3,90.0 294.8,90.0 299.3,90.0 303.8,90.1 308.3,90.1 312.8,90.2 317.3,90.3 321.8,90.3 326.3,90.4 330.8,90.4 335.3,90.5 339.8,90.6 344.3,90.6 348.8,90.6 353.3,90.7 357.8,90.7 362.3,90.8 366.8,90.8 371.3,90.9 375.9,91.0 380.4,91.0 384.9,91.1 389.4,91.1 393.9,91.2 398.4,91.2 402.9,91.3 407.4,91.3 411.9,91.3 416.4,91.5 420.9,91.5 425.4,91.5 429.9,91.6 434.4,91.7 438.9,91.7 443.4,91.7 447.9,91.8 452.4,91.9 456.9,91.9 461.5,91.9 466.0,92.0 470.5,92.0 475.0,92.1 479.5,92.1 484.0,92.2 488.5,92.3 493.0,92.4 497.5,92.4 502.0,92.4" fill="none" stroke="#9FB0CC" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.0 83.0,86.5 87.5,86.1 92.0,85.6 96.5,85.2 101.0,84.7 105.5,84.3 110.0,83.8 114.5,83.3 119.1,82.9 123.6,82.5 128.1,82.0 132.6,81.5 137.1,81.1 141.6,80.6 146.1,80.2 150.6,79.8 155.1,79.3 159.6,78.9 164.1,78.4 168.6,78.0 173.1,77.5 177.6,77.0 182.1,76.6 186.6,76.2 191.1,75.7 195.6,75.3 200.1,74.8 204.7,74.3 209.2,73.9 213.7,73.5 218.2,73.0 222.7,72.5 227.2,72.1 231.7,71.7 236.2,71.2 240.7,70.8 245.2,70.3 249.7,69.9 254.2,69.4 258.7,68.9 263.2,68.5 267.7,68.1 272.2,67.6 276.7,67.2 281.2,66.7 285.7,66.2 290.3,65.8 294.8,65.3 299.3,64.9 303.8,64.4 308.3,64.0 312.8,63.5 317.3,63.1 321.8,62.6 326.3,62.2 330.8,61.8 335.3,61.3 339.8,60.8 344.3,60.4 348.8,60.0 353.3,59.5 357.8,59.0 362.3,58.6 366.8,58.2 371.3,57.7 375.9,57.3 380.4,56.8 384.9,56.3 389.4,55.9 393.9,55.4 398.4,55.0 402.9,54.5 407.4,54.1 411.9,53.6 416.4,53.2 420.9,52.7 425.4,52.3 429.9,51.8 434.4,51.4 438.9,50.9 443.4,50.5 447.9,50.0 452.4,49.6 456.9,49.1 461.5,48.7 466.0,48.2 470.5,47.8 475.0,47.3 479.5,46.9 484.0,46.4 488.5,46.0 493.0,45.5 497.5,45.1 502.0,44.6" fill="none" stroke="#739BCF" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.8 83.0,88.1 87.5,88.5 92.0,88.9 96.5,89.2 101.0,89.6 105.5,90.0 110.0,90.3 114.5,90.8 119.1,91.1 123.6,91.5 128.1,91.8 132.6,92.2 137.1,92.6 141.6,93.0 146.1,93.3 150.6,93.7 155.1,94.0 159.6,94.4 164.1,94.8 168.6,95.2 173.1,95.5 177.6,95.9 182.1,96.3 186.6,96.7 191.1,97.0 195.6,97.4 200.1,97.8 204.7,98.1 209.2,98.5 213.7,98.9 218.2,99.2 222.7,99.6 227.2,100.0 231.7,100.3 236.2,100.7 240.7,101.1 245.2,101.4 249.7,101.8 254.2,102.2 258.7,102.5 263.2,102.9 267.7,103.3 272.2,103.6 276.7,104.0 281.2,104.4 285.7,104.8 290.3,105.1 294.8,105.5 299.3,105.9 303.8,106.3 308.3,106.6 312.8,107.0 317.3,107.3 321.8,107.7 326.3,108.1 330.8,108.5 335.3,108.9 339.8,109.2 344.3,109.6 348.8,109.9 353.3,110.3 357.8,110.7 362.3,111.0 366.8,111.5 371.3,111.8 375.9,112.2 380.4,112.5 384.9,112.9 389.4,113.3 393.9,113.6 398.4,114.0 402.9,114.4 407.4,114.8 411.9,115.1 416.4,115.5 420.9,115.9 425.4,116.3 429.9,116.6 434.4,117.0 438.9,117.3 443.4,117.7 447.9,118.1 452.4,118.5 456.9,118.8 461.5,119.2 466.0,119.6 470.5,120.0 475.0,120.3 479.5,120.6 484.0,121.1 488.5,121.4 493.0,121.7 497.5,122.1 502.0,122.5" fill="none" stroke="#27AE60" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.2 83.0,87.0 87.5,86.8 92.0,86.5 96.5,86.3 101.0,86.1 105.5,85.8 110.0,85.7 114.5,85.4 119.1,85.2 123.6,85.0 128.1,84.7 132.6,84.5 137.1,84.3 141.6,84.1 146.1,83.9 150.6,83.7 155.1,83.4 159.6,83.2 164.1,83.0 168.6,82.8 173.1,82.6 177.6,82.3 182.1,82.1 186.6,81.9 191.1,81.7 195.6,81.4 200.1,81.2 204.7,81.0 209.2,80.8 213.7,80.5 218.2,80.3 222.7,80.1 227.2,79.9 231.7,79.7 236.2,79.5 240.7,79.2 245.2,79.0 249.7,78.8 254.2,78.5 258.7,78.3 263.2,78.1 267.7,77.9 272.2,77.7 276.7,77.4 281.2,77.2 285.7,77.0 290.3,76.8 294.8,76.6 299.3,76.4 303.8,76.1 308.3,75.9 312.8,75.7 317.3,75.5 321.8,75.2 326.3,75.0 330.8,74.8 335.3,74.6 339.8,74.3 344.3,74.1 348.8,73.9 353.3,73.7 357.8,73.5 362.3,73.3 366.8,73.0 371.3,72.8 375.9,72.6 380.4,72.4 384.9,72.1 389.4,72.0 393.9,71.7 398.4,71.5 402.9,71.3 407.4,71.0 411.9,70.8 416.4,70.6 420.9,70.4 425.4,70.1 429.9,69.9 434.4,69.7 438.9,69.5 443.4,69.3 447.9,69.1 452.4,68.8 456.9,68.6 461.5,68.4 466.0,68.1 470.5,68.0 475.0,67.7 479.5,67.5 484.0,67.3 488.5,67.0 493.0,66.8 497.5,66.6 502.0,66.4" fill="none" stroke="#E06C69" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,88.2 83.0,88.9 87.5,89.6 92.0,90.4 96.5,91.1 101.0,91.8 105.5,92.5 110.0,93.3 114.5,94.0 119.1,94.8 123.6,95.6 128.1,96.3 132.6,97.0 137.1,97.7 141.6,98.5 146.1,99.2 150.6,99.9 155.1,100.7 159.6,101.4 164.1,102.2 168.6,102.9 173.1,103.6 177.6,104.4 182.1,105.1 186.6,105.8 191.1,106.6 195.6,107.3 200.1,108.0 204.7,108.8 209.2,109.6 213.7,110.3 218.2,111.0 222.7,111.7 227.2,112.5 231.7,113.2 236.2,114.0 240.7,114.7 245.2,115.5 249.7,116.2 254.2,116.9 258.7,117.7 263.2,118.4 267.7,119.1 272.2,119.9 276.7,120.6 281.2,121.4 285.7,122.1 290.3,122.8 294.8,123.6 299.3,124.3 303.8,125.0 308.3,125.8 312.8,126.5 317.3,127.3 321.8,128.0 326.3,128.7 330.8,129.5 335.3,130.2 339.8,131.0 344.3,131.7 348.8,132.4 353.3,133.2 357.8,133.9 362.3,134.6 366.8,135.4 371.3,136.1 375.9,136.9 380.4,137.6 384.9,138.3 389.4,139.1 393.9,139.8 398.4,140.5 402.9,141.3 407.4,142.0 411.9,142.7 416.4,143.5 420.9,144.2 425.4,145.0 429.9,145.7 434.4,146.4 438.9,147.2 443.4,147.9 447.9,148.7 452.4,149.4 456.9,150.1 461.5,150.9 466.0,151.6 470.5,152.3 475.0,153.1 479.5,153.8 484.0,154.5 488.5,155.3 493.0,156.0 497.5,156.8 502.0,157.5" fill="none" stroke="#9FB0CC" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.3 83.0,87.1 87.5,86.9 92.0,86.8 96.5,86.6 101.0,86.4 105.5,86.3 110.0,86.2 114.5,86.0 119.1,85.8 123.6,85.6 128.1,85.5 132.6,85.3 137.1,85.2 141.6,85.1 146.1,84.8 150.6,84.7 155.1,84.5 159.6,84.4 164.1,84.2 168.6,84.1 173.1,83.9 177.6,83.7 182.1,83.6 186.6,83.5 191.1,83.3 195.6,83.1 200.1,82.9 204.7,82.8 209.2,82.6 213.7,82.5 218.2,82.3 222.7,82.2 227.2,82.0 231.7,81.9 236.2,81.6 240.7,81.5 245.2,81.4 249.7,81.2 254.2,81.0 258.7,80.9 263.2,80.7 267.7,80.6 272.2,80.4 276.7,80.3 281.2,80.1 285.7,80.0 290.3,79.7 294.8,79.6 299.3,79.4 303.8,79.3 308.3,79.1 312.8,79.0 317.3,78.8 321.8,78.7 326.3,78.5 330.8,78.4 335.3,78.2 339.8,78.0 344.3,77.8 348.8,77.7 353.3,77.5 357.8,77.4 362.3,77.2 366.8,77.0 371.3,76.9 375.9,76.7 380.4,76.5 384.9,76.4 389.4,76.3 393.9,76.1 398.4,76.0 402.9,75.8 407.4,75.6 411.9,75.4 416.4,75.3 420.9,75.2 425.4,75.0 429.9,74.9 434.4,74.6 438.9,74.5 443.4,74.4 447.9,74.2 452.4,74.1 456.9,73.8 461.5,73.7 466.0,73.6 470.5,73.4 475.0,73.3 479.5,73.1 484.0,72.9 488.5,72.8 493.0,72.6 497.5,72.4 502.0,72.3" fill="none" stroke="#739BCF" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.5 83.0,87.6 87.5,87.7 92.0,87.8 96.5,87.9 101.0,87.9 105.5,88.0 110.0,88.2 114.5,88.2 119.1,88.3 123.6,88.4 128.1,88.5 132.6,88.6 137.1,88.7 141.6,88.7 146.1,88.9 150.6,89.0 155.1,89.0 159.6,89.1 164.1,89.2 168.6,89.3 173.1,89.4 177.6,89.5 182.1,89.6 186.6,89.7 191.1,89.7 195.6,89.8 200.1,89.9 204.7,90.0 209.2,90.1 213.7,90.2 218.2,90.3 222.7,90.4 227.2,90.5 231.7,90.6 236.2,90.6 240.7,90.8 245.2,90.8 249.7,90.9 254.2,91.0 258.7,91.1 263.2,91.2 267.7,91.3 272.2,91.3 276.7,91.5 281.2,91.5 285.7,91.6 290.3,91.7 294.8,91.8 299.3,91.9 303.8,92.0 308.3,92.1 312.8,92.1 317.3,92.2 321.8,92.3 326.3,92.4 330.8,92.5 335.3,92.6 339.8,92.7 344.3,92.8 348.8,92.9 353.3,92.9 357.8,93.0 362.3,93.2 366.8,93.2 371.3,93.3 375.9,93.4 380.4,93.5 384.9,93.6 389.4,93.7 393.9,93.8 398.4,93.9 402.9,94.0 407.4,94.1 411.9,94.1 416.4,94.2 420.9,94.3 425.4,94.4 429.9,94.5 434.4,94.5 438.9,94.7 443.4,94.8 447.9,94.8 452.4,94.9 456.9,95.0 461.5,95.1 466.0,95.2 470.5,95.3 475.0,95.4 479.5,95.5 484.0,95.5 488.5,95.6 493.0,95.7 497.5,95.8 502.0,95.9" fill="none" stroke="#27AE60" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,86.8 83.0,86.2 87.5,85.5 92.0,84.8 96.5,84.2 101.0,83.5 105.5,82.9 110.0,82.3 114.5,81.6 119.1,81.0 123.6,80.3 128.1,79.7 132.6,79.1 137.1,78.4 141.6,77.8 146.1,77.1 150.6,76.5 155.1,75.9 159.6,75.3 164.1,74.6 168.6,73.9 173.1,73.3 177.6,72.6 182.1,72.0 186.6,71.3 191.1,70.7 195.6,70.1 200.1,69.4 204.7,68.8 209.2,68.2 213.7,67.5 218.2,66.8 222.7,66.2 227.2,65.6 231.7,65.0 236.2,64.3 240.7,63.7 245.2,63.0 249.7,62.4 254.2,61.7 258.7,61.1 263.2,60.5 267.7,59.8 272.2,59.2 276.7,58.5 281.2,57.9 285.7,57.3 290.3,56.6 294.8,55.9 299.3,55.4 303.8,54.7 308.3,54.0 312.8,53.4 317.3,52.8 321.8,52.1 326.3,51.5 330.8,50.8 335.3,50.2 339.8,49.6 344.3,48.9 348.8,48.3 353.3,47.6 357.8,47.0 362.3,46.4 366.8,45.7 371.3,45.1 375.9,44.4 380.4,43.8 384.9,43.1 389.4,42.5 393.9,41.8 398.4,41.2 402.9,40.5 407.4,39.9 411.9,39.3 416.4,38.7 420.9,38.0 425.4,37.4 429.9,36.7 434.4,36.1 438.9,35.4 443.4,34.8 447.9,34.2 452.4,33.5 456.9,32.8 461.5,32.3 466.0,31.6 470.5,30.9 475.0,30.3 479.5,29.7 484.0,29.0 488.5,28.3 493.0,27.7 497.5,27.1 502.0,26.5" fill="none" stroke="#E06C69" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.5 83.0,87.5 87.5,87.6 92.0,87.7 96.5,87.7 101.0,87.8 105.5,87.8 110.0,87.9 114.5,88.0 119.1,88.0 123.6,88.1 128.1,88.2 132.6,88.2 137.1,88.3 141.6,88.3 146.1,88.4 150.6,88.5 155.1,88.5 159.6,88.6 164.1,88.7 168.6,88.7 173.1,88.8 177.6,88.8 182.1,88.9 186.6,88.9 191.1,89.0 195.6,89.1 200.1,89.1 204.7,89.2 209.2,89.3 213.7,89.3 218.2,89.4 222.7,89.5 227.2,89.5 231.7,89.6 236.2,89.6 240.7,89.7 245.2,89.8 249.7,89.8 254.2,89.9 258.7,90.0 263.2,90.0 267.7,90.1 272.2,90.1 276.7,90.2 281.2,90.3 285.7,90.4 290.3,90.4 294.8,90.5 299.3,90.5 303.8,90.6 308.3,90.6 312.8,90.7 317.3,90.8 321.8,90.8 326.3,90.9 330.8,91.0 335.3,91.0 339.8,91.1 344.3,91.1 348.8,91.2 353.3,91.3 357.8,91.3 362.3,91.4 366.8,91.4 371.3,91.5 375.9,91.6 380.4,91.7 384.9,91.7 389.4,91.8 393.9,91.8 398.4,91.9 402.9,91.9 407.4,92.0 411.9,92.1 416.4,92.1 420.9,92.2 425.4,92.3 429.9,92.3 434.4,92.4 438.9,92.5 443.4,92.5 447.9,92.6 452.4,92.7 456.9,92.7 461.5,92.8 466.0,92.8 470.5,92.9 475.0,92.9 479.5,93.0 484.0,93.1 488.5,93.1 493.0,93.2 497.5,93.3 502.0,93.3" fill="none" stroke="#9FB0CC" stroke-width="2"/>
+<polyline points="74.0,87.4 78.5,87.0 83.0,86.6 87.5,86.2 92.0,85.7 96.5,85.3 101.0,84.9 105.5,84.5 110.0,84.1 114.5,83.7 119.1,83.2 123.6,82.8 128.1,82.5 132.6,82.0 137.1,81.6 141.6,81.2 146.1,80.8 150.6,80.4 155.1,80.0 159.6,79.5 164.1,79.1 168.6,78.7 173.1,78.3 177.6,77.9 182.1,77.5 186.6,77.0 191.1,76.6 195.6,76.2 200.1,75.8 204.7,75.4 209.2,75.0 213.7,74.5 218.2,74.1 222.7,73.7 227.2,73.3 231.7,72.9 236.2,72.5 240.7,72.1 245.2,71.7 249.7,71.2 254.2,70.8 258.7,70.4 263.2,70.0 267.7,69.5 272.2,69.1 276.7,68.7 281.2,68.3 285.7,67.9 290.3,67.5 294.8,67.1 299.3,66.7 303.8,66.3 308.3,65.8 312.8,65.4 317.3,65.0 321.8,64.6 326.3,64.2 330.8,63.8 335.3,63.4 339.8,62.9 344.3,62.5 348.8,62.1 353.3,61.7 357.8,61.3 362.3,60.8 366.8,60.5 371.3,60.0 375.9,59.7 380.4,59.2 384.9,58.8 389.4,58.4 393.9,58.0 398.4,57.5 402.9,57.2 407.4,56.7 411.9,56.3 416.4,55.9 420.9,55.4 425.4,55.1 429.9,54.6 434.4,54.2 438.9,53.8 443.4,53.4 447.9,53.0 452.4,52.5 456.9,52.2 461.5,51.8 466.0,51.3 470.5,50.9 475.0,50.5 479.5,50.1 484.0,49.6 488.5,49.3 493.0,48.8 497.5,48.4 502.0,48.0" fill="none" stroke="#739BCF" stroke-width="2"/>
+</svg>
+    </div>
+    <div class="tile">
+      <h4>Relative motion, along-track and radial</h4>
+      <svg viewBox="0 0 520 210" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="hill-relative plot">
+<g stroke="#385FAF" stroke-width="1">
+<line x1="74" y1="168.0" x2="502" y2="168.0"/>
+<line x1="74" y1="130.0" x2="502" y2="130.0"/>
+<line x1="74" y1="92.0" x2="502" y2="92.0"/>
+<line x1="74" y1="54.0" x2="502" y2="54.0"/>
+<line x1="74" y1="16.0" x2="502" y2="16.0"/>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">
+<text x="66" y="172.0">-1.2</text>
+<text x="66" y="134.0">-0.566</text>
+<text x="66" y="96.0">0.066</text>
+<text x="66" y="58.0">0.698</text>
+<text x="66" y="20.0">1.3</text>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">
+<text x="74.0" y="184">-1.9</text>
+<text x="181.0" y="184">-0.881</text>
+<text x="288.0" y="184">0.139</text>
+<text x="395.0" y="184">1.2</text>
+<text x="502.0" y="184">2.2</text>
+<text x="288.0" y="204">Along-track offset, kilometres</text>
+</g>
+<text x="16" y="92.0" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" transform="rotate(-90 16 92.0)">Radial offset, kilometres</text>
+<path d="M74 16 L74 168 L502 168" fill="none" stroke="#739BCF" stroke-width="1"/>
+<polyline points="273.1,42.7 249.0,42.7 223.1,44.5 199.7,45.5 178.3,49.2 156.4,52.7 136.2,57.2 118.6,63.0 103.3,68.1 91.4,74.8 82.5,82.6 75.6,89.3 74.3,97.5 75.0,104.6 79.6,111.6 86.9,118.9 98.4,126.0 114.0,132.4 129.9,139.5 152.1,144.6 174.1,148.8 198.5,152.6 224.5,155.2 252.5,156.6 280.9,156.7 309.6,156.2 337.2,154.6 364.8,153.1 390.9,148.4 414.6,144.3 436.7,139.2 454.8,132.5 472.4,126.1 483.6,117.2 493.7,109.4 499.0,101.8 502.0,92.4 499.1,84.7 493.0,76.2 483.1,67.5 468.3,58.9 450.2,51.6 430.0,46.2 405.2,40.5 379.7,35.2 349.9,31.7 320.2,28.1 290.2,26.5 261.0,42.8 236.7,43.2 212.2,44.7 189.6,47.1 166.1,50.6 144.9,54.5 127.9,60.1 110.6,65.4 96.6,72.4 85.0,78.4 78.8,85.6 74.6,93.7 74.0,100.8 76.8,108.5 81.6,115.5 92.8,123.5 104.9,129.2 121.8,136.1 140.3,141.9 161.9,146.8 185.5,150.5 212.1,154.0 238.6,156.6 265.9,156.8 295.3,157.5 322.2,156.5 351.0,154.2 376.8,151.5 403.0,147.0 426.1,141.8 445.6,136.2 464.7,128.9 477.9,121.8 489.7,114.4 497.9,106.0 500.1,96.6 501.2,88.7 496.9,79.6 487.1,71.6 476.4,63.6 459.5,56.1 440.4,49.0 419.1,42.8 391.8,37.8 366.2,32.5 335.8,29.2 306.1,27.1 273.9,43.1" fill="none" stroke="#739BCF" stroke-width="2"/>
+</svg>
+    </div>
+    <div class="tile">
+      <h4>Event feed</h4>
+      <ul class="feed">
+        <li><b>00:00:00</b><span>Scenario start. Custody established on the parent object.</span></li>
+        <li><b>00:01:38</b><span>New associated object correlated within 3 km of the parent.</span></li>
+        <li><b>00:02:51</b><span>Second associated object correlated. Count now 2.</span></li>
+        <li><b>00:03:44</b><span>Sensor revisit. No further associated objects returned.</span></li>
+        <li><b>00:04:07</b><span>Parent continues to be tracked and behaves as controlled.</span></li>
+      </ul>
+    </div>
+    <div class="tile">
+      <h4>Your working call</h4>
+      <div class="field" style="margin-bottom:var(--step)">
+        <label>Event classification</label>
+        <div class="box focus" style="min-height:2.2rem"></div>
+      </div>
+      <div class="field" style="margin-bottom:var(--step)">
+        <label>Governing procedure</label>
+        <div class="box" style="min-height:2.2rem"></div>
+      </div>
+      <div class="field" style="margin-bottom:var(--step)">
+        <label>Confidence</label>
+        <div class="conf">
+          <div>1<span class="pct">15%</span></div><div>2<span class="pct">35%</span></div>
+          <div class="on">3<span class="pct">55%</span></div><div>4<span class="pct">75%</span></div>
+          <div>5<span class="pct">93%</span></div>
+        </div>
+      </div>
+      <p class="hint" style="margin-bottom:var(--step)">Revise this as the geometry develops. The
+        clock records when you changed your mind, and the debrief shows it against the expert.</p>
+      <div class="decision">
+        <span class="ghost">Task more observations</span>
+        <span class="ghost">Raise the report</span>
+        <span class="primary" style="padding:var(--step) calc(var(--step) * 1.5)">Commit and close</span>
+      </div>
+    </div>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

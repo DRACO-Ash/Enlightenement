@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .rail { display: flex; gap: 6px; align-items: center; margin: 0 0 calc(var(--step) * 2); }
+    .rail i { display: block; height: 4px; flex: 1; background: var(--structure); border-radius: 2px; }
+    .rail i.done { background: var(--label); }
+    .rail i.now { background: var(--ink); }
+    .rail span { font-size: 0.74rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    .teach { border: 2px solid var(--ink); border-radius: 3px; padding: calc(var(--step) * 1.5);
+             background: var(--navy-deep); box-shadow: 0 0 0 6px rgba(232,237,245,0.09); }
+    .teach b { font-size: 0.85rem; }
+    .teach p { margin: 6px 0 0; font-size: 0.95rem; }
+    .plain { font-size: 1.05rem; max-width: 62ch; }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="proposal">Proposal &middot; First run, zero knowledge &middot; not built</p>
+<p class="notice"><b>Illustrative content.</b> Derived from public open-source material only. NOT a JCO procedure and not validated by a subject-matter expert.</p>
+<div class="tabs">
+    <span class="on">Drill</span>
+    <span>Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel">
+    <div class="rail">
+      <span>1 of 4</span><i class="now"></i><i></i><i></i><i></i>
+      <span>about 90 seconds</span>
+    </div>
+    <h2>This is a geostationary object, plotted over two days</h2>
+    <p class="plain">You are looking at one number over time: how far east the object sits, in
+      degrees. Nothing else. Watch what it does around the middle of the plot.</p>
+    <svg viewBox="0 0 760 280" width="100%" role="img" style="display:block;background:var(--navy-deep);border-radius:3px" aria-label="longitude-drift plot">
+<g stroke="#385FAF" stroke-width="1">
+<line x1="74" y1="238.0" x2="742" y2="238.0"/>
+<line x1="74" y1="182.5" x2="742" y2="182.5"/>
+<line x1="74" y1="127.0" x2="742" y2="127.0"/>
+<line x1="74" y1="71.5" x2="742" y2="71.5"/>
+<line x1="74" y1="16.0" x2="742" y2="16.0"/>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="end" font-family="Segoe UI, system-ui, sans-serif">
+<text x="66" y="242.0">-5.8</text>
+<text x="66" y="186.5">-5.5</text>
+<text x="66" y="131.0">-5.3</text>
+<text x="66" y="75.5">-5.0</text>
+<text x="66" y="20.0">-4.7</text>
+</g>
+<g fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif">
+<text x="74.0" y="254">0.000</text>
+<text x="241.0" y="254">11.9</text>
+<text x="408.0" y="254">23.8</text>
+<text x="575.0" y="254">35.6</text>
+<text x="742.0" y="254">47.5</text>
+<text x="408.0" y="274">Hours since first fit</text>
+</g>
+<text x="16" y="127.0" fill="#739BCF" font-size="11" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" transform="rotate(-90 16 127.0)">Sub-satellite longitude, degrees east</text>
+<path d="M74 16 L74 238 L742 238" fill="none" stroke="#739BCF" stroke-width="1"/>
+<polyline points="74.0,222.5 81.0,221.5 88.1,222.4 95.1,221.1 102.1,221.4 109.2,220.9 116.2,221.3 123.2,220.6 130.3,220.9 137.3,219.9 144.3,219.1 151.3,219.2 158.4,219.0 165.4,219.1 172.4,218.8 179.5,218.0 186.5,217.9 193.5,217.7 200.6,217.1 207.6,218.1 214.6,217.9 221.7,216.2 228.7,216.4 235.7,215.8 242.8,222.7 249.8,222.0 256.8,222.4 263.9,222.1 270.9,221.7 277.9,221.9 284.9,221.5 292.0,220.3 299.0,220.4 306.0,219.9 313.1,219.0 320.1,222.2 327.1,218.7 334.2,214.7 341.2,211.9 348.2,209.6 355.3,205.5 362.3,203.1 369.3,199.9 376.4,196.4 383.4,193.6 390.4,190.5 397.5,186.2 404.5,183.8 411.5,179.4 418.5,177.7 425.6,174.0 432.6,170.2 439.6,167.5 446.7,164.1 453.7,161.5 460.7,157.5 467.8,154.9 474.8,151.8 481.8,149.1 488.9,145.2 495.9,141.2 502.9,139.3 510.0,135.2 517.0,133.2 524.0,129.2 531.1,126.0 538.1,122.5 545.1,120.2 552.1,116.4 559.2,112.4 566.2,109.6 573.2,107.0 580.3,103.9 587.3,100.7 594.3,96.5 601.4,95.0 608.4,90.4 615.4,87.0 622.5,84.4 629.5,80.6 636.5,79.1 643.6,75.6 650.6,71.0 657.6,68.5 664.7,65.4 671.7,63.1 678.7,59.7 685.7,56.1 692.8,53.6 699.8,49.4 706.8,45.8 713.9,43.4 720.9,40.8 727.9,37.3 735.0,33.4 742.0,31.3" fill="none" stroke="#739BCF" stroke-width="2"/>
+</svg>
+    <div class="teach" style="margin-top:calc(var(--step) * 2)">
+      <b>The cue</b>
+      <p>It held a steady position, then started sliding one way and kept sliding. That change of
+        rate, and the fact that it <em>stayed</em> changed, is the whole cue. An operator calls this
+        a <b>repositioning</b>.</p>
+    </div>
+    <p class="hint">Nothing is being scored yet. You will make one call yourself on the last step.</p>
+    <p style="display:flex; gap:var(--step); align-items:center; margin:calc(var(--step) * 2) 0 0">
+      <span class="primary">Show me what an expert checks next</span>
+      <span class="ghost">Skip the walkthrough</span>
+    </p>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>

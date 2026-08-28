@@ -30,3 +30,8 @@ tests
 # container." Excluded from the image context here and from the upload allowlist in
 # scripts/package-appstore.sh, with a contract test holding both.
 tools
+
+# Design canvas working files. Versioned, reviewable, and never shipped: the packaging
+# allowlist in scripts/package-appstore.sh names only src tests scripts docs content .github,
+# so this is belt and braces for the image build context.
+design

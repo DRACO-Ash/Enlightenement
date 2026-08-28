@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    :root {
+      --navy: #162646; --navy-deep: #101B33; --panel: #1B2C51;
+      --structure: #385FAF; --label: #739BCF;
+      --ink: #E8EDF5; --ink-dim: #9FB0CC;
+      --nominal: #27AE60; --alert: #E06C69; --alert-fill: #C0504D;
+      --step: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--navy); color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 18px; line-height: 1.5;
+    }
+    a { color: var(--label); } a:hover { color: var(--ink); }
+    .bar {
+      display: flex; align-items: baseline; gap: calc(var(--step) * 2); flex-wrap: wrap;
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      background: var(--navy-deep); border-bottom: 1px solid var(--structure);
+    }
+    .bar h1 { font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase; font-weight: 600; }
+    .bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
+    .bar .spacer { flex: 1; }
+    .bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+    .notice { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem; }
+    .tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
+    .tabs span { background: transparent; border-bottom: 3px solid transparent; color: var(--ink-dim); font-size: 0.95rem; padding: var(--step) calc(var(--step) * 1.5); }
+    .tabs span.on { color: var(--ink); border-bottom-color: var(--label); }
+    main { padding: calc(var(--step) * 2); max-width: 1180px; margin: 0 auto; }
+    h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); font-weight: 600; }
+    .panel { background: var(--panel); border: 1px solid var(--structure); border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2); }
+    .grid { display: grid; gap: calc(var(--step) * 2); }
+    .grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+    .grid.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; margin: 0 0 var(--step); }
+    .meta-row b { color: var(--ink); font-weight: 600; }
+    .plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
+    label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
+    .box { border: 1px solid var(--structure); background: var(--navy-deep); border-radius: 3px; padding: calc(var(--step) * 1.1); font-size: 1rem; color: var(--ink); min-height: 2.4rem; }
+    .box.focus { border-color: var(--ink); }
+    .field { margin-bottom: calc(var(--step) * 1.75); }
+    .hint { color: var(--ink-dim); font-size: 0.78rem; margin: 4px 0 0; }
+    fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step) * 1.75); }
+    legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
+    .conf { display: flex; gap: 6px; }
+    .conf div { flex: 1 1 90px; text-align: center; border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px; color: var(--ink); font-size: 0.8rem; background: var(--navy-deep); }
+    .conf div.on { border-color: var(--ink); background: var(--structure); font-weight: 700; }
+    .conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+    .conf div.on .pct { color: #DCE6F6; }
+    .primary { display: inline-block; font-weight: 600; background: var(--structure); color: #FFFFFF; border: 1px solid var(--label); border-radius: 3px; padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5); font-size: 1rem; }
+    .ghost { display: inline-block; background: transparent; color: var(--ink); border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5); font-size: 0.9rem; }
+    .verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; margin: 0 0 var(--step); }
+    .verdict .glyph { font-size: 1.4rem; line-height: 1; }
+    .verdict.hit { color: var(--nominal); }
+    .verdict.miss { color: var(--alert); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); vertical-align: top; }
+    th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .track { position: relative; height: 14px; background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; }
+    .track i { display: block; height: 100%; background: var(--structure); }
+    .track u { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
+    .ci { font-size: 0.7rem; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+    ol.steps { padding-left: 1.4em; margin: 0; }
+    ol.steps li { margin-bottom: var(--step); }
+    .step-role { display: block; color: var(--label); font-size: 0.8rem; }
+    .step-warning { display: block; color: var(--alert); font-size: 0.85rem; }
+    .step-note { display: block; color: var(--ink-dim); font-size: 0.85rem; }
+    .foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+    .proposal { margin: 0; padding: var(--step) calc(var(--step) * 2); background: var(--navy-deep); border-bottom: 1px solid var(--label); color: var(--label); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .empty { color: var(--ink-dim); }
+    .clock { font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+    .pill { display: inline-block; border: 1px solid var(--structure); border-radius: 999px; padding: 2px 10px; font-size: 0.74rem; color: var(--ink-dim); }
+    .pill.live { border-color: var(--nominal); color: var(--nominal); }
+    .pill.unscored { border-color: var(--label); color: var(--label); }
+
+    .same-words { border: 1px solid var(--label); border-radius: 3px;
+                  padding: calc(var(--step) * 1.5); background: var(--navy-deep);
+                  font-size: 0.88rem; }
+    .same-words h4 { margin: 0 0 var(--step); font-size: 0.85rem; color: var(--label); font-weight: 600; }
+    .same-words ul { margin: 0 0 var(--step); padding-left: 1.2em; }
+    .same-words li { margin-bottom: 4px; }
+    .not-shown { color: var(--ink-dim); }
+    .decay { display: flex; align-items: center; gap: var(--step); font-size: 0.82rem; }
+
+  </style>
+</helmet>
+<div class="bar">
+  <h1>Enlightenment</h1>
+  <span class="sub">Protect and Defend procedure trainer</span>
+  <span class="spacer"></span>
+  <span class="build">build 0.23.13</span>
+</div>
+<p class="proposal">Proposal &middot; Supervisor view &middot; not built &middot; flight plan step 10</p>
+<div class="tabs">
+    <span>Drill</span>
+    <span class="on">Dashboard</span>
+    <span>Library</span>
+</div>
+<main>
+  <div class="panel">
+    <h2>Readiness: [OPERATOR NAME]</h2>
+    <p class="meta-row">
+      <span>Declared purpose <b>Training development and readiness assurance</b></span>
+      <span>Last activity <b>2 days ago</b></span>
+      <span>This view is <b>audited</b></span>
+    </p>
+    <p class="hint" style="margin-bottom:calc(var(--step) * 2)">Opening this page writes an audit
+      record: who viewed, whose record, when, which view. The operator can see that record.</p>
+
+    <h3>Current competence by axis</h3>
+    <table>
+      <thead><tr><th>Axis</th><th class="num">Current</th><th>Interval</th>
+        <th>Since last demonstrated</th></tr></thead>
+      <tbody>
+          <tr><td>cue-detection</td><td class="num">68%</td><td><div class="track"><i style="width:68%"></i><u style="left:44%;width:42%"></u></div><span class="ci">44% to 86%</span></td><td>14 days</td></tr>
+          <tr><td>event-classification</td><td class="num">81%</td><td><div class="track"><i style="width:81%"></i><u style="left:63%;width:30%"></u></div><span class="ci">63% to 93%</span></td><td>3 days</td></tr>
+          <tr><td>procedure-recall</td><td class="num">88%</td><td><div class="track"><i style="width:88%"></i><u style="left:71%;width:25%"></u></div><span class="ci">71% to 96%</span></td><td>2 days</td></tr>
+          <tr><td>physical-reasoning</td><td class="num">not measured</td><td class="empty">not measured</td><td>never measured</td></tr>
+          <tr><td>uncertainty-calibration</td><td class="num">74%</td><td><div class="track"><i style="width:74%"></i><u style="left:55%;width:33%"></u></div><span class="ci">55% to 88%</span></td><td>6 days</td></tr>
+          <tr><td>reporting</td><td class="num">not measured</td><td class="empty">not measured</td><td>never measured</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Coverage of the active procedure set</h3>
+    <table>
+      <thead><tr><th>Procedure</th><th class="num">Items</th><th class="num">Demonstrated</th>
+        <th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>manoeuvre-detection</td><td class="num">4</td><td class="num">4</td>
+          <td style="color:var(--nominal)">&#9650; current</td></tr>
+        <tr><td>rpo-response</td><td class="num">4</td><td class="num">3</td>
+          <td style="color:var(--label)">&#9633; partial</td></tr>
+        <tr><td>separation-versus-breakup</td><td class="num">4</td><td class="num">2</td>
+          <td style="color:var(--alert)">&#9660; decayed</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="same-words">
+      <h4>What the operator is told you can see, in these exact words</h4>
+      <ul>
+        <li>Your current competence and confidence interval on each of the six axes.</li>
+        <li>Which procedures you have demonstrated, and which have decayed.</li>
+        <li>When you were last active, to the day.</li>
+        <li>A record of every time a supervisor opened your results.</li>
+      </ul>
+      <h4 class="not-shown">And what is never shown to anyone</h4>
+      <ul class="not-shown">
+        <li>Individual drill answers, right or wrong.</li>
+        <li>Your miss rate, your streaks, or any individual attempt.</li>
+        <li>Anything you did in the sandbox.</li>
+        <li>What you wrote in a self-explanation prompt.</li>
+      </ul>
+      <p class="hint" style="margin:0">A drill miss is the mechanism by which this product works.
+        Reporting it would destroy the loop.</p>
+    </div>
+  </div>
+</main>
+<p class="foot">synthetic-operator &middot; Synthetic operator. Sign-in and the supervisor audit trail are flight plan step 10, and no named-individual record is written before the DPIA is signed.</p>
+</x-dc>
+</body>
+</html>
