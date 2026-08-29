@@ -159,6 +159,14 @@ for a novice actively harm an expert. So:
 
 ### The plot surfaces
 
+**Read `docs/PLOT-REALISM.md` before designing a plot.** Ash supplied five screenshots of live KBR
+Space Domain Awareness tooling on 29 August, and judged against them these three surfaces are not
+realistic in a structural way: real products are dense gappy multi-source scatter that encode a
+second variable in colour, and ours are clean evenly sampled single-series polylines that encode
+nothing. That document lists the six idioms every real product uses, what each screenshot gives us,
+and the nine changes ranked by training value. A design that ignores it will produce a mockup an
+operator recognises as a toy.
+
 Three exist. Each is a canvas drawn from scratch, and each carries an authored text equivalent plus
 a "read the data as a table" control.
 

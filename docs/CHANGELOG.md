@@ -2,6 +2,44 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.19 (2026-08-29)
+
+**What.** `docs/PLOT-REALISM.md`, and a pointer to it from the design brief. No code change.
+
+Ash supplied five screenshots of live KBR Space Domain Awareness tooling and asked whether the
+plots this application generates are realistic. **They are not, and the gap is structural rather
+than cosmetic.** Every one of the five real products is a dense, gappy, multi-source scatter that
+encodes a second variable in colour. Every one of ours is a clean, evenly sampled, single-series
+polyline that encodes nothing.
+
+`plots.py` already carried the warning in its own docstring: a shaped series presented as measured
+data is the clean-training-data-is-negative-training failure. That warning was right and its scope
+was too small. It described the noise amplitude. The problem is the sampling, the clumping, the
+second dimension, the marker glyph, the provenance and the number of sources.
+
+**The one that changes the build.** The orbital element grid is a manoeuvre-detection drill as it
+exists in the real world, and it specifies a discrimination no current surface can pose: period,
+apogee, perigee and eccentricity all step together at a burn while inclination and RAAN ramp
+smoothly through it, untouched, because both are dominated by natural perturbation. The skill is
+not "spot a step". It is knowing which elements a burn moves and which it does not, and reading
+one against the other. A single-panel longitude plot cannot ask that question; a six-panel grid
+asks it on its own.
+
+Also recorded: we have no light-curve surface at all, which is why photometric cues sit in the
+progress artboard as never trained and why "specular glint" and "tumble period" are uncollected
+vocabulary; real Hill-frame analysis draws three projections rather than one, because a single
+projection of a three-dimensional relative track is ambiguous; and finding a target in a crowded
+field is a distinct skill we do not train, because our plots put one object alone on an empty axis.
+
+Nine changes ranked by training value, five questions for Ash that I am not going to guess at
+(among them what the four association types mean, and what "interval" indexes on a light curve),
+and a note that making the surfaces convincing before the characterisation pass runs makes the
+shortfall harder to see rather than smaller, so the provisional marker stays on all of them.
+
+**How verified.** Verification loop green. No source change beyond the version stamp. No datum
+from the supplied screenshots has been copied into content or code: the idiom was taken, the data
+was not, and the generated series stay synthetic and seeded.
+
 ## V0.23.18 (2026-08-29)
 
 **What.** The gates ran on V0.23.17. Security returned PASS, engineering returned FAIL, and both
