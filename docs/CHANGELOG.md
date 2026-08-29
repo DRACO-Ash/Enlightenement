@@ -2,6 +2,60 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.17 (2026-08-29)
+
+**What.** Three MAJORs from the security gate and one from the engineering gate, all on V0.23.16,
+all of them the same shape: a control that was claimed rather than tested.
+
+**The closure I wrote to close a hole had the same hole.** `_state_changing_routes` read
+`route.methods` and silently skipped any route object that did not have one. Both gates defeated
+it independently and by different routes: on the pinned FastAPI, `include_router` appends an
+`_IncludedRouter` whose `path` and `methods` are both `None`, and `app.mount` appends a `Mount`
+with no `methods` either. An unauthenticated `POST` behind either answered 200 in the closed
+default while the suite stayed green. It failed OPEN, which CLAUDE.md forbids outright.
+
+It now WALKS every idiom - decorator, `include_router` (through `original_router.routes`, taking
+the prefix from `include_context`), mount, sub-application, WebSocket - and RAISES on any route
+object it has not been taught, so a new routing idiom fails the suite rather than passing
+silently. A WebSocket cannot be probed with an HTTP verb, so it must be named in
+`REVIEWED_WEBSOCKETS` with its reasoning. Four mutants now die where none did: an ungated POST
+behind `include_router`, behind `app.mount`, a WebSocket route, and an opaque ASGI mount whose
+routes cannot be enumerated at all.
+
+**An open route could shut a gated one.** `POST /api/v1/drill/answer` is unauthenticated on
+purpose until operator identity exists, and it shared the strict rate limiter with the
+token-gated session writes. So twenty unauthenticated answers exhausted the budget and the next
+authenticated `POST /api/v1/sessions` answered 429. Behind the platform gateway many callers
+share one address, which is already recorded as accepted risk 4, so that was a single
+unauthenticated client able to hold the team's gated write path shut. Split into `DRILL_LIMIT`,
+its own bucket, same tier and same numbers. The coarse global tier stays shared, because a global
+ceiling is what it is for, and the risk paragraph now says so.
+
+**The audit line that was not a control.** `docs/SECURITY.md` cited the `drill.answered` emission
+twice, once in the register and once as a compensating control for the ungated write, and
+deleting it left the entire suite green. It was a claim. It is now bound by a test asserting
+exactly one line per accepted answer, naming the actor and the item, carrying NEITHER the
+submitted answer text NOR any score field - because the plan forbids a personal performance
+figure in a log line and an operator's own words are performance data.
+
+**And one I nearly shipped vacuously.** The first draft of the cross-limiter test asserted the
+session write was "not 429". It passed against the merged-limiter mutant, because a malformed
+body 422s before the rate guard ever runs. A negative assertion that a wrong request also
+satisfies is not an assertion. Rewritten to require 201, and the mutant then died with the right
+message.
+
+**Also.** The digest table pinning the six vendored typefaces was correct and bound by nothing, so
+a swapped `woff2` would have left the pinning claim intact and false; now recomputed by a contract
+test, proved by flipping one byte and by dropping a row. The register row for the route closure
+narrowed to exactly what the test guarantees. The audit row now cites `training_api.py`, where the
+third route's emission actually lives. The deploy checklist's test count, stale at 898 against 905.
+The last "both write routes" in the prose. The artboard harness now percent-decodes a pathname, so
+a directory with a space in its name does not read as an offsite fetch.
+
+**How verified.** Verification loop green: 905 passed, 1 skipped, coverage 96.85%. Continuous
+integration concluded `success` at `9679eaa`, the first green run after eight consecutive
+failures, read from run 56 rather than inferred. Nine new mutants killed across the four fixes.
+
 ## V0.23.16 (2026-08-29)
 
 **What.** Everything both binding gates found on V0.23.15, and the red continuous integration

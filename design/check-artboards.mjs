@@ -48,7 +48,10 @@ for (const width of WIDTHS) {
     const url = route.request().url();
     if (url.startsWith('file:')) {
       let target;
-      try { target = path.resolve(new URL(url).pathname); } catch { target = ''; }
+      // decodeURIComponent, because a directory with a space in its name arrives
+      // percent-encoded and would otherwise resolve outside root and read as offsite.
+      try { target = path.resolve(decodeURIComponent(new URL(url).pathname)); }
+      catch { target = ''; }
       if (target === dir || target.startsWith(root)) return route.continue();
     }
     offsite.push(url);

@@ -112,6 +112,16 @@ GLOBAL_WINDOW_SECONDS = 60.0
 WRITE_LIMIT = 20
 WRITE_WINDOW_SECONDS = 60.0
 
+#: The drill scorer's own budget, deliberately NOT the one the gated writes share.
+#: `POST /api/v1/drill/answer` is unauthenticated on purpose until operator identity exists
+#: (flight plan step 10), and while it shared the strict limiter an unauthenticated caller could
+#: spend the whole strict budget in twenty requests and leave the token-authenticated session
+#: writes answering 429. Measured, in the security gate's round on V0.23.16: twenty unauthenticated
+#: answers, then an authenticated `POST /api/v1/sessions` refused. An open route must not be able
+#: to shut a gated one. Same shape and same numbers; a separate bucket is the whole point.
+DRILL_LIMIT = 20
+DRILL_WINDOW_SECONDS = 60.0
+
 #: Request body cap, enforced on bytes actually read (see :mod:`enlightenment.middleware`).
 MAX_BODY_BYTES = 64 * 1024
 
@@ -153,6 +163,7 @@ class Limiters:
 
     coarse: RateLimiter | None = None
     strict: RateLimiter | None = None
+    drill: RateLimiter | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +190,7 @@ class _Runtime:
     probe_settings: ProbeSettings
     coarse: RateLimiter
     strict: RateLimiter
+    drill: RateLimiter
     started: float
     clock: Callable[[], float]
     ready: bool | None = field(default=None)
@@ -574,8 +586,26 @@ def _expected_rev(if_match: str | None) -> int | None:
 
 
 def _guard_write_rate(runtime: _Runtime, request: Request) -> None:
-    """Apply the strict tier. Shared by both write routes so neither can drift from it."""
+    """Apply the strict tier. Shared by the two GATED write routes so neither can drift from it.
+
+    The drill scorer is deliberately not among them; see `_guard_drill_rate`.
+    """
     if not runtime.strict.allow(_client_key(request)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="rate limit exceeded"
+        )
+
+
+def _guard_drill_rate(runtime: _Runtime, request: Request) -> None:
+    """The drill scorer's own budget, so an open route cannot shut a gated one.
+
+    Same tier and same numbers as the gated writes, and a SEPARATE bucket. The scorer is
+    unauthenticated until operator identity exists, so anyone can spend its budget; sharing one
+    limiter with the token-gated session writes meant anyone could spend theirs too. Measured
+    before this split: twenty unauthenticated answers, then an authenticated session write
+    refused with 429.
+    """
+    if not runtime.drill.allow(_client_key(request)):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="rate limit exceeded"
         )
@@ -716,6 +746,8 @@ def create_app(
         or RateLimiter(GLOBAL_LIMIT, GLOBAL_WINDOW_SECONDS),
         strict=(limiters.strict if limiters else None)
         or RateLimiter(WRITE_LIMIT, WRITE_WINDOW_SECONDS),
+        drill=(limiters.drill if limiters else None)
+        or RateLimiter(DRILL_LIMIT, DRILL_WINDOW_SECONDS),
         started=ticks(),
         clock=ticks,
         probe_pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="probe"),
@@ -820,5 +852,5 @@ def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths)
         app,
         content=store,
         engine=engine,
-        guard_write=lambda request: _guard_write_rate(runtime, request),
+        guard_write=lambda request: _guard_drill_rate(runtime, request),
     )

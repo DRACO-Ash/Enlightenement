@@ -9,6 +9,7 @@ guaranteed-false on the machine that gates the deploy.
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import json
 import os
@@ -3594,6 +3595,45 @@ def test_the_workstation_tools_never_reach_the_upload_or_the_image() -> None:
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert "tools" in ignored, "tools/ is not excluded from the image build context"
+
+
+def test_the_vendored_typeface_digests_match_the_files_on_disk() -> None:
+    """`design/phosphor/fonts/DIGESTS.md` pins six third-party binaries; recompute it.
+
+    The table was correct when it was written and bound by nothing, so a swapped `woff2` would
+    have left the pinning CLAIM intact and false. A digest nobody recomputes is a comment. The
+    directory never ships, which caps the impact, but the whole point of recording a digest is
+    that somebody can tell whether the file is still the file.
+    """
+    fonts = ROOT / "design" / "phosphor" / "fonts"
+    # The same discriminator as `_udl_tool_or_skip`, for the same reason and a different
+    # directory: `design/` is excluded from the upload on purpose, asserted two definitions
+    # above, so inside the unpacked artefact there is nothing here to recompute. Narrow on
+    # purpose - delete `design/` in a REPOSITORY and `.git` is still there, so this fails.
+    if not (ROOT / "design").exists() and not (ROOT / ".git").exists():
+        pytest.skip(
+            "design/ is absent and so is .git, which is the unpacked upload artefact. The"
+            " typefaces are excluded from the artefact on purpose"
+            " (test_the_design_directory_never_reaches_the_upload_or_the_image asserts both"
+            " exclusions), so there is nothing here to recompute."
+        )
+    recorded = {
+        match.group(1): (int(match.group(2)), match.group(3))
+        for match in re.finditer(
+            r"^\| `([^`]+\.woff2)` \| (\d+) \| `([0-9a-f]{64})` \|$",
+            (fonts / "DIGESTS.md").read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    }
+    on_disk = sorted(path.name for path in fonts.glob("*.woff2"))
+    assert on_disk, "no vendored typeface was found, so this test proves nothing"
+    assert sorted(recorded) == on_disk, (
+        f"DIGESTS.md records {sorted(recorded)} and the directory holds {on_disk}"
+    )
+    for name, (size, digest) in recorded.items():
+        blob = (fonts / name).read_bytes()
+        assert len(blob) == size, f"{name} is {len(blob)} bytes, DIGESTS.md says {size}"
+        assert hashlib.sha256(blob).hexdigest() == digest, f"{name} is not the file that was pinned"
 
 
 def test_the_design_directory_never_reaches_the_upload_or_the_image() -> None:

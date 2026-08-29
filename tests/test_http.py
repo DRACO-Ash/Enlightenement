@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.routing import WebSocketRoute
 
 from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
 from enlightenment.app import (
@@ -270,27 +271,78 @@ UNGATED_WRITES = frozenset({("POST", "/api/v1/drill/answer")})
 PATH_PARAMETER_VALUES = {"session_id": "alpha-one"}
 
 
+#: A WebSocket cannot be probed with an HTTP verb, so each one is reasoned about by hand and
+#: named here with how its writes are gated. Empty: the application mounts no WebSocket route.
+REVIEWED_WEBSOCKETS: frozenset[str] = frozenset()
+
+IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+
+def _walk_routes(routes: Any, prefix: str, found: list[tuple[str, str]]) -> None:
+    """Walk every routing idiom, and FAIL on one this closure has not been taught.
+
+    The first version of this closure read `route.methods` and silently skipped anything that
+    did not have it. Both binding gates defeated it the same way, independently: on the pinned
+    FastAPI, `include_router` appends an `_IncludedRouter` whose `path` and `methods` are both
+    `None`, and `app.mount` appends a `Mount` with no `methods` either. An unauthenticated
+    `POST` behind either one answered 200 in the closed default while the suite stayed green.
+
+    That is the SAME enumeration-versus-closure failure this test exists to close, one level
+    down, and it failed OPEN, which CLAUDE.md forbids outright: a control that cannot be
+    verified is treated as failed. So the unknown case now raises rather than continuing. The
+    day somebody reaches for a routing idiom this cannot see, the suite goes red and they have
+    to teach it before the route can ship. That is the intended cost.
+    """
+    for route in routes:
+        methods = getattr(route, "methods", None)
+        if methods is not None:
+            path = getattr(route, "path", None)
+            assert path is not None, f"{type(route).__name__} carries methods but no path"
+            for method in methods:
+                if method.upper() in IDEMPOTENT_METHODS:
+                    continue
+                found.append((method.upper(), prefix + path))
+            continue
+
+        included = getattr(route, "original_router", None)
+        if included is not None:  # FastAPI's _IncludedRouter, from include_router()
+            context = getattr(route, "include_context", None)
+            _walk_routes(included.routes, prefix + getattr(context, "prefix", ""), found)
+            continue
+
+        if hasattr(route, "routes"):  # a Mount, or a mounted sub-application
+            mounted = getattr(route, "app", None)
+            assert mounted is None or hasattr(mounted, "routes"), (
+                f"{prefix + getattr(route, 'path', '?')} mounts an opaque ASGI application whose"
+                " routes cannot be enumerated, so its writes cannot be checked. Gate it at the"
+                " mount, or make it introspectable."
+            )
+            _walk_routes(route.routes, prefix + getattr(route, "path", ""), found)
+            continue
+
+        if isinstance(route, WebSocketRoute):
+            found.append(("WEBSOCKET", prefix + getattr(route, "path", "")))
+            continue
+
+        raise AssertionError(
+            f"{type(route).__name__} at {getattr(route, 'path', '?')!r} carries no methods and"
+            " this closure does not know how to walk it. Teach it before the route ships: a"
+            " routing idiom the gating test cannot see is one that can carry an unauthenticated"
+            " write straight past it."
+        )
+
+
 def _state_changing_routes(app: Any) -> list[tuple[str, str]]:
-    """Every non-idempotent route the application actually mounts, from `app.routes`.
+    """Every non-idempotent route the application actually serves, however it was registered.
 
     DERIVED, not enumerated. The gating tests below used to list two paths by hand, and a third
     state-changing route - `POST /api/v1/drill/answer` - shipped past them without turning
-    anything red, because a list cannot notice what is not on it. That is the same
-    enumeration-versus-closure failure `docs/SECURITY.md` already names, so the parametrisation
-    now closes over the router and anything deliberately ungated must say so in UNGATED_WRITES.
+    anything red, because a list cannot notice what is not on it.
     """
     found: list[tuple[str, str]] = []
-    for route in app.routes:
-        path = getattr(route, "path", None)
-        methods = getattr(route, "methods", None)
-        if path is None or methods is None:
-            continue
-        for method in methods:
-            if method in {"GET", "HEAD", "OPTIONS"}:
-                continue
-            found.append((method, path))
+    _walk_routes(app.routes, "", found)
     assert found, "no state-changing route was found, so this test proves nothing"
-    return sorted(found)
+    return sorted(set(found))
 
 
 def _concrete(path: str) -> str:
@@ -310,6 +362,13 @@ def test_every_state_changing_route_is_gated_or_explicitly_excepted(
     somebody has to write down why it is open.
     """
     for method, path in _state_changing_routes(closed_client.app):
+        if method == "WEBSOCKET":
+            assert path in REVIEWED_WEBSOCKETS, (
+                f"{path} is a WebSocket route, which changes state and cannot be probed with an"
+                " HTTP verb. Gate it in the handler and name it in REVIEWED_WEBSOCKETS with the"
+                " reason, or this test cannot tell you anything about it."
+            )
+            continue
         response = getattr(closed_client, method.lower())(_concrete(path), json=VALID_SESSION)
         if (method, path) in UNGATED_WRITES:
             assert response.status_code != 401, (

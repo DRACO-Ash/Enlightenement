@@ -35,7 +35,8 @@ state-changing route.
 | No configured token cannot authorise (fail closed) | `auth.py` | `test_no_configured_token_cannot_authorise` |
 | Every cost-incurring and state-changing route gated | `app.py` | `test_a_write_without_a_token_is_refused...` |
 | **Writes CLOSED by default**: no token and no opt-in means 401 | `config.py`, `app.py` | `test_writes_are_refused_by_default_with_no_token_configured` |
-| The set of state-changing routes is CLOSED OVER, not enumerated: every non-idempotent route on `app.routes` must answer 401 in the closed default or be named in `UNGATED_WRITES` with a written reason. The previous tests listed two paths by hand, which is how a third state-changing route shipped past them | `app.py`, `training_api.py` | `test_every_state_changing_route_is_gated_or_explicitly_excepted` |
+| The one deliberately UNGATED write has its OWN rate budget, so an open route cannot spend a gated route's allowance and shut it. While the two shared the strict limiter, twenty unauthenticated drill answers left an authenticated session write answering 429 | `app.py` (`_guard_drill_rate`, `DRILL_LIMIT`) | `test_an_unauthenticated_answer_flood_cannot_shut_the_gated_writes` |
+| The set of state-changing routes is CLOSED OVER, not enumerated. The closure WALKS `app.routes` through every routing idiom the application could use - a decorator, an `include_router`, a mount, a sub-application, a WebSocket - and RAISES on any route object it has not been taught, so a new idiom fails the suite rather than passing silently. Every non-idempotent route it finds must answer 401 in the closed default, or be named in `UNGATED_WRITES`, or (for a WebSocket, which no HTTP verb can probe) in `REVIEWED_WEBSOCKETS`. Both binding gates defeated the first version of this row, which read `route.methods` and skipped what did not have it | `app.py`, `training_api.py` | `test_every_state_changing_route_is_gated_or_explicitly_excepted` |
 | Anonymous writes need an explicit opt-in | `config.py` | `test_anonymous_writes_require_the_explicit_opt_in` |
 | A token alongside the anonymous opt-in refuses to start; the two cannot combine | `config.py` | `test_a_token_alongside_anonymous_writes_refuses_to_start` |
 | A token below the minimum length refuses to start | `config.py` | `test_a_token_shorter_than_the_minimum_refuses_to_start` |
@@ -97,7 +98,7 @@ state-changing route.
 | Log injection blocked; actor sanitised | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
 | Actor and every reflected value LENGTH-CAPPED and sanitised, in `audit()` as well as `log_event()` | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded`, `test_an_audit_line_sanitises_every_string_field_not_only_the_actor` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
-| All three state-changing routes (`POST /api/v1/sessions`, `PATCH /api/v1/sessions/{id}`, `POST /api/v1/drill/answer`) EMIT an audit line naming the actor, which is the accountability control under a shared token | `app.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor` |
+| All three state-changing routes (`POST /api/v1/sessions`, `PATCH /api/v1/sessions/{id}`, `POST /api/v1/drill/answer`) EMIT an audit line naming the actor, which is the accountability control under a shared token. The drill line additionally carries NEITHER the submitted answer nor any score: the plan forbids a personal performance figure in a log line, and an operator's own words are performance data | `app.py`, `training_api.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor`, `test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data` |
 | A missing or blank actor becomes `anonymous`, never an empty field | `audit.py` | `test_missing_or_blank_actor_becomes_anonymous` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
 | No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length`, `test_nothing_on_app_state_exposes_the_configuration` |
@@ -137,7 +138,8 @@ copy of the tree and the named test went red. Mutants have been killed across th
 the ledger below counts, covering the anti-shrink merge, the token compare, both rate-limit boundary
 directions, the readiness fail-closed branch, the unknown-key rejection, the size cap, the
 actor sanitiser, the closed-by-default write posture, the cross-origin method list, the
-strict tier on both write routes, the byte-counting body cap, the probe cache, the port
+strict tier on both GATED write routes and the separate budget on the ungated one, the
+byte-counting body cap, the probe cache, the port
 validation, the exclusive write lock, the revision guard, the fail-closed key table, the
 worker count, the package-manager purge, the package-database retention, and the two binding
 image checks in continuous integration.
@@ -306,9 +308,17 @@ executes, never about the words beside it.
    stopped looking at exactly the route that writes.
    The reason is flight plan step 10: operator identity does not exist yet, so every drill
    write goes to the synthetic `DEMONSTRATION_OPERATOR` and no record of a named individual
-   is created before the DPIA is closed. The compensating controls are real and were
-   verified live under attack: the strict limiter answers 429 at request 21, and the write
-   emits an audit line carrying the item and the actor with no answer text and no score.
+   is created before the DPIA is closed. Run history is capped at `MAX_RUN_HISTORY`, so the
+   open write cannot grow the store without bound.
+   Two compensating controls, both now bound by tests rather than asserted here. The route has
+   its OWN rate budget, `DRILL_LIMIT`, and that separation is itself a finding: while it shared
+   the strict limiter with the gated session writes, twenty unauthenticated answers left an
+   authenticated `POST /api/v1/sessions` answering 429. Behind the platform gateway many callers
+   share one address (accepted risk 4), so that was a single unauthenticated client able to hold
+   the team's gated write path shut. The coarse global tier is still shared by every route,
+   because a global ceiling is what it is for. The second control is the audit line, which
+   carries the item and the actor and neither the answer text nor any score; deleting it used to
+   leave the whole suite green, so it was a claim rather than a control, and it is a control now.
    **When identity lands, this route gets the token dependency and this paragraph goes.**
 6. **Dataset confidentiality is out of scope.** Recorded, not assumed.
 7. **Socket parking during the HEADER phase is not bounded by this application.** The body

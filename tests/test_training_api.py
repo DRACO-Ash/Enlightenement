@@ -159,6 +159,14 @@ def test_an_unknown_item_is_a_400_naming_the_problem_not_a_500(client: TestClien
     assert "not loaded" in json.dumps(response.json())
 
 
+ANSWER_BODY = {
+    "item_id": "drill-station-keeping",
+    "classification": "station keeping",
+    "first_action": "confirm in a second independent fit",
+    "confidence": 3,
+}
+
+
 def test_answering_is_strictly_rate_limited(
     config: Config, store: TrainingStore, tmp_path: Path
 ) -> None:
@@ -168,18 +176,91 @@ def test_answering_is_strictly_rate_limited(
         config=config,
         store=store,
         probe=ok_probe,
-        limiters=Limiters(strict=RateLimiter(2, 60.0)),
+        limiters=Limiters(drill=RateLimiter(2, 60.0)),
         training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
     )
-    body = {
-        "item_id": "drill-station-keeping",
-        "classification": "station keeping",
-        "first_action": "confirm in a second independent fit",
-        "confidence": 3,
-    }
     with TestClient(app) as client:
-        codes = [client.post("/api/v1/drill/answer", json=body).status_code for _ in range(3)]
+        codes = [
+            client.post("/api/v1/drill/answer", json=ANSWER_BODY).status_code for _ in range(3)
+        ]
     assert codes == [200, 200, 429]
+
+
+def test_an_unauthenticated_answer_flood_cannot_shut_the_gated_writes(
+    config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """An open route must not be able to spend a gated route's budget.
+
+    The scoring endpoint is unauthenticated on purpose until operator identity exists, and it
+    used to share the strict limiter with the token-gated session writes. The security gate
+    reproduced the consequence in one go: twenty unauthenticated answers, then an authenticated
+    `POST /api/v1/sessions` refused with 429. Behind the platform gateway many callers share one
+    address, so that is a single unauthenticated client holding the team's gated write path shut.
+
+    Both budgets are set to two here so that exhausting one would be unmissable if they were
+    ever merged back together.
+    """
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        limiters=Limiters(strict=RateLimiter(2, 60.0), drill=RateLimiter(2, 60.0)),
+        training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        flood = [
+            client.post("/api/v1/drill/answer", json=ANSWER_BODY).status_code for _ in range(4)
+        ]
+        assert flood == [200, 200, 429, 429], "the drill route's own budget did not bite"
+        session = client.post(
+            "/api/v1/sessions",
+            json={"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"},
+        )
+    # Asserted as "the write SUCCEEDED", not as "it was not 429". The first draft of this test
+    # checked only for 429 and passed vacuously against the merged-limiter mutant, because a
+    # malformed body 422s before the rate guard ever runs. A negative assertion that a wrong
+    # request also satisfies is not an assertion.
+    assert session.status_code == 201, (
+        "an unauthenticated answer flood spent the gated writes' rate budget, so an open route"
+        f" can shut a gated one; the session write answered {session.status_code}"
+    )
+
+
+def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The accountability control on the one deliberately ungated write, and it was untested.
+
+    `docs/SECURITY.md` cites this emission twice: once in the audit register and once as a
+    compensating control for accepted risk 5, the ungated scorer. The security gate deleted the
+    `log_event` call and the entire suite stayed green, so it was a claim, not a control.
+
+    Three properties, because the line has to be present AND safe. The plan forbids a personal
+    performance figure in any log line, and the operator's own words are performance data: an
+    audit line that carried the submitted answer or the score would turn the audit trail into
+    the very record the DPIA has not yet approved.
+    """
+    with caplog.at_level("INFO"):
+        response = client.post("/api/v1/drill/answer", json=ANSWER_BODY)
+    assert response.status_code == 200
+
+    lines = [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.getMessage().startswith("{")
+    ]
+    answered = [line for line in lines if line.get("event") == "drill.answered"]
+    assert len(answered) == 1, f"expected exactly one drill.answered line, saw {len(answered)}"
+
+    line = answered[0]
+    assert line["actor"] == "synthetic-operator", line
+    assert line["itemId"] == ANSWER_BODY["item_id"], line
+
+    emitted = json.dumps(line)
+    assert ANSWER_BODY["classification"] not in emitted, "the answer text reached the audit line"
+    assert ANSWER_BODY["first_action"] not in emitted, "the answer text reached the audit line"
+    for field in ("score", "total", "rating", "brier", "confidence", "correct"):
+        assert field not in line, f"the audit line carries performance data: {field}"
 
 
 # --- content and library -----------------------------------------------------------------
