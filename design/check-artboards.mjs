@@ -11,8 +11,9 @@
 //   ● its bounding box sits inside the frame, so nothing is clipped away
 //   ● it does not overlap another label
 //
-// It also asserts that a loaded artboard makes no network request, which is
-// how the vendored typefaces stay vendored.
+// It also asserts that a loaded artboard fetches nothing outside its own
+// directory, which is how the vendored typefaces stay vendored, and that every
+// typeface a page actually asks for is one that actually loaded.
 //
 // Not part of scripts/verify.sh: it needs Node and Playwright, and this is a
 // Python project. Run it by hand when an artboard changes.
@@ -38,9 +39,18 @@ let failures = 0;
 for (const width of WIDTHS) {
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
   const offsite = [];
+  // Only a file: URL inside the artboard directory is served. An artboard is
+  // repo-controlled, so this is defence in depth rather than a live threat, but
+  // a page that can fetch('file:///etc/...') has no business in a check that
+  // exists to prove a page fetches nothing.
+  const root = dir.endsWith(path.sep) ? dir : dir + path.sep;
   await page.route('**', route => {
     const url = route.request().url();
-    if (url.startsWith('file:')) return route.continue();
+    if (url.startsWith('file:')) {
+      let target;
+      try { target = path.resolve(new URL(url).pathname); } catch { target = ''; }
+      if (target === dir || target.startsWith(root)) return route.continue();
+    }
     offsite.push(url);
     return route.abort();
   });
@@ -76,13 +86,30 @@ for (const width of WIDTHS) {
           }
         }
       }
+      // Asserted positively against document.fonts, never through fonts.check():
+      // check() returns TRUE when no @font-face rule matches the family at all, so
+      // a dropped stylesheet - the likeliest regression, and the exact state this
+      // direction moved away from - would read as a pass. And no allowlist of
+      // expected family names: every first-choice family that is not a generic
+      // keyword must resolve to a face that actually loaded, so a typo or a rename
+      // fails too rather than being skipped for not matching the list.
+      const GENERIC = new Set(['system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace',
+        'ui-rounded', 'sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'math',
+        'emoji', 'fangsong', 'inherit', 'initial', 'unset', 'revert']);
+      const declared = [...document.fonts].map(face => {
+        const bounds = String(face.weight).trim().split(/\s+/).map(Number);
+        return { family: face.family.replace(/["']/g, '').trim(),
+                 lo: bounds[0], hi: bounds[bounds.length - 1], status: face.status };
+      });
       for (const el of document.querySelectorAll('*')) {
         if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
         const style = getComputedStyle(el);
         const family = style.fontFamily.split(',')[0].replace(/["']/g, '').trim();
-        if (!/^(Saira|Saira Condensed|Azeret Mono)$/.test(family)) continue;
-        if (!document.fonts.check(`${style.fontWeight} 16px "${family}"`))
-          unloaded.push(`${family} ${style.fontWeight}`);
+        if (family === '' || GENERIC.has(family.toLowerCase())) continue;
+        const weight = Number(style.fontWeight);
+        const face = declared.find(f => f.family === family && weight >= f.lo && weight <= f.hi);
+        if (face === undefined) unloaded.push(`${family} ${weight}: nothing declares it`);
+        else if (face.status !== 'loaded') unloaded.push(`${family} ${weight}: ${face.status}`);
       }
       return { small: [...new Set(small)], clipped: [...new Set(clipped)],
                overlapping: [...new Set(overlapping)], unloaded: [...new Set(unloaded)] };
@@ -104,7 +131,7 @@ for (const width of WIDTHS) {
   }
   if (offsite.length) {
     failures += 1;
-    console.log(`FAIL an artboard reached off the disk: ${[...new Set(offsite)].join(', ')}`);
+    console.log(`FAIL an artboard fetched outside its own directory: ${[...new Set(offsite)].join(', ')}`);
   }
   await page.close();
 }

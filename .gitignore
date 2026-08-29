@@ -41,3 +41,9 @@ udl-profile.ini
 credentials.ini
 queryhelp-*.json
 noise-model*.json
+
+# `design/check-artboards.mjs` tells the operator to `npm install playwright` at the root, so
+# following the instruction produces thousands of untracked third-party files that git then
+# offers to commit. Same class as the worktree entry above: a tool's own working directory
+# has no business being offered to the App Store artefact.
+node_modules/

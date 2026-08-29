@@ -353,6 +353,26 @@ def test_the_release_version_matches_across_the_manifest_and_the_package() -> No
     )
 
 
+def test_the_udl_runbook_names_the_version_of_the_tool_it_documents() -> None:
+    """A seventh version site, hand-bumped every release since V0.23.6 and bound by nothing.
+
+    `docs/RUNBOOK-UDL-CHARACTERISATION.md` carries a readiness row naming the tool version the
+    operator is about to run on a live UDL endpoint with real credentials. Six tests bind the
+    other sites; this row had only discipline holding it, which the engineering gate pointed
+    out is not a control. A runbook that names the wrong version tells an operator they are
+    running something they are not.
+    """
+    row = re.search(
+        r"`tools/udl_characterise\.py` \| this repository, `V([0-9.]+)`",
+        (ROOT / "docs" / "RUNBOOK-UDL-CHARACTERISATION.md").read_text(encoding="utf-8"),
+    )
+    assert row is not None, "the runbook's tool-version row moved or lost its shape"
+    manifest = _pyproject()["project"]["version"]
+    assert row.group(1) == manifest, (
+        f"the UDL runbook says V{row.group(1)}, pyproject says {manifest}"
+    )
+
+
 def test_the_submission_manifest_names_the_version_being_shipped() -> None:
     """THE row a human copies into the App Store console, so a stale value is a wrong upload.
 
@@ -3485,6 +3505,74 @@ def test_the_physics_core_is_unreachable_from_any_http_route() -> None:
 UDL_TOOL = ROOT / "tools" / "udl_characterise.py"
 
 
+def _udl_tool_or_skip() -> Path:
+    """The characteriser, or a written skip when we are running INSIDE the upload artefact.
+
+    Continuous integration was red for eight consecutive runs, 48 through 55, and nothing
+    surfaced it because the local loop was green throughout. The pipeline simulation unpacks the
+    App Store zip and runs this suite from inside it; the zip stages `src tests scripts docs
+    content .github` and deliberately NOT `tools`, because `udl_characterise.py` reads real UDL
+    credentials and must never ship. So nineteen tests in this file asserted on a file that the
+    test three definitions above proves must not be there. The suite contradicted itself.
+
+    `PLATFORM_MANAGED_ABSENCES` already carries the doctrine: a check that cannot run in an
+    environment must SKIP with a written reason, never fail. This is the same doctrine and a
+    DIFFERENT reason, so it gets its own discriminator rather than being folded into that tuple.
+
+    The discriminator is deliberately narrow, because a skip that fires too easily is how a
+    deleted control goes unnoticed. It is not "the file is missing". It is "the whole `tools`
+    directory is gone AND there is no checkout", which together describe an unpacked artefact
+    and nothing else. Delete the tool in a repository and `.git` is still there, so these tests
+    FAIL, loudly, which is the behaviour that matters.
+    """
+    if UDL_TOOL.is_file():
+        return UDL_TOOL
+    if not (ROOT / "tools").exists() and not (ROOT / ".git").exists():
+        pytest.skip(
+            "tools/ is absent and so is .git, which is the unpacked upload artefact. The"
+            " characteriser is excluded from the artefact on purpose"
+            " (test_the_workstation_tools_never_reach_the_upload_or_the_image asserts both"
+            " exclusions), so it is not assertable here. It runs locally and in the CI test job."
+        )
+    pytest.fail(f"{UDL_TOOL} is missing from a checkout; flight plan step 4 depends on it")
+
+
+def test_the_characteriser_is_tracked_in_the_repository() -> None:
+    """The converse of the skip above: in a checkout, the tool must actually be there.
+
+    Without this, deleting `tools/udl_characterise.py` AND `tools/` in one commit would make
+    nineteen tests skip rather than fail anywhere the artefact is what runs. Reading it from
+    `git ls-files` rather than the filesystem means an untracked stray copy does not satisfy it.
+
+    The checkout guard comes BEFORE the binary guard, and the order is the point. The pipeline
+    simulation masks `git` with a stub that exits 127 rather than removing it, so `shutil.which`
+    finds something and `_git_or_skip` does not fire; the artefact has no `.git` at all, which is
+    the honest reason this question cannot be asked there.
+    """
+    if not (ROOT / ".git").exists():
+        pytest.skip(
+            "there is no checkout here, which is the unpacked artefact. Whether a file is tracked"
+            " in a repository is not a question that can be asked from outside the repository."
+        )
+    tracked = subprocess.run(  # noqa: S603 - a resolved binary and a fixed, in-repo path
+        [
+            _git_or_skip(),
+            "-C",
+            str(ROOT),
+            "ls-files",
+            "--error-unmatch",
+            "tools/udl_characterise.py",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tracked.returncode == 0, (
+        "tools/udl_characterise.py is not tracked in this repository, so the artefact-side skip"
+        f" in _udl_tool_or_skip would hide its absence: {tracked.stderr.strip()}"
+    )
+
+
 def test_the_workstation_tools_never_reach_the_upload_or_the_image() -> None:
     """`tools/` runs on the networked workstation and must not ship, in either contract.
 
@@ -3508,6 +3596,30 @@ def test_the_workstation_tools_never_reach_the_upload_or_the_image() -> None:
     assert "tools" in ignored, "tools/ is not excluded from the image build context"
 
 
+def test_the_design_directory_never_reaches_the_upload_or_the_image() -> None:
+    """`design/` holds third-party font binaries and a Node tool, and ships in neither contract.
+
+    Added after both binding gates independently proved the same mutant: put `design` in the
+    packaging allowlist and the suite stays green while 131 kB of third-party woff2 and a
+    Playwright harness ride into a SonarQube-scanned upload. `tools/` has had this guard since
+    V0.23.6; the directory that arrived in V0.23.15 had nothing. The posture was already
+    correct - the allowlist is positive, so a new directory is excluded by construction - but a
+    posture with no test is a posture that survives until somebody edits one line.
+    """
+    script = (ROOT / "scripts" / "package-appstore.sh").read_text(encoding="utf-8")
+    directory_loop = re.search(r"^for dir in (.+); do$", script, re.MULTILINE)
+    assert directory_loop is not None, "the packaging script's directory allowlist moved"
+    staged = directory_loop.group(1).split()
+    assert "design" not in staged, f"design/ is in the upload allowlist: {staged}"
+
+    ignored = {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert "design" in ignored, "design/ is not excluded from the image build context"
+
+
 def test_the_udl_characteriser_proves_itself_with_no_network_and_no_credentials() -> None:
     """`--self-test` must pass here, where there is no UDL and no credential file.
 
@@ -3516,10 +3628,8 @@ def test_the_udl_characteriser_proves_itself_with_no_network_and_no_credentials(
     network dependency would fail here rather than on the workstation, halfway through a
     characterisation run.
     """
-    if not UDL_TOOL.is_file():
-        pytest.fail(f"{UDL_TOOL} is missing; flight plan step 4 depends on it")
     result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
-        [sys.executable, str(UDL_TOOL), "--self-test"],
+        [sys.executable, str(_udl_tool_or_skip()), "--self-test"],
         capture_output=True,
         text=True,
         check=False,
@@ -3546,7 +3656,7 @@ def test_the_characteriser_refuses_to_fetch_without_an_endpoint_profile() -> Non
     result = subprocess.run(  # noqa: S603 - a resolved interpreter and a fixed, in-repo script
         [
             sys.executable,
-            str(UDL_TOOL),
+            str(_udl_tool_or_skip()),
             "--start",
             "2026-01-01T00:00:00Z",
             "--end",
@@ -3574,7 +3684,7 @@ def test_the_characteriser_refuses_a_non_https_endpoint() -> None:
     with tempfile.TemporaryDirectory() as raw_directory:
         profile = Path(raw_directory) / "profile.ini"
         template = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
-            [sys.executable, str(UDL_TOOL), "--print-profile-template"],
+            [sys.executable, str(_udl_tool_or_skip()), "--print-profile-template"],
             capture_output=True,
             text=True,
             check=True,
@@ -3601,7 +3711,7 @@ def test_the_characteriser_refuses_a_non_https_endpoint() -> None:
         result = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
             [
                 sys.executable,
-                str(UDL_TOOL),
+                str(_udl_tool_or_skip()),
                 "--profile",
                 str(profile),
                 "--start",
@@ -3632,7 +3742,7 @@ def test_the_credentials_permission_check_is_platform_aware() -> None:
     an execution, and it is stated as such: what it holds is that neither branch has been deleted,
     and that the Windows branch checks something real rather than skipping.
     """
-    source = UDL_TOOL.read_text(encoding="utf-8")
+    source = _udl_tool_or_skip().read_text(encoding="utf-8")
     checker = source[source.index("def _assert_owner_only") : source.index("def load_credentials")]
 
     assert 'if os.name != "nt":' in checker, "the platform split is gone"
@@ -3658,7 +3768,7 @@ def test_the_posix_credentials_check_refuses_a_group_readable_file() -> None:
     """The POSIX branch, EXECUTED rather than read, since this suite runs on POSIX."""
     if os.name == "nt":  # pragma: no cover - this suite's CI is Linux
         pytest.skip("the POSIX branch is not reachable on Windows")
-    spec = importlib.util.spec_from_file_location("udl_characterise", UDL_TOOL)
+    spec = importlib.util.spec_from_file_location("udl_characterise", _udl_tool_or_skip())
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -3690,7 +3800,7 @@ def _load_udl_tool() -> Any:
     through `sys.modules`, and an unregistered module raises inside `dataclasses` rather than in the
     code under test, which makes the failure look like a bug in the tool.
     """
-    spec = importlib.util.spec_from_file_location("udl_characterise", UDL_TOOL)
+    spec = importlib.util.spec_from_file_location("udl_characterise", _udl_tool_or_skip())
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -3909,7 +4019,14 @@ def test_queryhelp_refuses_a_non_https_base_url() -> None:
 
         # And end to end, so the CLI cannot route around the loader.
         result = subprocess.run(  # noqa: S603 - a resolved interpreter, fixed in-repo script
-            [sys.executable, str(UDL_TOOL), "--profile", str(profile_path), "--queryhelp", "elset"],
+            [
+                sys.executable,
+                str(_udl_tool_or_skip()),
+                "--profile",
+                str(profile_path),
+                "--queryhelp",
+                "elset",
+            ],
             capture_output=True,
             text=True,
             check=False,

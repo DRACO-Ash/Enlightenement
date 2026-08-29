@@ -82,10 +82,15 @@
       background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 1px,
                                             transparent 1px 3px);
     }
-    .scope-head { display: flex; align-items: baseline; gap: 18px; padding: 10px 14px;
+    .scope-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px;
+                  padding: 10px 14px;
                   border-bottom: 1px solid var(--grid); font-family: var(--data);
                   font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase;
                   color: var(--ink3); }
+    /* Each label stays whole and drops to its own line when the measure is tight.
+       Without this the caption broke mid-phrase, at "along-track AND / RADIAL". */
+    .scope-head > span { white-space: nowrap; }
+    .scope-head > span:last-child { margin-left: auto; }
     .scope-head b { color: var(--ink2); font-weight: 500; }
     .scope-head .push { flex: 1; }
 
@@ -233,7 +238,7 @@
           <h2>Two objects. One is holding station on the other.</h2>
         </div>
       </div>
-      <div class="scope"><div class="scope-head"><span><b>Relative motion · along-track and radial</b></span><span class="push"></span><span>96 samples · 2 revolutions</span></div><svg viewBox="0 0 860 348" width="100%" style="display:block" role="img" aria-label="Relative motion · along-track and radial">
+      <div class="scope"><div class="scope-head"><span><b>Relative motion · along-track and radial</b></span><span class="push"></span><span>synthetic · 96 samples · 2 revolutions</span></div><svg viewBox="0 0 860 348" width="100%" style="display:block" role="img" aria-label="Relative motion · along-track and radial">
 <g stroke="#2A2A34" stroke-width="1">
 <line x1="62" y1="22.0" x2="838" y2="22.0"/>
 <line x1="62" y1="78.8" x2="838" y2="78.8"/>

@@ -10,8 +10,6 @@ tested against instructional-design and defence training standards. Written adve
 are ranked by what would actually stop this being accepted or being effective, not by how easy they
 are to fix.
 
----
-
 ## The standards this is tested against
 
 Marked by how confident I am, because a red team that overstates its own authority is worth less
@@ -52,8 +50,6 @@ than one that does not.
 **Deliberately not claimed.** I have not cited a NATO STANAG, an ISO number, or a specific JSP
 clause, because I cannot verify one from here and a fabricated reference in a defence training
 document is worse than no reference at all.
-
----
 
 ## Findings, ranked
 
@@ -233,22 +229,29 @@ It lives at `design/check-artboards.mjs`. It needs Node and Playwright, so it is
 `scripts/verify.sh`; it is run by hand when an artboard changes. The numbers it produced are these.
 
 The rendered sizes were worse than the declared ones, because a plot inside a 1.55fr column is
-drawn *smaller* than its own coordinate system:
+drawn *smaller* than its own coordinate system. Measured on the artboards as they stood at
+`9b5f028`, with the vendored faces substituted in so the metrics are the real ones:
 
-| Artboard | scale | worst declared | worst rendered |
-| --- | --- | --- | --- |
-| Main | 0.77 to 0.95 | 9.5 | **9.0 px** |
-| Reveal | 0.77 to 0.95 | 9.5 | **9.0 px** |
-| Progress | 1.09 | 8.5 | **9.3 px** |
-| Debrief | 1.09 | 9.5 | **10.4 px** |
-| FirstContact | 1.08 | 9.5 | **10.2 px** |
+| Artboard | scale | worst declared | rendered at 1440 | rendered at 1180 |
+| --- | --- | --- | --- | --- |
+| Main | 0.95 / 0.77 | 9.5 | 9.0 px | **7.3 px** |
+| Reveal | 0.95 / 0.77 | 9.5 | 9.0 px | **7.3 px** |
+| Progress | 1.09 | 8.5 | **9.3 px** | 9.3 px |
+| FirstContact | 1.08 | 9.5 | **10.2 px** | 10.2 px |
+| Debrief | 1.09 | 9.5 | **10.4 px** | 10.4 px |
+
+Quote the worse column. Main and Reveal put a plot in a column that narrows with the window, so
+their floor is 7.3 px, not the 9.0 px a single wide measurement would have reported.
 
 Two further defects fell out of the same measurement, neither of which I had noticed by eye:
 
-● **Progress clipped its own radar labels.** "PROCEDURE RECALL" ran past the right edge of a 440
-  unit viewBox and was cut off by the frame. It had been wrong since the artboard was drawn.
-● **The debrief timeline overlapped six of its own labels.** "spread narrow, one way" and
-  "separation · 70%" occupied the same strip of pixels, as did two more pairs. The screen that
+● **Progress clipped four of its six radar labels.** CLASSIFICATION, PROCEDURE RECALL, CALIBRATION
+  and REPORTING all ran past the edge of a 440 unit viewBox and were cut off by the frame, at both
+  widths, with and without the real typefaces. The debrief timeline clipped its "EXPERT · ASH"
+  track label the same way. Both had been wrong since the artboards were drawn.
+● **The debrief timeline overlapped four pairs of its own labels**, seven distinct labels in all:
+  "count is 2" over "spread narrow, one way", that over "separation · 70%", "piece 2 under control"
+  over "separation · 93%", and "piece 2 manoeuvring?" over "separation · 55%". The screen that
   carries the single most important teaching moment in the product was partly unreadable.
 
 So the fix was not a font-size change. Every plot now sits inside a bounded measure so its render
@@ -258,8 +261,21 @@ layer was rebuilt on two staggered rows per track with hairline leaders back to 
 the radar frame gained the margin its labels always needed.
 
 The harness now asserts, at both a 1440 px and an 1180 px window, that **no text inside any plot
-renders below 12 px, none is clipped by its frame, and no two labels overlap.** All six artboards
-pass. That is a standing check, not a one-off: it is how the next artboard gets caught.
+renders below 12 px, none is clipped by its frame, no two labels overlap, every typeface a page
+asks for is one that actually loaded, and the page fetches nothing outside its own directory.**
+All six artboards pass; the same harness reports 30 failing checks against `9b5f028`.
+
+The typeface half of that had to be rewritten before it was worth anything. It first used
+`document.fonts.check()`, which returns TRUE when no `@font-face` rule matches the family at all -
+so deleting the stylesheet outright, the likeliest regression of the lot, read as a pass. Proved by
+deleting it. The replacement asserts positively against `document.fonts`, and drops the allowlist
+of expected family names too, because a fourth mutant walked through that: renaming a family to one
+nothing declares was silently skipped for not being on the list. Three mutants now die where one
+did. **A check that names a control but exercises something adjacent is the defect class this
+project has already been caught by three times**, and it does not stop being that because the
+subject is type rather than code.
+
+That is a standing check, not a one-off: it is how the next artboard gets caught.
 
 ### 11. MODERATE, and also mine. The contrast figures were measured without the scanline
 
@@ -290,8 +306,6 @@ The sweep is atmosphere rather than a stress-inoculation curriculum.
 
 Low priority, and honestly it may be the right call for v1 - but it should be a call.
 
----
-
 ## What PHOSPHOR gets right, tested rather than asserted
 
 Being adversarial does not mean being ungenerous. Against the same standards:
@@ -320,8 +334,6 @@ Being adversarial does not mean being ungenerous. Against the same standards:
 industry standard. The instructional systems engineering around it is below it.** Those are
 different disciplines and the second one is mostly paperwork and sequencing, not screens.
 
----
-
 ## Re-measured, with the overlay composited
 
 Every accent, against the plot ground **with** the scanline overlay applied, since the original
@@ -341,8 +353,6 @@ figures did not include it:
 The overlay costs about 1% of contrast ratio. Nothing crosses a threshold, so the scanline stays.
 `ink-3` at 4.87:1 remains the only token close to the 4.5:1 line, and it is used for axis numerals
 and secondary labels only.
-
----
 
 ## Recommended order of work
 

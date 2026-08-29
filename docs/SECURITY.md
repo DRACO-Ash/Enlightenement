@@ -35,6 +35,7 @@ state-changing route.
 | No configured token cannot authorise (fail closed) | `auth.py` | `test_no_configured_token_cannot_authorise` |
 | Every cost-incurring and state-changing route gated | `app.py` | `test_a_write_without_a_token_is_refused...` |
 | **Writes CLOSED by default**: no token and no opt-in means 401 | `config.py`, `app.py` | `test_writes_are_refused_by_default_with_no_token_configured` |
+| The set of state-changing routes is CLOSED OVER, not enumerated: every non-idempotent route on `app.routes` must answer 401 in the closed default or be named in `UNGATED_WRITES` with a written reason. The previous tests listed two paths by hand, which is how a third state-changing route shipped past them | `app.py`, `training_api.py` | `test_every_state_changing_route_is_gated_or_explicitly_excepted` |
 | Anonymous writes need an explicit opt-in | `config.py` | `test_anonymous_writes_require_the_explicit_opt_in` |
 | A token alongside the anonymous opt-in refuses to start; the two cannot combine | `config.py` | `test_a_token_alongside_anonymous_writes_refuses_to_start` |
 | A token below the minimum length refuses to start | `config.py` | `test_a_token_shorter_than_the_minimum_refuses_to_start` |
@@ -96,7 +97,7 @@ state-changing route.
 | Log injection blocked; actor sanitised | `audit.py` | `test_newline_injection_cannot_forge_a_second_line` |
 | Actor and every reflected value LENGTH-CAPPED and sanitised, in `audit()` as well as `log_event()` | `audit.py` | `test_actor_is_length_bounded`, `test_a_reflected_value_is_length_bounded`, `test_an_audit_line_sanitises_every_string_field_not_only_the_actor` |
 | EVERY reflected log value sanitised, lines emitted as JSON | `audit.py`, `app.py` | `test_an_event_line_sanitises_every_string_field_structurally` |
-| Both write routes EMIT an audit line naming the actor, which is the accountability control under a shared token | `app.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor` |
+| All three state-changing routes (`POST /api/v1/sessions`, `PATCH /api/v1/sessions/{id}`, `POST /api/v1/drill/answer`) EMIT an audit line naming the actor, which is the accountability control under a shared token | `app.py` | `test_local_anonymous_mode_allows_the_write_and_records_the_actor_as_anonymous`, `test_a_gated_write_emits_one_audit_line_naming_the_token_actor` |
 | A missing or blank actor becomes `anonymous`, never an empty field | `audit.py` | `test_missing_or_blank_actor_becomes_anonymous` |
 | Generic client errors; detail server-side only | `app.py` | `test_an_unhandled_error_returns_a_generic_message...` |
 | No secret in any response, log, or audit line | `app.py`, `audit.py` | `test_diagnostics_never_exposes_a_token_value_or_an_exact_length`, `test_nothing_on_app_state_exposes_the_configuration` |
@@ -296,8 +297,19 @@ executes, never about the words beside it.
    configured limit is the effective limit today. If the worker count ever rises, the
    effective limit rises with it; an exact global limit would need a shared store. The
    purpose is process protection, which this achieves.
-5. **Reads are open.** `GET /api/v1/sessions` is unauthenticated because the dataset is
-   low-sensitivity and its integrity, not its secrecy, is what is defended. Writes are gated.
+5. **Reads are open, and ONE write is too.** `GET /api/v1/sessions` is unauthenticated
+   because the dataset is low-sensitivity and its integrity, not its secrecy, is what is
+   defended. The session writes are gated by the team token. **`POST /api/v1/drill/answer`
+   is NOT**, deliberately, and this sentence used to say "writes are gated" flatly, which a
+   reviewer defeated in one request: with a token configured, an unauthenticated answer
+   returned 200 and moved persisted state. A reviewer trusting the old sentence would have
+   stopped looking at exactly the route that writes.
+   The reason is flight plan step 10: operator identity does not exist yet, so every drill
+   write goes to the synthetic `DEMONSTRATION_OPERATOR` and no record of a named individual
+   is created before the DPIA is closed. The compensating controls are real and were
+   verified live under attack: the strict limiter answers 429 at request 21, and the write
+   emits an audit line carrying the item and the actor with no answer text and no score.
+   **When identity lands, this route gets the token dependency and this paragraph goes.**
 6. **Dataset confidentiality is out of scope.** Recorded, not assumed.
 7. **Socket parking during the HEADER phase is not bounded by this application.** The body
    drain is bounded on a total budget, measured: 120 connections that frame a body and stop

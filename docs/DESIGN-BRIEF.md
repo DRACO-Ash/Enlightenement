@@ -31,11 +31,16 @@ Two practical consequences for the artboards:
   and the interface already serves `font-src 'self'` - which permits a self-hosted face and forbids
   a content delivery network. So PHOSPHOR ships Saira, Saira Condensed and Azeret Mono as vendored
   woff2, latin subset, six files and 131 kB in total, under the SIL Open Font Licence 1.1 with the
-  licence text carried beside them. The artboards load `fonts/fonts.css`, not `fonts.googleapis.com`,
-  and a rendering harness asserts zero network requests. A mockup that renders in different type
-  from the product it specifies is not a specification, so this is the same set of files on both
-  sides. The system stack stays behind them as the fallback, Segoe UI first, because the owner's
-  workstation is Windows.
+  licence text carried beside them, digests recorded. The artboards load `fonts/fonts.css`, not
+  `fonts.googleapis.com`, and `design/check-artboards.mjs` asserts that a loaded artboard fetches
+  nothing outside its own directory.
+  **The product side is not done.** `src/enlightenment/ui/` still declares no webfont at all - its
+  stack is `"Segoe UI", system-ui, -apple-system, sans-serif` and no font file ships - so today the
+  mockups render in Saira and the product renders in Segoe UI. That is precisely the defect this
+  decision exists to close, and it closes when PHOSPHOR is built into the shipped interface: the
+  same six files, served from `/ui/fonts/`, added to the `_UI_FILES` allowlist, with the system
+  stack behind them as the fallback because the owner's workstation is Windows. Until then, read
+  the artboards as a specification of intent, not as a rendering of what is deployed.
 ● **Charts are drawn from scratch on a canvas.** No chart library will be available. Design chart
   treatments that a few hundred lines of hand-written canvas code can produce.
 

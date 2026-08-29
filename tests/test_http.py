@@ -255,6 +255,73 @@ def test_diagnostics_reports_the_anonymous_write_posture(client: TestClient) -> 
 # --- the closed default: no token and no opt-in ---------------------------------------
 
 
+#: Routes that change state and are deliberately NOT gated by the team token, each with the
+#: reason it is here. An entry is a decision on the record, not a way to make a test pass.
+#:
+#: `POST /api/v1/drill/answer`: flight plan step 10, operator identity, does not exist yet, so
+#: every drill write goes to the synthetic DEMONSTRATION_OPERATOR and no record of a named
+#: individual is created before the DPIA is closed. Compensated by the strict rate limiter and
+#: an audit line carrying neither answer text nor score. Recorded as accepted risk 5 in
+#: `docs/SECURITY.md`, and this entry goes when identity lands.
+UNGATED_WRITES = frozenset({("POST", "/api/v1/drill/answer")})
+
+#: Path parameters get a concrete value so the route resolves rather than 404ing, which would
+#: pass this test for entirely the wrong reason.
+PATH_PARAMETER_VALUES = {"session_id": "alpha-one"}
+
+
+def _state_changing_routes(app: Any) -> list[tuple[str, str]]:
+    """Every non-idempotent route the application actually mounts, from `app.routes`.
+
+    DERIVED, not enumerated. The gating tests below used to list two paths by hand, and a third
+    state-changing route - `POST /api/v1/drill/answer` - shipped past them without turning
+    anything red, because a list cannot notice what is not on it. That is the same
+    enumeration-versus-closure failure `docs/SECURITY.md` already names, so the parametrisation
+    now closes over the router and anything deliberately ungated must say so in UNGATED_WRITES.
+    """
+    found: list[tuple[str, str]] = []
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if path is None or methods is None:
+            continue
+        for method in methods:
+            if method in {"GET", "HEAD", "OPTIONS"}:
+                continue
+            found.append((method, path))
+    assert found, "no state-changing route was found, so this test proves nothing"
+    return sorted(found)
+
+
+def _concrete(path: str) -> str:
+    for name, value in PATH_PARAMETER_VALUES.items():
+        path = path.replace("{" + name + "}", value)
+    assert "{" not in path, f"no test value for the path parameter in {path}"
+    return path
+
+
+def test_every_state_changing_route_is_gated_or_explicitly_excepted(
+    closed_client: TestClient,
+) -> None:
+    """The closure itself: a new write route is refused, or it is named and reasoned about.
+
+    A fourth unauthenticated write endpoint used to be able to ship with the suite green. Now it
+    either answers 401 in the closed default, or its absence from UNGATED_WRITES fails here and
+    somebody has to write down why it is open.
+    """
+    for method, path in _state_changing_routes(closed_client.app):
+        response = getattr(closed_client, method.lower())(_concrete(path), json=VALID_SESSION)
+        if (method, path) in UNGATED_WRITES:
+            assert response.status_code != 401, (
+                f"{method} {path} is listed as ungated but is refused; remove the exception"
+            )
+            continue
+        assert response.status_code == 401, (
+            f"{method} {path} changes state, is not in UNGATED_WRITES, and answered"
+            f" {response.status_code} with no token configured"
+        )
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [("post", "/api/v1/sessions"), ("patch", "/api/v1/sessions/alpha-one")],

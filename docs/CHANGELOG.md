@@ -2,6 +2,81 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.16 (2026-08-29)
+
+**What.** Everything both binding gates found on V0.23.15, and the red continuous integration
+nobody had looked at.
+
+**The red pipeline, which is the important one.** Continuous integration had concluded `failure`
+for eight consecutive runs, 48 through 55, across V0.23.10 to V0.23.15, and nothing surfaced it
+because the local loop was green throughout. Read from run 55's log, not inferred: the pipeline
+simulation unpacks the App Store zip and runs this suite from inside it. The zip stages
+`src tests scripts docs content .github` and deliberately NOT `tools`, because
+`udl_characterise.py` reads real UDL credentials and must never ship. So nineteen tests asserted
+on a file that a test three definitions above them proves must not be there. The suite
+contradicted itself, and had done since the characteriser tests landed.
+
+Closed with `_udl_tool_or_skip()`, following the doctrine `PLATFORM_MANAGED_ABSENCES` already
+carries: a check that cannot run in an environment SKIPS with a written reason, never fails. The
+discriminator is deliberately narrow, because a skip that fires too easily is how a deleted
+control goes unnoticed: not "the file is missing" but "the whole `tools` directory is gone AND
+there is no checkout", which together describe an unpacked artefact and nothing else. Delete the
+tool in a repository and `.git` is still there, so the tests fail loudly. Plus the converse,
+`test_the_characteriser_is_tracked_in_the_repository`, read from `git ls-files` so an untracked
+stray copy does not satisfy it.
+
+**Engineering gate, FAIL on V0.23.15, three MAJORs, all fair.**
+● I silently deleted the provenance marker `synthetic ·` from a plot caption while fixing a
+  header wrap. A content deletion dressed as a layout fix, and outside the declared scope.
+  Restored, and the wrap solved properly: the caption now breaks BETWEEN its two labels instead
+  of through the middle of "along-track and radial".
+● The harness's typeface assertion was decorative. `document.fonts.check()` returns TRUE when no
+  `@font-face` rule matches the family at all, so deleting the stylesheet outright read as a
+  pass. Proved by deleting it. Rewritten to assert positively against `document.fonts`, and the
+  allowlist of expected family names went too, because a fourth mutant walked through it:
+  renaming a family to one nothing declares was silently skipped for not being on the list.
+  Three mutants now die where one did.
+● `docs/DESIGN-BRIEF.md` claimed the artboards and the product use "the same set of files" and
+  that Segoe UI sits behind them. Both false. `src/enlightenment/ui/` declares no webfont at all,
+  so today the mockups render in Saira and the product renders in Segoe UI. The brief now says
+  so, and says what closes it.
+
+**Security gate, PASS on V0.23.15, six MINORs, all taken.** The one worth reading: accepted risk
+5 said "writes are gated", and the reviewer defeated that sentence in one request. With a token
+configured, an unauthenticated `POST /api/v1/drill/answer` returns 200 and moves persisted state.
+The behaviour is deliberate and is recorded in the code, but the security document flatly
+contradicted it, and a reviewer trusting that line stops looking at exactly the route that
+writes. Rewritten to name the route, the reason (flight plan step 10, identity does not exist, so
+every drill write goes to the synthetic operator and no named-individual record is created before
+the DPIA closes) and the two compensating controls, both verified live under attack.
+
+Behind it, the deeper fault: the write-gating tests ENUMERATED two paths by hand, which is why a
+third state-changing route shipped past them without turning anything red. Now derived from
+`app.routes`, with `UNGATED_WRITES` as an explicit, reasoned opt-out. A fourth unauthenticated
+write route fails the suite; so does removing the drill route from the opt-out. Both proved.
+
+**Also.** `design/` gained the regression guard `tools/` has had since V0.23.6, after both gates
+independently proved the same mutant: add `design` to the packaging allowlist and 131 kB of
+third-party binaries ride into a SonarQube-scanned upload with nothing turning red. The UDL
+runbook's version row, a seventh version site hand-bumped since V0.23.6 and bound by nothing, is
+now bound by a test. `node_modules/` is ignored, because the new tool's own instructions create it
+at the repository root. The six woff2 binaries have SHA-256 digests recorded in
+`design/phosphor/fonts/DIGESTS.md`, pinned the way the lockfiles are. Five horizontal rules left
+`docs/DESIGN-RED-TEAM.md`, per the house rule.
+
+**And the figures I got wrong.** Re-measured on `9b5f028` with the vendored faces substituted in,
+because the parent links a content delivery network the harness blocks and fallback metrics are
+not the real ones. The worst rendered text was **7.3 px** at an 1180 px window, not the 9.0 px I
+reported from a single wide measurement. Progress clipped **four of its six** radar labels, not
+one, and the debrief timeline clipped its track label too. The timeline overlapped **four pairs
+across seven labels**, not six labels. Corrected in `docs/DESIGN-RED-TEAM.md` and here.
+
+**How verified.** Verification loop green. Seven new mutants killed: `design` in the upload
+allowlist, `design` out of `.dockerignore`, a stale runbook version, a fourth ungated write route,
+the drill route removed from the opt-out, a deleted font stylesheet, and a renamed font family.
+Pipeline simulation run against the version being shipped. `design/check-artboards.mjs` passes on
+all six artboards at both widths and reports 30 failing checks against `9b5f028`.
+
 ## V0.23.15 (2026-08-29)
 
 **What.** Three things the owner asked for on the PHOSPHOR direction: vendored webfonts, a red team
