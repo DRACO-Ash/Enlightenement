@@ -8,4 +8,4 @@ in-process by the test suite with injected fakes.
 __all__ = ["__version__"]
 
 # Release version. Bump with every change, alongside a docs/CHANGELOG.md audit row.
-__version__ = "0.23.17"
+__version__ = "0.23.18"

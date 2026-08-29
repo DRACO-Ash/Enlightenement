@@ -10,8 +10,12 @@ modes than inside the health-probe wiring.
   serialises a :class:`~enlightenment.training.ServedDrill`, which has no answer field to leak.
   The reveal is the response to `POST /api/v1/drill/answer`, after an answer has been stored.
 ● **Writes are rate limited and validated at the boundary.** Answering is a write: it moves a
-  rating, schedules a cue and appends a run record. It goes through the same strict limiter as any
-  other write, because the plan asks for rate limiting on the scoring endpoint by name.
+  rating, schedules a cue and appends a run record. It goes through the strict tier the plan asks
+  for on the scoring endpoint by name, but through its OWN bucket (`DRILL_LIMIT`) rather than the
+  one the gated session writes share. This route is unauthenticated until operator identity
+  exists, so anyone can spend its budget; while the two shared a limiter, anyone could spend the
+  gated routes' budget too, and twenty unauthenticated answers left a token-authenticated session
+  write answering 429.
 ● **Content failures are author-facing and never fatal.** A malformed content tree yields a 503
   from the drill endpoints naming the files at fault, while the health paths stay green: the
   container is fine, the content is not, and those are different incidents.
@@ -114,8 +118,10 @@ def register_training_routes(
 ) -> None:
     """Mount the interface and the training API.
 
-    `guard_write` is passed in rather than imported so the strict rate limiter stays owned by the
-    factory: one limiter for every write in the process, not one per route group.
+    `guard_write` is passed in rather than imported so the rate limiter stays owned by the
+    factory, which is what lets the factory hand THIS route a different bucket from the gated
+    session writes. It is `_guard_drill_rate`, not `_guard_write_rate`: an open route must not be
+    able to spend a gated route's allowance and shut it.
 
     Split into three registrations rather than one, because each closure counts towards the
     enclosing function's cognitive complexity and the cap (Sonar S3776, fifteen per function in
@@ -312,8 +318,9 @@ def _register_drill(
     async def answer_drill(payload: DrillAnswer, request: Request) -> dict[str, Any]:
         """Score one produced answer and return the full decomposition.
 
-        A write: it moves a rating, schedules the cue and appends a run record. So it passes the
-        strict limiter, which is what the plan asks for on the scoring endpoint by name.
+        A write: it moves a rating, schedules the cue and appends a run record. So it passes a
+        strict-tier limiter, which is what the plan asks for on the scoring endpoint by name, and
+        specifically its own `DRILL_LIMIT` bucket rather than the gated writes' one.
         """
         guard_write(request)
         try:

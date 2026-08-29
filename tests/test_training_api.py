@@ -239,6 +239,16 @@ def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data
     performance figure in any log line, and the operator's own words are performance data: an
     audit line that carried the submitted answer or the score would turn the audit trail into
     the very record the DPIA has not yet approved.
+
+    The safety half asserts the EXACT KEY SET, not a list of forbidden names. The first version
+    checked six literal names against the top level of the line, and both binding gates walked
+    through it independently: `ScoredDrill` carries seventeen fields and the blacklist missed the
+    real ones, so adding `points` (the actual score), `calibration`, `ratingAfter` and
+    `nextDueInDays` left the whole suite green; a nested `detail` object hid a score AND the
+    operator's own words; and `newRating` defeated the `rating` check by renaming. A denylist
+    cannot notice what is not on it. `log_event` emits `event` plus exactly the fields it is
+    given, so a set equality closes over every future field, nested or renamed: a new one fails
+    here until somebody decides it belongs in an audit trail.
     """
     with caplog.at_level("INFO"):
         response = client.post("/api/v1/drill/answer", json=ANSWER_BODY)
@@ -256,11 +266,18 @@ def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data
     assert line["actor"] == "synthetic-operator", line
     assert line["itemId"] == ANSWER_BODY["item_id"], line
 
-    emitted = json.dumps(line)
-    assert ANSWER_BODY["classification"] not in emitted, "the answer text reached the audit line"
-    assert ANSWER_BODY["first_action"] not in emitted, "the answer text reached the audit line"
-    for field in ("score", "total", "rating", "brier", "confidence", "correct"):
-        assert field not in line, f"the audit line carries performance data: {field}"
+    assert set(line) == {"event", "actor", "itemId", "procedureId"}, (
+        "the drill audit line carries a field nobody has reviewed:"
+        f" {sorted(set(line) - {'event', 'actor', 'itemId', 'procedureId'})}."
+        " Every field here is written to an operational log for a route that is unauthenticated"
+        " and whose subject is a person's performance. Decide it belongs before you add it."
+    )
+
+    # A second, independent layer on the four fields that ARE allowed: the set equality above
+    # cannot see the answer text arriving inside `itemId`.
+    emitted = json.dumps(line).casefold()
+    assert ANSWER_BODY["classification"].casefold() not in emitted, "the answer text reached it"
+    assert ANSWER_BODY["first_action"].casefold() not in emitted, "the answer text reached it"
 
 
 # --- content and library -----------------------------------------------------------------

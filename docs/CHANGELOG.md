@@ -2,6 +2,55 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.18 (2026-08-29)
+
+**What.** The gates ran on V0.23.17. Security returned PASS, engineering returned FAIL, and both
+landed on the same thing from opposite directions: the audit-line control I had just written to
+close an enumeration defect was itself an enumeration.
+
+**A denylist cannot notice what is not on it.** The "carries no performance data" half of
+`test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data` checked six literal
+key names against the top level of the parsed line. `ScoredDrill` carries seventeen fields, and
+the six missed the real ones. The engineering gate added `points` (the actual score),
+`calibration`, `ratingAfter` and `nextDueInDays` to the audit line and the whole suite stayed
+green. The security gate got a score AND the operator's own words through inside a nested `detail`
+object, and defeated the `rating` check by renaming the field `newRating`, and defeated the
+answer-text check with `.upper()`.
+
+`log_event` emits `event` plus exactly the fields it is given, so the assertion is now a SET
+EQUALITY over the whole key set. Every future field fails it, nested or renamed, until somebody
+decides it belongs in an operational log for an unauthenticated route whose subject is a person's
+performance. The two answer-text substring checks stay, case-folded, as a second layer on the four
+fields that are allowed, because a set equality cannot see the answer arriving inside `itemId`.
+All four mutants now die, including the two the gates used.
+
+**Two more ways past the route walk, both fail-closed now.** The security gate found that
+Starlette treats a FALSY `methods` as matching every verb, so a raw `Route(..., methods=[])`
+appended to `app.router.routes` serves POST while the walk tested `is not None`, entered the loop,
+iterated zero methods and continued: an ungated 200 with the suite green. The walk now tests
+truthiness and raises on an empty set explicitly. The engineering gate found that
+`APIRouter.frontend()` puts routes in `_low_priority_routes`, which is not in `app.routes` at all;
+harmless today because `_FrontendRoute` hardcodes GET and HEAD, but that is a promise of the
+pinned FastAPI rather than of this project, so the bucket is now asserted empty.
+
+**What the limiter split does not fix, measured rather than argued.** Accepted risk 5 said the
+coarse tier stays shared "because a global ceiling is what it is for", which reads as closure. The
+security gate measured the residual: 240 unauthenticated drill answers still leave an
+authenticated `POST /api/v1/sessions` answering 429, because the coarse tier is consumed in
+middleware before any route guard runs, including on requests the drill guard then refuses. So the
+split is a twelvefold mitigation, 240 requests per window where it was 20, and not an elimination.
+The risk now says so and names the ingress as the remaining bound.
+
+**And three docstrings that said the opposite of the code.** V0.23.17 split the limiter and left
+`training_api.py` still describing the shared one, including "one limiter for every write in the
+process, not one per route group" - which is now precisely backwards. A reviewer trusting that line
+would conclude the budgets are shared and stop looking at the separation the release introduced.
+
+**How verified.** Verification loop green. Pipeline simulation green. Six new mutants killed: four
+against the audit closure, one raw `Route` with an empty method set, one low-priority route outside
+`app.routes`. Continuous integration concluded `success` at `9679eaa` and again at `e2b85e1`, runs
+56 and 57, after eight consecutive failures.
+
 ## V0.23.17 (2026-08-29)
 
 **What.** Three MAJORs from the security gate and one from the engineering gate, all on V0.23.16,

@@ -315,8 +315,14 @@ executes, never about the words beside it.
    the strict limiter with the gated session writes, twenty unauthenticated answers left an
    authenticated `POST /api/v1/sessions` answering 429. Behind the platform gateway many callers
    share one address (accepted risk 4), so that was a single unauthenticated client able to hold
-   the team's gated write path shut. The coarse global tier is still shared by every route,
-   because a global ceiling is what it is for. The second control is the audit line, which
+   the team's gated write path shut. **The split raises the cost of that attack; it does not
+   remove it.** Measured after the split: 240 unauthenticated drill answers still leave an
+   authenticated `POST /api/v1/sessions` answering 429, because the coarse tier is consumed in
+   middleware before any route guard runs, including on the requests the drill guard then
+   refuses. So the residual is 240 requests per window where it was 20, a twelvefold mitigation
+   rather than a closure, and the remaining bound is the platform ingress, exactly as accepted
+   risk 7 records for header-phase parking. The coarse tier stays shared deliberately: a global
+   ceiling that a route could opt out of would not be a ceiling. The second control is the audit line, which
    carries the item and the actor and neither the answer text nor any score; deleting it used to
    leave the whole suite green, so it was a claim rather than a control, and it is a control now.
    **When identity lands, this route gets the token dependency and this paragraph goes.**

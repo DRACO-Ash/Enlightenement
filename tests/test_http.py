@@ -261,8 +261,9 @@ def test_diagnostics_reports_the_anonymous_write_posture(client: TestClient) -> 
 #:
 #: `POST /api/v1/drill/answer`: flight plan step 10, operator identity, does not exist yet, so
 #: every drill write goes to the synthetic DEMONSTRATION_OPERATOR and no record of a named
-#: individual is created before the DPIA is closed. Compensated by the strict rate limiter and
-#: an audit line carrying neither answer text nor score. Recorded as accepted risk 5 in
+#: individual is created before the DPIA is closed. Compensated by its OWN rate budget
+#: (`DRILL_LIMIT`, not the gated writes' bucket) and an audit line whose key set is closed over
+#: so neither answer text nor any score can reach it. Recorded as accepted risk 5 in
 #: `docs/SECURITY.md`, and this entry goes when identity lands.
 UNGATED_WRITES = frozenset({("POST", "/api/v1/drill/answer")})
 
@@ -295,7 +296,7 @@ def _walk_routes(routes: Any, prefix: str, found: list[tuple[str, str]]) -> None
     """
     for route in routes:
         methods = getattr(route, "methods", None)
-        if methods is not None:
+        if methods:
             path = getattr(route, "path", None)
             assert path is not None, f"{type(route).__name__} carries methods but no path"
             for method in methods:
@@ -303,6 +304,15 @@ def _walk_routes(routes: Any, prefix: str, found: list[tuple[str, str]]) -> None
                     continue
                 found.append((method.upper(), prefix + path))
             continue
+
+        if methods is not None:  # an EMPTY method set, which is not the same as none at all
+            raise AssertionError(
+                f"{type(route).__name__} at {getattr(route, 'path', '?')!r} declares an empty"
+                " method set. Starlette treats a falsy `methods` as matching EVERY verb, so this"
+                " route serves POST while looking like it serves nothing. The first version of"
+                " this walk tested `is not None`, entered the loop, iterated zero methods and"
+                " continued, which let an ungated 200 POST through with the suite green."
+            )
 
         included = getattr(route, "original_router", None)
         if included is not None:  # FastAPI's _IncludedRouter, from include_router()
@@ -339,6 +349,16 @@ def _state_changing_routes(app: Any) -> list[tuple[str, str]]:
     state-changing route - `POST /api/v1/drill/answer` - shipped past them without turning
     anything red, because a list cannot notice what is not on it.
     """
+    # `APIRouter.frontend()` puts routes in `_low_priority_routes`, which is NOT in `app.routes`,
+    # so the walk below cannot see them at all. Harmless today - `_FrontendRoute` hardcodes
+    # GET and HEAD - and that is a promise of the pinned FastAPI, not of this project. Assert the
+    # bucket is empty so a version that admits a non-idempotent low-priority route fails loudly
+    # rather than routing around the closure.
+    low_priority = getattr(getattr(app, "router", None), "_low_priority_routes", [])
+    assert not low_priority, (
+        f"{len(low_priority)} low-priority route(s) sit outside app.routes and outside this"
+        " closure. Teach the walk to reach them before any of them can change state."
+    )
     found: list[tuple[str, str]] = []
     _walk_routes(app.routes, "", found)
     assert found, "no state-changing route was found, so this test proves nothing"
