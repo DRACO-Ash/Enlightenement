@@ -7,7 +7,7 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
       /* Grounds: warm near-blacks, deliberately not #000. */
@@ -68,7 +68,7 @@
     .rail .stat b { color: var(--ink); font-weight: 500; }
 
     /* ---- layout --------------------------------------------------------- */
-    main { padding: 34px 28px 28px; }
+    main { padding: 34px 28px 28px; max-width: 1180px; margin: 0 auto; }
     .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
              align-items: start; }
     .stack { display: grid; gap: 22px; }
@@ -233,7 +233,7 @@
           <h2>Two objects. One is holding station on the other.</h2>
         </div>
       </div>
-      <div class="scope"><div class="scope-head"><span><b>Relative motion · along-track and radial</b></span><span class="push"></span><span>synthetic · 96 samples · 2 revolutions</span></div><svg viewBox="0 0 860 340" width="100%" style="display:block" role="img" aria-label="Relative motion · along-track and radial">
+      <div class="scope"><div class="scope-head"><span><b>Relative motion · along-track and radial</b></span><span class="push"></span><span>96 samples · 2 revolutions</span></div><svg viewBox="0 0 860 348" width="100%" style="display:block" role="img" aria-label="Relative motion · along-track and radial">
 <g stroke="#2A2A34" stroke-width="1">
 <line x1="62" y1="22.0" x2="838" y2="22.0"/>
 <line x1="62" y1="78.8" x2="838" y2="78.8"/>
@@ -251,20 +251,20 @@
 <line x1="741.0" y1="22" x2="741.0" y2="306"/>
 <line x1="838.0" y1="22" x2="838.0" y2="306"/>
 </g>
-<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="end">
-<text x="53" y="25.5">1.2</text>
-<text x="53" y="82.3">0.72</text>
-<text x="53" y="139.1">0.24</text>
-<text x="53" y="195.9">-0.24</text>
-<text x="53" y="252.7">-0.71</text>
-<text x="53" y="309.5">-1.2</text>
+<g fill="#807D8C" font-size="16.2" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="end">
+<text x="59" y="25.5">1.2</text>
+<text x="59" y="82.3">0.72</text>
+<text x="59" y="139.1">0.24</text>
+<text x="59" y="195.9">-0.24</text>
+<text x="59" y="252.7">-0.71</text>
+<text x="59" y="309.5">-1.2</text>
 </g>
-<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="middle">
-<text x="62.0" y="322">-2.0</text>
-<text x="256.0" y="322">-0.99</text>
-<text x="450.0" y="322">0.00</text>
-<text x="644.0" y="322">0.99</text>
-<text x="838.0" y="322">2.0</text>
+<g fill="#807D8C" font-size="16.2" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="middle">
+<text x="62.0" y="330">-2.0</text>
+<text x="256.0" y="330">-0.99</text>
+<text x="450.0" y="330">0.00</text>
+<text x="644.0" y="330">0.99</text>
+<text x="838.0" y="330">2.0</text>
 </g>
 <polyline points="450.6,47.5 399.0,48.7 346.6,51.0 298.2,55.6 252.5,62.8 211.8,72.5 172.2,80.7 141.2,94.2 112.9,105.2 92.7,120.8 76.3,136.5 63.8,151.2 62.0,167.2 65.6,180.7 78.7,196.6 95.7,211.8 117.0,226.4 149.3,238.8 182.2,249.6 222.2,259.1 267.1,268.2 311.0,273.5 361.2,278.5 412.6,280.2 464.9,282.3 513.2,281.3 561.8,275.9 609.1,271.1 657.5,263.2 699.4,254.3 735.6,244.4 767.1,231.5 794.9,218.5 813.8,202.9 826.0,188.8 836.3,173.3 838.0,156.9 830.1,143.5 815.8,127.3 797.5,113.5 771.9,100.9 741.5,86.6 706.8,77.0 665.0,65.7 623.0,59.0 577.1,51.8 525.2,47.8 474.8,47.0 426.5,45.7 372.1,49.8 323.0,53.6 277.5,58.9 230.6,67.4 191.9,76.5 158.7,87.2 125.9,99.3 101.6,113.0 83.6,129.0 71.0,142.1 62.8,157.5 62.3,174.1 69.7,188.9 84.6,205.4 105.7,219.4 130.7,233.0 163.3,244.8 200.0,254.9 244.1,262.6 287.4,272.1 335.8,277.1 387.8,281.3 437.0,280.3 486.3,281.3 538.0,279.8 589.2,274.8 631.9,268.6 677.6,258.1 716.9,250.4 751.5,239.3 782.5,223.9 803.3,210.9 820.2,197.2 832.9,180.8 836.1,165.3 835.8,151.3 826.8,133.9 810.8,119.6 786.0,105.8 758.6,93.4 723.7,83.0 686.5,71.9 647.4,62.0 601.5,55.8 553.2,49.2 499.7,47.9 448.5,47.3" fill="none" stroke="#00E6FA" stroke-width="7" opacity="0.13" stroke-linejoin="round"/>
 <polyline points="450.6,47.5 399.0,48.7 346.6,51.0 298.2,55.6 252.5,62.8 211.8,72.5 172.2,80.7 141.2,94.2 112.9,105.2 92.7,120.8 76.3,136.5 63.8,151.2 62.0,167.2 65.6,180.7 78.7,196.6 95.7,211.8 117.0,226.4 149.3,238.8 182.2,249.6 222.2,259.1 267.1,268.2 311.0,273.5 361.2,278.5 412.6,280.2 464.9,282.3 513.2,281.3 561.8,275.9 609.1,271.1 657.5,263.2 699.4,254.3 735.6,244.4 767.1,231.5 794.9,218.5 813.8,202.9 826.0,188.8 836.3,173.3 838.0,156.9 830.1,143.5 815.8,127.3 797.5,113.5 771.9,100.9 741.5,86.6 706.8,77.0 665.0,65.7 623.0,59.0 577.1,51.8 525.2,47.8 474.8,47.0 426.5,45.7 372.1,49.8 323.0,53.6 277.5,58.9 230.6,67.4 191.9,76.5 158.7,87.2 125.9,99.3 101.6,113.0 83.6,129.0 71.0,142.1 62.8,157.5 62.3,174.1 69.7,188.9 84.6,205.4 105.7,219.4 130.7,233.0 163.3,244.8 200.0,254.9 244.1,262.6 287.4,272.1 335.8,277.1 387.8,281.3 437.0,280.3 486.3,281.3 538.0,279.8 589.2,274.8 631.9,268.6 677.6,258.1 716.9,250.4 751.5,239.3 782.5,223.9 803.3,210.9 820.2,197.2 832.9,180.8 836.1,165.3 835.8,151.3 826.8,133.9 810.8,119.6 786.0,105.8 758.6,93.4 723.7,83.0 686.5,71.9 647.4,62.0 601.5,55.8 553.2,49.2 499.7,47.9 448.5,47.3" fill="none" stroke="#00E6FA" stroke-width="1.7" stroke-linejoin="round"/>

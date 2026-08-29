@@ -7,7 +7,7 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
       /* Grounds: warm near-blacks, deliberately not #000. */
@@ -68,7 +68,7 @@
     .rail .stat b { color: var(--ink); font-weight: 500; }
 
     /* ---- layout --------------------------------------------------------- */
-    main { padding: 34px 28px 28px; }
+    main { padding: 34px 28px 28px; max-width: 1180px; margin: 0 auto; }
     .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
              align-items: start; }
     .stack { display: grid; gap: 22px; }
@@ -215,7 +215,7 @@
     <h1 style="margin-top:12px">Something in this line is<br>about to be your job.</h1>
   </div>
 
-  <div class="b2" style="margin-top:30px"><div class="scope"><div class="scope-head"><span><b>One number, over two days</b></span><span class="push"></span><span>sub-satellite longitude · degrees east</span></div><svg viewBox="0 0 980 300" width="100%" style="display:block" role="img" aria-label="One number, over two days">
+  <div class="b2" style="margin-top:30px"><div class="scope"><div class="scope-head"><span><b>One number, over two days</b></span><span class="push"></span><span>sub-satellite longitude · degrees east</span></div><svg viewBox="0 0 980 306" width="100%" style="display:block" role="img" aria-label="One number, over two days">
 <g stroke="#2A2A34" stroke-width="1">
 <line x1="62" y1="22.0" x2="958" y2="22.0"/>
 <line x1="62" y1="70.8" x2="958" y2="70.8"/>
@@ -233,7 +233,7 @@
 <line x1="846.0" y1="22" x2="846.0" y2="266"/>
 <line x1="958.0" y1="22" x2="958.0" y2="266"/>
 </g>
-<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="end">
+<g fill="#807D8C" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="end">
 <text x="53" y="25.5">-4.7</text>
 <text x="53" y="74.3">-4.9</text>
 <text x="53" y="123.1">-5.2</text>
@@ -241,12 +241,12 @@
 <text x="53" y="220.7">-5.6</text>
 <text x="53" y="269.5">-5.8</text>
 </g>
-<g fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="middle">
-<text x="62.0" y="282">0.00</text>
-<text x="286.0" y="282">11.9</text>
-<text x="510.0" y="282">23.8</text>
-<text x="734.0" y="282">35.6</text>
-<text x="958.0" y="282">47.5</text>
+<g fill="#807D8C" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.06em" text-anchor="middle">
+<text x="62.0" y="288">0.00</text>
+<text x="286.0" y="288">11.9</text>
+<text x="510.0" y="288">23.8</text>
+<text x="734.0" y="288">35.6</text>
+<text x="958.0" y="288">47.5</text>
 </g>
 <polyline points="62.0,245.4 71.4,244.4 80.9,245.3 90.3,244.0 99.7,244.3 109.2,243.7 118.6,244.2 128.0,243.5 137.5,243.7 146.9,242.7 156.3,241.8 165.7,242.0 175.2,241.8 184.6,241.9 194.0,241.5 203.5,240.7 212.9,240.6 222.3,240.3 231.8,239.7 241.2,240.8 250.6,240.6 260.1,238.7 269.5,239.0 278.9,238.4 288.4,245.7 297.8,244.9 307.2,245.3 316.7,245.0 326.1,244.6 335.5,244.8 344.9,244.4 354.4,243.1 363.8,243.3 373.2,242.7 382.7,241.8 392.1,245.1 401.5,241.5 411.0,237.2 420.4,234.2 429.8,231.7 439.3,227.4 448.7,224.8 458.1,221.4 467.6,217.7 477.0,214.7 486.4,211.4 495.9,206.9 505.3,204.3 514.7,199.7 524.1,197.9 533.6,193.9 543.0,189.9 552.4,187.0 561.9,183.4 571.3,180.7 580.7,176.4 590.2,173.7 599.6,170.3 609.0,167.5 618.5,163.4 627.9,159.1 637.3,157.1 646.8,152.7 656.2,150.6 665.6,146.4 675.1,143.0 684.5,139.2 693.9,136.7 703.3,132.8 712.8,128.5 722.2,125.5 731.6,122.8 741.1,119.5 750.5,116.1 759.9,111.6 769.4,110.0 778.8,105.1 788.2,101.5 797.7,98.8 807.1,94.7 816.5,93.1 826.0,89.4 835.4,84.5 844.8,81.9 854.3,78.5 863.7,76.1 873.1,72.5 882.5,68.6 892.0,66.0 901.4,61.6 910.8,57.8 920.3,55.2 929.7,52.4 939.1,48.7 948.6,44.6 958.0,42.3" fill="none" stroke="#00E6FA" stroke-width="7" opacity="0.13" stroke-linejoin="round"/>
 <polyline points="62.0,245.4 71.4,244.4 80.9,245.3 90.3,244.0 99.7,244.3 109.2,243.7 118.6,244.2 128.0,243.5 137.5,243.7 146.9,242.7 156.3,241.8 165.7,242.0 175.2,241.8 184.6,241.9 194.0,241.5 203.5,240.7 212.9,240.6 222.3,240.3 231.8,239.7 241.2,240.8 250.6,240.6 260.1,238.7 269.5,239.0 278.9,238.4 288.4,245.7 297.8,244.9 307.2,245.3 316.7,245.0 326.1,244.6 335.5,244.8 344.9,244.4 354.4,243.1 363.8,243.3 373.2,242.7 382.7,241.8 392.1,245.1 401.5,241.5 411.0,237.2 420.4,234.2 429.8,231.7 439.3,227.4 448.7,224.8 458.1,221.4 467.6,217.7 477.0,214.7 486.4,211.4 495.9,206.9 505.3,204.3 514.7,199.7 524.1,197.9 533.6,193.9 543.0,189.9 552.4,187.0 561.9,183.4 571.3,180.7 580.7,176.4 590.2,173.7 599.6,170.3 609.0,167.5 618.5,163.4 627.9,159.1 637.3,157.1 646.8,152.7 656.2,150.6 665.6,146.4 675.1,143.0 684.5,139.2 693.9,136.7 703.3,132.8 712.8,128.5 722.2,125.5 731.6,122.8 741.1,119.5 750.5,116.1 759.9,111.6 769.4,110.0 778.8,105.1 788.2,101.5 797.7,98.8 807.1,94.7 816.5,93.1 826.0,89.4 835.4,84.5 844.8,81.9 854.3,78.5 863.7,76.1 873.1,72.5 882.5,68.6 892.0,66.0 901.4,61.6 910.8,57.8 920.3,55.2 929.7,52.4 939.1,48.7 948.6,44.6 958.0,42.3" fill="none" stroke="#00E6FA" stroke-width="1.7" stroke-linejoin="round" style="animation: trace 1500ms ease-out both" stroke-dasharray="2400"/>

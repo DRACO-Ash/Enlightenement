@@ -18,7 +18,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Category | Training / Simulation. Owner decision, 2026-08-18. If the console's list uses different wording, pick its nearest equivalent and record the exact string here rather than forcing this one |
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
-| Version | 0.23.14, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.23.15, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -155,7 +155,7 @@ the volume.
 ## Pre-submission checklist
 
 - [x] Verification loop green (`sh scripts/verify.sh`), 898 passed and 1 skipped, coverage 96.84%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.23.14`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.23.15`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included

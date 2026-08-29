@@ -7,7 +7,7 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
       /* Grounds: warm near-blacks, deliberately not #000. */
@@ -68,7 +68,7 @@
     .rail .stat b { color: var(--ink); font-weight: 500; }
 
     /* ---- layout --------------------------------------------------------- */
-    main { padding: 34px 28px 28px; }
+    main { padding: 34px 28px 28px; max-width: 1180px; margin: 0 auto; }
     .split { display: grid; gap: 34px; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
              align-items: start; }
     .stack { display: grid; gap: 22px; }
@@ -209,8 +209,8 @@
     <div>
       <p class="kicker">Your shape, 28 August</p>
       <h2 style="margin-top:9px">Strong on recall. Cue detection is the<br>edge that is still soft.</h2>
-      <div style="max-width:480px; margin:20px auto 0">
-        <svg viewBox="0 0 440 440" width="100%" style="display:block" role="img" aria-label="Competence figure across six axes, each with a confidence band">
+      <div style="max-width:660px; margin:20px auto 0">
+        <svg viewBox="-90 -12 620 464" width="100%" style="display:block" role="img" aria-label="Competence figure across six axes, each with a confidence band">
 <polygon points="220.0,182.6 252.4,201.3 252.4,238.7 220.0,257.4 187.6,238.7 187.6,201.3" fill="none" stroke="#2A2A34" stroke-width="1"/>
 <polygon points="220.0,145.2 284.8,182.6 284.8,257.4 220.0,294.8 155.2,257.4 155.2,182.6" fill="none" stroke="#2A2A34" stroke-width="1"/>
 <polygon points="220.0,107.8 317.2,163.9 317.2,276.1 220.0,332.2 122.8,276.1 122.8,163.9" fill="none" stroke="#2A2A34" stroke-width="1"/>
@@ -228,14 +228,14 @@
 <circle cx="324.9" cy="159.4" r="3.2" fill="#FFBB55"/>
 <circle cx="334.0" cy="285.8" r="3.2" fill="#FFBB55"/>
 <circle cx="124.1" cy="275.4" r="3.2" fill="#FFBB55"/>
-<text x="220.0" y="31.5" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">CUE DETECTION</text>
-<text x="385.8" y="127.3" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">CLASSIFICATION</text>
-<text x="385.8" y="318.7" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">PROCEDURE RECALL</text>
-<text x="220.0" y="414.5" fill="#5A5866" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">PHYSICAL REASONING</text>
-<text x="220.0" y="392.0" fill="#5A5866" font-size="8.5" font-family="Azeret Mono, monospace" text-anchor="middle">NOT MEASURED</text>
-<text x="54.2" y="318.7" fill="#B9B6C2" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">CALIBRATION</text>
-<text x="54.2" y="127.3" fill="#5A5866" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">REPORTING</text>
-<text x="73.6" y="138.5" fill="#5A5866" font-size="8.5" font-family="Azeret Mono, monospace" text-anchor="end">NOT MEASURED</text>
+<text x="220.0" y="31.5" fill="#B9B6C2" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">CUE DETECTION</text>
+<text x="385.8" y="127.3" fill="#B9B6C2" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">CLASSIFICATION</text>
+<text x="385.8" y="318.7" fill="#B9B6C2" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="start">PROCEDURE RECALL</text>
+<text x="220.0" y="414.5" fill="#5A5866" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">PHYSICAL REASONING</text>
+<text x="220.0" y="437.0" fill="#5A5866" font-size="11.5" font-family="Azeret Mono, monospace" text-anchor="middle">NOT MEASURED</text>
+<text x="54.2" y="318.7" fill="#B9B6C2" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">CALIBRATION</text>
+<text x="54.2" y="127.3" fill="#5A5866" font-size="12" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="end">REPORTING</text>
+<text x="54.2" y="146" fill="#5A5866" font-size="11.5" font-family="Azeret Mono, monospace" text-anchor="end">NOT MEASURED</text>
 </svg>
       </div>
       <p class="under" style="text-align:center; max-width:56ch; margin:8px auto 0">The band is the

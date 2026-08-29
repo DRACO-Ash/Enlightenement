@@ -7,7 +7,7 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@300;400;500;600&family=Saira+Condensed:wght@400;500;600;700&family=Azeret+Mono:wght@300;400;500;700&display=swap">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <style>
     :root {
       /* Grounds: warm near-blacks, deliberately not #000. */
@@ -225,59 +225,64 @@
   <div class="scope b3" style="margin-top:28px">
     <div class="scope-head"><span><b>One clock, two reads</b></span><span class="push"></span>
       <span>seed 0x4f1a &middot; replayable exactly</span></div>
-    <svg viewBox="0 0 1020 270" width="100%" style="display:block" role="img" aria-label="Expert and operator reads on one shared scenario clock">
-<line x1="92" y1="139" x2="994" y2="139" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="92.0" y1="134" x2="92.0" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="92.0" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">00:00</text>
-<line x1="182.2" y1="136.5" x2="182.2" y2="141.5" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="272.4" y1="134" x2="272.4" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="272.4" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">01:00</text>
-<line x1="362.6" y1="136.5" x2="362.6" y2="141.5" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="452.8" y1="134" x2="452.8" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="452.8" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">02:00</text>
-<line x1="543.0" y1="136.5" x2="543.0" y2="141.5" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="633.2" y1="134" x2="633.2" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="633.2" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">03:00</text>
-<line x1="723.4" y1="136.5" x2="723.4" y2="141.5" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="813.6" y1="134" x2="813.6" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="813.6" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">04:00</text>
-<line x1="903.8" y1="136.5" x2="903.8" y2="141.5" stroke="#3C3C4A" stroke-width="1"/>
-<line x1="994.0" y1="134" x2="994.0" y2="144" stroke="#3C3C4A" stroke-width="1"/>
-<text x="994.0" y="158" fill="#807D8C" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">05:00</text>
-<text x="78" y="83.5" fill="#00E6FA" font-size="9.5" text-anchor="end" font-family="Azeret Mono, monospace" letter-spacing="0.14em">EXPERT · ASH</text>
-<text x="78" y="201.5" fill="#FFBB55" font-size="9.5" text-anchor="end" font-family="Azeret Mono, monospace" letter-spacing="0.14em">YOU</text>
-<rect x="476.9" y="36" width="120.3" height="188" fill="#FFA4A1" opacity="0.09"/>
-<text x="537.0" y="46" fill="#FFA4A1" font-size="9.5" font-family="Azeret Mono, monospace" letter-spacing="0.13em" text-anchor="middle">40 S BEHIND, AND WRONG ON ARRIVAL</text>
-<line x1="176.2" y1="80" x2="176.2" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="176.2" cy="80" r="2.6" fill="#00E6FA" opacity="0.75"/>
-<text x="176.2" y="65" fill="#00E6FA" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="start">count is 1</text>
-<line x1="308.5" y1="80" x2="308.5" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="308.5" cy="80" r="2.6" fill="#00E6FA" opacity="0.75"/>
-<text x="308.5" y="65" fill="#00E6FA" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">count is 2</text>
-<line x1="404.7" y1="80" x2="404.7" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="404.7" cy="80" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
-<text x="404.7" y="65" fill="#DBB5FF" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">spread narrow, one way</text>
-<line x1="476.9" y1="80" x2="476.9" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<polygon points="476.9,74 470.9,85 482.9,85" fill="#00E6FA"/>
-<text x="476.9" y="65" fill="#00E6FA" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">separation · 70%</text>
-<line x1="741.4" y1="80" x2="741.4" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="741.4" cy="80" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
-<text x="741.4" y="65" fill="#DBB5FF" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">piece 2 under control</text>
-<line x1="789.5" y1="80" x2="789.5" y2="139" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<polygon points="789.5,74 783.5,85 795.5,85" fill="#00E6FA"/>
-<text x="789.5" y="65" fill="#00E6FA" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">separation · 93%</text>
-<line x1="380.6" y1="198" x2="380.6" y2="139" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="380.6" cy="198" r="2.6" fill="#FFBB55" opacity="0.75"/>
-<text x="380.6" y="219" fill="#FFBB55" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">count is 2</text>
-<line x1="597.1" y1="198" x2="597.1" y2="139" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<polygon points="597.1,204 591.1,193 603.1,193" fill="#FFA4A1"/>
-<text x="597.1" y="219" fill="#FFA4A1" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">fragmentation · 75%</text>
-<line x1="825.6" y1="198" x2="825.6" y2="139" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<circle cx="825.6" cy="198" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
-<text x="825.6" y="219" fill="#DBB5FF" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">piece 2 manoeuvring?</text>
-<line x1="921.8" y1="198" x2="921.8" y2="139" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
-<polygon points="921.8,192 915.8,203 927.8,203" fill="#FFBB55"/>
-<text x="921.8" y="219" fill="#FFBB55" font-size="10" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="end">separation · 55%</text>
+    <svg viewBox="0 0 1020 252" width="100%" style="display:block" role="img" aria-label="Expert and operator reads on one shared scenario clock">
+<rect x="510.1" y="22" width="112.5" height="218" fill="#FFA4A1" opacity="0.09"/>
+<text x="566.4" y="14" fill="#FFA4A1" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.13em" text-anchor="middle">40 S BEHIND, AND WRONG ON ARRIVAL</text>
+<line x1="150" y1="138" x2="994" y2="138" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="150.0" y1="133" x2="150.0" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="150.0" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">00:00</text>
+<line x1="234.4" y1="135.5" x2="234.4" y2="140.5" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="318.8" y1="133" x2="318.8" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="318.8" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">01:00</text>
+<line x1="403.2" y1="135.5" x2="403.2" y2="140.5" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="487.6" y1="133" x2="487.6" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="487.6" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">02:00</text>
+<line x1="572.0" y1="135.5" x2="572.0" y2="140.5" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="656.4" y1="133" x2="656.4" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="656.4" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">03:00</text>
+<line x1="740.8" y1="135.5" x2="740.8" y2="140.5" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="825.2" y1="133" x2="825.2" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="825.2" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">04:00</text>
+<line x1="909.6" y1="135.5" x2="909.6" y2="140.5" stroke="#3C3C4A" stroke-width="1"/>
+<line x1="994.0" y1="133" x2="994.0" y2="143" stroke="#3C3C4A" stroke-width="1"/>
+<text x="994.0" y="160" fill="#807D8C" font-size="11.5" font-family="Azeret Mono, monospace" letter-spacing="0.1em" text-anchor="middle">05:00</text>
+<text x="136" y="84" fill="#00E6FA" font-size="12" text-anchor="end" font-family="Azeret Mono, monospace" letter-spacing="0.14em">EXPERT · ASH</text>
+<text x="136" y="200" fill="#FFBB55" font-size="12" text-anchor="end" font-family="Azeret Mono, monospace" letter-spacing="0.14em">YOU</text>
+<line x1="228.8" y1="80" x2="228.8" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="228.8" cy="80" r="2.6" fill="#00E6FA" opacity="0.75"/>
+<text x="228.8" y="68" fill="#00E6FA" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="start">count is 1</text>
+<line x1="352.6" y1="80" x2="352.6" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="352.6" cy="80" r="2.6" fill="#00E6FA" opacity="0.75"/>
+<line x1="352.6" y1="56" x2="352.6" y2="74" stroke="#00E6FA" stroke-width="1" opacity="0.28"/>
+<text x="352.6" y="50" fill="#00E6FA" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">count is 2</text>
+<line x1="442.6" y1="80" x2="442.6" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="442.6" cy="80" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
+<text x="442.6" y="68" fill="#DBB5FF" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">spread narrow, one way</text>
+<line x1="510.1" y1="80" x2="510.1" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<polygon points="510.1,74 504.1,85 516.1,85" fill="#00E6FA"/>
+<line x1="510.1" y1="56" x2="510.1" y2="74" stroke="#00E6FA" stroke-width="1" opacity="0.28"/>
+<text x="510.1" y="50" fill="#00E6FA" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">separation · 70%</text>
+<line x1="757.7" y1="80" x2="757.7" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="757.7" cy="80" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
+<text x="757.7" y="68" fill="#DBB5FF" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">piece 2 under control</text>
+<line x1="802.7" y1="80" x2="802.7" y2="138" stroke="#00E6FA" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<polygon points="802.7,74 796.7,85 808.7,85" fill="#00E6FA"/>
+<line x1="802.7" y1="56" x2="802.7" y2="74" stroke="#00E6FA" stroke-width="1" opacity="0.28"/>
+<text x="802.7" y="50" fill="#00E6FA" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">separation · 93%</text>
+<line x1="420.1" y1="196" x2="420.1" y2="138" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="420.1" cy="196" r="2.6" fill="#FFBB55" opacity="0.75"/>
+<text x="420.1" y="218" fill="#FFBB55" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">count is 2</text>
+<line x1="622.6" y1="196" x2="622.6" y2="138" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<polygon points="622.6,202 616.6,191 628.6,191" fill="#FFA4A1"/>
+<line x1="622.6" y1="202" x2="622.6" y2="224" stroke="#FFA4A1" stroke-width="1" opacity="0.28"/>
+<text x="622.6" y="236" fill="#FFA4A1" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">fragmentation · 75%</text>
+<line x1="836.5" y1="196" x2="836.5" y2="138" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<circle cx="836.5" cy="196" r="4.5" fill="none" stroke="#DBB5FF" stroke-width="1.4"/>
+<text x="836.5" y="218" fill="#DBB5FF" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="middle">piece 2 manoeuvring?</text>
+<line x1="926.5" y1="196" x2="926.5" y2="138" stroke="#FFBB55" stroke-width="1" stroke-dasharray="2 3" opacity="0.45"/>
+<polygon points="926.5,202 920.5,191 932.5,191" fill="#FFBB55"/>
+<line x1="926.5" y1="202" x2="926.5" y2="224" stroke="#FFBB55" stroke-width="1" opacity="0.28"/>
+<text x="926.5" y="236" fill="#FFBB55" font-size="12.5" font-family="Azeret Mono, monospace" letter-spacing="0.08em" text-anchor="end">separation · 55%</text>
 </svg>
     <div class="keyrow">
       <span><svg width="14" height="12"><polygon points="7,1 13,11 1,11" fill="#00E6FA"/></svg> Call made</span>

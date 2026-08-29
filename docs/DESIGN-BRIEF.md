@@ -26,8 +26,16 @@ without them, or it is not a design this product can adopt.
 
 Two practical consequences for the artboards:
 
-● **Type is the system stack, not a webfont.** `"Segoe UI", system-ui, -apple-system, sans-serif`.
-  The owner's workstation is Windows, so Segoe UI is the real face in the real deployment.
+● **Type is a vendored webfont.** Owner decision, 29 August, overriding the system-stack rule this
+  section originally carried. The constraint was always "no external request", never "no webfont",
+  and the interface already serves `font-src 'self'` - which permits a self-hosted face and forbids
+  a content delivery network. So PHOSPHOR ships Saira, Saira Condensed and Azeret Mono as vendored
+  woff2, latin subset, six files and 131 kB in total, under the SIL Open Font Licence 1.1 with the
+  licence text carried beside them. The artboards load `fonts/fonts.css`, not `fonts.googleapis.com`,
+  and a rendering harness asserts zero network requests. A mockup that renders in different type
+  from the product it specifies is not a specification, so this is the same set of files on both
+  sides. The system stack stays behind them as the fallback, Segoe UI first, because the owner's
+  workstation is Windows.
 ● **Charts are drawn from scratch on a canvas.** No chart library will be available. Design chart
   treatments that a few hundred lines of hand-written canvas code can produce.
 
@@ -407,9 +415,10 @@ Paste this into Claude Design, then attach this document.
 > designing.
 >
 > The design system is fixed and measured - I will give you the tokens, the contrast figures and five
-> hard rules that tests enforce. Do not introduce a webfont, a chart library or any external request:
-> the application is air-gapped and serves `script-src 'self'`, so charts are hand-written canvas and
-> type is the system stack. Density varies by mode; the palette never does.
+> hard rules that tests enforce. Do not introduce a chart library or any external request: the
+> application is air-gapped and serves `script-src 'self'`, so charts are hand-written canvas. Type
+> is a webfont, but a vendored one - name the faces and I will bring the files into the repository;
+> nothing may be fetched at runtime. Density varies by mode; the palette never does.
 >
 > Build every artboard with the real payloads I supply, not placeholder content.
 >

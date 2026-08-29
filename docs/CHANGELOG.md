@@ -2,6 +2,50 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.15 (2026-08-29)
+
+**What.** Three things the owner asked for on the PHOSPHOR direction: vendored webfonts, a red team
+against instructional-design standards, and the accessibility defect that red team found in my own
+artboards, fixed.
+
+**Webfonts.** Owner decision, overriding the design brief's "type is the system stack" rule. The
+constraint was always "no external request", never "no webfont", and the interface already serves
+`font-src 'self'`. So Saira, Saira Condensed and Azeret Mono now sit in `design/phosphor/fonts/` as
+latin-subset woff2 under the SIL Open Font Licence 1.1, licence text carried beside them, six files
+and 131 kB. Saira and Azeret Mono carry a `wght` axis, verified by reading the `fvar` table out of
+the woff2 directory, so one file covers every weight and is declared as a range; Saira Condensed is
+served upstream as static instances, so it is four files. Every artboard now links
+`fonts/fonts.css` instead of `fonts.googleapis.com`.
+
+**Red team.** `docs/DESIGN-RED-TEAM.md`, thirteen ranked findings against DSAT, Gagné, Merrill,
+4C/ID, cognitive load theory, Kirkpatrick, deliberate practice and recognition-primed decision
+making. Verdict: the learning science is above industry standard, the instructional systems
+engineering around it is below it. Three criticals, all structural rather than visual: no training
+needs analysis, so nothing is traceable to the job; entirely part-task practice, with two of the
+six axes structurally unmeasurable; and no scaffolding fade between the worked example and
+unsupported problems.
+
+**The defect that was mine.** Finding 10 said in-plot text was carrying the lesson at 8.5 to 10.5
+pixels. Measuring instead of estimating made it worse and wider. A plot drawn inside a 1.55fr
+column renders *smaller* than its own coordinate system, so the true floor was 9.0 px; Progress was
+clipping "PROCEDURE RECALL" off the edge of its own viewBox; and the debrief timeline, the single
+most important teaching screen in the product, was overlapping six of its own labels. Fixed by
+bounding every artboard's measure so the render scale is a known quantity, sizing in-plot text
+against that measured scale, rebuilding the debrief label layer on two staggered rows per track
+with leaders back to each marker, and giving the radar frame the margin its labels always needed.
+
+**Why.** A contrast figure measured to two decimal places and then undermined by size is a control
+that was never verified. Same for a mockup that specifies a typeface it cannot render, and for a
+design document whose type rule the owner has since overruled.
+
+**How verified.** New standing check at `design/check-artboards.mjs`: headless Chromium loads each
+artboard at 1440 px and 1180 px and asserts that no text inside a plot renders below 12 CSS pixels,
+none is clipped by its frame, no two labels overlap, every declared face actually loaded, and the
+page makes zero network requests. All six artboards pass at both widths. It needs Node and
+Playwright so it is not a leg of `scripts/verify.sh`; it is run by hand when an artboard changes.
+The verification loop is green, and no application code changed: the only source edit is the
+version stamp.
+
 ## V0.23.14 (2026-08-28)
 
 **What.** A second design direction, `design/phosphor/`, after the owner's verdict on the first:
