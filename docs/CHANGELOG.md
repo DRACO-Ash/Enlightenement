@@ -2,6 +2,62 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.23.20 (2026-08-30)
+
+**What.** `docs/TASK-EVIDENCE.md`, and the answers to the five questions `docs/PLOT-REALISM.md`
+left open. Ash supplied the Iron Stallion help manual for Sat Xzibit, the application the five
+product screenshots came from. No code change.
+
+**The material answers more than it was asked.** It closes four of the five plot questions and
+lands on two of the design red team's three CRITICAL findings.
+
+**The association types are a diagnostic rule, not a legend.** ASTAT is association status, 1 fully
+associated and 2 closely. The other two are a discrimination with a physical basis: **Beta
+residuals reveal orbit PLANE change, Time residuals reveal orbit SIZE change.** Neither was in our
+vocabulary, because nobody here knew it.
+
+**Residuals are a four-class classification and we already have the format for it.** The manual
+gives four causes for data leaving the zero line: the state still fits, a manoeuvre moved the
+object, the orbit fit is degrading, or the incoming data has a quality problem. Two of the three
+non-null answers are not about the satellite at all, which is exactly the confusable alternative
+an invented syllabus misses. A trainee taught only "residuals move when there is a manoeuvre" will
+report a manoeuvre when the fit is stale.
+
+**Two of the six axes stop being unmeasurable**, which is red team finding 2. Physical reasoning
+becomes markable through the element-response question: which elements should have moved, given
+this manoeuvre, when period, apogee, perigee and eccentricity step together while inclination and
+RAAN ramp through untouched. Reporting becomes markable through the collection-planning step the
+workflow actually ends at: a time window, an object list, a sensor set, a step rate, and a
+phenomenology judgement about whether a sensor can physically see the object at all. Neither is
+free, both need authoring, but the flight plan's claim that the axes are measurable is now
+defensible for four of six rather than four with two hopes attached.
+
+**And it contains a procedure we did not write.** The manual's recommended operator checks, of
+which the second is a discipline rather than a technique: "look for agreement across providers
+before assuming a trend is real". That answers the multi-source point from the other direction.
+Overlaying two sources is not a pleasing visual idiom, it is a required check, and a training
+surface showing one source cannot ask an operator to perform it.
+
+**One decision for Ash before the palette is final.** Red means "the most recent data" throughout
+the real toolset, consistently, in the heat map, the LAT/LON view and the light curves, with a red
+line marking the present. PHOSPHOR uses red for "your call was wrong". Two unrelated meanings on
+one colour, in the environment whose surface features are supposed to match the job's. Three
+options are set out; the recommendation is to confine red to recency on plot surfaces and never use
+it for verdicts.
+
+**Corrections to V0.23.19.** The waterfall is not a whole-sky view with the target somewhere in it:
+it shows objects within 50 km of the queried satellite, so the proposed "find the target in a
+crowded field" surface is rewritten as "read the neighbourhood", which fits the rendezvous and
+proximity operations discrimination the flight plan already names. Pass cadence now has real
+figures from Ash: LEO eight passes a day in two periods, GEO electro-optical consistent except
+solar exclusion, passive RF essentially constant.
+
+**How verified.** Verification loop green. No source change beyond the version stamp. Nothing from
+the manual or the screenshots is asserted as fact where the source is silent: ACDC is left
+unexpanded and marked `TBC, re-verify`, `V Mag Assoc.` is marked as inference, and a disagreement
+between the manual and a screenshot over "Solar Equinox" against "Solar Equatorial" phase angle is
+recorded rather than resolved.
+
 ## V0.23.19 (2026-08-29)
 
 **What.** `docs/PLOT-REALISM.md`, and a pointer to it from the design brief. No code change.

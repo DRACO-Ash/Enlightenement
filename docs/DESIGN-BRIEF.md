@@ -159,6 +159,13 @@ for a novice actively harm an expert. So:
 
 ### The plot surfaces
 
+**Read `docs/PLOT-REALISM.md` before designing a plot, and `docs/TASK-EVIDENCE.md` before
+designing anything at all.** The second carries the first material in this project traceable
+to the job rather than inferred from the code, taken from the help manual of the tool
+operators actually use. It also raises a colour collision that has to be settled before the
+palette is final: red means "most recent data" throughout the real toolset, and PHOSPHOR uses
+red for "your call was wrong".
+
 **Read `docs/PLOT-REALISM.md` before designing a plot.** Ash supplied five screenshots of live KBR
 Space Domain Awareness tooling on 29 August, and judged against them these three surfaces are not
 realistic in a structural way: real products are dense gappy multi-source scatter that encode a

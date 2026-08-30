@@ -177,18 +177,92 @@ all still parameters we chose rather than figures we measured. Making the plots 
 before that pass runs makes the shortfall harder to see, not smaller, so the provisional marker
 stays on every one of them until real figures replace it.
 
-## Questions for Ash, which I am not going to guess at
+## The questions, answered
 
-● **The association types.** ASTAT, Beta, Time and V Mag association each have a precise meaning in
-  the residual product. If they are part of the vocabulary an analyst uses out loud, they belong in
-  the training; I do not know what they mean and will not invent definitions.
-● **Interval, in the light curve.** Whether "interval 0 to 7" indexes passes, nights, sensors or
-  something else determines whether it is a legend or a lesson.
-● **Realistic pass cadence and gap distribution** for the sensors that matter, which is the number
-  item 2 needs and which the characterisation pass is meant to produce.
-● **Whether the crowded-field task is in scope for v1.** It is a real skill and it is also a
-  substantial surface; the flight plan does not name it.
-● **Handling.** These are live operational products of publicly catalogued objects. I have taken
-  design idiom from them and no data: no residual value, object pairing, timestamp or sensor
-  characteristic from these screenshots has been copied into content or code, and the generated
-  series stay synthetic and seeded. Say if any of that needs to be tighter.
+Ash supplied the Sat Xzibit help manual on 30 August. It closes four of the five and changes two
+things I had written above.
+
+### The association types are a diagnostic rule, not a legend
+
+**ASTAT is association status**: how strongly an observation matches an element set. ASTAT 1 is
+fully associated, ASTAT 2 closely associated. And the other two are not categories at all, they are
+a discrimination:
+
+● **Beta residuals reveal orbit PLANE change.**
+● **Time residuals reveal orbit SIZE change.**
+
+That is a teachable rule with a physical basis, and it is the residual plot's whole reason for
+existing. The manual also gives four distinct causes for residuals leaving the zero line, which
+between them make a four-class classification task of exactly the shape our drill format already
+serves: the state no longer fits, a manoeuvre has changed orbit size or plane, the orbit fit is
+degrading, or the incoming data has a quality problem. Recorded in `docs/TASK-EVIDENCE.md`.
+
+`V Mag Assoc.` is not defined in the manual. By position it is the visual-magnitude residual;
+marked as inference, `TBC, re-verify`.
+
+### Interval is a recency bin, and red means "now" across the whole toolset
+
+The light-curve display uses multiple days of observations "with the most recent data shown in
+red". The heat map is explicit: colours are date-based, red is the most recent data, blue the
+oldest in the range, and a red line marks the current time. LAT/LON uses the same convention. So
+the interval legend running 0 to 7 down the left edge of the light curve is a time bin, interval 0
+being the most recent, and the blue-to-white ramp is age.
+
+**This is a transfer-of-training problem for PHOSPHOR and I would rather raise it than let it
+ship.** In the operator's real tools red means *most recent*, consistently, in at least three
+views. In PHOSPHOR red-pink (`--no`, #FFA4A1) means *your call was wrong*. An operator moving
+between the two reads the same colour as two unrelated things. Baldwin and Ford's identical-elements
+account of transfer says the training environment's surface features should match the job's where
+they can, and colour semantics are about as surface as it gets. Options: adopt red-equals-recent
+and find another channel for wrongness, keep the PHOSPHOR meaning and accept the collision
+knowingly, or use red only for recency on plot surfaces and never for verdicts. **My
+recommendation is the third**, because it keeps the two meanings in separate parts of the screen
+where they cannot be confused, but it is a design decision and it is Ash's.
+
+### Pass cadence, which is the number change 2 needed
+
+From Ash directly:
+
+| Regime and phenomenology | Cadence |
+| --- | --- |
+| Low Earth orbit (LEO) | 8 passes per day, split into 2 periods |
+| Geostationary (GEO), electro-optical | Consistent coverage, except solar exclusion |
+| Passive radio frequency (RF) | Essentially constant |
+
+So a LEO series is roughly four passes in a window, one revolution apart, then a long gap, then a
+second window: two dense clusters a day, not an even sweep. The residual product corroborates it,
+showing seven clumps across the seven days of the GAOFEN 13 window. GEO optical is near-continuous
+through local night with a daylight gap and a solar-exclusion outage; RF has no meaningful gaps,
+which makes it the phenomenology an operator turns to when the optical picture goes quiet. That
+contrast is itself trainable.
+
+### The waterfall is neighbours, not the catalogue
+
+I had this wrong. Web Waterfall shows "observations from objects within 50 km of the queried
+satellite, displayed as longitude over time". It is not a whole-sky view with the target somewhere
+in it, it is the target and its close neighbourhood. That makes it a far better fit for the product
+than the crowded-field task I proposed: it is a co-location and proximity surface, which is the
+rendezvous and proximity operations (RPO) discrimination the flight plan already names.
+
+Change 8 above is therefore rewritten: **not "find the target in a crowded field" but "read the
+neighbourhood"**, the target's longitude track among the objects sharing its 50 km, over time.
+
+### Still open
+
+● The Web Waterfall help guide itself did not come through, only the one-line description inside
+  the Sat Xzibit manual. If there is more on how the 50 km neighbourhood is selected and drawn, it
+  would sharpen the surface.
+● ACDC, in "Adjust ACDC Span", is not expanded anywhere in the supplied material. `TBC, re-verify`
+  rather than guessed at.
+● The manual's RCS section calls the axis "Solar Equinox Phase Angle" while the light-curve
+  screenshot's axis reads "Solar Equatorial Phase Angle". The screenshot is the artefact, so the
+  plots follow it, but one of the two is wrong and it would be worth knowing which.
+
+## Handling
+
+These are live operational products and tool documentation for publicly catalogued objects. What
+has been taken is procedure and visual idiom, not data: no residual value, object pairing,
+timestamp, sensor identity or provider characteristic from the screenshots has been copied into
+content or code, and the generated series stay synthetic and seeded. Everything sourced from the
+manual is attributed in `docs/TASK-EVIDENCE.md` so it can be verified or removed as one block. Say
+if any of that needs to be tighter.
