@@ -1,0 +1,1242 @@
+{
+  "_README": "THIS FILE SHIPS. THE REAL ONE DOES NOT. Copy this to thresholds.local.json, populate it from the current procedure, and keep thresholds.local.json out of version control. Every threshold_ref key used anywhere in the content library resolves against this structure. The values below are placeholders and are deliberately NOT the operational values: they exist so the application runs, the validator passes, and a developer without procedure access can build against a complete shape. An operator seeing a placeholder value in the interface is a bug, and the loader must refuse to serve a scored scenario when a required key is still at its placeholder.",
+  "_rationale": "Operational thresholds are the part of a procedure most likely to change and least appropriate to distribute inside a training artefact. Externalising them does three things: it keeps tasking values and distance criteria out of the repository, it means a threshold revision is a config change rather than a content release, and it makes the application honest about the fact that the numbers belong to the procedure rather than to the app.",
+  "_meta": {
+    "populated_by": "Partially pre-populated from supplied source documents, latest 31 Aug 2026. Values marked source are traceable; PLACEHOLDER remain for local population.",
+    "populated_date": null,
+    "source_procedure_version": null,
+    "review_due": null,
+    "all_placeholders_replaced": false,
+    "source_documents": [
+      "JCO Timing Standards",
+      "JCO Quick Reference Card",
+      "JCO Launch procedure",
+      "JCO Photometry Change procedure",
+      "GEO DA-ASAT advanced module",
+      "Co-orbital coplanar tool configuration screen",
+      "SJ-21/25 RPO and docking AAR"
+    ]
+  },
+  "report": {
+    "notso_standard": {
+      "value": "60 minutes from initial indications, or 30 minutes from the last provider product dropped, whichever is earlier",
+      "source": "Timing Standards",
+      "note": "Two-legged. Bands: Qualified 60/30, Partial 90/60, Unqualified >90/60. Both legs must be tracked; the governing leg changes with provider speed."
+    }
+  },
+  "manoeuvre": {
+    "max_state_age": {
+      "value": 24,
+      "unit": "hours",
+      "source": "Aligned to the predictive surveillance element set currency requirement",
+      "note": "Above this a residual departure is treated as unassessable rather than as a manoeuvre. Chosen for consistency with the 24 hour element set currency check rather than invented separately."
+    },
+    "regime_delta_v_sanity": {
+      "source": "Computed from two-body dynamics, WGS84 constants. Reproducible; method stated.",
+      "note": "Approximate relationships for sanity-checking a reported figure in seconds, not for computing a solution. Circular-orbit assumptions, in-track burns.",
+      "assumptions": {
+        "mu_km3_s2": 398600.4418,
+        "earth_radius_km": 6378.137,
+        "sidereal_day_s": 86164.0905,
+        "leo_reference_altitude_km": 600,
+        "meo_reference_altitude_km": 20200
+      },
+      "GEO": {
+        "semi_major_axis_km": 42164.17,
+        "altitude_km": 35786.0,
+        "altitude_change_per_ms": 27.43,
+        "altitude_change_unit": "km per m/s in-track",
+        "period_change_per_km_sma_s": 3.07,
+        "period_change_per_ms_s": 84.07,
+        "drift_per_km_sma_deg_day": -0.0128,
+        "drift_per_ms_deg_day": -0.351,
+        "reading": "About 27 km of altitude and 0.35 deg/day of drift per metre per second. Higher is slower, so a boost drifts west."
+      },
+      "MEO": {
+        "altitude_change_per_ms": 13.73,
+        "period_change_per_km_sma_s": 2.43,
+        "period_change_per_ms_s": 33.41,
+        "reading": "About 14 km per metre per second at navigation altitudes."
+      },
+      "LEO": {
+        "altitude_change_per_ms": 1.85,
+        "period_change_per_km_sma_s": 1.25,
+        "period_change_per_ms_s": 2.3,
+        "reading": "About 1.8 km per metre per second at 600 km. An order of magnitude tighter than the belt, which is why the period-change threshold is an order of magnitude smaller."
+      },
+      "cross_check_against_notification_thresholds": {
+        "note": "A useful validation. Converting the published period-change thresholds into delta-v shows they are broadly equivalent across regimes, which means they are calibrated to detect burns of similar magnitude rather than being arbitrary numbers per regime.",
+        "GEO_20s": "approximately 0.24 m/s",
+        "MEO_10s": "approximately 0.30 m/s",
+        "LEO_2s": "approximately 0.87 m/s",
+        "teaching_point": "All three thresholds sit under one metre per second. An operator who understands this stops memorising three numbers and starts recognising one idea: the criterion is roughly a quarter to a metre per second of delta-v, expressed in whatever period change that produces in the regime."
+      }
+    },
+    "impossible_rate_ceiling": {
+      "source": "Computed from the semi-major axis offset required to produce the drift.",
+      "geo_deg_day": 20,
+      "unit": "deg/day",
+      "note": "A 20 deg/day belt drift requires a semi-major axis offset of about 1550 km, which places the object well outside the operational belt. Operational objects sit within a few hundred km of nominal, giving drifts inside about 6 deg/day. A reported belt drift beyond 20 deg/day is rejected as an artefact without further analysis.",
+      "reference_points": {
+        "sma_plus_50km": "0.64 deg/day",
+        "sma_plus_100km": "1.28 deg/day",
+        "sma_plus_200km": "2.56 deg/day",
+        "sma_plus_500km": "6.42 deg/day"
+      }
+    },
+    "min_epoch_separation": {
+      "source": "Computed. Drift error equals twice the longitude solve uncertainty divided by the epoch separation.",
+      "hard_reject_hours": 1,
+      "recommended_minimum_hours": 6,
+      "preferred_hours": 24,
+      "unit": "hours between the two state epochs",
+      "note": "At a typical longitude solve uncertainty of about 0.005 degrees, a 24 hour separation gives a drift error near 0.01 deg/day and a 5 hour separation gives about 0.05 deg/day. Below one hour the derived rate is dominated by solve noise, and at sub-second separations the error runs to five orders of magnitude, which is the recorded artefact.",
+      "operator_rule": "Check the epoch separation before believing any rate derived from two states. A physically impossible value is arithmetic, not astrodynamics."
+    },
+    "notification_criteria": {
+      "source": "Quick Reference Card, Maneuver Notification Criteria",
+      "note": "Period change OR plane change qualifies. Reporting mode varies by HRR rank. SK denotes station-keeping, MAN a manoeuvre of interest.",
+      "plane_change_deg": 0.1,
+      "regimes": {
+        "GEO": {
+          "manoeuvre_period_change_s": ">20",
+          "station_keep_bands_s": [
+            "10-20",
+            "<10"
+          ]
+        },
+        "MEO": {
+          "manoeuvre_period_change_s": ">10"
+        },
+        "LEO": {
+          "manoeuvre_period_change_s": ">2",
+          "station_keep_band_s": "<=2"
+        }
+      },
+      "reporting_by_rank": {
+        "note": "BOTH means NOTSO and verbal. Verbal means verbal only. NOTSO means written only. N/A means no report.",
+        "GEO_manoeuvre": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "BOTH",
+          "rank_3": "BOTH",
+          "rank_4": "BOTH",
+          "rank_5": "BOTH"
+        },
+        "GEO_sk_10_20s": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "BOTH",
+          "rank_3": "Verbal",
+          "rank_4": "N/A",
+          "rank_5": "N/A"
+        },
+        "GEO_sk_under_10s": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "Verbal",
+          "rank_3": "N/A",
+          "rank_4": "N/A",
+          "rank_5": "N/A"
+        },
+        "MEO_manoeuvre": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "BOTH",
+          "rank_3": "BOTH",
+          "rank_4": "BOTH",
+          "rank_5": "BOTH"
+        },
+        "LEO_manoeuvre": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "BOTH",
+          "rank_3": "BOTH",
+          "rank_4": "NOTSO",
+          "rank_5": "NOTSO"
+        },
+        "LEO_sk": {
+          "rank_0": "BOTH",
+          "rank_1": "BOTH",
+          "rank_2": "Verbal",
+          "rank_3": "N/A",
+          "rank_4": "N/A",
+          "rank_5": "N/A"
+        }
+      },
+      "raan_flip_qualifier": {
+        "source": "Quick Reference Card footnote",
+        "rule": "Where a qualifying event is associated with a RAAN flip station-keeping manoeuvre, treat it as a station keep for processing.",
+        "note": "Applies to the plane change criterion and to the starred rank cells. A plane change large enough to qualify may still be routine if it is a RAAN flip station keep."
+      },
+      "station_keeping_reporting": {
+        "source": "Quick Reference Card",
+        "ranks_0_to_2": "Report, verbal or written, as prescribed by the matrix",
+        "ranks_3_to_5": "Site lead discretion"
+      },
+      "blue_asset_manoeuvre": {
+        "source": "Quick Reference Card",
+        "rule": "Where a friendly asset manoeuvres, check whether the manoeuvre places it into a collection or close approach opportunity with a red object.",
+        "if_yes": "Open a do-not-report thread. Leave it open for 24 hours to capture additional observations and confirm the asset is clear.",
+        "if_no": "Site lead discretion whether to open a thread at all.",
+        "note": "A whole class of event the package did not model: a friendly manoeuvre creating exposure. The subject is our own asset and the risk is what it has moved next to."
+      }
+    }
+  },
+  "rpo": {
+    "plane_match_deg": {
+      "geo": {
+        "value": 0.1,
+        "source": "Quick Reference Card",
+        "unit": "degrees",
+        "note": "Inclination AND right ascension, with +/-100 km range"
+      },
+      "leo": {
+        "value": 0.25,
+        "source": "Quick Reference Card",
+        "unit": "degrees",
+        "note": "Inclination and/or right ascension, with +/-50 km range"
+      }
+    },
+    "type_distances": {
+      "extremely_close_geo": {
+        "value": 5,
+        "unit": "km",
+        "approximate": true,
+        "source": "JCO Force Package procedure (DRAFT)",
+        "note": "Both objects in a tight RPO configuration. Cross-tagging may be occurring."
+      },
+      "extremely_close_leo": {
+        "value": 1,
+        "unit": "km",
+        "approximate": true,
+        "source": "JCO Force Package procedure (DRAFT)",
+        "note": "As GEO, at the tighter LEO distance."
+      },
+      "perch_band": {
+        "value": "GEO +/-100 km and +/-0.1 deg inc and RA; LEO +/-50 km and/or +/-0.25 deg",
+        "source": "Quick Reference Card",
+        "note": "Perch is a red object parked in close proximity to a blue object with other elements typically matched."
+      },
+      "series_close_approach_revs": {
+        "value": 3,
+        "source": "Quick Reference Card",
+        "unit": "orbits",
+        "note": "Actor remains or is projected to remain in the vicinity of the target for more than 3 orbits."
+      },
+      "series_close_approach_longitude": {
+        "value": "PLACEHOLDER",
+        "unit": "degrees",
+        "note": "STILL OPEN. The Force Package RPO definitions describe a series of close approaches qualitatively, as drift producing repeated approaches, and state no longitude. This is now the only operational threshold outstanding that is not a protected item or a scoring decision."
+      },
+      "merge_km": {
+        "value": 5,
+        "source": "Quick Reference Card",
+        "unit": "km",
+        "note": "Sub 5 km is considered merged. The card describes this as dire."
+      },
+      "_unreconciled": {
+        "observation": "merge_km holds 5 km from the Quick Reference Card, labelled merged. extremely_close_geo holds approximately 5 km from the Force Package definitions, labelled extremely close RPO. Both cite cross-tagging.",
+        "status": "Not reconciled. Two sources, same distance, different labels. Preserved rather than collapsed. Owner to resolve which term the operator should use.",
+        "raised": "2026-08-31"
+      }
+    },
+    "tasking_ranks": {
+      "source": "HRR framework and Red Predictive Surveillance",
+      "red_object_of_interest": {
+        "value": 1,
+        "note": "Temporary elevation, held to 24 hours after closest approach"
+      },
+      "object_at_risk": {
+        "value": "Raise per the governing procedure; state the rank for each object separately",
+        "note": "Ambiguous tasking instructions are a recorded source of collection failure."
+      }
+    },
+    "cross_tag_risk_km": {
+      "optical_fusion": {
+        "value": "2 to 5",
+        "source": "SJ-21/25 AAR",
+        "unit": "km"
+      },
+      "cross_tag_onset": {
+        "value": 10,
+        "source": "SJ-21/25 AAR",
+        "unit": "km"
+      }
+    },
+    "plane_match_range_km": {
+      "geo": {
+        "value": 100,
+        "source": "Quick Reference Card",
+        "unit": "km"
+      },
+      "leo": {
+        "value": 50,
+        "source": "Quick Reference Card",
+        "unit": "km"
+      }
+    },
+    "parking_criteria": {
+      "source": "Quick Reference Card",
+      "regime": "GEO",
+      "criteria": [
+        "Actor remains or is projected to remain in the vicinity of the target for more than 3 orbits",
+        "Actor occupies an ITU slot not assigned to that payload, and in proximity to Blue high reportable objects"
+      ]
+    },
+    "plane_match_via_drift": {
+      "source": "Quick Reference Card, Critical Plane Matching Criteria",
+      "note": "Where a potential adversary uses right ascension drift to close on a friendly high reportable object, escalate on days to closure.",
+      "ladder": [
+        {
+          "days_to_closure": 7,
+          "condition": "Yellow",
+          "action": "NOTSO"
+        },
+        {
+          "days_to_closure": 3,
+          "condition": "Amber",
+          "action": "NOTSO and raise to Rank 2"
+        },
+        {
+          "days_to_closure": 1,
+          "condition": "Red",
+          "action": "NOTSO and raise to Rank 1"
+        }
+      ]
+    },
+    "ingress_delta_v": {
+      "value": 10,
+      "unit": "m/s",
+      "approximate": true,
+      "source": "JCO Force Package procedure (DRAFT)",
+      "note": "A mostly plane-matched object approaching a potential target usually needs less than this to establish RPO. Below the threshold the approach is cheap, which is what makes ingress reportable."
+    }
+  },
+  "separation": {
+    "headcount_branch": {
+      "breakup_threshold": {
+        "value": 3,
+        "source": "Space Warfare and Separation CT",
+        "unit": "objects"
+      },
+      "note": "Two on a red parent is separation. Two on a blue parent is UCT discovery. Intent overrides count in both directions."
+    },
+    "tasking_ranks": {
+      "source": "JCO Separation procedure",
+      "parent": {
+        "value": 2,
+        "note": "Rank 2, Site Lead discretion to go higher."
+      },
+      "new_object": {
+        "value": 2,
+        "note": "Rank 2 on opening. Escalation to Rank 1 follows a conversation with the operations centre, it is not the entry rank."
+      },
+      "rule": "State the rank for parent and new object separately in every tasking request.",
+      "note": "CORRECTS an earlier entry that put a new object at Rank 1 on opening. The procedure opens both at Rank 2."
+    },
+    "_removed_keys": {
+      "confirmation_passes": "REMOVED 31 Aug 2026. The procedure commits on the initial headcount and notifies immediately, then reclassifies if further information changes the event type. There is no confirmation pass count to hold, so the key was a placeholder for something that does not exist."
+    },
+    "notification_gate": {
+      "ranks": [
+        0,
+        1,
+        2
+      ],
+      "source": "JCO Separation procedure",
+      "note": "Operations centres are notified immediately only where an object is at one of these ranks. Breakup notification is unconditional by contrast. The same gate appears in the docked object and force package procedures."
+    },
+    "combo_screening": {
+      "distance_km": 100,
+      "duration_days": 5,
+      "source": "JCO Separation procedure"
+    },
+    "final_closure_days": {
+      "value": 30,
+      "unit": "days",
+      "source": "JCO Separation procedure",
+      "note": "Where the new object does not meet the criteria for standing tasking, a final closure report follows after this period."
+    }
+  },
+  "breakup": {
+    "tasking_ranks": {
+      "value": 2,
+      "unit": "HRR rank",
+      "source": "JCO Breakup procedure",
+      "note": "Breakup cloud manually tasked at Rank 2 for 24 hours. Confirmed directly by the breakup procedure, previously carried from the LEO direct ascent procedure."
+    },
+    "handover_expectation": {
+      "value": "Request terminated, not time bound",
+      "source": "JCO Breakup procedure",
+      "rule": "Support to the cataloguing authority continues until that authority asks for it to stop. Coverage must not lapse in the meantime.",
+      "final_closure_days": 30,
+      "note": "REPLACES a placeholder declared in days and an unsourced days to weeks estimate in the procedure text. The source states no duration. The trigger is a request."
+    },
+    "coverage_duration": {
+      "note": "SPLIT 31 Aug 2026. The single key was under-specified and the procedure supplies four distinct durations.",
+      "source": "JCO Breakup procedure",
+      "initial_cloud_tasking_hr": 24,
+      "parent_tasking_increase_hr": {
+        "value": 24,
+        "note": "24 hours or greater, at discretion."
+      },
+      "closure_timer_hr": 24,
+      "final_closure_days": 30
+    },
+    "combo_screening": {
+      "source": "JCO Breakup procedure",
+      "geo": {
+        "distance_km": 100,
+        "duration_days": 3
+      },
+      "leo": {
+        "distance_km": 50,
+        "duration_days": 2
+      },
+      "note": "Assessment repeated every shift and carried explicitly in the handover."
+    },
+    "combo_escalation": {
+      "source": "JCO Breakup procedure",
+      "geo": {
+        "distance_km": 50,
+        "within_days": 2
+      },
+      "leo": {
+        "distance_km": 30,
+        "within_days": 2
+      },
+      "note": "Close approaches inside these bounds are reported to the cataloguing authority."
+    },
+    "combo_report_floor": {
+      "source": "JCO Breakup procedure",
+      "geo_km": 25,
+      "leo_km": 15,
+      "note": "Close approaches below these distances are tabulated in the limited distribution report."
+    },
+    "blue_threat_horizon_hr": {
+      "value": 24,
+      "unit": "hours",
+      "source": "JCO Breakup procedure",
+      "note": "The initial verbal names friendly objects that the debris could threaten within this horizon."
+    }
+  },
+  "uct": {
+    "reporting_decision": {
+      "value": "Decided in discussion with higher headquarters at the time of discovery. Not an automatic output.",
+      "source": "UCT discovery continuation training"
+    }
+  },
+  "ps": {
+    "source": "JCO Red Predictive Surveillance procedure",
+    "scope": {
+      "drifting_threshold": {
+        "value": 0.1,
+        "source": "Red Predictive Surveillance",
+        "unit": "deg/day",
+        "note": "Only drifting objects at or above this rate enter the daily sweep"
+      },
+      "colour_designators": {
+        "value": "Two only: Red and Blue. A Grey high reportable object is treated as Blue.",
+        "source": "Red Predictive Surveillance",
+        "note": "CORRECTS an earlier package assumption. The neighbourhood product displays Grey as a third category, but for this processing Grey is treated as Blue."
+      },
+      "unranked_objects": {
+        "value": "Do not process objects without a rank, except Known Objects",
+        "source": "Red Predictive Surveillance"
+      },
+      "known_objects": {
+        "value": "Treated as Blue. A stability assessment is required. Do not increase tasking on them.",
+        "source": "Red Predictive Surveillance"
+      }
+    },
+    "data_currency": {
+      "elset_max_age_hours": {
+        "value": 24,
+        "source": "Red Predictive Surveillance",
+        "unit": "hours",
+        "note": "All element sets checked to be under this age"
+      },
+      "neighbourhood_exclusion_days": {
+        "value": 60,
+        "source": "Red Predictive Surveillance",
+        "unit": "days",
+        "note": "Providers exclude objects with element sets older than this"
+      }
+    },
+    "close_approach_criteria": {
+      "standard": {
+        "value": "Under 75 km within the next 48 hours",
+        "source": "Red Predictive Surveillance"
+      },
+      "parking_archetype": {
+        "value": "Under 10 km within 24 hours",
+        "source": "Red Predictive Surveillance",
+        "note": "Applies to an object whose pattern is to park near a target rather than drift past. Under 10 km triggers a notification to the coordination cell."
+      },
+      "potential_activity_alert": {
+        "value": "Under 30 km within the next 72 hours",
+        "source": "Red Predictive Surveillance",
+        "note": "Anticipatory. The object may manoeuvre to increase distance, consistent with its pattern of life. Posted as a potential activity alert rather than an event."
+      }
+    },
+    "tasking_windows": {
+      "hours_before_toca": {
+        "value": 48,
+        "source": "Red Predictive Surveillance",
+        "unit": "hours"
+      },
+      "hours_after_toca": {
+        "value": 24,
+        "source": "Red Predictive Surveillance",
+        "unit": "hours"
+      },
+      "rank_on_approach": {
+        "value": 1,
+        "source": "Red Predictive Surveillance",
+        "unit": "HRR rank",
+        "note": "Raise the red object to this rank until 24 hours after closest approach"
+      },
+      "extend_for_weekends": {
+        "value": "May be necessary to extend tasking to cover weekends and holidays",
+        "source": "Red Predictive Surveillance"
+      }
+    },
+    "gating_checks": {
+      "stability": {
+        "value": "If the object is unstable, do not raise the rank",
+        "source": "Red Predictive Surveillance"
+      },
+      "elset_and_manoeuvre": {
+        "value": "Verify the object is on element set and that neither the red nor blue object has an active manoeuvre",
+        "source": "Red Predictive Surveillance"
+      },
+      "drifting_exception": {
+        "value": "While an object is drifting, do not raise rank for close approaches unless it appears to be decreasing drift to park",
+        "source": "Red Predictive Surveillance",
+        "note": "A drifting object passes through many close approaches that mean nothing. Slowing drift is the signal, not proximity."
+      }
+    },
+    "longitudinal_bounds": {
+      "turnaround_margin_deg": {
+        "value": 5,
+        "source": "Red Predictive Surveillance",
+        "unit": "degrees",
+        "note": "Objects operating within known longitude bounds turn around at the limits. Within this margin of a turn-around point, raise to Rank 1 until the turn is complete and watch for proximity operations at the turn."
+      },
+      "note": "Several objects of interest operate within established longitude bounds. Approaching a bound predicts a turn-around, and a turn-around is an opportunity for proximity operations."
+    },
+    "daily_execution": {
+      "value": "Daily, every cell",
+      "source": "Red Predictive Surveillance"
+    },
+    "red_threat_list": {
+      "value": "PLACEHOLDER",
+      "source": "Held locally only",
+      "note": "CONFIRMED to exist as a specific list of object catalogue numbers. **Never shipped in content and never in the repository.** Populate locally. The application teaches that a list exists and drives the daily sweep."
+    }
+  },
+  "daasat_leo": {
+    "source": "JCO LEO DA ASAT procedure",
+    "scope_note": "Applies to direct ascent and possibly air-launched. Co-orbital kinetic and non-kinetic may not follow these steps.",
+    "target_filter": {
+      "assessment_order": [
+        "Blue high reportable objects",
+        "Launching nation payloads",
+        "Launching nation rocket bodies"
+      ],
+      "perigee_km": {
+        "value": "100 to 2000",
+        "source": "LEO DA ASAT procedure",
+        "unit": "km"
+      },
+      "apogee_km": {
+        "value": "100 to 2000",
+        "source": "LEO DA ASAT procedure",
+        "unit": "km"
+      },
+      "inclination_rule": {
+        "value": "Launch site latitude minus 5 degrees, up to 180 minus the start inclination",
+        "source": "LEO DA ASAT procedure",
+        "note": "The lower bound sits below launch latitude because a dogleg can reduce achievable inclination. The upper bound covers retrograde."
+      },
+      "rso_categories": [
+        "Payload",
+        "Rocket body"
+      ]
+    },
+    "search_window": {
+      "start": {
+        "value": "Notice window minus 15",
+        "source": "LEO DA ASAT procedure",
+        "unit": "minutes"
+      },
+      "end": {
+        "value": "Notice window plus 15",
+        "source": "LEO DA ASAT procedure",
+        "unit": "minutes"
+      },
+      "azimuth_band": {
+        "value": "Median notice azimuth plus or minus 10",
+        "source": "LEO DA ASAT procedure",
+        "unit": "degrees"
+      }
+    },
+    "pass_counts": {
+      "before": {
+        "value": 1,
+        "source": "LEO DA ASAT procedure",
+        "unit": "pass",
+        "note": "Baseline pass establishing the object intact"
+      },
+      "after": {
+        "value": 3,
+        "source": "LEO DA ASAT procedure",
+        "unit": "passes",
+        "note": "Verification passes. Closure requires all targets at headcount 1 after three passes."
+      }
+    },
+    "tasking": {
+      "candidates_initial": {
+        "value": 0,
+        "source": "LEO DA ASAT procedure",
+        "unit": "HRR rank",
+        "note": "Candidate objects tasked at the highest rank on event opening"
+      },
+      "affected_minimum": {
+        "value": 2,
+        "source": "LEO DA ASAT procedure",
+        "unit": "HRR rank",
+        "note": "Minimum rank for potentially affected satellites"
+      },
+      "breakup_cloud": {
+        "value": "Rank 2 for 24 hours",
+        "source": "LEO DA ASAT procedure"
+      }
+    },
+    "update_cadence": {
+      "value": 60,
+      "source": "LEO DA ASAT procedure",
+      "unit": "minutes",
+      "note": "Maximum interval between periodic updates to operations centres until all objects tracked"
+    },
+    "pass_confidence": {
+      "medium": {
+        "value": ">50",
+        "source": "LEO DA ASAT procedure",
+        "note": "Pass quality threshold for medium confidence"
+      },
+      "high": {
+        "value": ">80",
+        "source": "LEO DA ASAT procedure",
+        "note": "Pass quality threshold for high confidence"
+      }
+    },
+    "coordinate_format": {
+      "value": "Decimal degrees to three places. North and East positive, South and West negative",
+      "source": "LEO DA ASAT procedure",
+      "note": "Interface mismatch risk: external partners may supply minutes and seconds. Convert deliberately."
+    },
+    "provider_ack_minutes": {
+      "target": 15,
+      "maximum": 30,
+      "source": "LEO DA ASAT procedure"
+    }
+  },
+  "daasat_geo": {
+    "initial_band_deg": {
+      "value": 5,
+      "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+      "unit": "degrees either side of the ascending belt intercept",
+      "note": "Initial target list from the provided state vector and trajectory."
+    },
+    "refined_band_deg": {
+      "value": 2.5,
+      "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+      "unit": "degrees either side of the ascending belt intercept",
+      "note": "Refined list once an initial orbit determination is available."
+    },
+    "initial_notso": {
+      "value": 30,
+      "source": "Timing Standards",
+      "unit": "minutes",
+      "note": "Qualified. Partial 60, Unqualified >60."
+    },
+    "refined_notso": {
+      "value": 90,
+      "source": "Timing Standards",
+      "unit": "minutes",
+      "note": "Tracked object report. Qualified 90, Partial 120, Unqualified >120."
+    },
+    "separation_notso": {
+      "value": 10,
+      "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+      "unit": "minutes from detected separation",
+      "note": "Verbal notification AND written report both required within this window. The procedure advises preparing the separation report in advance so it can be issued immediately."
+    },
+    "kkv_target_radius": {
+      "primary": {
+        "value": 100,
+        "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+        "unit": "km",
+        "note": "Potential targets within this range of the separated object's initial orbit determination."
+      },
+      "fallback": {
+        "value": 250,
+        "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+        "unit": "km",
+        "note": "Where no target is visible within the primary radius, take the closest target inside this close approach distance."
+      }
+    },
+    "operator_reaction_time": {
+      "value": 3,
+      "unit": "hours",
+      "source": "GEO DA-ASAT advanced training module",
+      "note": "Warning time this procedure exists to buy. Enables reallocating users, generating or selecting an evasion plan, uploading emergency commands, and warming thruster catalyst beds."
+    },
+    "seeker_phase_angle": {
+      "value": "30 to 90",
+      "source": "GEO DA-ASAT advanced module",
+      "unit": "degrees",
+      "note": "Solar phase angle at intercept within which an electro-optical seeker can acquire."
+    },
+    "update_window": {
+      "value": "60 to 120",
+      "source": "GEO DA-ASAT advanced module",
+      "unit": "minutes of tracking data",
+      "note": "Required for a precision targeting update, which must resolve before the terminal burn."
+    },
+    "kkv_search_start": {
+      "value": "approximately 15 minutes before impact at approximately 2100 km",
+      "source": "GEO DA-ASAT advanced module"
+    },
+    "seeker_fov": {
+      "value": "+/- 1",
+      "source": "GEO DA-ASAT advanced module",
+      "unit": "degrees"
+    },
+    "assumed_flight_time": {
+      "value": 4.5,
+      "source": "GEO DA-ASAT advanced module",
+      "unit": "hours"
+    },
+    "assumed_operator_reaction": {
+      "value": 3,
+      "unit": "hours",
+      "source": "GEO DA-ASAT advanced training module"
+    },
+    "threatened_longitude_band": {
+      "value": "PLACEHOLDER",
+      "source": "Held locally",
+      "note": "The longitude range placed at risk from known launch areas. Geography, and therefore configuration. The application teaches that such a band exists and is derived from launch site and trajectory, not which longitudes it covers."
+    },
+    "apogee_decision": {
+      "source": "JCO GEO DA ASAT procedure",
+      "tolerance_km": 50,
+      "rule": "Where maximum altitude is less than 50 km above the belt, treat the apogee point as the centre longitude. Where apogee is higher, treat the ascending belt penetration as the centre longitude.",
+      "note": "REFINES an earlier package statement, which drew the line at belt altitude exactly. There is a 50 km tolerance band, so an apogee marginally above the belt still uses the apogee longitude."
+    },
+    "search_fallback": {
+      "source": "JCO GEO DA ASAT procedure",
+      "in_track_minutes": "plus or minus 5 to 10",
+      "cross_track_degrees": "up to 3 to 5",
+      "note": "Applied where no object is tracked on or near the expected trajectory."
+    },
+    "tasking": {
+      "candidate_initial": 0,
+      "candidate_once_state_good": 1,
+      "potential_targets": 2,
+      "note": "Targets at Rank 2, with mission area lead discretion to Rank 1 depending on how many other top-rank taskings are already running. Collection is finite and the top ranks are a small set.",
+      "breakup_cloud": "Rank 2 for 24 hours"
+    },
+    "update_cadence": {
+      "value": 60,
+      "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+      "unit": "minutes",
+      "note": "Maximum interval between periodic updates until all objects have been tracked."
+    },
+    "closure_hold_hours": {
+      "value": 24,
+      "source": "JCO GEO DA ASAT procedure, 2026 operational version",
+      "unit": "hours",
+      "note": "If all targets remain at headcount 1 after this period, proceed to closure."
+    },
+    "target_list_filter": {
+      "source": "JCO GEO DA ASAT procedure, best practices",
+      "rank_range": "0 to 5",
+      "longitude": "The crossing range",
+      "state_of_behaviour": [
+        "Blue",
+        "Grey",
+        "unknown"
+      ],
+      "note": "Targets are non-red by definition. Note that Grey and unknown are included here, which differs from predictive surveillance where Grey is treated as Blue. Read the filter for the procedure you are in."
+    },
+    "disclosure_by_channel": {
+      "source": "JCO GEO DA ASAT procedure",
+      "verbal_to_ops_centres": "Do NOT identify individual targets. Identify the affected longitude window only.",
+      "written_report": "The potential target list is provided, by identifier and name.",
+      "note": "A deliberate asymmetry. The verbal notification travels faster and less controllably than the written report, so it carries the window rather than the names."
+    },
+    "disclosure_by_phase": {
+      "source": "JCO GEO DA ASAT procedure",
+      "initial": "Where a potential at-risk system is identified, report the object but DO NOT include its state.",
+      "post_separation": "Once the separated object has an initial orbit determination, report the state and the at-risk objects.",
+      "note": "Withholding the state early denies precision to anyone reading the report who should not have it. Once the engagement is committed and the kill vehicle has separated, the state is released because the warning value to the operator now outweighs it."
+    }
+  },
+  "crm": {
+    "tem_brief_duration": {
+      "value": 60,
+      "source": "CRM continuation training",
+      "unit": "seconds",
+      "note": "Deliberately short."
+    },
+    "debrief_after_event": {
+      "value": "After a shift or a major event",
+      "source": "JCO Changeover procedure and CRM continuation training"
+    },
+    "pre_changeover_minutes": {
+      "value": 30,
+      "unit": "minutes",
+      "source": "JCO Changeover procedure",
+      "note": "Oncoming crew joins and listens to closeout."
+    },
+    "final_check_minutes": {
+      "value": 5,
+      "unit": "minutes",
+      "source": "JCO Changeover procedure",
+      "note": "Timers expiring next shift identified; both crews confirmed ready."
+    },
+    "shift_length_hours": {
+      "value": 8,
+      "unit": "hours",
+      "source": "JCO Changeover procedure"
+    },
+    "handover_brief_points": {
+      "value": 6,
+      "source": "JCO Changeover procedure",
+      "points": [
+        "Why the event was opened",
+        "Who tasked which object and to what rank",
+        "Which timers affect the next shift",
+        "What reporting has been accomplished",
+        "Next steps",
+        "Current checklist step"
+      ],
+      "note": "The last two are the ones most often dropped, and they are what save the incoming operator from re-deriving position and intent under time pressure."
+    },
+    "tasking_annotation": {
+      "value": "Thread reference, object name and identifier, reason for the change, and an expiry date",
+      "source": "JCO Changeover procedure",
+      "note": "The expiry is the mechanism that makes a step-down happen. An elevation without one becomes permanent by omission."
+    },
+    "rank_tasking_briefed": {
+      "value": "Ranks 0 to 3",
+      "source": "JCO Changeover procedure",
+      "note": "Rank tasking changes briefed at changeover cover the attention-bearing ranks."
+    },
+    "daily_tasks": {
+      "source": "JCO Changeover procedure",
+      "note": "Divided across cells and days rather than repeated by every cell. A cell assuming another has covered its task leaves a gap nobody sees.",
+      "task_families": [
+        "Red predictive surveillance",
+        "Blue predictive surveillance",
+        "Crew information file check",
+        "Outage review",
+        "Core check",
+        "High rate revisit daily",
+        "High rate revisit decay",
+        "Schedule review",
+        "Blue launch",
+        "Cross-mission synchronisation"
+      ],
+      "allocation": "By cell and by weekday. Held locally."
+    }
+  },
+  "scoring": {
+    "accuracy_floor": {
+      "value": 0.8,
+      "source": "JCO continuation training testing standard",
+      "note": "Retained as the stage gate threshold. NOT the day to day target; the scheduler targets ~90 per cent retrievability."
+    },
+    "calibration_ceiling": {
+      "value": "PLACEHOLDER",
+      "unit": "Brier score",
+      "note": "Maximum Brier score permitted to pass the judgement stage gate."
+    },
+    "drill_time_targets_multiplier": {
+      "value": "PLACEHOLDER",
+      "note": "Multiplier applied to per-item time targets before time standards are enforced."
+    }
+  },
+  "photometry": {
+    "exclusions": {
+      "value": "PLACEHOLDER",
+      "source": "Held locally only",
+      "note": "CONFIRMED to exist as a specific object list in both the Photometry procedure and the Quick Reference Card. **The list is never shipped in content and never enters the repository.** Populate locally. The application teaches that the check exists and must be performed before analysis."
+    },
+    "friendly_hrr_suppression": {
+      "value": "No report on photometry of friendly high rate revisit objects unless specifically directed by higher headquarters",
+      "source": "Photometry Change procedure"
+    },
+    "vismag_change": {
+      "value": 0.5,
+      "source": "Photometry Change procedure",
+      "unit": "visual magnitude",
+      "note": "Starting point. A smaller change can qualify; character of the change matters alongside size."
+    },
+    "notify_ranks": {
+      "value": "Rank 0, 1 or 2",
+      "source": "Photometry Change procedure",
+      "note": "Immediate notification to all operations centres."
+    },
+    "close_approach_km": {
+      "value": 150,
+      "source": "Photometry Change procedure",
+      "unit": "km",
+      "note": "Request where a nearby object has a close approach within this range and good sun angle."
+    },
+    "closure_hours": {
+      "value": 24,
+      "source": "Photometry Change procedure",
+      "unit": "hours"
+    },
+    "provider_ack_minutes": {
+      "target": {
+        "value": 15,
+        "source": "Photometry and Launch procedures",
+        "unit": "minutes"
+      },
+      "maximum": {
+        "value": 30,
+        "source": "Photometry and Launch procedures",
+        "unit": "minutes"
+      }
+    }
+  },
+  "coco": {
+    "association_bands": {
+      "source": "Co-orbital coplanar tool configuration",
+      "same": {
+        "inclination_deg": 0.05,
+        "raan_deg": 0.05,
+        "perigee_km": 5,
+        "period_min": 0.015
+      },
+      "close": {
+        "inclination_deg": 0.25,
+        "raan_deg": 1,
+        "perigee_km": 100,
+        "period_min": 1
+      },
+      "nearby": {
+        "inclination_deg": 0.5,
+        "raan_deg": 2,
+        "perigee_km": 450,
+        "period_min": 5
+      }
+    },
+    "comparison_set": {
+      "value": "All payloads within the orbit regime, no distance filter",
+      "source": "Product standardisation and tool configuration"
+    }
+  },
+  "launch": {
+    "processing_criteria": {
+      "value": "PLACEHOLDER",
+      "note": "Which launches are processed and by whose direction. Threat designation authority sits with the mission area lead informed by open source research."
+    },
+    "longitude_risk_margin": {
+      "value": 2,
+      "source": "Launch procedure",
+      "unit": "degrees",
+      "note": "Entry within this margin of a high reportable system may be a potential risk."
+    },
+    "missed_pass_limit": {
+      "value": 3,
+      "source": "Launch procedure",
+      "unit": "passes"
+    },
+    "tasking_profiles": {
+      "source": "Launch procedure",
+      "threat_leo": {
+        "initial_rank": 1,
+        "initial_duration_hr": 24,
+        "then_rank": 2
+      },
+      "threat_geo_payload": {
+        "initial_rank": 1,
+        "initial_duration_days": 15,
+        "then_rank": 2
+      },
+      "threat_geo_rocket_body": {
+        "initial_rank": 3,
+        "initial_duration_days": 30,
+        "then_rank": 5
+      },
+      "non_threat_leo": {
+        "initial_rank": 1,
+        "initial_duration_hr": 24,
+        "then_rank": 3,
+        "then_duration_days": 15,
+        "report_only_if": "unexpected behaviour such as plane matching with a friendly object or initiating proximity operations where that capability was not expected"
+      },
+      "non_threat_geo_payload": {
+        "initial_rank": 1,
+        "initial_duration_days": 15,
+        "then_rank": 2,
+        "then_duration_days": 30
+      },
+      "non_threat_geo_rocket_body": {
+        "initial_rank": 3,
+        "initial_duration_days": 30,
+        "then_rank": 5,
+        "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+        "note": "Identical to the threat profile for this class. Added 31 Aug 2026, previously absent."
+      }
+    },
+    "transfer_duration": {
+      "value": 30,
+      "source": "Launch procedure",
+      "unit": "days",
+      "note": "A low orbit insertion bound for a higher regime may take this long to transfer."
+    },
+    "closure_custody": {
+      "source": "Launch procedure",
+      "leo_rank_0_2": "Observations from the primary provider plus at least one other within 24 hours, or one provider where the primary is unavailable",
+      "leo_rank_3_5": "Observations from one provider within 24 hours. Custody not required before closing",
+      "geo": "Object at GEO, tracked at the designated rank, observed by the fusion providers"
+    },
+    "launch_time_heuristics": {
+      "source": "Quick Reference Card",
+      "note": "Used where a projected launch time is unavailable.",
+      "patterns": [
+        "One nation typically launches shortly after the window opens",
+        "Another typically launches at the beginning of the window"
+      ]
+    }
+  },
+  "hrr": {
+    "_note": "The rank card supplies the observation cadences that make the rank framework quantitative. Ranks 0 and 1 are labelled temporary tasking on the card itself, which confirms from an authoritative source what the package previously held as inference.",
+    "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+    "temporary_ranks": [
+      0,
+      1
+    ],
+    "standing_ranks": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "ranks": {
+      "0": {
+        "name": "Immediate operations focus",
+        "population": "Red on blue engagements, direct ascent candidate discovery",
+        "geo_eo": "stare",
+        "passive_rf_min": 10,
+        "leo": "every pass"
+      },
+      "1": {
+        "name": "Heightened monitoring",
+        "population": "Significant events, anomaly investigation, pattern of life establishment",
+        "geo_eo_min": 15,
+        "passive_rf_min": 10,
+        "leo": "every pass"
+      },
+      "2": {
+        "name": "Threat assessment and early warning",
+        "population": "Observed or predicted red counter-space threats",
+        "geo_eo_min": 45,
+        "passive_rf_min": 10,
+        "leo": "every pass"
+      },
+      "3": {
+        "name": "Routine operational awareness",
+        "population": "Red non protect-and-defend military and government systems, current generation friendly systems",
+        "geo_eo_hr": 2,
+        "passive_rf_min": 10,
+        "leo": "as resources allow"
+      },
+      "4": {
+        "name": "Broad domain coverage",
+        "population": "Red commercial, academic and non-government research, legacy friendly systems, friendly hosted payloads",
+        "geo_eo_hr": 12,
+        "leo": "as resources allow"
+      },
+      "5": {
+        "name": "Baseline custody maintenance",
+        "population": "Mission ended and retired red and friendly, proliferated red",
+        "geo_eo_hr": 24,
+        "leo": "as resources allow"
+      }
+    },
+    "tasking_day": {
+      "start": "0000z",
+      "stop": "2359z",
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures"
+    },
+    "baseline_end_date": {
+      "value": "31 December 2035",
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "note": "The convention for an object returned to baseline tasking with no expiry."
+    },
+    "increase_headroom_rule": {
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "rule": "Increased tasking is of little use at Rank 2 and of real use at Ranks 3 to 5.",
+      "why": "Rank 2 already sits at 45 minute optical and every pass in low orbit, so there is almost no headroom above it. Ranks 3 to 5 sit at 2, 12 and 24 hours, where an increase changes the picture. The rule appears in three procedures and is derivable from the cadences rather than arbitrary."
+    },
+    "passive_rf": {
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "trigger": "An object raised from Ranks 3 to 5 into Rank 2, or a new object placed into Ranks 0 to 2.",
+      "capacity_rule": "Passive RF capacity is fixed by contracted object counts. Adding an object requires dropping another, and the mission area lead decides which. Provider identities and contracted quantities are commercial and are held locally.",
+      "note": "The trainable content is the trade, not the provider. Every elevation costs another object its custody."
+    },
+    "hrr_deletion_record": {
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "fields": [
+        "Catalogue identifier",
+        "Object name",
+        "Reason for removal",
+        "Name of the individual removing it",
+        "Date of removal"
+      ]
+    },
+    "review_cadence": {
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "daily": "Tasking review and decay check",
+      "weekly": "Friendly launch review, Mondays"
+    }
+  },
+  "triage": {
+    "source": "Quick Reference Card, P&D primary sorting",
+    "note": "Authoritative priority order for Protect and Defend events. Used to score triage under concurrent load.",
+    "priority_order": [
+      "Human spaceflight events",
+      "On-orbit kinetic ASAT or separation",
+      "GEO direct ascent ASAT",
+      "Rendezvous and proximity operations",
+      "LEO direct ascent ASAT",
+      "Uncooperative launch",
+      "Object discovery",
+      "Manoeuvre",
+      "Photometric change",
+      "State update search",
+      "GEO wide area search",
+      "Breakup",
+      "Reentry"
+    ]
+  },
+  "collection": {
+    "source": "Quick Reference Card, Passive RF Tasking",
+    "note": "Passive RF is capacity constrained. Adding an object requires dropping one. Trained as a zero-sum trade-off.",
+    "passive_rf_providers": [
+      {
+        "bands": "C, S, X, Ku",
+        "contracted_slots": 15,
+        "availability": "limited shift coverage"
+      },
+      {
+        "bands": "C, X, Ku",
+        "contracted_slots": 10,
+        "availability": "continuous operations floor"
+      }
+    ],
+    "trigger": "An object moving from ranks 3-5 up to Rank 2, or a new object entering ranks 0-2",
+    "decision": "Where neither provider has capacity, the site lead decides which object to drop."
+  },
+  "state_of_behaviour": {
+    "source": "Owner direction and the high rate revisit list structure",
+    "determination": "By registered country against a defined set of countries of concern.",
+    "countries_of_concern": {
+      "value": "PLACEHOLDER",
+      "note": "Configuration. Held locally. The application teaches the determination method, not the membership."
+    },
+    "grey_handling": "A Grey high reportable object is treated as Blue for predictive surveillance processing.",
+    "known_objects": "Treated as Blue. Stability assessment required. Tasking not raised."
+  },
+  "docking": {
+    "evidence_duration": {
+      "source": "JCO Docked Object procedure",
+      "evidence": "The objects appear as one in photometry, residuals and image chips.",
+      "capability_expected": {
+        "possible_hr": 6,
+        "verified_hr": 12
+      },
+      "capability_not_expected": {
+        "possible_hr": 12,
+        "verified_hr": 24
+      },
+      "note": "The bar is set by prior expectation of docking capability, not by the evidence alone. Where public information does not support a docking capability, the same evidence must persist for twice as long before the same call is made."
+    },
+    "notification_gate": {
+      "ranks": [
+        0,
+        1,
+        2
+      ],
+      "source": "JCO Docked Object procedure"
+    },
+    "post_docking_hold_hr": {
+      "value": 24,
+      "unit": "hours",
+      "source": "JCO Docked Object procedure",
+      "note": "Event and any increased tasking held at least this long after docking completion, to capture follow-up circularisation, drift halt or stabilisation."
+    },
+    "reporting_rule": {
+      "source": "JCO Docked Object procedure",
+      "rule": "Report only where a red object is ingressing on another satellite. A friendly pair carries the do-not-report marker in the title.",
+      "cancellation": "A cancellation is mandatory where a possible docking was published and the objects turned out not to have docked. A closure report is optional."
+    },
+    "primary_rule": {
+      "source": "JCO Docked Object procedure",
+      "rule": "The primary is the object being docked to. The docked pair takes the primary's positional data, and only the primary's states and products are posted unless there are indications of separation."
+    },
+    "outside_source_rule": {
+      "source": "JCO Docked Object procedure",
+      "min_rank": 2,
+      "rule": "Sources outside own observations are used only for objects assessed at Rank 2 or higher. Where the indication came from outside, the report's basis clause names that source instead of the standard observation clause."
+    }
+  },
+  "force_package": {
+    "definition": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "rule": "Two or more objects exhibiting collaborative proximity behaviour against a localised target set.",
+      "note": "Ranking is at mission area lead discretion and there is no minimum object count for the target set."
+    },
+    "entry_points": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "at_or_before_launch_or_new_catalogue": "pre-assessment",
+      "objects_moving_into_force_package": "initiation",
+      "manoeuvre_during_persistent_operations": "manoeuvre",
+      "objects_departing": "termination"
+    },
+    "important_object_definition": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "criteria": [
+        "Primary in a state update search",
+        "Notable conjunctions or longitudinal intersections in a wide area search",
+        "Plane matched or proximity adjacent in a neighbourhood or other product"
+      ],
+      "pre_publication_check": "Confirm these objects have recent states and are not in manoeuvre or recovery status before publishing.",
+      "note": "The expansion of the two search abbreviations is INFERRED from the task names in the timing standards document, not stated in the procedure."
+    },
+    "element_set_disclosure": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "red_vs_red": "Include the target element set.",
+      "red_vs_blue": "Do not include the target element set.",
+      "protected_objects": "Never. Held locally.",
+      "well_tracked_uct": "Never. Refer to its presence in the area only, with no positional data in the overview.",
+      "note": "The package holds a comparable disclosure ruleset for direct ascent. This is the reporting equivalent for proximity events."
+    },
+    "reporting_bias": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "rule": "Where detailed information is not available, err towards releasing an initial report and reassess after further observations."
+    },
+    "itu_verification": {
+      "source": "JCO Force Package procedure (DRAFT)",
+      "rule": "Slot assignment is verified for red objects only. Orbital and frequency data for allied military systems is not provided."
+    }
+  }
+}

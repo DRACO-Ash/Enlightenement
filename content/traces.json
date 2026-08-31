@@ -1,0 +1,396 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.2.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "scenarios.json v1.0.0",
+      "JCO CT decks, all",
+      "SJ-21 / SJ-25 RPO and Docking Event AAR",
+      "Cosmos 2558 / Object C Separation AAR",
+      "Live Fly 26-1 after action reports, surge day observations",
+      "JCO Photometry Change procedure"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Traces describe reasoning against synthetic scenario instances. No real object behaviour is attributed to a named live asset."
+  },
+  "_design_note": "The trace is what the debrief overlays on the operator's own run. The highest value field is ruled_out, because novices rarely generate competing hypotheses at all, and seeing which ones an expert actively discarded is the fastest route to generating them yourself. The would_have_missed field exists so the trace does not read as omniscient; a trace that never struggles is not believed and therefore does not teach.",
+  "expert_traces": [
+    {
+      "id": "TRC-MNV-BASELINE",
+      "scenario_id": "SCN-MNV-BASELINE",
+      "author": "Ash Higgins",
+      "authored": "2026-08-28",
+      "validated_by": "TBC, re-verify. A second subject matter expert should validate before this trace scores any operator.",
+      "observations": [
+        {
+          "at": "T+0",
+          "saw": "The provider label said possible manoeuvre, and my eye went to the epoch column before it went to the departure.",
+          "on_product": "PRD-RESIDUAL",
+          "concluded": "Nothing yet. The label is a hypothesis from someone with less context than me about this object's history.",
+          "confidence": "high",
+          "ruled_out": [
+            "Accepting the provider assessment at face value"
+          ]
+        },
+        {
+          "at": "T+1m",
+          "saw": "Observations dense on both sides of the departure, and the state epoch recent.",
+          "on_product": "PRD-RESIDUAL",
+          "concluded": "The fit is well constrained, so the departure is the object moving rather than the solution decaying. Now it is worth characterising.",
+          "confidence": "high",
+          "ruled_out": [
+            "Propagation error across a starved fit",
+            "A single outlying observation"
+          ]
+        },
+        {
+          "at": "T+3m",
+          "saw": "The departure sits in the in-plane component.",
+          "on_product": "PRD-RESIDUAL",
+          "concluded": "In-track or radial. Not cross-track, so this is not a plane change and not the expensive kind. That already lowers my expectation of intent before I see a single number.",
+          "confidence": "high",
+          "ruled_out": [
+            "Cross-track burn",
+            "Inclination or RAAN change"
+          ]
+        },
+        {
+          "at": "T+6m",
+          "saw": "Period moved in the Delta column, along with eccentricity.",
+          "on_product": "PRD-DC-TABLE",
+          "concluded": "In-track. Radial would have left the period alone. The object has changed its average altitude and will now drift.",
+          "confidence": "high",
+          "ruled_out": [
+            "Radial burn, because period moved"
+          ]
+        },
+        {
+          "at": "T+8m",
+          "saw": "I checked the delta-v against the altitude change and asked whether one could produce the other at this altitude.",
+          "on_product": "PRD-DC-TABLE",
+          "concluded": "Consistent, so both numbers survive. If they had not been consistent I would have suspected the table before suspecting the satellite.",
+          "confidence": "medium",
+          "ruled_out": [
+            "Solver artefact in the delta-v figure"
+          ]
+        },
+        {
+          "at": "T+11m",
+          "saw": "I pulled the object's own history and counted the cadence and magnitude of previous burns.",
+          "on_product": "PRD-WATERFALL",
+          "concluded": "This is where the assessment is actually made. A burn that matches the established cadence, magnitude and direction is housekeeping. One that does not is a decision someone took.",
+          "confidence": "high",
+          "ruled_out": [
+            "Assessing intent from the burn in isolation"
+          ]
+        },
+        {
+          "at": "T+14m",
+          "saw": "The resulting geometry relative to nearby objects.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "The manoeuvre matters because of where it leads. This is the reportable content; the burn itself is just the mechanism.",
+          "confidence": "high",
+          "ruled_out": [
+            "Reporting the burn without the consequence"
+          ]
+        }
+      ],
+      "decision_rationale": "The whole procedure hangs on one habit: verify the data before characterising the event. Two of the three ways this scenario goes wrong are data problems rather than analytical ones, and both are caught in the first two minutes by looking at epoch age and observation density. After that, the element signature names the burn direction without anyone's help, the physical sanity check catches a bad number, and pattern of life turns an event into an assessment. Report the geometry, not the burn, and say plainly whether it is possible or verified.",
+      "would_have_missed": "On a seed where the burn is small and the pattern of life history is short, I am not confident I could separate routine station-keeping from a deliberate small adjustment. I would report it as possible with medium confidence and say what additional history would settle it, rather than pretending to a certainty I do not have."
+    },
+    {
+      "id": "TRC-RPO-APPROACH",
+      "scenario_id": "SCN-RPO-APPROACH",
+      "author": "Ash Higgins",
+      "authored": "2026-08-28",
+      "validated_by": "TBC, re-verify.",
+      "observations": [
+        {
+          "at": "T+0",
+          "saw": "Two traces converging in longitude on the waterfall.",
+          "on_product": "PRD-WATERFALL",
+          "concluded": "Interesting but not yet meaningful. A waterfall is a one-dimensional view of a three-dimensional relationship and cannot tell me whether these objects will come near each other at all.",
+          "confidence": "high",
+          "ruled_out": [
+            "Treating longitude convergence as proximity"
+          ]
+        },
+        {
+          "at": "T+4m",
+          "saw": "Epoch ages first, then the inclination and RAAN deltas.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "The plane relationship is the earliest available indicator of intent, because matching planes costs real fuel. If the deltas are small and have been held for days, someone is paying to keep them there.",
+          "confidence": "high",
+          "ruled_out": [
+            "Assessing distance from stale states",
+            "Coincidental plane similarity, which does not persist"
+          ]
+        },
+        {
+          "at": "T+8m",
+          "saw": "The shape of the relative motion across the plotted revolutions, and whether it repeated identically.",
+          "on_product": "PRD-TRIC",
+          "concluded": "Shape is type. Repeating identically is natural motion and costs nothing. Changing at discrete points is forced motion and costs continuously. Walking along the in-track axis is a drift, and whether it is slowing is the question that matters most.",
+          "confidence": "high",
+          "ruled_out": [
+            "Classifying from too few revolutions, which makes a drifting geometry look stable"
+          ]
+        },
+        {
+          "at": "T+12m",
+          "saw": "On the merge seed, optical resolving to a single object while RF still separated them across different bands.",
+          "on_product": "PRD-TRIC",
+          "concluded": "Unresolved, not docked. Optical fuses objects at these separations as a matter of routine, so a merged optical picture is the expected consequence of geometry rather than evidence of contact.",
+          "confidence": "high",
+          "ruled_out": [
+            "Docking, because a second phenomenology still separates them",
+            "Reporting the conclusion rather than the ambiguity"
+          ]
+        },
+        {
+          "at": "T+16m",
+          "saw": "On the red-against-red seed, that neither object was ours.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "Still reportable. Capabilities get practised against own-nation assets before they are used against anyone else's, so this is often the earliest warning available and skipping it wastes it.",
+          "confidence": "high",
+          "ruled_out": [
+            "Standing down because no blue asset is involved"
+          ]
+        },
+        {
+          "at": "T+20m",
+          "saw": "That the picture was still incomplete and the clock was running.",
+          "on_product": "PRD-TRIC",
+          "concluded": "Publish anyway. Multiple reports across a developing event are expected and correct. Holding for a complete picture spends the operator's warning time on my comfort.",
+          "confidence": "high",
+          "ruled_out": [
+            "Waiting for certainty before the first report"
+          ]
+        }
+      ],
+      "decision_rationale": "Read the plane relationship first because it is the cheapest early indicator of deliberateness and the most expensive thing for an adversary to fake. Read the relative motion second because its shape is the classification. Then ask what closure would cost from here, because cost is the proxy for opportunity and it is what turns a geometry into a warning. Throughout, report early and report again; the value of this procedure is warning time, and warning time is spent by waiting.",
+      "would_have_missed": "On seeds with heavy eclipse and exclusion gaps I would struggle to tell a slowing drift from a sparse one. I would say so in the report rather than smoothing over it, because a confident assessment built on four observations is worse than an honest uncertain one."
+    },
+    {
+      "id": "TRC-SEP-OR-BREAK",
+      "scenario_id": "SCN-SEP-OR-BREAK",
+      "author": "Ash Higgins",
+      "authored": "2026-08-28",
+      "validated_by": "TBC, re-verify.",
+      "observations": [
+        {
+          "at": "T+0",
+          "saw": "A headcount greater than one, reported once.",
+          "on_product": "PRD-WATERFALL",
+          "concluded": "Not yet a fact. A count from a single pass can be a tracking artefact, and the count decides which of three procedures I am about to run.",
+          "confidence": "medium",
+          "ruled_out": [
+            "Committing to a processing path on an unconfirmed count"
+          ]
+        },
+        {
+          "at": "T+3m",
+          "saw": "Confirmation across a second pass, and the state of behaviour of the parent.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "Now the branch is safe to take. Three or more starts as breakup, two on a red parent is separation, two on a blue parent is UCT discovery. The last of those has a conditional reporting obligation and the other two do not, which is the part people get wrong under pressure.",
+          "confidence": "high",
+          "ruled_out": [
+            "Treating count as decisive regardless of intent"
+          ]
+        },
+        {
+          "at": "T+6m",
+          "saw": "Whether a parent manoeuvre was co-timed with the appearance of the new object.",
+          "on_product": "PRD-RESIDUAL",
+          "concluded": "A co-timed burn supports deliberate release, which supports separation over breakup. It also anchors the separation time, which tells providers what to look back at.",
+          "confidence": "medium",
+          "ruled_out": [
+            "Unintentional shedding, where a co-timed burn is present"
+          ]
+        },
+        {
+          "at": "T+9m",
+          "saw": "The tasking instruction as I was about to write it, and the ambiguity in it.",
+          "on_product": "PRD-PASS-SCHEDULE",
+          "concluded": "Say which rank applies to the parent and which to the new object. An instruction that does not say gets interpreted, and interpretation costs collection at the exact moment it matters most.",
+          "confidence": "high",
+          "ruled_out": [
+            "A single unqualified tasking rank"
+          ]
+        },
+        {
+          "at": "T+12m",
+          "saw": "That the neighbourhood in front of me was ranked-objects-only.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "Ask for the unfiltered view. Objects acquire relevance before they acquire a rank, and a filtered product has previously hidden the asset that actually mattered.",
+          "confidence": "high",
+          "ruled_out": [
+            "Concluding nothing is at risk from a filtered product"
+          ]
+        },
+        {
+          "at": "T+16m",
+          "saw": "A manoeuvre by the new object after separation.",
+          "on_product": "PRD-RESIDUAL",
+          "concluded": "This is the discriminator that changes everything. An object that can choose where it goes is an active payload and a different threat proposition entirely from an inert release. It is also a separate reportable fact from the separation itself.",
+          "confidence": "high",
+          "ruled_out": [
+            "Passive debris",
+            "A single combined report covering both facts"
+          ]
+        }
+      ],
+      "decision_rationale": "Three procedures share one entry cue, so the discipline is to confirm the count before choosing, and then to remember that intent overrides count in both directions. After the branch, the analytical work is establishing what the new object is, and the single most informative observation is whether it manoeuvres. Everything else supports that. Ask for unfiltered products, state tasking unambiguously, and report the separation and any subsequent manoeuvre as separate facts.",
+      "would_have_missed": "The pattern of life comparison, honestly. Knowing where in a parent's life a release normally falls requires history I do not carry in my head, and on a first pass I would have reported the separation without noting that it was unusually late in mission. That observation came from someone else on a real event and it materially changed the assessment."
+    },
+    {
+      "id": "TRC-SURGE-CONCURRENT",
+      "scenario_id": "SCN-SURGE-CONCURRENT",
+      "author": "Ash Higgins",
+      "authored": "2026-08-29",
+      "validated_by": "TBC, re-verify.",
+      "observations": [
+        {
+          "at": "T+0",
+          "saw": "Two time-critical indications landing within minutes, with proximity threads already running.",
+          "on_product": "PRD-EPHEMERIS",
+          "concluded": "Both alerts go out now, in parallel, one sentence each. I am not going to work one and then the other, because serialising them costs the second recipient the whole delay of the first.",
+          "confidence": "high",
+          "ruled_out": [
+            "Assessing before alerting",
+            "Working the events in sequence"
+          ]
+        },
+        {
+          "at": "T+3m",
+          "saw": "That I was already reaching for the products rather than the release button.",
+          "on_product": "PRD-EPHEMERIS",
+          "concluded": "This is the trap. The pull towards analysis is strong and it feels like the responsible thing. It is not. The alert is the product at this moment and the analysis is the product in twenty minutes.",
+          "confidence": "high",
+          "ruled_out": [
+            "Waiting for the target list",
+            "Waiting for a provider state"
+          ]
+        },
+        {
+          "at": "T+5m",
+          "saw": "The open thread count against what I could realistically hold.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "More than I can work. So I choose what to drop and I say it out loud, because a thread I have silently stopped working looks identical to one I am working, and that is how an hour goes past on a ripe event.",
+          "confidence": "high",
+          "ruled_out": [
+            "Attempting to hold everything",
+            "Working by recency"
+          ]
+        },
+        {
+          "at": "T+12m",
+          "saw": "Threads that were finished but still open.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "Closing these is not tidying. Every open thread is a claim on attention, and attention is the thing in shortest supply right now.",
+          "confidence": "high",
+          "ruled_out": [
+            "Leaving them open in case something develops"
+          ]
+        },
+        {
+          "at": "T+18m",
+          "saw": "A proximity thread with no activity since before the surge started.",
+          "on_product": "PRD-TRIC",
+          "concluded": "This is the one that gets missed. It was ripe before the surge and nothing about the surge made it less ripe, but it stopped being visible because everything else was louder. A sweep on a cadence is the only thing that catches it, because noticing does not scale under load.",
+          "confidence": "high",
+          "ruled_out": [
+            "Assuming someone else picked it up"
+          ]
+        },
+        {
+          "at": "T+25m",
+          "saw": "On the routine seed, that one of the concurrent events matched the object's established station-keeping cadence.",
+          "on_product": "PRD-WATERFALL",
+          "concluded": "Routine. And under surge that assessment is worth as much as any of the others, because it hands capacity back to the events that need it.",
+          "confidence": "medium",
+          "ruled_out": [
+            "Treating every concurrent event as equally significant"
+          ]
+        }
+      ],
+      "decision_rationale": "Under overload the analytical work is the easy part and the allocation is the hard part. Alert immediately and in parallel, triage out loud so that what you have dropped is visible, close what is finished because open threads cost attention, and sweep on a cadence because noticing does not scale. The single most valuable assessment under surge is often the one that concludes an event is routine, because it returns capacity. None of this is about being cleverer under pressure. It is about having a fixed routine that survives the pressure.",
+      "would_have_missed": "The ageing thread, if I am honest, and I would have missed it for the same reason everyone does: it was quiet and everything else was not. I only catch it because the sweep is on a timer rather than on my judgement. That is not discipline, it is admitting that my judgement degrades exactly when I need it most."
+    },
+    {
+      "id": "TRC-PHOT-CHANGE",
+      "scenario_id": "SCN-PHOT-CHANGE",
+      "author": "Ash Higgins",
+      "authored": "2026-08-29",
+      "validated_by": "TBC, re-verify.",
+      "observations": [
+        {
+          "at": "T+0",
+          "saw": "The object identity, before the light curve.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "Check the suppression rules first. If this object is excluded, or is a friendly high rate revisit object, the analysis does not change the answer and doing it first only creates the temptation to publish.",
+          "confidence": "high",
+          "ruled_out": [
+            "Beginning with the interesting part"
+          ]
+        },
+        {
+          "at": "T+2m",
+          "saw": "Whether the object was docked.",
+          "on_product": "PRD-NEIGHBORHOOD",
+          "concluded": "A docked pair presents one signature. If it is docked, a change may belong to the pair rather than to either object, and both go in the title and the report.",
+          "confidence": "high",
+          "ruled_out": [
+            "Attributing a combined signature to a single object"
+          ]
+        },
+        {
+          "at": "T+5m",
+          "saw": "The shape of the change against the object's own curve at matched phase angle.",
+          "on_product": "PRD-PHOTOMETRY",
+          "concluded": "Name which of the five it is. A new peak, a sharp change with hard angles, a feature that has completely changed, a stable curve gone diffuse, or a whole trend shifting in one period. Naming it is the difference between reporting that something changed and reporting what changed.",
+          "confidence": "high",
+          "ruled_out": [
+            "Reading the plot as a time series, which it is not"
+          ]
+        },
+        {
+          "at": "T+8m",
+          "saw": "How many sensors saw it, and from which hemispheres.",
+          "on_product": "PRD-PHOTOMETRY",
+          "concluded": "This is where most apparent photometric changes stop being changes. One sensor, or a hemisphere shift, or a source that watched this object last week and does not see it now. Three checks, each with a view that settles it, and all three are faster than being wrong in front of an operations centre.",
+          "confidence": "high",
+          "ruled_out": [
+            "Single sensor artefact",
+            "Hemispheric bias",
+            "Phase angle effect"
+          ]
+        },
+        {
+          "at": "T+13m",
+          "saw": "A close approach inside the window.",
+          "on_product": "PRD-TRIC",
+          "concluded": "Candidate, not cause. The question is lighting: was the sun positively illuminating one and not blinding the other. Without that the approach is a coincidence in time, and saying so explicitly is a stronger report than leaving it hanging.",
+          "confidence": "medium",
+          "ruled_out": [
+            "Timing as sufficient evidence of mechanism"
+          ]
+        },
+        {
+          "at": "T+18m",
+          "saw": "That I had a cause I could not pin down.",
+          "on_product": "PRD-PHOTOMETRY",
+          "concluded": "Then unknown is the answer and it goes in the report. Unknown is a legitimate assessment and it tells the recipient the cause is genuinely open rather than unconsidered. Omitting the question is what leaves them guessing.",
+          "confidence": "high",
+          "ruled_out": [
+            "Choosing the most plausible cause to avoid writing unknown"
+          ]
+        }
+      ],
+      "decision_rationale": "Suppression rules before analysis, because analysis cannot change them. Then name which of the five signatures is present, because that makes the observation specific. Then run the three scepticism checks, because most apparent changes fail one of them and each has a view that settles it in a minute. Only then ask what caused it, and be willing to write unknown. The phase angle window and the magnitudes before and after are not optional detail; without them nobody downstream can assess the claim at all. This is the report type where the cell is most likely to describe precisely and assess not at all, so the discipline is to keep going past the observation.",
+      "would_have_missed": "The lighting check on the close approach. Everything in me wants to accept a co-timed close approach as the explanation because it is tidy, and on a busy shift I would probably have written it as the likely cause without establishing whether the geometry allowed either object to see the other."
+    }
+  ]
+}

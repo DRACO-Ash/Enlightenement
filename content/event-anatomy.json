@@ -1,0 +1,184 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.0.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "Red team of package v1.8.1, finding 5",
+      "All procedures, cues, artefacts and the platform library",
+      "NOTSO quality model, quality ladder levels three and four"
+    ],
+    "review_status": "draft"
+  },
+
+  "_why_this_file_exists": "The package had procedures saying what to do and cues saying what to notice, and nothing saying what an event is. That is the gap between an operator who can follow a checklist and one who understands what they are looking at. This framework is the spine: eight questions, applied identically to every event type, that together constitute understanding an event. It structures the debrief, generates a new drill class, and gives the report its argument.",
+
+  "the_eight_questions": [
+    {
+      "n": 1,
+      "question": "What is physically happening?",
+      "asks_for": "The mechanism. Not the label but the physics: what changed, in which direction, and what that does to the orbit.",
+      "package_coverage": "Good. Physical reasoning is the second most represented competency in the cue library.",
+      "report_location": "The observational body and the specifics block.",
+      "failure_if_missed": "The report names an event type without demonstrating that the analyst knows what occurred, which shows immediately to anyone who does."
+    },
+    {
+      "n": 2,
+      "question": "What class of object is doing it, and what is that class for?",
+      "asks_for": "Platform archetype and its purpose. What it is built to do, and critically what it cannot do.",
+      "package_coverage": "Newly added in the platform library. Previously absent entirely.",
+      "report_location": "The publicly available information paragraph, hedged and separate.",
+      "failure_if_missed": "Intent cannot be assessed at all. This is the question whose absence produced reports that describe precisely and assess not at all."
+    },
+    {
+      "n": 3,
+      "question": "Is this normal for this object, and for its class?",
+      "asks_for": "Two comparisons, not one. Against the object's own history, and against what the class typically does. An object can be acting normally for itself and unusually for its class, or the reverse, and both are findings.",
+      "package_coverage": "Strong for the object comparison through the behaviour library. The class comparison is new.",
+      "report_location": "The explicit pattern of life statement.",
+      "failure_if_missed": "Present in only about a third of released reports. Without it the reader cannot tell whether anything unusual has occurred."
+    },
+    {
+      "n": 4,
+      "question": "What did it cost, and what does that cost imply?",
+      "asks_for": "Delta-v spent, fuel budget consumed, and what that expenditure says about deliberateness. Expensive actions are considered ones.",
+      "package_coverage": "Partial. Delta-v appears throughout; the inference from cost to deliberateness is stated in places and is not systematic.",
+      "report_location": "The specifics block, and the assessment where the cost is significant.",
+      "failure_if_missed": "The single best available proxy for intent goes unused. A plane change is a statement; a station-keep is housekeeping."
+    },
+    {
+      "n": 5,
+      "question": "What does this enable next, and what has it foreclosed?",
+      "asks_for": "The option set after the event. What could this object now do that it could not do before, how cheaply, and how quickly. What has it given up.",
+      "package_coverage": "Almost entirely absent. This was the largest single omission the red team found within the anatomy.",
+      "report_location": "The assessment, and it is what makes a report actionable rather than informative.",
+      "failure_if_missed": "The recipient is told what happened and not why it matters to them. An event matters because of the options it creates, and a report that stops at the event has stopped one step short of the point."
+    },
+    {
+      "n": 6,
+      "question": "Who is affected, and how?",
+      "asks_for": "The specific objects, operators or missions whose situation has changed, and in what way. Including an explicit statement where nobody is affected.",
+      "package_coverage": "Weak. Consequence to friendly assets returned only 34 keyword hits across the whole package.",
+      "report_location": "Objects at risk, the neighbourhood assessment, and any impact statement.",
+      "failure_if_missed": "Present in only 38 per cent of released reports. It is the reason the recipient opened the message."
+    },
+    {
+      "n": 7,
+      "question": "What else could explain this?",
+      "asks_for": "Competing hypotheses, including data artefacts, ranked as peers rather than as footnotes, and the evidence that discriminates between them.",
+      "package_coverage": "Strong. Twenty-two artefacts, discrimination on every cue, and it is the most drilled analytical habit in the package.",
+      "report_location": "The assessed cause, including where the honest answer is unknown.",
+      "failure_if_missed": "A sensor story becomes a satellite story, and it reaches an operations centre before anyone notices."
+    },
+    {
+      "n": 8,
+      "question": "How confident am I, and what would change it?",
+      "asks_for": "A stated confidence proportionate to the evidence, the limitations that constrain it, and the specific observation that would firm or overturn the assessment.",
+      "package_coverage": "Strong in the cue and drill layers.",
+      "report_location": "Confidence statement, limitations, and the next expected observation.",
+      "failure_if_missed": "Confidence appears in 17 per cent of released reports and limitations in 4 per cent. This is the most under-served question in real reporting despite being the best covered in training, which suggests it is a habit problem rather than a knowledge problem."
+    }
+  ],
+
+  "how_it_is_used": {
+    "in_debrief": "The debrief presents the operator's run against the eight questions, showing which they answered, which they answered implicitly without stating, and which they did not reach. Answering a question in your head and not in the report counts as not answered, because the recipient cannot read your head.",
+    "in_drills": "A drill class asking a single anatomy question about a presented event, with questions five and six weighted most heavily because they are the weakest in both the package and the corpus.",
+    "in_scenarios": "Scenario trigger events map to anatomy questions, so a scenario can be scored for which parts of understanding it exercised and the coverage gaps become visible at authoring time rather than after.",
+    "in_reports": "The eight questions in order are close to the structure of a good report. Questions one to four are the body, five and six are the assessment, seven and eight are the calibration. An operator who answers all eight in order has written a level four report almost by construction."
+  },
+
+  "per_event_anatomy": [
+    {
+      "event": "Manoeuvre",
+      "procedure_id": "PROC-MNV",
+      "q1_mechanism": "A burn in one or more of the three axes, changing period, eccentricity, argument of perigee, inclination or RAAN according to direction. Read the element signature and the burn names itself.",
+      "q2_platform": "Manoeuvre magnitude and cadence are strongly class-linked. A constellation member manoeuvres constantly and means nothing by it; an early warning platform almost never does and means a great deal.",
+      "q3_normal": "Against the object's own cadence, and against what the class does. A station-keep on a schedule is housekeeping; the same burn from an object that has never performed one is a finding.",
+      "q4_cost": "Cross-track is expensive and therefore deliberate. In-track is cheap. A large plane change is among the most expensive things a satellite can do and is never accidental.",
+      "q5_enables": "Where the new drift takes it, what it can now reach and how cheaply, and what proximity relationships become available. The most under-answered question on this event type.",
+      "q6_affected": "Objects along the new drift path, anything the resulting geometry closes on, and anyone whose conjunction picture has changed.",
+      "q7_alternatives": "A stale state, a starved fit, a summed pair of burns solved as one, or a physically impossible derived rate.",
+      "q8_confidence": "Possible against verified, the phenomenology supporting it, and whether the timing is bracketed or precise."
+    },
+    {
+      "event": "Rendezvous and proximity operations",
+      "procedure_id": "PROC-RPO",
+      "q1_mechanism": "Relative motion in the rotating frame, natural or forced. The shape of the relative path is the type of the operation.",
+      "q2_platform": "The most consequential question on this event type. A collector holds a standoff, an inspector closes and departs, a servicing vehicle makes contact. The same geometry means different things by class.",
+      "q3_normal": "Whether this object has done this before, and whether this class does this routinely. Some classes conduct proximity operations as their normal business.",
+      "q4_cost": "Plane matching is expensive, forced motion is continuously expensive, natural motion is free once established. Sustained expenditure is sustained attention.",
+      "q5_enables": "How cheaply this geometry could become a closer one, and how quickly. A plane-matched perch is minutes of fuel away from something else, and that is the warning.",
+      "q6_affected": "The approached object and its operator, and anyone whose collection or communications the geometry could affect.",
+      "q7_alternatives": "Cross-tagging at close separation, a coincidental pass rather than a sustained relationship, a stale state generating a phantom approach.",
+      "q8_confidence": "Whether merged means docked, what phenomenology supports it, and what collection gaps constrain the picture."
+    },
+    {
+      "event": "Separation",
+      "procedure_id": "PROC-SEP",
+      "q1_mechanism": "A new object released from a parent, usually co-timed with a parent manoeuvre, distinguishable in mean anomaly and subsequently in its own element set.",
+      "q2_platform": "Deployer classes are known to do this. The question is what the child is, which is answered mostly by whether it manoeuvres.",
+      "q3_normal": "Where in the parent's life this falls, and whether the sequence matches previous deployments by this class. A release very late in mission is itself the finding.",
+      "q4_cost": "Deployment is cheap. The child's subsequent manoeuvring is where cost appears, and it is what separates an active payload from an inert release.",
+      "q5_enables": "The reach of the new object, what it can approach and how quickly, and whether the parent retains further objects.",
+      "q6_affected": "Everything within the child's reach, ranked and unranked, which is why the unfiltered neighbourhood matters here more than anywhere.",
+      "q7_alternatives": "A tracking artefact producing a false headcount, a catalogued but unranked object mistaken for new, or a breakup with a low count.",
+      "q8_confidence": "The headcount confidence, the derivation of separation time, and explicitly what cannot be confirmed about the child's identity."
+    },
+    {
+      "event": "Breakup",
+      "procedure_id": "PROC-BRK",
+      "q1_mechanism": "Fragmentation, releasing many objects with a velocity spread that reflects the energy of the event.",
+      "q2_platform": "What broke up constrains why. An ageing upper stage sheds; a controlled payload does not fragment without a cause.",
+      "q3_normal": "Whether the object had prior anomaly indicators, and whether this class fails this way.",
+      "q4_cost": "Not applicable to the event, but relevant to the cause: an intercept was expensive and deliberate, a failure was neither.",
+      "q5_enables": "Nothing for the object. For everyone else it creates a debris field with a conjunction consequence that persists for years.",
+      "q6_affected": "Everything sharing that orbital regime, now and for a long time. The widest-reaching consequence of any event type.",
+      "q7_alternatives": "Deployment mistaken for fragmentation, collection geometry mistaken for loss, or a headcount artefact.",
+      "q8_confidence": "The count as a floor rather than a total, the cause with explicit confidence, and the collection limitations."
+    },
+    {
+      "event": "Photometric change",
+      "procedure_id": "PROC-PHOT",
+      "q1_mechanism": "A change in reflected light, from a configuration change, an attitude change, a deployment, or the onset of tumbling.",
+      "q2_platform": "Strongly class-linked. A deployable antenna produces a distinctive signature; a three-axis stabilised platform holding attitude produces a very stable one, so change means more.",
+      "q3_normal": "Against the object's own curve at matched phase angle, and against what the class shows. Return to pattern of life is itself an event.",
+      "q4_cost": "Usually none, which is exactly why photometry is valuable: it reveals changes that cost nothing and would otherwise be invisible.",
+      "q5_enables": "What a reorientation or deployment makes possible. A platform that has reoriented may now be collecting, and that is the question.",
+      "q6_affected": "Anyone the new configuration allows it to observe or affect, which requires the platform knowledge to answer at all.",
+      "q7_alternatives": "Single sensor, hemisphere, phase angle, and collection gap. Better served on this event type than on any other.",
+      "q8_confidence": "How many sensors and hemispheres, the phase angle window, and whether the cause is unknown, which is a legitimate answer."
+    },
+    {
+      "event": "Launch",
+      "procedure_id": "PROC-LAUNCH",
+      "q1_mechanism": "Ascent and insertion. Latitude bounds achievable inclination, launch time determines RAAN, and the transfer profile determines the destination.",
+      "q2_platform": "What is being launched drives everything downstream. A threat payload and a communications relay produce the same ascent and entirely different reporting.",
+      "q3_normal": "Whether the vehicle, site and profile match previous launches of this type, which is what makes the nominal credible or not.",
+      "q4_cost": "The transfer profile is a choice. A fast transfer buys time at fuel cost and says something about urgency.",
+      "q5_enables": "What the new object can reach once operational, and when. For a transfer to a higher regime, that may be weeks away and should still be stated.",
+      "q6_affected": "Objects in plane for low orbit insertions, or near the destination longitude for the belt. The two-degree longitude proximity check exists for this.",
+      "q7_alternatives": "A nominal that is wrong in plane looks identical to a failed launch. Acquisition failure is not launch failure until the nominal has been re-examined.",
+      "q8_confidence": "Nominal confidence, whether identification is provisional, and the explicit limitation on low orbit commercial observation before cataloguing."
+    },
+    {
+      "event": "Direct ascent",
+      "procedure_id": "PROC-DAASAT-GEO",
+      "q1_mechanism": "A ballistic trajectory to an apogee at or near the target altitude, with a terminal adjustment and a kill vehicle separation before intercept.",
+      "q2_platform": "An interceptor. The only archetype in the package with no benign interpretation once identified.",
+      "q3_normal": "Nothing about this is normal, which inverts the usual analysis. The pattern of life question becomes whether the launch site, vehicle and profile match a known test programme.",
+      "q4_cost": "An act of war, and priced accordingly. Cost here is political rather than propulsive.",
+      "q5_enables": "For the adversary, the destruction of a specific asset. For the defender, the question is what the target can still do about it, and when moving actually helps.",
+      "q6_affected": "The target, everything near the target, and everything sharing the regime once a debris field exists.",
+      "q7_alternatives": "An orbital insertion, a sounding rocket, or a test against an own-nation object. Lighting geometry at intercept helps discriminate.",
+      "q8_confidence": "Target list confidence, explicitly provisional and expected to change, published early anyway."
+    }
+  ],
+
+  "weakest_questions": {
+    "finding": "Questions five and six, what this enables and who is affected, are the weakest in both the package and the released report corpus.",
+    "evidence": "Consequence to friendly assets returned 34 keyword hits across the whole package, and only 38 per cent of released reports contain any impact statement.",
+    "consequence": "These two questions are what convert a report from informative to actionable, and they are the ones an operations centre actually needs.",
+    "action": "Drills targeting questions five and six carry the highest weighting in the new anatomy drill class, and the debrief surfaces them explicitly whether or not the operator reached them."
+  }
+}

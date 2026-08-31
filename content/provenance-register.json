@@ -1,0 +1,877 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.6.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "Final review audit of package v2.1.0",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "JCO Breakup procedure",
+      "JCO Separation procedure",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft"
+  },
+  "_why_this_file_exists": "Operator-facing content carries no confidence markers, and it should not: an analyst does not want to read [Inference] in a drill explanation. But the package makes numeric and factual claims to operators, and those claims must be traceable to a source and to a confidence level. This file is that trace. It is not loaded at runtime and is not shown to operators. It exists so that when someone asks where a number came from, there is an answer, and so that a claim which turns out to be wrong can be found and corrected everywhere it appears.",
+  "_how_to_use": "Before changing any numeric claim in operator-facing content, check here for every location it appears. Before adding a new numeric claim, add it here first. If a claim cannot be sourced, it should not be in the content.",
+  "confidence_definitions": {
+    "fact": "Directly stated in an authoritative source document, or computed from data held.",
+    "derived": "Computed by this package from a corpus or dataset. Reproducible, and the method is stated.",
+    "inference": "A reasonable conclusion from evidence, not directly stated by any source. Could be wrong.",
+    "judgement": "An authoring decision. Not derived from evidence and not claimed to be."
+  },
+  "claims": [
+    {
+      "claim": "Timing standard is 60 minutes from initial indications, or 30 minutes from the last provider product dropped, whichever is earlier",
+      "confidence": "fact",
+      "source": "JCO Timing Standards document",
+      "appears_in": [
+        "rubrics.json R-FIRST-REPORT-GREEN/AMBER/RED",
+        "drills.json DRL-0035, DRL-0114",
+        "recurrence-register.json headline_finding",
+        "procedures reporting time_standard refs"
+      ],
+      "note": "SUPERSEDED an earlier inferred flat 30 minute standard which was wrong and had propagated into scoring. Corrected 29 August 2026."
+    },
+    {
+      "claim": "GEO direct ascent initial warning standard is 30 minutes; tracked object 90 minutes",
+      "confidence": "fact",
+      "source": "JCO Timing Standards document",
+      "appears_in": [
+        "rubrics.json R-DAASAT-INITIAL-WARNING",
+        "PROC-DAASAT-GEO",
+        "thresholds daasat_geo block"
+      ]
+    },
+    {
+      "claim": "Daily crew operations tasks have no official timing standards",
+      "confidence": "fact",
+      "source": "JCO Timing Standards document",
+      "appears_in": [
+        "CUE-103 discriminator",
+        "PROC-PS"
+      ],
+      "note": "Load-bearing negative. Latency must not be scored on predictive surveillance, logging, tasking or searches."
+    },
+    {
+      "claim": "Observed first-report latencies of 37, 49, 55, 56, 60 and 61 minutes across six direct ascent events",
+      "confidence": "fact",
+      "source": "Exercise after action reports, Live Fly 25-2 and 26-1",
+      "appears_in": [
+        "recurrence-register.json calibration_data"
+      ],
+      "note": "The raw times are fact. Their assessment as breaches is NOT, because the governing leg cannot be reconstructed without provider product drop timestamps. Outstanding request."
+    },
+    {
+      "claim": "The same cell later delivered six first reports in 16 to 30 minutes, most in the 20 to 25 band",
+      "confidence": "fact",
+      "source": "Live Fly 26-1 Day 4 after action report",
+      "appears_in": [
+        "recurrence-register.json counter_evidence"
+      ],
+      "note": "The strongest single piece of evidence in the package for the training thesis."
+    },
+    {
+      "claim": "Confidence stated in 7.8 per cent of released reports; hedges sized in 9.4 per cent of hedged reports",
+      "confidence": "derived",
+      "source": "Corpus of 3,124 released notifications, 2022 to 2026",
+      "method": "Regular expression detection over Event_Description across all records. Reproducible.",
+      "appears_in": [
+        "notso-quality-model.json",
+        "drills.json DRL-0054",
+        "recurrence-register.json REC-026",
+        "event-anatomy.json"
+      ],
+      "note": "RECALIBRATED 29 August 2026. Earlier figures of 17 and 24 per cent were produced by looser patterns. The gap is larger than first reported."
+    },
+    {
+      "claim": "Pattern of life assessed in 34.6 per cent; consequence content present in 64.7 per cent of released reports",
+      "confidence": "derived",
+      "source": "Same corpus and method",
+      "appears_in": [
+        "notso-quality-model.json",
+        "drills.json DRL-0088",
+        "event-anatomy.json weakest_questions"
+      ],
+      "note": "RECALIBRATED. The earlier 38 per cent impact figure came from a narrow pattern. Consequence is better handled than first reported; pattern of life is the real gap on this axis."
+    },
+    {
+      "claim": "1,899 reports hedge; 24 per cent of those state a confidence level",
+      "confidence": "derived",
+      "source": "Same corpus and method",
+      "appears_in": [
+        "notso-quality-model.json AMB-01",
+        "drills.json DRL-0054"
+      ]
+    },
+    {
+      "claim": "Drift rates carry a direction in only 29.4 per cent of cases. Delta-v carries units in 99.6 per cent",
+      "confidence": "derived",
+      "source": "Same corpus and method",
+      "appears_in": [
+        "notso-quality-model.json AMB-02",
+        "drills.json DRL-0053"
+      ],
+      "note": "**CORRECTED.** The earlier claim that 42 per cent of delta-v figures lacked units was WRONG, caused by a regular expression with a zero-width lookahead that matched everything. The genuine qualifier gap is direction on rates. This error had reached operator-facing content in DRL-0053 and has been fixed."
+    },
+    {
+      "claim": "Of reports appending a state, 23.1 per cent name no provider and 40.0 per cent give no time current",
+      "confidence": "derived",
+      "source": "Same corpus and method",
+      "appears_in": [
+        "notso-quality-model.json AMB-03",
+        "drills.json DRL-0057"
+      ]
+    },
+    {
+      "claim": "Median completeness rose from 6 of 21 in 2022 to 14 in 2026; median length 102 to 618 words",
+      "confidence": "derived",
+      "source": "Same corpus, scored against a 21-check rubric derived from the product standard",
+      "appears_in": [
+        "notso-quality-model.json quality_trend",
+        "recurrence-register.json REC-029"
+      ],
+      "note": "The 21-check rubric is an authoring judgement, so the absolute numbers are less meaningful than the trend. The TREND is the finding."
+    },
+    {
+      "claim": "Report type mix: manoeuvre 42, launch 24, photometric 15, RPO 8, separation 7 per cent",
+      "confidence": "derived",
+      "source": "Same corpus, classified by keyword over Event_Class and Event_Description",
+      "appears_in": [
+        "notso-quality-model.json type_mix",
+        "behaviour-library.json corpus_shape"
+      ],
+      "note": "Keyword classification, so boundary cases are misassigned. Proportions are indicative."
+    },
+    {
+      "claim": "Concurrent event ceiling of about 3 per analyst; ageing callout at 15 to 20 minutes",
+      "confidence": "fact",
+      "source": "Live Fly 26-1 after action report recommendations",
+      "appears_in": [
+        "drills.json DRL-0037",
+        "RPS T6.1",
+        "thresholds"
+      ],
+      "note": "Fact that it was RECOMMENDED. Not a fact that it was adopted. Treated as provisional standard pending TRA ratification."
+    },
+    {
+      "claim": "Peak concurrent thread count reached around 35",
+      "confidence": "fact",
+      "source": "Live Fly 26-1 after action report",
+      "appears_in": [
+        "recurrence-register.json REC-008",
+        "SCN-SURGE-CONCURRENT"
+      ]
+    },
+    {
+      "claim": "Cross-tagging observed from around 10 km; optical fusion between 2 and 5 km; RF remained distinguishable",
+      "confidence": "fact",
+      "source": "SJ-21 / SJ-25 RPO and docking event after action report",
+      "appears_in": [
+        "artefacts.json ART-002",
+        "drills.json DRL-0015",
+        "CUE-020"
+      ]
+    },
+    {
+      "claim": "Three photometric scepticism checks: single sensor, prior-observing source, hemisphere",
+      "confidence": "fact",
+      "source": "JCO Photometry Change procedure",
+      "appears_in": [
+        "PROC-PHOT",
+        "CUE-084",
+        "drills.json DRL-0067"
+      ],
+      "note": "Independently corroborates ART-004 and ART-005, which were derived from the product standard before this procedure was seen."
+    },
+    {
+      "claim": "Five photometric change signatures to look for",
+      "confidence": "fact",
+      "source": "JCO Photometry Change procedure notification criteria table",
+      "appears_in": [
+        "PROC-PHOT step 4",
+        "CUE-075",
+        "CUE-076"
+      ]
+    },
+    {
+      "claim": "Alpha-5 replaces the leading digit of a five-digit catalogue number; both forms are provided in reports",
+      "confidence": "fact",
+      "source": "JCO Photometry Change and Launch procedures",
+      "appears_in": [
+        "CUE-079",
+        "drills.json DRL-0069",
+        "artefacts.json ART-020"
+      ],
+      "note": "Resolves an ambiguity recorded as unsettled in the Pacific after action report."
+    },
+    {
+      "claim": "A report should be distributed as soon as a candidate track is obtained, even prior to payload separation",
+      "confidence": "fact",
+      "source": "JCO Launch procedure",
+      "appears_in": [
+        "PROC-LAUNCH step 14",
+        "CUE-093",
+        "drills.json DRL-0096"
+      ],
+      "note": "The most explicit latency instruction in any procedure held."
+    },
+    {
+      "claim": "In-flight updates mean a threatened asset that manoeuvres too early can be retargeted",
+      "confidence": "fact",
+      "source": "GEO direct ascent advanced training module",
+      "appears_in": [
+        "PROC-DAASAT-GEO",
+        "CUE-087",
+        "drills.json DRL-0076"
+      ],
+      "note": "Highest-rated drill in the bank. Inverts a conjunction-avoidance instinct."
+    },
+    {
+      "claim": "Distance-maintaining avoidance keeps close approaches above roughly 30 km",
+      "confidence": "fact",
+      "source": "JCO weekly activity reports, generalised",
+      "appears_in": [
+        "behaviour-library.json BHV-01",
+        "CUE-088",
+        "drills.json DRL-0078"
+      ],
+      "note": "Generalised from named objects. The behaviour class and magnitude are real; the identities are deliberately absent."
+    },
+    {
+      "claim": "Blue 1 #385FAF scores 2.45:1 on navy and fails both text and graphic contrast floors",
+      "confidence": "derived",
+      "source": "WCAG 2.2 relative luminance computation, performed in session",
+      "method": "Standard sRGB linearisation and contrast ratio. Reproducible.",
+      "appears_in": [
+        "flight plan look and feel",
+        "build guidance 5.4"
+      ],
+      "note": "Enforced as a grep gate rather than a review item."
+    },
+    {
+      "claim": "Six components make an argument defensible",
+      "confidence": "judgement",
+      "source": "Authoring decision, informed by analytical tradecraft practice",
+      "appears_in": [
+        "synthesis-ladder.json argument_scoring",
+        "rubrics.json RUB-ARGUMENT"
+      ],
+      "note": "NOT derived from any JCO source. An authoring judgement about what makes an assessment defensible, and open to challenge by the TRA."
+    },
+    {
+      "claim": "Eight questions constitute understanding an event",
+      "confidence": "judgement",
+      "source": "Authoring decision, derived from gap analysis of the corpus",
+      "appears_in": [
+        "event-anatomy.json",
+        "rubrics.json anatomy rules"
+      ],
+      "note": "The framework is mine. The evidence that questions five and six are weakest IS derived from the corpus."
+    },
+    {
+      "claim": "Eight competency axes",
+      "confidence": "judgement",
+      "source": "Authoring decision. Owner confirmed no external framework applies",
+      "appears_in": [
+        "competencies.json",
+        "all rubrics",
+        "RPS section 6"
+      ],
+      "note": "CMP-07 and CMP-08 were added on evidence of specific recorded failures. The axis structure itself is an authoring choice."
+    },
+    {
+      "claim": "Elo difficulty ratings, 1050 to 2200",
+      "confidence": "judgement",
+      "source": "Authoring judgement, item by item",
+      "appears_in": [
+        "drills.json every item"
+      ],
+      "note": "PROVISIONAL. No empirical basis until a cohort has run. Early adaptivity will be poor and must be described as provisional rather than presented as precise."
+    },
+    {
+      "claim": "Expert traces represent how an experienced analyst reasons",
+      "confidence": "inference",
+      "source": "Reconstructed from procedures, training decks and after action reports",
+      "appears_in": [
+        "traces.json, all five"
+      ],
+      "note": "THE WEAKEST CLAIM IN THE PACKAGE. Authored by reconstruction, not by anyone holding the role. Every trace records validated_by TBC. Second-expert validation gates scored use."
+    },
+    {
+      "claim": "All corpus-derived percentages are produced by the calibrated patterns in report-detection-patterns.json",
+      "confidence": "derived",
+      "source": "Corpus of 3,123 narratives",
+      "method": "Regular expression detection, patterns published and reproducible",
+      "appears_in": [
+        "notso-quality-model.json",
+        "recurrence-register.json",
+        "several drill explanations"
+      ],
+      "note": "Detection is pattern-based and undercounts unconventional phrasing. Every figure is a floor. Operator-facing claims are phrased to survive the true figure being somewhat higher."
+    },
+    {
+      "claim": "Manoeuvre notification thresholds by regime: GEO above 20 seconds period change, MEO above 10, LEO above 2; plane change at or above 0.1 degrees qualifies in any regime",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card, Maneuver Notification Criteria",
+      "appears_in": [
+        "thresholds manoeuvre.notification_criteria",
+        "CUE-104",
+        "DRL-0115"
+      ],
+      "note": "The package previously had no key for this at all. It is the primary discriminator between a manoeuvre of interest and station-keeping."
+    },
+    {
+      "claim": "Reporting mode varies by tasking rank: both written and verbal, verbal only, written only, or none",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card",
+      "appears_in": [
+        "thresholds manoeuvre.notification_criteria.reporting_by_rank",
+        "CUE-105",
+        "DRL-0116"
+      ],
+      "note": "Establishes that some qualifying events warrant no report. Supports the restraint rebalancing."
+    },
+    {
+      "claim": "Critical plane matching: GEO within 100 km and 0.1 degrees inclination and right ascension; LEO within 50 km and/or 0.25 degrees",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card",
+      "appears_in": [
+        "thresholds rpo.plane_match_deg and plane_match_range_km"
+      ]
+    },
+    {
+      "claim": "Plane match via drift escalation ladder at 7, 3 and 1 days to closure, raising report and rank at each step",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card",
+      "appears_in": [
+        "thresholds rpo.plane_match_via_drift",
+        "CUE-106",
+        "DRL-0117"
+      ],
+      "note": "Converts days to right ascension zero from an observation into a scored escalation ladder."
+    },
+    {
+      "claim": "Merge is sub 5 km; capture is a merged pair manoeuvring off element set as one",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card, RPO Definitions",
+      "appears_in": [
+        "thresholds rpo.type_distances.merge_km",
+        "CUE-108",
+        "DRL-0119"
+      ]
+    },
+    {
+      "claim": "Parking criteria: remaining or projected to remain in the vicinity for more than 3 orbits, or occupying an ITU slot not assigned to that payload in proximity to friendly high reportable objects",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card",
+      "appears_in": [
+        "thresholds rpo.parking_criteria"
+      ]
+    },
+    {
+      "claim": "HRR tasking framework, ranks 0 to 5, with electro-optical and radio frequency cadences per rank",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card, HRR Definitions",
+      "appears_in": [
+        "thresholds hrr block, referenced by every procedure"
+      ],
+      "note": "Closes the majority of outstanding tasking rank references across the package."
+    },
+    {
+      "claim": "Protect and Defend event priority order, thirteen event types ranked",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card, P&D primary sorting",
+      "appears_in": [
+        "thresholds triage.priority_order",
+        "SCN-SURGE-CONCURRENT"
+      ],
+      "note": "The surge scenario previously scored triage against authoring judgement with no authoritative order behind it. Now scored against the published order."
+    },
+    {
+      "claim": "Passive radio frequency collection is contracted in fixed slots across two providers with differing band coverage",
+      "confidence": "fact",
+      "source": "JCO Quick Reference Card, Passive RF Tasking",
+      "appears_in": [
+        "thresholds collection block",
+        "CUE-107",
+        "DRL-0118"
+      ],
+      "note": "Provider identities and contact details deliberately excluded. Only the capacity constraint and the band difference are modelled."
+    },
+    {
+      "claim": "Objects manoeuvre to increase minimum distance when a projected miss distance falls below roughly thirty kilometres",
+      "confidence": "fact",
+      "source": "Weekly activity reports, independently corroborated by pattern of life notes in the Quick Reference Card for three separate objects",
+      "appears_in": [
+        "behaviour-library BHV-01",
+        "CUE-088",
+        "DRL-0078"
+      ],
+      "note": "Generalised archetype authored before the corroborating reference was seen, and the figure matched. A useful check that the behaviour library is not drifting into invention."
+    },
+    {
+      "claim": "LEO direct ascent target filter: perigee and apogee 100 to 2000 km; inclination from launch latitude minus 5 degrees to 180 minus start inclination; azimuth median plus or minus 10; window plus or minus 15 minutes",
+      "confidence": "fact",
+      "source": "JCO LEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_leo",
+        "DRL-0126"
+      ],
+      "note": "The five-degree offset below launch latitude accounts for dogleg profiles. A wrong filter produces a coherent and wrong target list."
+    },
+    {
+      "claim": "LEO direct ascent tasking: candidates at highest rank on opening, affected satellites minimum Rank 2, one pass before and three after, closure at headcount 1 across three passes",
+      "confidence": "fact",
+      "source": "JCO LEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_leo",
+        "PROC-DAASAT-LEO"
+      ]
+    },
+    {
+      "claim": "Updates to operations centres at intervals not exceeding 60 minutes until all objects tracked",
+      "confidence": "fact",
+      "source": "JCO LEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_leo.update_cadence"
+      ]
+    },
+    {
+      "claim": "Predictive surveillance: drifting threshold 0.1 deg/day; element sets under 24 hours; providers exclude states over 60 days; close approaches under 75 km within 48 hours",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "thresholds ps"
+      ]
+    },
+    {
+      "claim": "Tasking window 48 hours before to 24 hours after closest approach, at Rank 1",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "thresholds ps.tasking_windows"
+      ]
+    },
+    {
+      "claim": "While drifting, rank is not raised for close approaches unless the object is decreasing drift to park",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "CUE-112",
+        "DRL-0121"
+      ],
+      "note": "Prevents a drifting object consuming collection capacity on every crossing."
+    },
+    {
+      "claim": "Within 5 degrees of a longitudinal bound, raise to Rank 1 until the turn-around completes",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "thresholds ps.longitudinal_bounds",
+        "CUE-110",
+        "BHV-12"
+      ]
+    },
+    {
+      "claim": "A close approach under 30 km within 72 hours triggers a potential activity alert forecasting a manoeuvre",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "CUE-111",
+        "DRL-0123"
+      ],
+      "note": "Anticipatory rather than reactive. The most sophisticated move in the procedure."
+    },
+    {
+      "claim": "Two colour designators only. A Grey high reportable object is treated as Blue for this processing",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "thresholds ps.scope.colour_designators"
+      ],
+      "note": "CORRECTS an earlier package assumption drawn from the neighbourhood product, which displays Grey as a third category."
+    },
+    {
+      "claim": "Known Objects are tracked objects with no catalogue entry, treated as friendly, requiring a stability assessment, with tasking not raised",
+      "confidence": "fact",
+      "source": "JCO Red Predictive Surveillance procedure",
+      "appears_in": [
+        "CUE-109",
+        "DRL-0120"
+      ],
+      "note": "An object class the package did not previously have."
+    },
+    {
+      "claim": "A qualifying plane change associated with a RAAN flip station keep is processed as station-keeping",
+      "confidence": "fact",
+      "source": "Quick Reference Card footnote",
+      "appears_in": [
+        "thresholds manoeuvre.notification_criteria.raan_flip_qualifier",
+        "CUE-114",
+        "DRL-0125"
+      ]
+    },
+    {
+      "claim": "A friendly manoeuvre placing an asset within red collection or approach range opens a do-not-report thread held for 24 hours",
+      "confidence": "fact",
+      "source": "Quick Reference Card",
+      "appears_in": [
+        "thresholds manoeuvre.notification_criteria.blue_asset_manoeuvre",
+        "CUE-113",
+        "DRL-0124"
+      ],
+      "note": "A class of event the package did not model: exposure created by our own manoeuvre."
+    },
+    {
+      "claim": "Physics sanity constants: 27.4 km per m/s and 0.35 deg/day drift in the belt, 13.7 km per m/s at navigation altitudes, 1.85 km per m/s at 600 km; minimum epoch separation for a derivable drift rate; impossible-rate ceiling of 20 deg/day in the belt",
+      "confidence": "derived",
+      "source": "Computed from two-body dynamics with WGS84 constants",
+      "method": "Vis-viva and Kepler's third law, circular-orbit assumption, in-track burns. Stated in the thresholds file and reproducible.",
+      "appears_in": [
+        "thresholds manoeuvre.regime_delta_v_sanity, min_epoch_separation, impossible_rate_ceiling",
+        "DRL-0127"
+      ],
+      "note": "The cross-check is the interesting result: the published period-change notification thresholds convert to 0.24, 0.30 and 0.87 m/s across the three regimes. They are calibrated to a common delta-v magnitude rather than being independent per-regime numbers."
+    },
+    {
+      "claim": "State of behaviour is determined by registered country against a defined set of countries of concern",
+      "confidence": "fact",
+      "source": "Owner direction 30 August 2026",
+      "appears_in": [
+        "thresholds state_of_behaviour",
+        "population-statistics.json"
+      ],
+      "note": "The country set is configuration held locally. The application teaches the determination method, never the membership."
+    },
+    {
+      "claim": "The standing high rate revisit list contains ranks 2 to 5 only; ranks 0 and 1 are temporary event elevations",
+      "confidence": "derived",
+      "source": "Structure of the standing list, 2,972 entries",
+      "appears_in": [
+        "thresholds hrr.rank_structure",
+        "CUE-116",
+        "DRL-0129"
+      ],
+      "note": "CORRECTS an earlier package assumption that treated 0 to 5 as one standing scale. Every elevation implies a step-down with a duration set by the governing procedure."
+    },
+    {
+      "claim": "Standing list distributions: half at the lowest rank, under two per cent at the highest; seven in ten in low orbit; red proportion non-monotonic across ranks",
+      "confidence": "derived",
+      "source": "Aggregate statistics over the standing list",
+      "appears_in": [
+        "population-statistics.json"
+      ],
+      "note": "Aggregates only. No object name, catalogue number or country attribution retained. Used so generated products are statistically faithful without containing a real object."
+    },
+    {
+      "claim": "GEO direct ascent bands: initial target list within 5 degrees of the ascending belt intercept, refined to 2.5 degrees once an initial orbit determination exists",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo",
+        "PROC-DAASAT-GEO"
+      ]
+    },
+    {
+      "claim": "Separation notification and written report both required within 10 minutes of detected separation",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo.separation_notso"
+      ],
+      "note": "The procedure advises preparing the separation report in advance. It is the tightest deadline in the package."
+    },
+    {
+      "claim": "Kill vehicle target radius 100 km from the initial orbit determination, extending to the closest target within 250 km where none is visible",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo.kkv_target_radius"
+      ]
+    },
+    {
+      "claim": "Apogee decision carries a 50 km tolerance above belt altitude before switching to the ascending penetration point",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo.apogee_decision",
+        "CUE-119",
+        "DRL-0132"
+      ],
+      "note": "REFINES an earlier package statement that drew the line at belt altitude exactly."
+    },
+    {
+      "claim": "Verbal notifications carry the affected longitude window; written reports carry the target list",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo.disclosure_by_channel",
+        "CUE-118",
+        "DRL-0131"
+      ],
+      "note": "A disclosure asymmetry the package did not model."
+    },
+    {
+      "claim": "Before separation, an at-risk object is named without its state. After separation and orbit determination, the state is included",
+      "confidence": "fact",
+      "source": "JCO GEO DA ASAT procedure",
+      "appears_in": [
+        "thresholds daasat_geo.disclosure_by_phase",
+        "CUE-117",
+        "DRL-0130"
+      ],
+      "note": "Disclosure changes with phase. The package previously had no representation of graded disclosure at all."
+    },
+    {
+      "claim": "Handover brief covers six points: why opened, who tasked what to which rank, timers affecting the next shift, reporting accomplished, next steps, current checklist step",
+      "confidence": "fact",
+      "source": "JCO Changeover procedure",
+      "appears_in": [
+        "PROC-CRM step 8",
+        "thresholds crm.handover_brief_points",
+        "CUE-121",
+        "DRL-0134",
+        "SCN-HANDOVER-GAP"
+      ],
+      "note": "Closes the handover standard in the Role Performance Statement, which previously carried an authored description rather than a published one."
+    },
+    {
+      "claim": "Changeover runs on a 30 minute, 5 minute, changeover-time structure across an 8 hour shift",
+      "confidence": "fact",
+      "source": "JCO Changeover procedure",
+      "appears_in": [
+        "PROC-CRM",
+        "thresholds crm"
+      ]
+    },
+    {
+      "claim": "Every tasking change is annotated with thread reference, object, reason and expiry date",
+      "confidence": "fact",
+      "source": "JCO Changeover procedure",
+      "appears_in": [
+        "thresholds crm.tasking_annotation",
+        "CUE-122",
+        "DRL-0135"
+      ],
+      "note": "Supplies the mechanism behind the temporary-elevation finding. The expiry is what makes a step-down happen."
+    },
+    {
+      "claim": "Daily tasks are allocated across cells and weekdays rather than performed by every cell",
+      "confidence": "fact",
+      "source": "JCO Changeover procedure",
+      "appears_in": [
+        "thresholds crm.daily_tasks",
+        "CUE-124",
+        "DRL-0137"
+      ],
+      "note": "A coordination failure mode the package did not model. From inside one cell, a task owned elsewhere and a task missed look identical."
+    },
+    {
+      "claim": "A Blue predictive surveillance task exists alongside Red predictive surveillance",
+      "confidence": "fact",
+      "source": "JCO Changeover procedure daily task table",
+      "appears_in": [
+        "thresholds crm.daily_tasks.task_families"
+      ],
+      "note": "**GAP IDENTIFIED.** The package models Red predictive surveillance in full and has no representation of the Blue equivalent. The procedure has not been supplied."
+    },
+    {
+      "claim": "Extremely close proximity operations are approximately sub 5 km in geosynchronous orbit and sub 1 km in low orbit",
+      "confidence": "fact",
+      "source": "JCO Force Package procedure (DRAFT)",
+      "appears_in": [
+        "thresholds.example.json rpo.type_distances"
+      ],
+      "note": "Closes two long-standing placeholders. UNRECONCILED against merge_km, which holds 5 km from the Quick Reference Card under the label merged. Both cite cross-tagging. The conflict is recorded rather than resolved."
+    },
+    {
+      "claim": "Ingress to a proximity target usually requires less than 10 m/s of delta-v",
+      "confidence": "fact",
+      "source": "JCO Force Package procedure (DRAFT)",
+      "appears_in": [
+        "thresholds.example.json rpo.ingress_delta_v"
+      ]
+    },
+    {
+      "claim": "Docking evidence durations are about 6 hours to possible and beyond 12 to verified where a docking capability was expected, and about 12 and beyond 24 where it was not",
+      "confidence": "fact",
+      "source": "JCO Docked Object procedure",
+      "appears_in": [
+        "thresholds.example.json docking.evidence_duration",
+        "procedures-extended.json PROC-DOCK steps 2 and 7",
+        "PROC-DOCK DCK-D1"
+      ],
+      "note": "The bar is set by prior expectation of capability, not by the evidence alone."
+    },
+    {
+      "claim": "A docked pair is held open at least 24 hours after docking completion, with tasking maintained",
+      "confidence": "fact",
+      "source": "JCO Docked Object procedure",
+      "appears_in": [
+        "thresholds.example.json docking.post_docking_hold_hr",
+        "PROC-DOCK step 9"
+      ]
+    },
+    {
+      "claim": "Operations centre notification for separation, docking and force package events is gated on the object sitting at one of the top three ranks; breakup notification is unconditional",
+      "confidence": "fact",
+      "source": "JCO Separation, Docked Object, Force Package and Breakup procedures",
+      "appears_in": [
+        "thresholds.example.json separation.notification_gate and docking.notification_gate",
+        "PROC-DOCK step 3",
+        "PROC-FP step 4"
+      ],
+      "note": "CORRECTS an earlier package statement that verbal notification followed establishing the headcount in all cases."
+    },
+    {
+      "claim": "A separation opens with parent and new object both at Rank 2, with discretion to go higher",
+      "confidence": "fact",
+      "source": "JCO Separation procedure",
+      "appears_in": [
+        "thresholds.example.json separation.tasking_ranks"
+      ],
+      "note": "CORRECTS an earlier entry that put a newly separated object at Rank 1 on opening. Rank 1 is the escalation."
+    },
+    {
+      "claim": "Breakup handover to the cataloguing authority is terminated by request rather than by a fixed duration, with a final closure report after 30 days where objects no longer meet the criteria for standing tasking",
+      "confidence": "fact",
+      "source": "JCO Breakup procedure",
+      "appears_in": [
+        "thresholds.example.json breakup.handover_expectation",
+        "procedures-core.json PROC-BRK step 9"
+      ],
+      "note": "REPLACES a placeholder declared in days and an unsourced days to weeks estimate."
+    },
+    {
+      "claim": "Breakup close approach screening runs to 100 km over 3 days in geosynchronous orbit and 50 km over 2 days in low orbit, escalating to the cataloguing authority at 50 km and 30 km respectively, and tabulated in the limited distribution report below 25 km and 15 km",
+      "confidence": "fact",
+      "source": "JCO Breakup procedure",
+      "appears_in": [
+        "thresholds.example.json breakup.combo_screening, combo_escalation and combo_report_floor"
+      ]
+    },
+    {
+      "claim": "Separation close approach screening runs to 100 km over 5 days",
+      "confidence": "fact",
+      "source": "JCO Separation procedure",
+      "appears_in": [
+        "thresholds.example.json separation.combo_screening"
+      ]
+    },
+    {
+      "claim": "Observation cadences by rank are stare, 15 minutes, 45 minutes, 2 hours, 12 hours and 24 hours for geosynchronous optical, with passive radio frequency at 10 minutes to Rank 3 and low orbit every pass to Rank 2",
+      "confidence": "fact",
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "appears_in": [
+        "thresholds.example.json hrr.ranks"
+      ],
+      "note": "Ranks 0 and 1 are labelled temporary tasking on the source card, which converts a package inference into a sourced statement."
+    },
+    {
+      "claim": "Increased tasking is of little use at Rank 2 and of real use at Ranks 3 to 5",
+      "confidence": "derived",
+      "source": "Rule stated in three JCO procedures; the reason derived from the rank cadences",
+      "appears_in": [
+        "thresholds.example.json hrr.increase_headroom_rule",
+        "PROC-DOCK step 6",
+        "PROC-FP step 9"
+      ],
+      "note": "The rule is stated. The explanation, that Rank 2 already sits at 45 minutes and every pass while Ranks 3 to 5 sit at 2, 12 and 24 hours, is derived by this package from the cadence card and is not stated by any source."
+    },
+    {
+      "claim": "Dedicated passive radio frequency capacity is contracted in fixed object counts, so adding an object requires removing another",
+      "confidence": "fact",
+      "source": "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "appears_in": [
+        "thresholds.example.json hrr.passive_rf",
+        "cues.json CUE-126",
+        "drills.json DRL-0139"
+      ],
+      "note": "Provider identities and contracted quantities are commercial and are deliberately excluded. Only the trade is taught."
+    },
+    {
+      "claim": "Element set disclosure in a proximity report depends on the target: included against a red target, withheld against a friendly one, never for a protected object or a well-tracked uncorrelated track",
+      "confidence": "fact",
+      "source": "JCO Force Package procedure (DRAFT)",
+      "appears_in": [
+        "thresholds.example.json force_package.element_set_disclosure",
+        "PROC-FP step 7 and FP-D2",
+        "cues.json CUE-127",
+        "drills.json DRL-0140"
+      ]
+    },
+    {
+      "claim": "The determination product column order is Initial, Final, Delta",
+      "confidence": "fact",
+      "source": "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "appears_in": [
+        "drills.json _generator_contract dc_table",
+        "products.json PRD-DC-TABLE",
+        "product-layouts.json PRD-DC-TABLE"
+      ],
+      "note": "CORRECTS an earlier package statement of Initial, Delta, Final."
+    },
+    {
+      "claim": "The manoeuvre specifics block runs Time, Delta V, Period, Apogee, Perigee, Inclination, Drift Rate",
+      "confidence": "fact",
+      "source": "JCO Force Package procedure (DRAFT), printed three times; corroborated by the synthesised exemplar already held in notso-quality-model.json",
+      "appears_in": [
+        "notso-templates.json TPL-VERIFIED-MANOEUVRE"
+      ],
+      "note": "CORRECTS an earlier ordering with Perigee before Apogee. The order is scored, so the error was load-bearing. Note the trap: the determination product lists perigee above apogee and the report block inverts it."
+    },
+    {
+      "claim": "On a verified manoeuvre determination the right ascension delta across a fit interval of about a day and a half is natural nodal regression rather than manoeuvre effect",
+      "confidence": "derived",
+      "source": "Computed by this package from the observed determination screen. J2 nodal regression for the stated semi-major axis and inclination, integrated over the stated fit interval, reproduces the observed delta to within about one part in two thousand.",
+      "appears_in": [
+        "product-layouts.json PRD-DC-TABLE",
+        "cues.json CUE-125",
+        "drills.json DRL-0138"
+      ],
+      "note": "The argument of perigee behaves the same way but is poorly conditioned at near-circular eccentricity and is not claimed to be predictable."
+    },
+    {
+      "claim": "On the observed determination screen the stated delta-v did not reconcile with the element changes",
+      "confidence": "inference",
+      "source": "Computed by this package from the observed screen. The in-plane change implies roughly a twentieth of a metre per second and the inclination change roughly three tenths, against a stated three quarters.",
+      "appears_in": [
+        "product-layouts.json PRD-DC-TABLE"
+      ],
+      "note": "UNKNOWN whether the field is operator entered or computed by another route. Owner to confirm. No generator should derive the field from the table until it is resolved."
+    },
+    {
+      "claim": "An ephemeris delivered as a file may be a fitted product rather than a propagation, and need not be Keplerian-consistent",
+      "confidence": "derived",
+      "source": "Computed by this package from the observed exercise ephemeris. Specific orbital energy drifted by about six per cent across 96 minutes, which two-body propagation would not produce at those altitudes. Provenance as exercise data and as fitted confirmed by the owner.",
+      "appears_in": [
+        "product-layouts.json PRD-EPHEMERIS"
+      ]
+    },
+    {
+      "claim": "An osculating perigee radius below the Earth's surface distinguishes a ballistic ascent from an orbit",
+      "confidence": "derived",
+      "source": "Computed by this package from the observed exercise ephemeris, and consistent with the geosynchronous direct ascent procedure's treatment of belt penetration.",
+      "appears_in": [
+        "product-layouts.json PRD-EPHEMERIS reading_rules"
+      ],
+      "note": "In the observed file the equatorial crossing falls within roughly 40 km of geostationary radius, about 17.7 minutes after the file ends. Exercise data, so the geometry is not a real event."
+    }
+  ],
+  "claims_deliberately_absent": {
+    "note": "Things a reader might expect the package to claim and which it does not, because the evidence does not support them.",
+    "items": [
+      "That the training improves real reporting quality. Unmeasured. That is External Validation.",
+      "That six of six recorded events breached the timing standard. Retracted; the standard used was wrong.",
+      "That the competency axes map to any recognised framework. They do not; none applies.",
+      "That stage gate attainment constitutes a qualification. It does not.",
+      "That attitudinal competencies can be certified. They can be observed by proxy only.",
+      "That electromagnetic interference is in scope. Confirmed out of scope by owner."
+    ]
+  }
+}

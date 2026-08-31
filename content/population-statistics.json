@@ -1,0 +1,92 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.0.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-30",
+    "source_refs": [
+      "JCO high rate revisit satellite list, 2,972 entries, August 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "REDACTION CRITICAL. Derived from a live operational object list carrying a real data mode and a distribution marking. **No object name, catalogue number or country attribution from that list appears here.** Only aggregate distributions and the derived determination rule. The list itself is never shipped and never enters the repository."
+  },
+  "_why_this_file_exists": "A generated neighbourhood populated with an invented mix of ranks, regimes and states of behaviour will feel wrong to an experienced operator within one scenario. These are the real proportions, so generated products can be statistically faithful without containing a single real object.",
+  "state_of_behaviour_rule": {
+    "source": "Owner direction, 30 August 2026",
+    "rule": "Objects whose registered country is one of a defined set of countries of concern are Red. All others are Blue.",
+    "note": "The specific country codes are configuration and live in the local thresholds file. The application teaches that the determination is made by registered country against a defined set, not that any particular country is on it.",
+    "grey_handling": "The neighbourhood product displays a Grey category. For predictive surveillance processing, a Grey high reportable object is treated as Blue.",
+    "known_objects": "Treated as Blue, requiring a stability assessment, with tasking not raised."
+  },
+  "rank_structure": {
+    "finding": "**The standing list runs from rank 2 to rank 5 only. Ranks 0 and 1 do not appear on it.**",
+    "interpretation": "Ranks 0 and 1 are temporary tasking elevations applied to an object during an event, not categories of standing list membership. This is consistent with the tasking framework, which describes both as temporary tasking. An object is elevated into rank 0 or 1 by an event and returns to its standing rank afterwards.",
+    "training_consequence": "Raise to Rank 1 is an action with a defined end, not a reclassification. Every procedure that raises a rank also implies a step-down, and forgetting the step-down leaves collection capacity tied up. This is why the launch procedure states durations alongside ranks.",
+    "correction": "An earlier package assumption treated ranks 0 to 5 as a single standing scale. The distinction between standing membership and temporary elevation was not modelled."
+  },
+  "distributions": {
+    "note": "Proportions of the standing list. Generators should sample from these unless a scenario deliberately seeds otherwise.",
+    "total_entries": 2972,
+    "by_rank": {
+      "2": 0.019,
+      "3": 0.103,
+      "4": 0.373,
+      "5": 0.505
+    },
+    "by_regime": {
+      "LEO": 0.711,
+      "GEO": 0.202,
+      "MEO": 0.062,
+      "HEO": 0.011,
+      "unknown": 0.014
+    },
+    "by_state_of_behaviour": {
+      "red": 0.745,
+      "blue": 0.255
+    },
+    "red_proportion_by_rank": {
+      "2": 1.0,
+      "3": 0.77,
+      "4": 0.488,
+      "5": 0.921
+    },
+    "rank_by_regime": {
+      "note": "Counts, for sampling a realistic mix within a regime.",
+      "GEO": {
+        "2": 18,
+        "3": 153,
+        "4": 297,
+        "5": 132
+      },
+      "LEO": {
+        "2": 38,
+        "3": 134,
+        "4": 782,
+        "5": 1158
+      },
+      "MEO": {
+        "2": 0,
+        "3": 4,
+        "4": 1,
+        "5": 180
+      },
+      "HEO": {
+        "2": 1,
+        "3": 14,
+        "4": 9,
+        "5": 9
+      }
+    }
+  },
+  "reading_the_distribution": {
+    "steep_pyramid": "Half the standing list sits at the lowest rank and under two per cent at the highest. The high-attention set is small, which is what makes elevation meaningful and what makes leaving an object elevated expensive.",
+    "non_monotonic_red_proportion": "Red proportion is total at rank 2, falls to about half at rank 4, and rises again to over ninety per cent at rank 5. This is not noise. Rank 4 is where legacy friendly systems, hosted payloads and commercial partner systems sit, so friendly objects concentrate there. Rank 5 is dominated by retired and proliferated systems.",
+    "training_point": "An operator who assumes rank correlates with threat will misread rank 4 in particular, where roughly half the population is friendly. Rank expresses attention warranted, not hostility.",
+    "regime_skew": "Seven in ten standing objects are in low orbit, yet the belt carries a far higher share of the highest ranks. A generated belt neighbourhood should be denser in ranks 2 and 3 than a low orbit one."
+  },
+  "generator_guidance": {
+    "neighbourhood": "Sample rank and state of behaviour from the regime-specific distributions. A belt neighbourhood dominated by rank 5 objects would be unrealistic; so would a low orbit one full of rank 2s.",
+    "coco": "Low orbit comparison sets are large. The real standing list carries over two thousand low orbit objects, which is why the product exists with no distance filter.",
+    "scenario_seeding": "Where a scenario needs an unranked object inside the threat geometry, that is a deliberate seed rather than a sampling outcome, because the standing list contains only ranked objects."
+  }
+}

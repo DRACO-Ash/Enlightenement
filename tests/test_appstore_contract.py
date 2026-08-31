@@ -807,10 +807,18 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     "test_audit.py",
     "test_auth.py",
     "test_config.py",
-    "test_content.py",
+    "test_content_package.py",
+    "test_drill_loop.py",
+    "test_generators.py",
     "test_healthcheck.py",
     "test_http.py",
     "test_middleware.py",
+    # The progress store, which will hold personal performance data the moment identity exists.
+    # Swept because it carries three register rows: the file's mode, the capped history, and the
+    # degrade-to-defaults path on a damaged file. Its tests lived in the retired `test_training.py`
+    # and were restored here in V0.24.0, because deleting a suite for a module that still exists
+    # takes its controls with it and the register goes on citing them.
+    "test_progress.py",
     "test_ratelimit.py",
     "test_storage.py",
     # The training layer. Swept because it carries four classes of control the register names:
@@ -818,7 +826,13 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     # the product is FOR), the interface's Content Security Policy and its markup-sink discipline,
     # the strict limiter on the scoring endpoint, and the redaction gate re-asserted at the edge
     # rather than only at load.
-    "test_training.py",
+    #
+    # V0.24.0 replaced the illustrative engine with the real content package, and the suites moved
+    # with it: `test_content.py` and `test_training.py` are gone, and `test_content_package.py`,
+    # `test_generators.py`, `test_drill_loop.py` and `test_scoring.py` carry the same four classes
+    # of control over the new modules. The answer-key boundary in particular is now asserted on
+    # the raw response BODY of a real 140-item library rather than on a placeholder one.
+    "test_scoring.py",
     "test_training_api.py",
 )
 
@@ -892,46 +906,21 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         #   the interval rendering. These are code standards in this project and they are enforced
         #   by these tests, but they are not security controls and `docs/SECURITY.md` is not where
         #   a reader should look for them.
-        "test_a_cue_with_no_recorded_due_date_is_due",
-        "test_a_different_seed_draws_a_different_instantiation",
         "test_a_drill_response_is_never_cached",
-        "test_a_miss_returns_the_spacing_interval_to_the_front",
-        "test_a_miss_that_names_the_look_alike_says_so_in_the_evidence",
-        "test_a_missing_progress_file_is_not_an_error",
-        "test_a_named_look_alike_is_reported_so_a_miss_becomes_a_teachable_moment",
-        "test_a_perfect_small_sample_still_reports_a_non_zero_interval",
         "test_a_procedure_is_served_in_full_and_an_unknown_one_is_a_404",
-        "test_a_rating_cannot_leave_the_band_any_authored_item_can_match",
-        "test_a_run_row_of_an_unknown_shape_is_skipped_rather_than_fatal",
-        "test_a_scored_run_records_the_content_hash_it_was_scored_under",
-        "test_an_axis_with_no_attempts_reports_nothing_rather_than_zero",
-        "test_an_empty_content_tree_refuses_to_serve_rather_than_inventing_an_item",
-        "test_an_unknown_item_is_a_400_naming_the_problem_not_a_500",
-        "test_answering_correctly_raises_the_rating_and_records_the_run",
-        "test_every_plot_carries_a_text_equivalent",
-        "test_every_score_names_the_rule_and_the_evidence_and_the_lines_sum_to_the_total",
-        "test_every_status_in_the_interface_carries_a_shape_and_a_label",
-        "test_matching_refuses_a_near_miss_rather_than_guessing_in_the_operator_s_favour",
-        "test_matching_returns_the_key_form_so_the_debrief_can_quote_the_expert",
-        "test_no_confidence_step_asserts_certainty",
+        "test_an_unknown_run_is_a_400_naming_the_problem_not_a_500",
+        # Renamed and rescoped in V0.24.0: status-by-shape became the verdict-glyph half of the
+        # red reservation, which IS cited because it is a transfer-of-training decision.
+        "test_the_interface_honours_an_inverted_axis",
+        "test_the_interface_sizes_plot_text_against_the_measured_scale",
+        "test_a_product_is_served_with_its_observed_layout",
         "test_normalisation_folds_the_variants_an_operator_actually_types",
-        "test_saving_one_operator_preserves_every_other_operator",
-        "test_scoring_refuses_an_unknown_item_and_an_off_scale_confidence",
         "test_selection_prefers_a_due_item_over_a_better_matched_one",
         "test_the_bounded_relative_track_closes_and_the_unbounded_one_does_not",
-        "test_the_brier_score_punishes_confident_error_quadratically",
-        "test_the_calibration_verdict_names_the_failure_mode_the_product_exists_to_remove",
-        "test_the_confidence_scale_refuses_an_off_scale_step_rather_than_clamping",
-        "test_the_content_endpoint_states_its_own_provenance",
-        "test_the_dashboard_endpoint_reports_intervals_and_never_a_bare_axis_number",
-        "test_the_dashboard_reports_an_interval_on_every_measured_axis",
-        "test_the_elo_exchange_is_symmetric_so_the_pool_cannot_inflate",
-        "test_the_expected_score_is_a_half_when_the_ratings_are_equal",
-        "test_the_interface_honours_reduced_motion_with_an_equivalent_rather_than_a_removal",
-        "test_the_interface_honours_the_measured_palette_rules",
+        "test_the_manifest_states_its_own_provenance",
+        "test_the_dashboard_reports_intervals_and_never_a_bare_competency_number",
+        "test_the_interface_honours_reduced_motion",
         "test_the_reveal_arrives_only_as_the_answer_response",
-        "test_the_same_item_and_seed_draw_the_same_series_every_time",
-        "test_the_same_item_served_twice_is_a_different_instantiation",
         # --- test_content.py. The suite IS swept, because the redaction gate is a disclosure
         # control and the fail-closed load is an integrity one, and both carry register rows. These
         # thirteen are content-CORRECTNESS: does a version resolve, is a hash canonical, is an
@@ -950,19 +939,6 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         # Listed individually rather than exempted by file, deliberately: a new SECURITY test in
         # this suite still fails the sweep until somebody decides about it, which is the whole
         # reason this set exists per-test.
-        "test_a_complete_tree_loads_and_every_item_is_addressable",
-        "test_a_draft_is_loaded_but_never_counted_as_active",
-        "test_a_json_schema_is_emitted_for_every_content_kind",
-        "test_a_reference_to_content_that_is_not_loaded_is_refused",
-        "test_a_schema_failure_names_the_field_path_for_the_author",
-        "test_an_absent_content_root_loads_empty_rather_than_raising",
-        "test_content_status_is_exactly_the_three_the_plan_names",
-        "test_every_loaded_item_carries_a_content_hash_a_run_can_record",
-        "test_redaction_error_is_a_content_error_so_one_except_clause_covers_both",
-        "test_step_ordinals_must_be_a_contiguous_run_from_one",
-        "test_the_hash_is_over_the_canonical_form_not_the_raw_bytes",
-        "test_the_loaded_model_type_matches_the_directory_it_came_from",
-        "test_two_files_claiming_one_version_is_refused",
         # A unit-level half of the nosniff rows, which cite the integration tests.
         "test_a_non_http_scope_passes_through_untouched",
         # Unit-level cases of controls the register cites at SOURCE granularity - the
@@ -1103,6 +1079,94 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_probe_writable_proves_a_usable_directory_with_a_real_write",
         "test_seed_creates_the_snapshot_and_is_idempotent",
         "test_the_write_result_counts_are_measured_inside_the_lock",
+        # --- test_content_package.py. Swept, and three properties carry register rows: the
+        # partial-library refusal, the malformed-file report and the frozen models. The names
+        # below are correctness and provenance rather than boundary controls. Counts, hash
+        # stability, the rated band and the canonical-generator guard protect the TRAINING; the
+        # threshold refusal is a content decision from the flight plan, and its harm is an
+        # operator shown a placeholder figure rather than a disclosure.
+        "test_a_generator_outside_the_canonical_twelve_is_refused",
+        "test_a_populated_local_threshold_file_unlocks_scored_scenarios",
+        "test_a_scored_scenario_is_refused_while_thresholds_are_placeholders",
+        "test_an_item_authored_outside_the_rated_band_is_refused",
+        "test_every_shipped_drill_uses_a_canonical_generator",
+        "test_the_content_hash_is_stable_and_changes_with_the_content",
+        "test_the_drill_rubric_is_present_and_its_rules_carry_operator_facing_reasons",
+        "test_the_package_carries_the_counts_the_handover_declares",
+        "test_the_shipped_package_loads_with_no_errors",
+        # --- test_generators.py. Swept, and one property carries a register row: the wire form
+        # never carrying the derived expected value, which is half the answer-key boundary. The
+        # rest are contract tests on the RENDERERS, read out of product-layouts.json. They
+        # decide whether the trainer is as hard as the job and hold no boundary property: an
+        # inverted magnitude axis is a correctness question, not a disclosure one.
+        "test_a_different_seed_draws_a_different_surface",
+        "test_an_unresolvable_generator_fails_closed",
+        "test_every_product_the_content_references_has_a_registered_renderer",
+        "test_every_shipped_drill_renders",
+        "test_every_surface_carries_a_text_equivalent_of_how_it_reads",
+        "test_every_surface_declares_its_axes_with_units",
+        "test_the_composite_mode_renders_every_product_on_the_board",
+        "test_the_contract_block_still_states_the_requirements_these_tests_check",
+        "test_the_determination_table_column_order_is_initial_final_delta",
+        "test_the_determination_table_marks_the_row_that_is_natural_regression",
+        "test_the_neighbourhood_carries_every_observed_column",
+        "test_the_neighbourhood_header_shows_the_threshold_block_and_the_filters",
+        "test_the_photometry_magnitude_axis_is_inverted",
+        "test_the_probe_mode_resolves_the_product_from_the_stimulus",
+        "test_the_provisional_noise_figures_are_marked_as_provisional",
+        "test_the_relative_motion_panels_use_independent_scales",
+        "test_the_relative_motion_surface_marks_state_changes_distinctly_from_the_track",
+        "test_the_residual_departs_in_the_series_the_params_name",
+        "test_the_residual_scale_is_tight_and_labels_the_time_and_beta_series",
+        "test_the_right_ascension_panel_is_drawn_as_a_staircase",
+        "test_the_same_params_and_seed_draw_the_same_surface_every_time",
+        "test_the_waterfall_is_observation_level_scatter_with_gaps",
+        "test_the_waterfall_time_axis_runs_newest_at_the_bottom",
+        # --- test_drill_loop.py. Swept, and two properties carry register rows: the served
+        # payload carrying no answer key and no derived value, and the run record carrying its
+        # content hash. The rest is loop behaviour protecting the training rather than the
+        # boundary. The idempotency one is the closest call and sits here rather than in the
+        # register because its harm is a rating moved twice, not a disclosure.
+        "test_a_second_submission_returns_the_first_result_rather_than_rescoring",
+        "test_an_unknown_run_id_is_refused",
+        "test_an_unloaded_package_refuses_to_serve_rather_than_inventing_an_item",
+        "test_selection_targets_the_band_just_above_the_operator",
+        "test_the_dashboard_never_reports_a_bare_competency_estimate",
+        "test_the_dashboard_says_identity_does_not_exist_yet",
+        "test_the_manifest_reports_what_is_loaded_and_what_is_not_wired",
+        "test_the_reveal_carries_everything_the_service_withheld",
+        "test_the_same_operator_and_item_draw_the_same_stimulus_until_they_answer",
+        "test_two_operators_on_one_item_get_different_stimuli",
+        # --- test_scoring.py. Swept, and one property carries a register row: the bounded
+        # answer length, which is the denial-of-service surface on a caller-controlled string.
+        # The rest is scoring correctness - exact matching, tolerance, the sentinel refusal, the
+        # fail-closed report of an unwired rule. All protect the SCORE rather than the system,
+        # and a wrong score is a training failure rather than a security one.
+        "test_a_computed_answer_with_no_generator_value_is_refused_not_guessed",
+        "test_a_near_miss_is_refused_rather_than_guessed_in_the_operator_s_favour",
+        "test_a_numeric_answer_is_judged_against_the_tolerance_the_content_states",
+        "test_a_partial_answer_earns_the_credit_the_item_states",
+        "test_a_registered_predicate_makes_a_previously_unimplemented_rule_score",
+        "test_a_rule_cap_is_honoured_from_the_content",
+        "test_a_rule_with_no_predicate_is_reported_rather_than_silently_scoring_zero",
+        "test_an_unrecognised_answer_is_none_and_not_a_reject",
+        "test_every_score_names_the_rule_and_its_award_comes_from_the_content",
+        "test_normalisation_strips_at_most_two_fillers_so_it_cannot_be_made_to_loop",
+        "test_the_drill_rubric_is_fully_implemented",
+        "test_the_reject_list_returns_its_reason_so_a_miss_becomes_a_teachable_moment",
+        "test_the_sentinel_is_never_matched_as_a_literal_string",
+        "test_the_speed_bonus_needs_both_correct_and_inside_the_target",
+        # --- test_progress.py. Swept, and three properties carry register rows: the file mode,
+        # the capped history and the degrade-to-defaults path. The names below are the store's
+        # ordinary behaviour around them: a missing file on first run, multi-operator isolation,
+        # and the spacing and interval arithmetic. The interval one matters a great deal and is
+        # not a security control: it stops a supervisor reading three answers as proof.
+        "test_a_cue_with_no_recorded_due_date_is_due",
+        "test_a_miss_returns_the_spacing_interval_to_the_front",
+        "test_a_missing_progress_file_is_not_an_error",
+        "test_a_perfect_small_sample_still_reports_a_non_zero_interval",
+        "test_an_axis_with_no_attempts_reports_nothing_rather_than_zero",
+        "test_saving_one_operator_preserves_every_other_operator",
     }
 )
 
@@ -3634,6 +3698,39 @@ def test_the_vendored_typeface_digests_match_the_files_on_disk() -> None:
         blob = (fonts / name).read_bytes()
         assert len(blob) == size, f"{name} is {len(blob)} bytes, DIGESTS.md says {size}"
         assert hashlib.sha256(blob).hexdigest() == digest, f"{name} is not the file that was pinned"
+
+
+def test_the_content_validator_runs_as_a_verification_leg() -> None:
+    """The content package's own validator is a leg of the loop, before any code analyser.
+
+    Cited by two rows in `docs/SECURITY.md` that record controls which moved UPSTREAM in V0.24.0:
+    the redaction discipline over authored content, and the strictness that the engine's models
+    deliberately gave up when they adopted `extra="allow"`. Both now rest on this file running, so
+    a change that dropped the leg would silently remove two controls at once.
+
+    Run rather than reimplemented, and excluded from ruff, because it is vendored: it ships inside
+    Ash's package and is the authority on whether the content is valid.
+    """
+    loop = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+    assert "tools/validate_content.py" in loop, "the content validator is not a leg of the loop"
+    assert "--self-test" in loop, "the validator runs without its own self-test"
+    assert loop.index("tools/validate_content.py") < loop.index("-m ruff"), (
+        "the content leg must run BEFORE the analysers: the content is the asset, and ten seconds"
+        " of validation is the cheapest rung that can catch a content fault"
+    )
+    # The loop text and the ruff exclusion both ship. The validator itself does NOT: `tools/` is
+    # excluded from the upload on purpose, so inside the unpacked artefact there is no file to
+    # stat. Same narrow discriminator as `_udl_tool_or_skip`: `tools/` gone AND no checkout is an
+    # artefact and nothing else, and deleting the validator in a repository still fails here.
+    if (ROOT / "tools").exists() or (ROOT / ".git").exists():
+        assert (ROOT / "tools" / "validate_content.py").is_file(), (
+            "the content validator is cited by two register rows and is not on disk"
+        )
+    excluded = _pyproject()["tool"]["ruff"].get("extend-exclude", [])
+    assert "tools/validate_content.py" in excluded, (
+        "the vendored validator must be excluded from format and lint, or every package update"
+        " becomes a merge against a reformatted copy"
+    )
 
 
 def test_the_design_directory_never_reaches_the_upload_or_the_image() -> None:

@@ -1,70 +1,75 @@
-"""Versioned, schema-validated training content: procedures, scenarios, rubrics, traces.
+"""The content package: Ash's authored training library, loaded at runtime and never compiled in.
 
-Flight plan step 5. The content tree is data, not code: a content author edits a procedure's
-steps or thresholds and adds a new procedure WITHOUT a code deployment, which is a line in the
-plan's definition of done.
+**The content is the asset; this application is the delivery mechanism.** 140 drills, 127 cues,
+13 procedures, 12 scenario templates, 67 rubric rules and five expert traces, all validated JSON,
+built from a corpus of 3,124 released reports, nine exercise sources, eleven procedures and two
+years of weekly reporting. If the application goes badly it can be rebuilt. If the content is
+absorbed into code, everything has to be.
 
-**Why pydantic rather than a `jsonschema` runtime dependency.** The plan says "JSON Schema
-validated on load with safe failure". Pydantic 2 is already a runtime dependency, validates
-strictly with `extra="forbid"`, produces author-facing error paths, and EMITS JSON Schema from the
-same models via :func:`json_schemas`. So authors still get a schema artefact to validate against in
-an editor or a pre-commit hook, and the container gains no dependency. One definition, two
-consumers, no drift between the schema authors read and the schema the loader enforces.
-
-**Why JSON rather than YAML.** The plan permits either. JSON is in the standard library, so the
-choice costs nothing and rules out a second parser in the image.
+So nothing in here is a hardcoded scenario, a switch over event types, or a scoring rule expressed
+in Python. What IS code, deliberately: the product generators, the physics core, the scoring
+evaluator and the scheduler. The test that draws the line is whether the count changes when a
+content author does their job. Ten product generators does not. 140 drills does.
 """
 
 from __future__ import annotations
 
 from enlightenment.content.loader import (
-    CONTENT_KINDS,
-    ContentError,
-    ContentLoadResult,
-    ContentStore,
-    RedactionError,
-    content_hash,
-    json_schemas,
+    EXAMPLE_THRESHOLDS,
+    LOCAL_THRESHOLDS,
+    REQUIRED_FILES,
+    ContentPackage,
+    LoadResult,
+    Thresholds,
+    resolve_content_root,
 )
 from enlightenment.content.models import (
-    CATALOGUE_NUMBER_PATTERN,
-    CONTENT_ID_PATTERN,
-    SPARTA_TECHNIQUE_PATTERN,
-    ContentStatus,
-    DrillItem,
-    ExpertTrace,
-    PlotKind,
+    CANONICAL_GENERATORS,
+    COMPOSITION_MODES,
+    MAX_ELO,
+    MIN_ELO,
+    PRODUCT_RENDERERS,
+    Answer,
+    Competency,
+    Cue,
+    Drill,
+    PartialAnswer,
     Procedure,
-    ProcedureStep,
+    Product,
+    RejectAnswer,
+    ResponseFormat,
     Rubric,
-    RubricCriterion,
+    RubricRule,
     ScenarioTemplate,
-    ThresholdCriterion,
-    TraceObservation,
-    TransitionRule,
+    Stimulus,
+    Tolerance,
 )
 
 __all__ = [
-    "CATALOGUE_NUMBER_PATTERN",
-    "CONTENT_ID_PATTERN",
-    "CONTENT_KINDS",
-    "SPARTA_TECHNIQUE_PATTERN",
-    "ContentError",
-    "ContentLoadResult",
-    "ContentStatus",
-    "ContentStore",
-    "DrillItem",
-    "ExpertTrace",
-    "PlotKind",
+    "CANONICAL_GENERATORS",
+    "COMPOSITION_MODES",
+    "EXAMPLE_THRESHOLDS",
+    "LOCAL_THRESHOLDS",
+    "MAX_ELO",
+    "MIN_ELO",
+    "PRODUCT_RENDERERS",
+    "REQUIRED_FILES",
+    "Answer",
+    "Competency",
+    "ContentPackage",
+    "Cue",
+    "Drill",
+    "LoadResult",
+    "PartialAnswer",
     "Procedure",
-    "ProcedureStep",
-    "RedactionError",
+    "Product",
+    "RejectAnswer",
+    "ResponseFormat",
     "Rubric",
-    "RubricCriterion",
+    "RubricRule",
     "ScenarioTemplate",
-    "ThresholdCriterion",
-    "TraceObservation",
-    "TransitionRule",
-    "content_hash",
-    "json_schemas",
+    "Stimulus",
+    "Thresholds",
+    "Tolerance",
+    "resolve_content_root",
 ]

@@ -1,0 +1,3204 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "2.6.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "JCO CT-RPO (15 APR 25)",
+      "JCO CT Orbital Elements, Maneuvers and Orbit Determination (22 DEC 25)",
+      "JCO CT Space Warfare and Separation (29 SEP 25)",
+      "JCO CT Crew Resource Management and Breakup (29 JUL 26)",
+      "JCO CT Predictive Surveillance (28 APR 26)",
+      "JCO CT Launch and xGEO (20 JAN 26)",
+      "DRAFT: JCO vendor product standardization (DOK amends)",
+      "SJ-21 / SJ-25 RPO and Docking Event AAR",
+      "Fusion provider product screens observed 28 Aug 2026",
+      "Operational NOTSO thread supplied 29 Aug 2026",
+      "Live Fly 25-2 and 26-1 after action reports",
+      "Exercise ASTRAL VORTEX, Pacific cell after action report",
+      "JCO NOTSO corpus, 3124 released notifications, 2022 to 2026",
+      "Exercise ASTRAL VORTEX, Meridian advanced operator observations",
+      "JCO Photometry Change procedure",
+      "JCO vendor product standardisation, full document with embedded worked examples",
+      "JCO Weekly Activity Reports, 76 editions",
+      "GEO Direct Ascent Anti-Satellite Weapons Advanced Training Module",
+      "JCO Launch procedure",
+      "platform-library.json",
+      "event-anatomy.json",
+      "JCO Timing Standards, authoritative",
+      "JCO Quick Reference Card",
+      "JCO LEO DA ASAT procedure",
+      "JCO Red Predictive Surveillance procedure",
+      "JCO high rate revisit list structure",
+      "JCO GEO DA ASAT procedure, 2026 operational version",
+      "JCO Changeover procedure",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Cue descriptions are generic patterns. No live object identifiers, no watchlist membership, no tasking values."
+  },
+  "cues": [
+    {
+      "id": "CUE-001",
+      "name": "Residual departure from the zero line",
+      "seen_in": [
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "Observations that were sitting on the zero line begin to depart from it and stay departed.",
+      "means": "The object is no longer where its current orbital state says it should be. Something changed: most often a manoeuvre, sometimes the quality of the fit.",
+      "first_action": "Check epoch age and observation density either side of the departure before calling anything.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-002 propagation drift after an observation gap",
+          "discriminator": "A manoeuvre departs from a well-constrained fit with dense observations either side. Propagation error departs from a starved one."
+        },
+        {
+          "cue_id_or_name": "Single outlying observation",
+          "discriminator": "A manoeuvre is a sustained departure across multiple observations, not one point off the line."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1100,
+      "artefact_ids": [
+        "ART-011",
+        "ART-007"
+      ]
+    },
+    {
+      "id": "CUE-002",
+      "name": "Observation gap preceding a departure",
+      "seen_in": [
+        "PRD-RESIDUAL",
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A stretch of the residual plot with few or no observations, immediately followed by observations off the zero line.",
+      "means": "The state degraded across the gap with nothing to constrain it. The departure may be accumulated propagation error rather than the object moving.",
+      "first_action": "Request observations covering the gap before assessing. State the gap as a limitation in any report.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-001 genuine manoeuvre",
+          "discriminator": "Look at observation density, not just the departure. Dense either side means the object moved; starved means the fit decayed."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1350,
+      "artefact_ids": [
+        "ART-011"
+      ]
+    },
+    {
+      "id": "CUE-003",
+      "name": "Out-of-plane residual signature",
+      "seen_in": [
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "The departure appears in the out-of-plane residual component rather than the in-plane one.",
+      "means": "A cross-track burn, which changes inclination or RAAN. This is the expensive kind of manoeuvre and therefore the deliberate kind.",
+      "first_action": "Note that this is fuel expensive and treat it as an indicator of intent. Request the DC table and check whether it is a plane match in progress.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "In-plane departure",
+          "discriminator": "In-plane points to in-track or radial and affects period and eccentricity. Out-of-plane affects inclination or RAAN."
+        },
+        {
+          "cue_id_or_name": "Solve noise on inclination",
+          "discriminator": "A real cross-track burn produces a sustained inclination or RAAN change in the DC table; noise does not persist into the new solve."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1400,
+      "artefact_ids": [
+        "ART-013"
+      ]
+    },
+    {
+      "id": "CUE-004",
+      "name": "In-track burn element signature",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "The Delta column shows a change in period, eccentricity and possibly argument of perigee, with inclination and RAAN essentially unchanged.",
+      "means": "An in-track boost or de-boost. The object has changed its average altitude and will now drift relative to where it was.",
+      "first_action": "Determine drift direction and rate. A boost raises average altitude and drifts backward; a de-boost lowers it and drifts forward.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-005 radial burn signature",
+          "discriminator": "A radial burn changes eccentricity and argument of perigee but leaves the period alone. If the period moved, it was in-track."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1200
+    },
+    {
+      "id": "CUE-005",
+      "name": "Radial burn element signature",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-TRIC"
+      ],
+      "presentation": "A change in eccentricity and argument of perigee with the period essentially unchanged. On a TRIC plot, a closed relative ellipse appears.",
+      "means": "A radial burn. From a circular orbit this creates an apogee or perigee a quarter orbit away and establishes a natural motion circumnavigation in the relative frame.",
+      "first_action": "Read the TRIC to establish which side of the target the circumnavigation sits on, and whether it is being maintained or terminated.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-004 in-track burn signature",
+          "discriminator": "Period. Radial leaves it alone, in-track moves it."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-006",
+      "name": "Natural motion circumnavigation on a TRIC plot",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "A closed ellipse around the origin traced once per orbit, with the long axis along in-track at roughly twice the radial extent, repeating unchanged.",
+      "means": "The relative motion is being maintained by orbital mechanics alone, with no further fuel spent. The object is circumnavigating naturally.",
+      "first_action": "Classify as NMC and check across multiple revolutions whether it is stable or drifting.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-007 drifting NMC",
+          "discriminator": "Plot enough revolutions. A drifting NMC walks along the in-track axis; a stable one returns to the same place."
+        },
+        {
+          "cue_id_or_name": "CUE-008 forced motion",
+          "discriminator": "Forced motion changes shape at discrete points. Natural motion repeats identically."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-007",
+      "name": "Drifting natural motion circumnavigation",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "An ellipse that repeats but progressively walks along the in-track axis across successive revolutions.",
+      "means": "The object is circumnavigating while also drifting past. It is in close proximity for several revolutions but is not stationed there.",
+      "first_action": "Assess whether the drift rate is slowing. A slowing drift near an asset of interest indicates an intent to stabilise, which is a materially more serious assessment.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-006 stable NMC",
+          "discriminator": "Number of revolutions plotted. A short window makes a drifting NMC look stable."
+        },
+        {
+          "cue_id_or_name": "CUE-016 series of close approaches",
+          "discriminator": "These are the same phenomenon seen two ways; a series of close approaches over three to five revolutions appears as a drifting NMC on a TRIC."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1500,
+      "artefact_ids": [
+        "ART-007"
+      ]
+    },
+    {
+      "id": "CUE-008",
+      "name": "Forced motion circumnavigation",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "Relative motion geometry that changes at discrete points rather than repeating, often shown as a change of colour at each change.",
+      "means": "The object is actively manoeuvring to shape the relationship. Each discontinuity is a burn and fuel is being spent continuously.",
+      "first_action": "Count the manoeuvres and assess cumulative delta-v. Sustained forced motion is an expensive and therefore highly deliberate posture.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-006 natural motion",
+          "discriminator": "Natural motion repeats identically and costs nothing. Forced motion changes and costs continuously."
+        },
+        {
+          "cue_id_or_name": "Poor orbit solve",
+          "discriminator": "A bad solve produces noisy scatter, not clean geometry changes at discrete points."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-009",
+      "name": "Precision plane match",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-COCO"
+      ],
+      "presentation": "Inclination and RAAN deltas between two objects that have closed to a very small value and stayed there.",
+      "means": "A deliberate precision match. It is fuel expensive, requires specific knowledge of the target orbit, and places the object in immediate proximity capability.",
+      "first_action": "Notify higher headquarters promptly and consider maximising tasking. This is a recognised strong indicator of a prelude to further activity.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Coincidental plane similarity",
+          "discriminator": "Coincidence does not hold. Watch whether the deltas are being actively maintained across days, which costs fuel and proves intent."
+        },
+        {
+          "cue_id_or_name": "CUE-010 natural RAAN closure",
+          "discriminator": "A natural closure comes from an altitude difference precessing the plane slowly. A precision match arrives via cross-track burns and holds."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-010",
+      "name": "Slow RAAN closure via altitude",
+      "seen_in": [
+        "PRD-COCO"
+      ],
+      "presentation": "A large current RAAN delta accompanied by a raDot value that is closing it, with a finite days-to-closure figure.",
+      "means": "The object is using an altitude difference to precess its plane toward the target's over an extended timeline, at a fraction of the fuel cost of a direct plane change.",
+      "first_action": "Read days to RAAN closure and treat it as a countdown. This is the patient, cheap route to a plane match and it is easy to miss because nothing dramatic happens on any given day.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-009 precision plane match",
+          "discriminator": "Timeline and cost. Natural precession is slow and cheap; a direct match is immediate and expensive."
+        },
+        {
+          "cue_id_or_name": "Sun synchronous station keeping",
+          "discriminator": "Check whether the precession rate is simply maintaining a sun synchronous relationship rather than converging on another object."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-011",
+      "name": "Drift stop on a waterfall",
+      "seen_in": [
+        "PRD-WATERFALL"
+      ],
+      "presentation": "A sloped trace that flattens to vertical and stays there.",
+      "means": "The object has stopped drifting and parked at a longitude. Where it parked is the whole question.",
+      "first_action": "Establish the parked longitude and assess what is nearby, including whether it is a registered slot the object does not control.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Reduced drift rate",
+          "discriminator": "A slowed drift still slopes. Look across enough days to distinguish slow from stopped."
+        },
+        {
+          "cue_id_or_name": "Plot inverted by provider",
+          "discriminator": "Confirm the newest data is at the bottom before reading any drift direction at all."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1050
+    },
+    {
+      "id": "CUE-012",
+      "name": "Slope change on a waterfall",
+      "seen_in": [
+        "PRD-WATERFALL"
+      ],
+      "presentation": "A trace whose gradient changes at a point in time.",
+      "means": "The object manoeuvred. Its average altitude changed and therefore its drift rate and direction changed.",
+      "first_action": "Bracket the time of the change and request a residual plot and DC table covering it.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Provider plot artefact at a data seam",
+          "discriminator": "A genuine slope change persists across the seam. Check whether the change coincides with a data source boundary."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1150
+    },
+    {
+      "id": "CUE-013",
+      "name": "Converging traces on a waterfall",
+      "seen_in": [
+        "PRD-WATERFALL"
+      ],
+      "presentation": "Two traces approaching the same longitude.",
+      "means": "A longitudinal crossing is coming. Whether it matters depends entirely on the plane relationship, which the waterfall does not show.",
+      "first_action": "Request a neighbourhood constrained by inclination and RAAN. Longitude convergence alone is not proximity.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuine close approach",
+          "discriminator": "Objects can share a longitude and be widely separated in plane, passing quickly with no opportunity to linger."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-014",
+      "name": "Perch geometry",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object holding a standoff distance from another with most orbital elements matched, sustained over an extended period.",
+      "means": "A deliberate collection or observation posture. From a plane-matched perch, transition to closer operations requires minimal fuel.",
+      "first_action": "Assess how cheaply the object could close from here, and raise tasking accordingly. The danger of a perch is how quickly it can become something else.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Coincidental co-location",
+          "discriminator": "A perch is maintained. Coincidence drifts apart without intervention."
+        },
+        {
+          "cue_id_or_name": "CUE-007 drifting NMC",
+          "discriminator": "A perch holds a standoff; a drifting NMC is still moving past."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-015",
+      "name": "Photometric step change",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A discrete step in visual magnitude, before and after which the curve is otherwise stable.",
+      "means": "A configuration change. A deployment, a separation, or a change in the reflecting surface presented.",
+      "first_action": "Before assessing the object, check the phase angles at which the change was observed, request the sensor view, and request the hemisphere view.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Phase angle effect",
+          "discriminator": "Compare like phase angle with like. A genuine change persists when phase angle is controlled."
+        },
+        {
+          "cue_id_or_name": "Single sensor artefact",
+          "discriminator": "Request the sensor view. A change on one sensor only is a sensor story."
+        },
+        {
+          "cue_id_or_name": "Hemispheric bias",
+          "discriminator": "Request the hemisphere view. A change that disappears when hemispheres are separated was never on the object."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1600,
+      "artefact_ids": [
+        "ART-004",
+        "ART-005",
+        "ART-006"
+      ]
+    },
+    {
+      "id": "CUE-016",
+      "name": "Series of close approaches",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A drifting object slows its approach so that it remains in the vicinity of another across several successive revolutions rather than passing once.",
+      "means": "Not parked, but no longer simply transiting. This is a deliberate loitering posture and is reportable.",
+      "first_action": "Classify as a series of close approaches rather than a single close approach, and report on that basis.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Single close approach",
+          "discriminator": "Count revolutions in proximity. One pass is a close approach; several is a series and means something different."
+        },
+        {
+          "cue_id_or_name": "CUE-007 drifting NMC",
+          "discriminator": "These describe the same behaviour from the neighbourhood and TRIC perspectives respectively."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-017",
+      "name": "Multiple headcount of two",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An attempt to track a single object returns two.",
+      "means": "The branch point for three different procedures. Which one depends on whether the parent is red or blue, and on whether the release was intentional.",
+      "first_action": "Establish whether the parent is red or blue. Red goes to separation; blue goes to UCT discovery. Confirm the count across more than one pass first.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-018 headcount of three or more",
+          "discriminator": "Count determines the initial branch, but intent can override it. A headcount of two from an anomalous parent is a breakup."
+        },
+        {
+          "cue_id_or_name": "Tracking artefact",
+          "discriminator": "Confirm across passes before committing. A false headcount sends the whole response down the wrong procedure."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03"
+      ],
+      "difficulty_seed": 1200,
+      "artefact_ids": [
+        "ART-015"
+      ]
+    },
+    {
+      "id": "CUE-018",
+      "name": "Multiple headcount of three or more",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-GABBARD"
+      ],
+      "presentation": "A tracking attempt returns three or more objects where one was expected.",
+      "means": "Start breakup processing. Later evidence may reclassify it, but the count sets the initial path.",
+      "first_action": "Enter breakup processing and treat the early count as a floor rather than a total.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Multiple payload deployment",
+          "discriminator": "Intent and context. An expected deployment during launch processing is not a breakup."
+        },
+        {
+          "cue_id_or_name": "CUE-017 headcount of two",
+          "discriminator": "Count sets the default branch; intent can override it in either direction."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03"
+      ],
+      "difficulty_seed": 1150
+    },
+    {
+      "id": "CUE-019",
+      "name": "Large photometric expansion",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "Visual magnitude increases substantially and suddenly, with the spread of observations widening at the same time.",
+      "means": "Many new reflecting surfaces. This is the photometric signature of a fragmentation and it brackets the time of the event.",
+      "first_action": "Enter breakup processing, secure optical collection, and use the expansion to bracket the event time.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-015 photometric step change",
+          "discriminator": "A step change is discrete and modest and the curve remains tight. A breakup expands the spread as well as the magnitude."
+        },
+        {
+          "cue_id_or_name": "Glint",
+          "discriminator": "A glint is a brief specular spike that returns to baseline. A breakup does not return."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-020",
+      "name": "Element sets converging between two objects",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-TRIC"
+      ],
+      "presentation": "Two objects' element sets become progressively more similar and eventually identical.",
+      "means": "Either the objects have genuinely merged, or the tracking has cross-tagged them and is now solving one orbit for both.",
+      "first_action": "Ask whether a second phenomenology still separates them before concluding anything. Converged element sets alone do not establish a merge.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuine docking",
+          "discriminator": "Sustained single-object detection across phenomenologies, not just optical, with consistent signatures over time."
+        },
+        {
+          "cue_id_or_name": "Optical cross-tagging",
+          "discriminator": "Radio frequency signatures often remain distinguishable when optical has merged, particularly across different bands."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1750,
+      "artefact_ids": [
+        "ART-002"
+      ]
+    },
+    {
+      "id": "CUE-021",
+      "name": "Stale epoch in a neighbourhood",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An epoch column entry noticeably older than the others, alongside a close approach distance that looks alarming.",
+      "means": "The distance was computed by propagating an old state and carries far more uncertainty than its precision suggests.",
+      "first_action": "Request an updated state before escalating. Read the epoch column before the distance column, every time.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuine close approach",
+          "discriminator": "A current state gives a distance you can act on. A stale one gives a hypothesis."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1100,
+      "artefact_ids": [
+        "ART-007"
+      ]
+    },
+    {
+      "id": "CUE-022",
+      "name": "Cessation of an established station-keeping pattern",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "An object that had been performing regular station-keeping stops doing so, and begins to drift.",
+      "means": "A change of state in the object: fuel exhaustion, a fault, a change of mission, or a deliberate repositioning. The absence of the expected burn is the signal.",
+      "first_action": "Treat the cessation itself as the finding and assess where the resulting drift takes the object.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Collection gap",
+          "discriminator": "Confirm observations exist across the period. An absence of data is not an absence of burns."
+        },
+        {
+          "cue_id_or_name": "Normal variation in cadence",
+          "discriminator": "Compare against several cycles of the object's own history, not one."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1650,
+      "artefact_ids": [
+        "ART-013",
+        "ART-003"
+      ]
+    },
+    {
+      "id": "CUE-023",
+      "name": "Cross-track wobble in the relative frame",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "A side-to-side offset occurring once per orbit, with the maximum offset a quarter orbit from the burn point and a further offset on the opposite side three quarters of the way round.",
+      "means": "A cross-track manoeuvre has been performed, changing inclination or RAAN.",
+      "first_action": "Identify the burn point from the geometry and check whether it occurred at the equator, implying an inclination change, or at extreme latitude, implying a RAAN change.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Out of plane solve noise",
+          "discriminator": "A real cross-track burn produces a clean once-per-orbit signature with the offsets in the expected places."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-024",
+      "name": "Corkscrew drift geometry",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "A combination of a circumnavigation with a cross-track offset and an in-track drift, producing a helical relative path along the belt.",
+      "means": "The object is drifting along the belt while remaining offset out of plane, which reduces collision risk as it passes through the operating altitude.",
+      "first_action": "Recognise it as a deliberate transit technique rather than an approach, then check whether the drift is slowing near any asset of interest.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-007 drifting NMC",
+          "discriminator": "A corkscrew includes the deliberate cross-track offset. A drifting NMC need not."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-025",
+      "name": "Absence of expected detections",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE",
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "Passes are scheduled and expected, but no observations arrive.",
+      "means": "Ambiguous by design. It could be loss of the object, or it could be solar exclusion, eclipse, sensor unavailability, or regime limits on sensitivity.",
+      "first_action": "Establish the collection geometry before drawing any conclusion. An absence during a predicted exclusion is not evidence of anything.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuine loss of custody",
+          "discriminator": "Rule out exclusion, eclipse and sensor availability first. Only then is absence informative."
+        },
+        {
+          "cue_id_or_name": "xGEO sensitivity limit",
+          "discriminator": "At xGEO an object may be too dim or too slow to be detected at all, and may be filtered as a background star."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1450,
+      "artefact_ids": [
+        "ART-003",
+        "ART-014"
+      ]
+    },
+    {
+      "id": "CUE-026",
+      "name": "Impossible derived rate",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A drift rate, delta-v or altitude change of a magnitude that could not physically occur.",
+      "means": "An arithmetic or data artefact, most commonly two states with a near-zero epoch separation producing a divergent quotient.",
+      "first_action": "Reject the number and check the epoch separation of the inputs. A physically impossible value is an artefact until proven otherwise.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuine large manoeuvre",
+          "discriminator": "Sanity-check against the regime. Real burns produce changes consistent with the platform and the altitude."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1250,
+      "artefact_ids": [
+        "ART-001"
+      ]
+    },
+    {
+      "id": "CUE-027",
+      "name": "Unranked object inside the threat geometry",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object present in an unfiltered neighbourhood and absent from the ranked view, sitting inside the geometry of interest.",
+      "means": "Something relevant that the standard filtered product would have hidden. Objects acquire relevance before they acquire a rank.",
+      "first_action": "Include it in the assessment and request a rank change. Always ask what filter produced the product in front of you.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuinely irrelevant object",
+          "discriminator": "Assess the geometry, not the rank. Rank reflects a prior decision, not current relevance."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1500,
+      "artefact_ids": [
+        "ART-008"
+      ]
+    },
+    {
+      "id": "CUE-028",
+      "name": "Ascending object with apogee near the belt",
+      "seen_in": [
+        "PRD-EPHEMERIS",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "A state vector or ephemeris for an object climbing on a high-altitude ballistic profile with apogee at or near geosynchronous altitude.",
+      "means": "A possible direct ascent event against the belt, with hours of warning available if processed immediately.",
+      "first_action": "Determine whether apogee is at or below belt altitude, or above it, because that decides which longitude the target assessment runs against.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Geosynchronous transfer orbit insertion",
+          "discriminator": "A transfer orbit circularises at apogee. A ballistic profile does not, and returns."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-029",
+      "name": "Observations exist but no state is published",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A search for an orbital state returns nothing, while providers are visibly tracking something.",
+      "means": "The object is being tracked as an uncorrelated track with observations published but no state. The data exists but not through the route being used.",
+      "first_action": "Search for observations rather than states, and ask providers directly whether they hold tracks.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Genuinely untracked object",
+          "discriminator": "Absence of a state is not absence of data. Ask before concluding."
+        }
+      ],
+      "procedure_id": "PROC-UCT",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-01"
+      ],
+      "difficulty_seed": 1650,
+      "artefact_ids": [
+        "ART-009"
+      ]
+    },
+    {
+      "id": "CUE-030",
+      "name": "Parked in a slot the object does not control",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object stops drift and parks at a longitude registered to another operator.",
+      "means": "Physically permissible, but transmitting from an unregistered slot would breach the coordination framework. An object that parks there and transmits is likely not doing what its stated mission claims.",
+      "first_action": "Establish whether the slot is registered to another party and whether the object is transmitting, then report the combination.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Ordinary drift stop",
+          "discriminator": "The registration status of the longitude is what makes this different, not the parking itself."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-031",
+      "name": "Residual manoeuvre marker with period and inclination deltas",
+      "seen_in": [
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "A vertical marker on the residual plot at a candidate manoeuvre time, with a tooltip giving the period change and the inclination change at that instant.",
+      "means": "The product has already bracketed a candidate manoeuvre and handed you the two numbers that name the burn direction.",
+      "first_action": "Read both deltas together. A period change with essentially no inclination change is in-plane. A meaningful inclination change is cross-track and therefore expensive.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A state update marker",
+          "discriminator": "A state change marker means the solution was refitted. A manoeuvre marker asserts the object moved. They are different marks and mean different things."
+        },
+        {
+          "cue_id_or_name": "CUE-001 residual departure",
+          "discriminator": "The departure is the evidence; the marker is the product's interpretation of it. Check the departure supports the marker rather than trusting the marker alone."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1200
+    },
+    {
+      "id": "CUE-032",
+      "name": "Time association versus beta association residuals",
+      "seen_in": [
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "Residual series are labelled by association type, with time association and beta association plotted together.",
+      "means": "Time association carries the in-plane story and beta association carries the out-of-plane story. Which one departs names the burn family.",
+      "first_action": "Identify which association departs before looking at any numbers. That single read narrows the burn direction immediately.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Both associations departing",
+          "discriminator": "A combined burn has components in more than one direction. Do not force it into a single category."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-033",
+      "name": "Delta-v column on a neighbourhood",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A delta-v column giving the cost for each listed object to reach the primary from its current geometry.",
+      "means": "The cost of opportunity, computed for you. A low value means an object could close cheaply and therefore quickly.",
+      "first_action": "Sort or scan by delta-v and treat the cheapest objects as the ones worth watching, regardless of their current distance.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Current distance",
+          "discriminator": "A distant object with a cheap closure cost is a more serious proposition than a nearby one that would need an expensive burn."
+        },
+        {
+          "cue_id_or_name": "The provider Score column",
+          "discriminator": "Score is a provider ranking that blends factors. Delta-v is a physical quantity. Do not let the score substitute for your own assessment."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-034",
+      "name": "Days to longitude crossing countdown",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A column giving the number of days until each object crosses the primary's longitude.",
+      "means": "A countdown to the moment an object of interest is co-located with something. It is the belt analogue of days to RAAN closure.",
+      "first_action": "Read it as a tasking schedule. Objects with a short countdown drive the tasking window for the day.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Absolute minimum distance time",
+          "discriminator": "Longitude crossing and closest approach are not the same instant, because plane separation means the objects need not be close when longitudes match."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-035",
+      "name": "Only HRR filter toggle left enabled",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A filter toggle in the product header, one click away, whose enabled state is easy to overlook while reading rows.",
+      "means": "The table in front of you is showing ranked objects only, and anything unranked has been removed from view.",
+      "first_action": "Check the toggle state and the threshold block before reading a single row.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A genuinely sparse neighbourhood",
+          "discriminator": "Turn the filter off. If rows appear, the sparseness was the filter."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-05"
+      ],
+      "difficulty_seed": 1150,
+      "artefact_ids": [
+        "ART-008"
+      ]
+    },
+    {
+      "id": "CUE-036",
+      "name": "State change marker on a TRIC panel",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "Marks along the relative motion track indicating where the reference or the secondary object's state was updated.",
+      "means": "The orbit solution was refitted at that point. It does not by itself mean the object manoeuvred.",
+      "first_action": "Do not count state change markers as manoeuvres. Check the residuals for the same period before treating any of them as a burn.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "CUE-008 forced motion manoeuvre points",
+          "discriminator": "Forced motion changes the geometry. A state update changes the solution while the geometry continues smoothly."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1600,
+      "artefact_ids": [
+        "ART-016"
+      ]
+    },
+    {
+      "id": "CUE-037",
+      "name": "Departure from the object's own phase angle brightness curve",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "On magnitude against solar equatorial phase angle, one interval of observations sits off the curve traced by earlier intervals at the same phase angles.",
+      "means": "Something about the object changed, because the comparison is already controlled for viewing geometry.",
+      "first_action": "Compare intervals at matched phase angle rather than comparing across the plot. Then request the sensor or hemisphere view to eliminate the remaining benign causes.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Reading the plot as a time series",
+          "discriminator": "The horizontal axis is phase angle, not time. Movement left to right is geometry changing, not the object changing."
+        },
+        {
+          "cue_id_or_name": "Expected asymmetry either side of zero phase angle",
+          "discriminator": "Many objects show an asymmetric curve as a matter of course. Compare against the object's own established shape."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1700,
+      "artefact_ids": [
+        "ART-006",
+        "ART-004",
+        "ART-005"
+      ]
+    },
+    {
+      "id": "CUE-038",
+      "name": "Drifting streak in dense waterfall scatter",
+      "seen_in": [
+        "PRD-WATERFALL"
+      ],
+      "presentation": "A diagonal streak of same-coloured observations picked out from a field of many thousands of observations across the belt.",
+      "means": "One object is drifting through a populated region. The skill is separating it from the surrounding density.",
+      "first_action": "Follow the colour, not the shape. Then read the gradient for drift rate and look for any change in gradient.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A populated longitude region",
+          "discriminator": "Dense clusters are where objects live and carry no meaning. Structure that moves across longitude with time is the signal."
+        },
+        {
+          "cue_id_or_name": "A collection gap",
+          "discriminator": "Empty horizontal bands are gaps in collection, not empty sky."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01"
+      ],
+      "difficulty_seed": 1400,
+      "artefact_ids": [
+        "ART-003"
+      ]
+    },
+    {
+      "id": "CUE-039",
+      "name": "Mean anomaly jump between consecutive states",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "The mean anomaly changes substantially between two consecutive states while the other elements move only slightly.",
+      "means": "The object's position within its orbit has shifted relative to where the previous solution placed it, which supports a separation or a significant in-track event.",
+      "first_action": "Compare the mean anomaly of the parent against that of any new object, because the difference is the in-track separation expressed in angle.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Normal progression of mean anomaly",
+          "discriminator": "Mean anomaly advances continuously as a matter of course. Compare like epoch with like, and look at the change relative to what propagation predicts."
+        },
+        {
+          "cue_id_or_name": "A cross-tag between two nearby objects",
+          "discriminator": "A cross-tag can produce an apparent jump. Check whether the tracking has swapped identities."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-040",
+      "name": "Register shift from possible to verified",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-RESIDUAL"
+      ],
+      "presentation": "The evidence has firmed to the point where the assessment can move from a possible event to a verified one.",
+      "means": "The reporting obligation changes, and so does what the recipient is expected to do about it.",
+      "first_action": "Ask what specifically changed to justify the shift. If nothing did, keep the possible register and publish again anyway.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Growing personal confidence without new evidence",
+          "discriminator": "Familiarity is not evidence. Name the observation that moved the assessment."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-041",
+      "name": "Time-critical indication with an incomplete picture",
+      "seen_in": [
+        "PRD-EPHEMERIS",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "An indication of a time-critical event arrives. Products are still being generated, the target list is not final, and the assessment is hours from complete.",
+      "means": "The reporting clock started when the indication arrived, not when your assessment finishes.",
+      "first_action": "Publish a one-sentence alert now. State what has been detected and that further analysis will follow. Then do the analysis.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An event that genuinely needs assessment before reporting",
+          "discriminator": "Ask what the recipient does with the information. If they need planning time, they need the alert now. If nothing changes for them either way, take the time."
+        },
+        {
+          "cue_id_or_name": "Waiting for a target list",
+          "discriminator": "A sentence saying the target list will follow is a complete and correct report. Waiting for the list is not."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1200
+    },
+    {
+      "id": "CUE-042",
+      "name": "Analysis complete but unpublished",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "The assessment is made and the products are in the thread, but nothing has been released.",
+      "means": "Warning time is being spent on your comfort. The value of the assessment decays from the moment it exists.",
+      "first_action": "Publish. If something is still unresolved, say what it is in the report rather than holding for it.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An assessment that is genuinely not yet supportable",
+          "discriminator": "If you can say it out loud to a colleague with a confidence level, you can publish it with a confidence level."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-043",
+      "name": "Relative motion product posted showing circumnavigation entry",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A provider posts a relative motion product or a close approach entry indicating an object has entered a circumnavigation around another.",
+      "means": "This is the trigger for the proximity operations procedure. It is not a prompt to discuss whether it might be.",
+      "first_action": "Transition the thread and start the procedure immediately. Assess afterwards.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A close approach with no sustained geometry",
+          "discriminator": "Transition anyway. Backing out of a procedure costs minutes; entering it late has repeatedly cost hours."
+        },
+        {
+          "cue_id_or_name": "An indication raised on the previous shift",
+          "discriminator": "An indication that arrived before you did is still your trigger. Check what the previous shift left untransitioned."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-044",
+      "name": "Mandatory notification step not yet made",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "The analysis is progressing and the required notification calls have not been made.",
+      "means": "A step that has been skipped repeatedly across exercise periods, and one that no amount of good analysis substitutes for.",
+      "first_action": "Make the call. It is not contingent on the assessment being finished.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Waiting until there is something worth saying",
+          "discriminator": "The notification and the assessment are separate obligations with separate timings."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1100
+    },
+    {
+      "id": "CUE-045",
+      "name": "Parent and child object ambiguity in reporting",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "Two related objects are in play, one having originated from the other, and the report or verbal call refers to them without distinguishing which is which.",
+      "means": "The recipient cannot act on it. Ambiguity in a time-critical call is the same as no call.",
+      "first_action": "State the identifier and the role for each object explicitly, every time, including in verbal reporting.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Obvious from context",
+          "discriminator": "It is obvious to you because you have the thread. The recipient has one sentence."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-06"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-046",
+      "name": "Unfilled placeholder in a draft report",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A report ready for release still contains a template placeholder, a missing standard verbiage block, or a reference to something not included.",
+      "means": "It will be published as-is unless someone reads it.",
+      "first_action": "Read the draft once end to end before release, specifically looking for placeholders and dangling references.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An intentional not-applicable entry",
+          "discriminator": "A not-applicable entry is a stated value. A placeholder is an unfilled field. They look different."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-06"
+      ],
+      "difficulty_seed": 1150
+    },
+    {
+      "id": "CUE-047",
+      "name": "Relevant detail earlier in the thread",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A provider posted a relevant detail early in the thread and the report being drafted addresses only the most recent development.",
+      "means": "Known information is about to be omitted from a report, which is a worse failure than not knowing it.",
+      "first_action": "Sweep the thread before writing, not only your own working notes.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Superseded information",
+          "discriminator": "Superseded is different from earlier. An earlier close approach that has not happened yet is not superseded."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-06"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-048",
+      "name": "Concurrent thread load beyond working capacity",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "More open events than can be actively worked, with new indications continuing to arrive.",
+      "means": "Something will be dropped. The only question is whether you choose what, or whether it chooses itself.",
+      "first_action": "Triage explicitly into active, monitoring and ready to close. Name what you are not working and say so.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Working the newest thread",
+          "discriminator": "Recency is not priority. The oldest untouched ripe thread is usually the most costly one to leave."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-08",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-049",
+      "name": "Ageing untouched thread",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An open event with no activity for a sustained period while other events are being worked.",
+      "means": "Either it is finished and should be closed, or it is ripe and is being missed. Both are actionable and neither is the status quo.",
+      "first_action": "Sweep for untouched threads on a fixed cadence rather than when you happen to notice.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A thread deliberately in a monitoring state",
+          "discriminator": "Deliberate monitoring is a stated status. Silence is not a status."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-08"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-050",
+      "name": "Unactioned indication sitting in a monitored channel",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "An indication has been posted and no one has picked it up.",
+      "means": "The clock has been running since it was posted, not since you saw it.",
+      "first_action": "Sweep monitored channels on a cadence at the start of and throughout a shift, rather than waiting to be cued.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Being tasked",
+          "discriminator": "Waiting to be tasked is the failure being trained out. Once cued, this cell performs well; the gap is entirely in the noticing."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-08"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-051",
+      "name": "Proximity sitting just inside or just outside the reporting threshold",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-TRIC"
+      ],
+      "presentation": "An object holding a position near an asset at a separation close to the reporting threshold, with no clear-cut answer either way.",
+      "means": "A judgement call, and one the cell has explicitly recorded as ambiguous.",
+      "first_action": "Reason it out loud with the threshold, the trend and the asset's importance, state a recommendation with a confidence level, and escalate the judgement rather than absorbing it silently.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A clear-cut case either way",
+          "discriminator": "If it were clear you would not be deliberating. The deliberation is the signal that this needs to be raised, not resolved alone."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1750
+    },
+    {
+      "id": "CUE-052",
+      "name": "Event crossing a procedure boundary",
+      "seen_in": [
+        "PRD-WATERFALL"
+      ],
+      "presentation": "An event that began under one procedure develops into another, for example a direct ascent event producing a fragmentation.",
+      "means": "The transition itself is a procedural step with its own actions, and it is where the cell has repeatedly hesitated.",
+      "first_action": "Execute the transition deliberately, and state which procedure now governs and what carries across.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A new unrelated event",
+          "discriminator": "Ask whether the second event is a consequence of the first. If so it is a transition, and the history matters."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-053",
+      "name": "Consequence observed before its cause",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "Evidence of an outcome arrives before any indication of the event that produced it, for example fragmentation observed before a launch notification.",
+      "means": "Reality does not deliver evidence in the order the procedure describes it.",
+      "first_action": "Reason backwards from the effect to its likely cause and start the procedure that governs the effect. Do not wait for the expected trigger to arrive first.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An unrelated event",
+          "discriminator": "Check timing and geometry for a plausible causal link before deciding they are unrelated."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-054",
+      "name": "Event arriving in a non-standard shape",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An event handed over or presented in a form the procedure does not describe, such as several objects combined into a single thread.",
+      "means": "A judgement is required about how to proceed. Stalling is the failure, not deviating.",
+      "first_action": "Decide how to proceed, state the decision and the reasoning, and continue. Split or consolidate on the basis of what serves clarity for the recipient.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A procedure violation",
+          "discriminator": "Handling a non-standard case with stated judgement is correct practice. Stopping because the procedure does not cover it is not."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-055",
+      "name": "Gap in a received handover",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A handover brief that omits an open event, its current state, or its next expected action.",
+      "means": "You have inherited a gap and it is now yours. The previous shift may have been fatigued at the end of a long period.",
+      "first_action": "Identify what is missing and close the gap actively rather than proceeding on what you were given.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A complete handover",
+          "discriminator": "Check the open thread list against what was briefed. The difference is the gap."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-08"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-056",
+      "name": "Observation implausible for the sensor that reported it",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "An observation whose parameters are inconsistent with the stated phenomenology, such as a radar detection at a range no contracted radar could achieve.",
+      "means": "A data integrity problem: contamination, a pipeline fault, or a mislabelled source.",
+      "first_action": "Reject the observation and raise it. Check whether other data from the same source is affected before using any of it.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A genuine capability you were unaware of",
+          "discriminator": "Check the known performance envelope of the sensor type. If the observation requires a capability that does not exist in the network, the data is wrong."
+        }
+      ],
+      "procedure_id": "PROC-UCT",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1550,
+      "artefact_ids": [
+        "ART-019"
+      ]
+    },
+    {
+      "id": "CUE-057",
+      "name": "Procedure encountered for the first time under tempo",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An event requires a procedure the operator has never applied, or one that has changed materially since they last used it.",
+      "means": "Understanding is being built at the same moment it is being applied, which is the most expensive possible time to build it.",
+      "first_action": "Say so. State that this is unfamiliar, work from the procedure text explicitly rather than from memory, and flag any ambiguity rather than resolving it silently.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A procedure you know but have not used recently",
+          "discriminator": "Different problem. Recall decay is fixed by rehearsal; genuine unfamiliarity needs the text open and an explicit statement that you are working from it."
+        },
+        {
+          "cue_id_or_name": "A non-standard instance of a familiar procedure",
+          "discriminator": "If you know the procedure and the event does not fit it, that is a judgement call. If you do not know the procedure, that is a training gap and it needs naming."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-058",
+      "name": "Same object under two identifier representations",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "Two products refer to what appears to be the same object using different identifier forms, one alpha-numeric and one an all-numeric expansion of it, and in some products the numeric form appears in the name field instead.",
+      "means": "One object, two representations. Treating them as two objects, or entering the wrong form, is the failure.",
+      "first_action": "Confirm they are the same object by comparing states and epochs, then carry both designators in the report. The convention is to provide both rather than to choose between them.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Two genuinely distinct objects",
+          "discriminator": "Compare states and epochs. Two representations of one object have identical orbital elements; two objects do not."
+        },
+        {
+          "cue_id_or_name": "A name rather than an identifier",
+          "discriminator": "Some products place the numeric representation in the name field while retaining the alpha-numeric form as the identifier. Read which field you are looking at."
+        },
+        {
+          "cue_id_or_name": "Choosing whichever form the product used",
+          "discriminator": "Neither form alone is correct where both exist. Both go in, so the reader can cross-reference identifier against element set."
+        }
+      ],
+      "procedure_id": "PROC-UCT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1500,
+      "artefact_ids": [
+        "ART-020"
+      ]
+    },
+    {
+      "id": "CUE-059",
+      "name": "New object in the immediate vicinity of a red asset",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A newly identified object detected separating from, or immediately adjacent to, a red asset.",
+      "means": "This is a separation first. Discovery processing may follow if the object remains unidentified, but it does not come first.",
+      "first_action": "Enter separation processing. Do not skip to discovery because the object is unidentified; unidentified is the normal condition at this point.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Uncorrelated track discovery",
+          "discriminator": "Discovery applies where there is no identified parent. An object separating from a known red asset has one, and the separation procedure carries assessment considerations that discovery does not."
+        },
+        {
+          "cue_id_or_name": "A headcount of two on a blue parent",
+          "discriminator": "The state of behaviour of the parent decides the branch. Blue parent goes to discovery; red parent goes to separation."
+        }
+      ],
+      "procedure_id": "PROC-SEP",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-060",
+      "name": "Indication supplied in a format the procedure does not use",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "An external partner supplies a launch location or other parameter in a different unit or notation from the one the procedure requires.",
+      "means": "A conversion step sits between you and the procedure, at the moment when seconds matter most.",
+      "first_action": "Convert deliberately and have the result checked before it enters any product. Do not convert in your head under tempo.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A value already in the required format",
+          "discriminator": "Read the notation before assuming. Minutes and seconds against decimal degrees look similar at a glance and differ by a large distance on the ground."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-LEO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1300,
+      "artefact_ids": [
+        "ART-021"
+      ]
+    },
+    {
+      "id": "CUE-061",
+      "name": "Hedge without a confidence level",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A draft report uses appears to, possibly, likely or believed to, with no confidence level anywhere.",
+      "means": "Doubt has been signalled but not sized. The recipient cannot tell whether to act.",
+      "first_action": "Attach a confidence level to the hedge, or replace the hedge with a statement of what is known and what is not.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Appropriate hedging",
+          "discriminator": "Hedging is correct; unsized hedging is not. The fix is to add the size, not to remove the hedge."
+        },
+        {
+          "cue_id_or_name": "The possible versus verified register",
+          "discriminator": "The register is a coarse two-state signal. A confidence level is finer and they are not substitutes."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-062",
+      "name": "Quantity without its qualifier",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A delta-v without units, a drift rate without an east or west direction, or an orbital element listed as a bare value where the reader cannot tell a change from an absolute.",
+      "means": "A number whose meaning depends on a convention the reader has to guess. It will still be used.",
+      "first_action": "Add units to every quantity, direction to every rate, and the word Change to every delta.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A value obvious from context",
+          "discriminator": "It is obvious to you. An apogee figure that might be a change or a value has two readings differing by thousands of kilometres."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1200
+    },
+    {
+      "id": "CUE-063",
+      "name": "State quoted without provenance",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "An element set appended to a report with no provider named, no time it was current, or neither.",
+      "means": "The state cannot be assessed for staleness or reconciled against another source, so nobody downstream can safely use it.",
+      "first_action": "Add the time the state was current and the provider, and annotate confidence inline where the state is weak.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A state whose epoch is in the element set itself",
+          "discriminator": "The element set epoch is when the solution is valid. The time it was current and who produced it are separate facts and both are needed."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-064",
+      "name": "Observation with no consequence stated",
+      "seen_in": [
+        "PRD-PHOTOMETRY",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A report that says accurately what happened and never says whether it is normal for this object or what it means for anyone.",
+      "means": "The analytical burden has been transferred to a recipient with less context than the author.",
+      "first_action": "Answer three questions in order: what happened, is this normal for this object, what does it mean. A statement of no impact is a complete answer.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A report where there genuinely is no impact",
+          "discriminator": "Then say so explicitly. Silence and no impact look identical to the reader and only one of them is an assessment."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-065",
+      "name": "Report level mismatched to the moment",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "A fully assessed report being drafted at the moment a one-sentence alert is what the situation requires, or a bare observation issued when the picture is mature and a full assessment is due.",
+      "means": "The right content at the wrong time is the wrong content.",
+      "first_action": "Decide which level the moment warrants before writing. Early in a time-critical event that is a holding alert; later it is a calibrated assessment.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Always aiming for the fullest report",
+          "discriminator": "A fully calibrated report issued forty minutes late is worse than a one-sentence alert at four minutes."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-066",
+      "name": "Provider post carrying more than one reportable fact",
+      "seen_in": [
+        "PRD-RESIDUAL",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A single provider post that both verifies a previously reported possible event and flags a new one.",
+      "means": "Two reportable facts, not one. The verification closes an open loop and the new item opens another.",
+      "first_action": "Read the whole post and the thread above it before writing. Report both, and be explicit that the earlier possible is now verified.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A single new event",
+          "discriminator": "Check whether anything in the post resolves something already reported. A verification is a reportable fact in its own right and leaving it unstated leaves the recipient holding a possible that is no longer possible."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-067",
+      "name": "Products already provided before the thread was opened",
+      "seen_in": [
+        "PRD-RESIDUAL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A provider has already flagged the event and posted supporting products, and the standard first step of the procedure is to request that product set.",
+      "means": "The procedural step has already been satisfied by someone else. Executing it anyway costs the provider time they do not have and costs you minutes.",
+      "first_action": "Establish what is actually present, then ask only for what is genuinely missing.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A genuinely empty thread",
+          "discriminator": "Look above the thread as well as in it. Products are frequently posted elsewhere before a thread exists."
+        },
+        {
+          "cue_id_or_name": "Following the procedure correctly",
+          "discriminator": "The step is request the products you need, not paste the request. It was always a judgement."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-068",
+      "name": "Outstanding question with no named product to answer it",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "Something is unresolved and the impulse is to ask the provider for an update.",
+      "means": "A generic request signals activity without producing anything. It also cannot be tracked by a provider working many concurrent threads.",
+      "first_action": "Name the specific product, say what it will resolve, and direct it to the right party. If speed matters, ask verbally.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Legitimate proactivity",
+          "discriminator": "Proactivity is knowing what to ask for. If you cannot name the product, work out what question you are trying to answer first."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-05"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-069",
+      "name": "Event already past the stage you are working",
+      "seen_in": [
+        "PRD-EPHEMERIS",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "Preparing a product appropriate to an earlier stage of an event that has already moved on, for example a pre-launch product after launch has occurred.",
+      "means": "Effort is going into something the event has overtaken, and the current stage is unattended.",
+      "first_action": "Establish where the event actually sits before choosing an action, especially when joining an event already in progress.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Correctly working an earlier stage",
+          "discriminator": "Check the most recent post in the thread and the clock, not the procedure's first step."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-LEO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-070",
+      "name": "Procedure step whose purpose is unclear to you",
+      "seen_in": [
+        "PRD-GABBARD"
+      ],
+      "presentation": "A required step that seems unnecessary in this case, for example attaching debris states where the debris came from a friendly object.",
+      "means": "You are about to skip a step on reasoning that has not been checked against why the step exists.",
+      "first_action": "Recall the purpose of the step before deciding it does not apply. Debris is tracked because of what it will hit, not because of what it came from.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A step that genuinely does not apply",
+          "discriminator": "Some do not. The test is whether you can state the step's purpose and show this case falls outside it. If you cannot state the purpose, you cannot make that judgement."
+        }
+      ],
+      "procedure_id": "PROC-BRK",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-071",
+      "name": "Provider phrasing with a technical meaning",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "Provider commentary using a term that also has an everyday meaning, such as visibility, which in context refers to observation geometry rather than weather.",
+      "means": "Read in the everyday sense it will be passed on wrongly, and the error compounds as it travels.",
+      "first_action": "Read provider commentary in its operational sense, and ask the provider directly where a term is ambiguous.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "The everyday meaning",
+          "discriminator": "Ask what would have to be true for the everyday reading to make sense in this product. Usually nothing would."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-072",
+      "name": "Degraded condition that is not yet blocking",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A connectivity, tooling or access problem that has not yet prevented anything because nothing has been required yet.",
+      "means": "It will block something, and it will do so at the moment you are needed.",
+      "first_action": "Declare it now, at the start of the shift or the moment it appears, not when it stops you.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A problem not worth raising",
+          "discriminator": "If it would affect your ability to act on a thread, it is worth raising before you are asked to act on one."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-08"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-073",
+      "name": "Solved manoeuvre inconsistent with a single burn",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-TRIC"
+      ],
+      "presentation": "A provider summary reporting one large manoeuvre, where the element changes do not sit comfortably with a single burn, or the relative motion does not match the stated solution.",
+      "means": "Two or more manoeuvres may have been solved as one. Under high manoeuvre rates, solvers struggle once burns sum together.",
+      "first_action": "Check the element signature against the stated burn. Where they disagree, challenge the summary and ask whether the period contains more than one manoeuvre.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A genuinely large single manoeuvre",
+          "discriminator": "A single burn produces a coherent element signature. A summed pair often produces a combination that no single burn direction explains."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1750,
+      "artefact_ids": [
+        "ART-022"
+      ]
+    },
+    {
+      "id": "CUE-074",
+      "name": "Display convention that varies between deliveries",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A product whose colour assignment, axis orientation or identifier representation is not fixed between providers or between deliveries.",
+      "means": "The same visual can mean opposite things depending on who produced it.",
+      "first_action": "Read the legend, the axis labels and the field definitions before reading the data. Every time, including on a product you have read a hundred times.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A convention you are confident about",
+          "discriminator": "Confidence is what makes this dangerous. Three separate conventions have now been recorded as varying: relative motion plot colours, waterfall time direction and identifier representation."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-075",
+      "name": "New feature in a light curve",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A peak, sharp change with hard angles, or other feature present in the current curve that was not there before at the same phase angles.",
+      "means": "One of the five recognised change signatures. Something about the object's configuration or attitude presents differently.",
+      "first_action": "Name which of the five signatures it is, then run the three scepticism checks before assessing it as real.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Normal scatter",
+          "discriminator": "A new feature is repeatable across observations at the same phase angle. Scatter is not."
+        },
+        {
+          "cue_id_or_name": "A feature visible because coverage improved",
+          "discriminator": "Check whether a source that observed the object previously also sees it now. A feature that appears only when a new sensor joins is a coverage story."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1500,
+      "artefact_ids": [
+        "ART-005",
+        "ART-004"
+      ]
+    },
+    {
+      "id": "CUE-076",
+      "name": "Stable curve becoming a diffuse trend",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A curve that previously held a repeatable shape now showing a diffuse slope, or a complete trend change within a single period.",
+      "means": "Two of the five change signatures. Loss of a stable signature often indicates loss of stable attitude.",
+      "first_action": "Assess whether the object has begun tumbling or has changed attitude control state, and check for a co-timed manoeuvre.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Sparse collection making a curve look diffuse",
+          "discriminator": "Count the observations. A genuinely diffuse curve has density; a sparse one has gaps."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-077",
+      "name": "Object subject to a reporting suppression rule",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An event on an object that is either on an exclusion list, or is a friendly high rate revisit object.",
+      "means": "The reporting decision is already made and it is not yours. Either no event is opened at all, or no report is issued without specific direction.",
+      "first_action": "Check the exclusion rules before beginning any analysis, and carry the decision in the thread title so it travels with the event.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An ordinary reportable event",
+          "discriminator": "The check comes first, before analysis, because analysis does not change the answer and a report issued in error cannot be withdrawn cleanly."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-078",
+      "name": "Close approach as a candidate cause, with lighting",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A close approach falling inside the window of a photometric change.",
+      "means": "A candidate cause, but only if the geometry allowed one object to see or be seen.",
+      "first_action": "Establish whether lighting was favourable, meaning sunlight positively illuminating one satellite without blinding the other. State time, distance and lighting together.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Coincidence in time",
+          "discriminator": "Timing alone is not a mechanism. Lighting is what converts a co-timed close approach into a plausible explanation."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-079",
+      "name": "Catalogue number above the five-digit range",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "An object whose catalogue number exceeds the five-digit range, carrying both a numeric identifier and an Alpha-5 designator in which the leading digit is replaced by an alphanumeric character and the remaining four digits are unchanged.",
+      "means": "One object, two designators, and the report must carry both so they can be cross-referenced.",
+      "first_action": "Provide both forms together in the report, so a reader can reconcile the identifier against the element set.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Two separate objects",
+          "discriminator": "The last four digits are identical between the two forms. That is the tell."
+        },
+        {
+          "cue_id_or_name": "An arbitrary choice between forms",
+          "discriminator": "It is not a choice. Both go in, which is what resolves the inconsistency seen across provider products."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1400,
+      "artefact_ids": [
+        "ART-020"
+      ]
+    },
+    {
+      "id": "CUE-080",
+      "name": "Event that did not stand up",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "An event was opened and reported, and subsequent analysis shows it was not a valid event.",
+      "means": "A cancellation is owed. The recipients of the original are still holding it.",
+      "first_action": "Cancel the event and issue a report saying it did not meet event criteria, rather than closing quietly.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Ordinary closure",
+          "discriminator": "Closure ends an event that happened. Cancellation withdraws one that did not, and the recipient needs telling."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-081",
+      "name": "Sustained close approach possible",
+      "seen_in": [
+        "PRD-COCO"
+      ],
+      "presentation": "A true or false column on the coplanar product stating whether a sustained close approach between two objects is possible.",
+      "means": "A direct answer to whether this object could linger near the primary rather than merely pass it. Lingering is what enables everything that matters.",
+      "first_action": "Read this column before the deltas. Where it is true, the pair warrants attention regardless of current separation.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "The association status band",
+          "discriminator": "They are independent. An object can sit in a close band with sustained approach false, and a more distant one can be true. Read both."
+        },
+        {
+          "cue_id_or_name": "Current distance",
+          "discriminator": "Distance is now; sustained approach possible is about what the geometry permits."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-082",
+      "name": "Association status band and its definition",
+      "seen_in": [
+        "PRD-COCO"
+      ],
+      "presentation": "An association status of same, close, nearby or none, computed against four thresholds per band set in the tool header.",
+      "means": "A graded coplanarity judgement, and the grade depends entirely on what the bands were configured as.",
+      "first_action": "Read the band definitions in the header before reading a single status value. The same pair can be close under one configuration and none under another.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An absolute measure of coplanarity",
+          "discriminator": "It is a banding of four continuous quantities against configurable thresholds, not a physical property."
+        },
+        {
+          "cue_id_or_name": "The self-comparison row",
+          "discriminator": "The primary compared against itself shows same with zero deltas. It is a sanity anchor, not a duplicate."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-083",
+      "name": "Days to right ascension zero",
+      "seen_in": [
+        "PRD-COCO"
+      ],
+      "presentation": "A column giving days until the right ascension difference between two objects reaches zero, alongside the rate of change.",
+      "means": "A countdown to natural plane alignment, achieved by patience and altitude rather than by fuel.",
+      "first_action": "Read it as a countdown, and read the rate alongside it to confirm the planes are closing rather than opening.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A large current RAAN delta implying safety",
+          "discriminator": "Current separation says nothing about convergence. A finite countdown with a closing rate is the finding."
+        },
+        {
+          "cue_id_or_name": "Zero in the column meaning aligned now",
+          "discriminator": "Zero can also mean no convergence is occurring. Check the rate to tell the two apart."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-084",
+      "name": "Light curve display mode as the scepticism check",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A display mode selector on the light curve offering colouring by interval, by sensor hemisphere, and by sensor.",
+      "means": "The three photometric scepticism checks are display modes on the screen already in front of you, not products to be requested.",
+      "first_action": "Switch modes before assessing any change as real. Hemisphere for bias, sensor for single-source abnormality, interval for change at matched phase angle.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Needing to request a supporting view",
+          "discriminator": "Sometimes you do, for an extended window. The hemisphere and sensor checks are already there and take seconds."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1300,
+      "artefact_ids": [
+        "ART-004",
+        "ART-005"
+      ]
+    },
+    {
+      "id": "CUE-085",
+      "name": "Collection geography on the pass schedule",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "Sensor rows labelled by provider and site with country identifiers, spanning a timeline of pass windows.",
+      "means": "The geographic and hemispheric spread of collection, which decides how much independent corroboration is actually available.",
+      "first_action": "Locate the present on the timeline, then read how many independent sites and which hemispheres cover the period of interest.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A dense schedule meaning good coverage",
+          "discriminator": "Many passes from sites in one hemisphere is one failure mode wearing several names. Count independent geography, not bars."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-086",
+      "name": "Launch inside a favourable seeker lighting window",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "A launch whose projected intercept time falls in a solar phase angle band where the target would be illuminated while the launch site is not.",
+      "means": "The lighting conditions an electro-optical seeker would need. A weak indicator alone, and a sharpening one alongside other cues.",
+      "first_action": "Check the lighting geometry at projected intercept and state it in the assessment.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Lighting as a collection consideration",
+          "discriminator": "It is both. Collection lighting affects what you can see; seeker lighting affects what the adversary can hit, and the second is the one nobody checks."
+        },
+        {
+          "cue_id_or_name": "A full daytime launch",
+          "discriminator": "A full daytime launch is a poor fit for an electro-optical engagement and correspondingly less likely to be one."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-087",
+      "name": "Threatened asset asking whether to move now",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "An asset has been warned and its operator is ready to manoeuvre, well before the intercept.",
+      "means": "Moving early is worse than moving late here. The ascending vehicle may receive in-flight updates, and an early mover is simply retargeted.",
+      "first_action": "Advise preparation rather than movement: reallocate users, select an evasion plan, upload commands, warm the thrusters. Movement comes after the terminal adjustment.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Ordinary conjunction avoidance",
+          "discriminator": "Debris does not retarget. A guided vehicle receiving updates does, which inverts the usual instinct to move as early as possible."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1800
+    },
+    {
+      "id": "CUE-088",
+      "name": "Distance-maintaining behaviour across cycles",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object that manoeuvres ahead of projected close approaches, each time increasing the resulting distance, repeatedly over months.",
+      "means": "Deliberate separation keeping. The manoeuvre is triggered by the approach and is benign in intent.",
+      "first_action": "Compare against prior cycles before assessing. Where the behaviour is established, assess as avoidance within pattern of life and say so.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A manoeuvre of intent",
+          "discriminator": "Check the effect. Avoidance increases the resulting distance; a manoeuvre of intent closes it."
+        },
+        {
+          "cue_id_or_name": "Routine station-keeping",
+          "discriminator": "Avoidance is triggered by a specific upcoming approach rather than by a calendar cadence."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-089",
+      "name": "Coordinated activity across a launch group",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-COCO"
+      ],
+      "presentation": "Objects launched together performing similar manoeuvres within days of each other, with the effect of matching planes with the same set of foreign objects.",
+      "means": "A campaign rather than a series of individual events. The first mover was the indicator and the rest are confirmation.",
+      "first_action": "Read across the launch group rather than down a single thread, and check whether any group member has already done this.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Independent manoeuvres",
+          "discriminator": "Look for a common launch, similar magnitudes, and a common set of objects being matched. Coincidence does not produce all three."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1750
+    },
+    {
+      "id": "CUE-090",
+      "name": "First observed instance of a behaviour",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "An object with a long and limited behavioural history does something it has never been observed doing, often at small magnitude.",
+      "means": "Novelty is the finding. Significance here comes from the history, not from the size.",
+      "first_action": "State explicitly that it is the first observed instance, then assess the resulting geometry.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A small routine manoeuvre",
+          "discriminator": "Small and routine are different claims. Check the history before dismissing on magnitude."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-091",
+      "name": "Return to pattern of life",
+      "seen_in": [
+        "PRD-PHOTOMETRY"
+      ],
+      "presentation": "A signature that had departed from the object's established curve returns to it, often within about a day.",
+      "means": "A reportable event in its own right, and evidence about the original change, because a transient departure and a permanent one mean different things.",
+      "first_action": "Report the return explicitly and use its transience to reassess the original.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Closing the event quietly",
+          "discriminator": "The recipient of the original report is still holding it. The return closes their loop, not just yours."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-092",
+      "name": "Launch time moved after the nominal was rotated",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "The expected launch time changes after a nominal has already been rotated and distributed.",
+      "means": "The nominal is now wrong in plane. Launch time determines RAAN, so a stale rotation is right in size and wrong in the sky.",
+      "first_action": "Re-rotate to the new time, redistribute, and re-run the in-plane or apogee assessment because the at-risk set has changed too.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A small time slip not worth re-rotating",
+          "discriminator": "There is no small slip. RAAN moves continuously with launch time, and a nominal that looks approximately right sends collection to the wrong part of the sky."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-093",
+      "name": "Candidate track obtained before payload separation",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A first candidate track on a launch, with separation not yet occurred and identification not yet possible.",
+      "means": "Enough to report. The procedure states that a report should be distributed as soon as a candidate track is obtained, even prior to payload separation.",
+      "first_action": "Publish now. Identification and refinement follow in later reports.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Waiting for separation so the report can name the payload",
+          "discriminator": "Timely awareness is the purpose. A named payload in a late report is worth less than an unnamed one on time."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-094",
+      "name": "No track on the expected passes",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "Repeated passes against the nominal return nothing.",
+      "means": "Either the object is not there, or the nominal is wrong. These look identical from the collection side.",
+      "first_action": "After the permitted attempts, reassess the nominal before concluding anything about the launch itself.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A failed launch",
+          "discriminator": "A nominal wrong in plane produces exactly this picture. Check the rotation and the assumed profile before assessing failure."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-095",
+      "name": "Object in a parking or transfer orbit",
+      "seen_in": [
+        "PRD-EPHEMERIS",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "A newly launched object in low orbit whose intended destination is a higher regime.",
+      "means": "It has not arrived. The transfer may take weeks and the reportable outcome is where it ends up.",
+      "first_action": "State the current orbit and the intended destination separately, and keep the event open across the transfer.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An object that has reached its operational orbit",
+          "discriminator": "Compare the current orbit against the stated mission. A communications payload sitting in low orbit has not finished."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-096",
+      "name": "Tasking rank due to step down",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A newly catalogued object has been held at an elevated tasking rank for the defined period and that period has elapsed.",
+      "means": "Collection capacity is tied up on an object that no longer needs it, and something else is going without.",
+      "first_action": "Step the rank down per the profile for the object's threat status, regime and type.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An object that still warrants elevated tasking",
+          "discriminator": "The profile sets a duration. Extending beyond it is a decision that should be taken deliberately rather than by omission."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1250
+    },
+    {
+      "id": "CUE-097",
+      "name": "Indication originating outside the organisation",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "The basis for a report comes from an external source rather than from internal observation.",
+      "means": "The report's opening frame must change to attribute it, rather than presenting external information as internal assessment.",
+      "first_action": "Attribute the source explicitly in the opening rather than using the standard internal observation frame.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Corroborated internal observation",
+          "discriminator": "If the internal picture does not independently support it, the source belongs in the opening sentence."
+        }
+      ],
+      "procedure_id": "PROC-LAUNCH",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-098",
+      "name": "Behaviour that does not fit the assumed platform class",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-WATERFALL"
+      ],
+      "presentation": "An object catalogued or assumed to be one class behaving in a way that class cannot, such as a spent upper stage manoeuvring.",
+      "means": "Either the classification is wrong or the object is not what it appears. Both are findings.",
+      "first_action": "Say which of the two you think it is and why, rather than quietly adjusting your assumption.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An unusual but possible behaviour for the class",
+          "discriminator": "Use the cannot list. An object that manoeuvres is not derelict, whatever the catalogue says."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-099",
+      "name": "Approach profile shared by servicing and attack",
+      "seen_in": [
+        "PRD-TRIC"
+      ],
+      "presentation": "A staged, deliberate closure to contact, indistinguishable by geometry from either a servicing operation or a co-orbital attack.",
+      "means": "Capability is observable and intent is not. This is the clearest case in the domain where the two must be reported separately.",
+      "first_action": "Report the observation and the demonstrated capability, and state plainly that intent is not observable from the geometry.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Assuming benign intent because the operator says it is servicing",
+          "discriminator": "A stated mission is publicly available information, hedged and separate from the observation."
+        },
+        {
+          "cue_id_or_name": "Assuming hostile intent because the target is friendly",
+          "discriminator": "Same geometry, same conclusion: capability yes, intent unobservable."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1800
+    },
+    {
+      "id": "CUE-100",
+      "name": "Outlier within a constellation",
+      "seen_in": [
+        "PRD-PHOTOMETRY",
+        "PRD-COCO"
+      ],
+      "presentation": "One member of a constellation behaving or appearing unlike its siblings.",
+      "means": "Consistency across a constellation is high, so an outlier is genuinely notable where an isolated object's variation would not be.",
+      "first_action": "Compare against sibling members rather than against a general baseline, then establish whether the outlier is a member at all.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Normal variation",
+          "discriminator": "Constellation members are near-identical by design. The comparison population is what makes small differences meaningful."
+        }
+      ],
+      "procedure_id": "PROC-PHOT",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-101",
+      "name": "Event assessed without stating what it enables",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-TRIC"
+      ],
+      "presentation": "A complete and accurate account of what happened, with nothing said about what the object can now do that it could not before.",
+      "means": "The report has stopped one step short of the point. An event matters because of the options it creates.",
+      "first_action": "State what the new geometry or configuration enables, how cheaply and how quickly, and what it has foreclosed.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A complete report",
+          "discriminator": "Complete on the observation is not complete on the assessment. Ask what a recipient would do differently having read it."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-102",
+      "name": "Event assessed without naming who is affected",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An assessment with no statement of whose situation has changed, including no statement that nobody's has.",
+      "means": "The reason the recipient opened the message has gone unanswered.",
+      "first_action": "Name the affected objects, operators or missions and how they are affected. Where nobody is, say so explicitly.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Nobody being affected",
+          "discriminator": "Then say that. Silence and no impact read identically and only one of them is an assessment."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-06"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-103",
+      "name": "Which leg of the timing standard governs",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "An event is running and provider products have arrived, or have not yet arrived.",
+      "means": "The reporting deadline is the earlier of two clocks: 60 minutes from the initial indication, or 30 minutes from the last provider product. Fast delivery tightens your window rather than relaxing it.",
+      "first_action": "Compute both deadlines and work to the earlier. Recompute when a further product arrives.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Assuming the 60 minute leg",
+          "discriminator": "If products arrived at ten minutes, the deadline is forty, not sixty. Working the wrong leg loses twenty minutes without anyone noticing."
+        },
+        {
+          "cue_id_or_name": "Daily crew operations tasks",
+          "discriminator": "Predictive surveillance, logging, tasking and searches carry no official timing standard. Do not invent one."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-104",
+      "name": "Manoeuvre against station-keeping by period change",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A period change of a given magnitude, with or without a plane change, on an object in a known regime.",
+      "means": "The regime sets the threshold that separates a manoeuvre of interest from routine station-keeping. Below it is station-keeping; above it, or with a meaningful plane change, it is a manoeuvre.",
+      "first_action": "Apply the threshold for the regime, then read across to the object's rank to establish whether the report is written, verbal, both, or none.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Applying one threshold across regimes",
+          "discriminator": "The thresholds differ by an order of magnitude between regimes. A period change that is routine in one is a manoeuvre in another."
+        },
+        {
+          "cue_id_or_name": "Ignoring the plane change leg",
+          "discriminator": "A plane change at or above the threshold qualifies regardless of period change. Either leg is sufficient."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-105",
+      "name": "Reporting mode set by rank, not by event",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A qualifying event on an object whose tasking rank determines what form of report is owed.",
+      "means": "The same event produces a written report and a verbal call on a high-ranked object, a verbal call alone on a mid-ranked one, and nothing at all on a low-ranked one.",
+      "first_action": "Establish the object's rank before deciding what to produce. The event tells you whether to report; the rank tells you how.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Reporting everything in writing",
+          "discriminator": "Over-reporting erodes the channel. Some qualifying events warrant a verbal call only, and some warrant nothing."
+        },
+        {
+          "cue_id_or_name": "Reporting nothing because the object is low-ranked",
+          "discriminator": "Rank governs the mode, not whether the event happened. A manoeuvre of interest on a low-ranked object may still warrant a written report depending on regime."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-106",
+      "name": "Days to plane closure crossing a condition threshold",
+      "seen_in": [
+        "PRD-COCO",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object using right ascension drift to close on a friendly high reportable object, with a computable number of days to closure.",
+      "means": "An escalation ladder rather than a single judgement. Each threshold crossed raises both the reporting obligation and the tasking rank.",
+      "first_action": "Compute days to closure and apply the ladder. Crossing a threshold is itself the trigger, and it happens without anything visibly changing on any given day.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A large current plane separation implying no urgency",
+          "discriminator": "The ladder runs on days to closure, not on current separation. A wide separation closing steadily crosses the threshold on schedule."
+        },
+        {
+          "cue_id_or_name": "Waiting for the object to arrive",
+          "discriminator": "The escalation exists so that tasking is raised before arrival rather than after."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-107",
+      "name": "Passive radio frequency tasking at capacity",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A new object warrants passive radio frequency collection, and both providers are at their contracted slot limits.",
+      "means": "A zero-sum trade. Adding this object means dropping another, and that is a decision with a consequence rather than an administrative step.",
+      "first_action": "Establish which provider can track the object at all given its bands, then identify the lowest priority object currently tasked and escalate the swap decision.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Assuming collection is elastic",
+          "discriminator": "It is contracted in fixed slots. Every addition is a subtraction somewhere else."
+        },
+        {
+          "cue_id_or_name": "Dropping the oldest tasking",
+          "discriminator": "Priority, not age. An object tasked for months may still outrank a new arrival."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-108",
+      "name": "Merged pair manoeuvring as one",
+      "seen_in": [
+        "PRD-TRIC",
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "Two objects previously assessed as merged now manoeuvre together, departing from the element set of either.",
+      "means": "Capture. One object is manoeuvring the other, and the pair is being relocated.",
+      "first_action": "Report as capture rather than as a merge or a manoeuvre. This is a materially different assessment and the language matters.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A merge",
+          "discriminator": "A merge is proximity so close the objects cannot be resolved. Capture is the merged pair moving as a single body under control."
+        },
+        {
+          "cue_id_or_name": "Cross-tagging",
+          "discriminator": "Cross-tagging produces an apparent merge from a tracking limitation. A captured pair departs the original element set, which no tracking artefact does."
+        }
+      ],
+      "procedure_id": "PROC-RPO",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1700,
+      "artefact_ids": [
+        "ART-002"
+      ]
+    },
+    {
+      "id": "CUE-109",
+      "name": "Known Object, tracked but not catalogued",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-COCO"
+      ],
+      "presentation": "An object appearing in products under an analyst number or provider designation rather than a catalogue number, labelled differently across providers.",
+      "means": "A tracked object known to analysts with no catalogue entry. It is treated as friendly and requires a stability assessment, and its tasking is not raised.",
+      "first_action": "Treat as a friendly object, perform a stability assessment, and do not increase its tasking.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An uncorrelated track",
+          "discriminator": "A Known Object is tracked and understood; it simply has no catalogue entry. An uncorrelated track has not yet been resolved to an object at all."
+        },
+        {
+          "cue_id_or_name": "An unranked object to be skipped",
+          "discriminator": "Unranked objects are not processed, but Known Objects are the explicit exception."
+        },
+        {
+          "cue_id_or_name": "The same object under two provider labels",
+          "discriminator": "Providers label these differently. Compare states before concluding there are two."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-110",
+      "name": "Object approaching a longitudinal bound",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object with established longitude bounds drifting within a small margin of one of them.",
+      "means": "A turn-around is coming, and a turn-around is where proximity operations happen because the object slows and reverses near whatever is there.",
+      "first_action": "Raise tasking until the turn is complete, and post a potential activity alert. Watch for proximity operations at the turn rather than after it.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Ordinary drift",
+          "discriminator": "Drift matters differently near a bound. The object is about to change behaviour and the bound predicts when."
+        },
+        {
+          "cue_id_or_name": "A drift stop",
+          "discriminator": "A turn-around reverses direction; a drift stop parks. Both slow first, so watch what follows the slowing."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-111",
+      "name": "Anticipated manoeuvre from pattern of life",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A close approach forecast inside the distance at which this object class habitually manoeuvres to increase separation.",
+      "means": "The object is likely to manoeuvre, and saying so before it happens is more useful than reporting it afterwards.",
+      "first_action": "Post a potential activity alert naming the object, the approach and the expected behaviour. This is a forecast, not an event.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A reportable event",
+          "discriminator": "Nothing has happened yet. An alert anticipates; a report records."
+        },
+        {
+          "cue_id_or_name": "A threat indication",
+          "discriminator": "The expected manoeuvre increases separation. Anticipating benign behaviour is still worth stating, because its absence would then be the finding."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-07"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-112",
+      "name": "Drifting object passing close, without slowing",
+      "seen_in": [
+        "PRD-WATERFALL",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A drifting object with a close approach inside the usual criteria, and no reduction in drift rate.",
+      "means": "A transit rather than an approach. A drifting object passes through many close approaches and almost none of them mean anything.",
+      "first_action": "Do not raise the rank. Watch the drift rate instead, because a decrease is what would change the assessment.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An object preparing to park",
+          "discriminator": "Decreasing drift is the signal, not proximity. Proximity without slowing is geometry."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-113",
+      "name": "Friendly asset manoeuvring into exposure",
+      "seen_in": [
+        "PRD-DC-TABLE",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A friendly asset performs a manoeuvre, and the resulting geometry places it within collection or close approach range of a red object.",
+      "means": "We have moved our own asset into someone else's reach. The event is ours rather than theirs, and it is not reported outward.",
+      "first_action": "Open a do-not-report thread, hold it for a day to gather observations, and confirm the asset is clear.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A red manoeuvre creating proximity",
+          "discriminator": "Who moved. The analysis is similar and the reporting is entirely different."
+        },
+        {
+          "cue_id_or_name": "Nothing to do because the asset is friendly",
+          "discriminator": "Exposure is exposure regardless of who created it. The thread exists so the asset is watched until it is clear."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-114",
+      "name": "Qualifying plane change that is a RAAN flip station keep",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A plane change at or above the notification criterion, on an object with a routine station-keeping cadence.",
+      "means": "It may be a RAAN flip station keep, in which case it is processed as station-keeping despite meeting the manoeuvre criterion.",
+      "first_action": "Assess whether the change is associated with a RAAN flip station keep before classifying it as a manoeuvre of interest.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A deliberate plane change",
+          "discriminator": "Compare against the object's station-keeping history. A flip recurs on a cadence; a deliberate change does not."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1700
+    },
+    {
+      "id": "CUE-115",
+      "name": "Rank read as threat level",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-COCO"
+      ],
+      "presentation": "A neighbourhood row carrying a rank badge, on an object whose state of behaviour is not immediately obvious.",
+      "means": "Rank expresses the attention an object warrants, not whether it is hostile. At the middle ranks roughly half the population is friendly.",
+      "first_action": "Read the state of behaviour separately from the rank. Neither implies the other.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Assuming a high rank means red",
+          "discriminator": "At the highest standing rank the population is entirely red, but at the middle ranks it is close to an even split, and the lowest rank is dominated by retired and proliferated objects."
+        },
+        {
+          "cue_id_or_name": "Assuming a low rank means unimportant",
+          "discriminator": "Low rank means low routine attention. An event can elevate any object temporarily."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02"
+      ],
+      "difficulty_seed": 1300
+    },
+    {
+      "id": "CUE-116",
+      "name": "Temporary elevation without a step-down",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE",
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An object sitting at a temporary elevated rank after the event that justified it has closed.",
+      "means": "Collection capacity is tied up. The elevation was an action with a defined end, not a reclassification.",
+      "first_action": "Return the object to its standing rank, or extend deliberately with a stated reason.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An object whose standing rank is genuinely high",
+          "discriminator": "The standing list runs from the middle ranks downward. The top two ranks are elevations and always have an end."
+        }
+      ],
+      "procedure_id": "PROC-PS",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-117",
+      "name": "At-risk object identified before separation",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD",
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "An initial target assessment identifies a friendly object inside the crossing band, before any kill vehicle has separated.",
+      "means": "The object is named in the report and its state is not. Withholding the state early denies precision to anyone reading who should not have it.",
+      "first_action": "Report the object. Do not include its state until after separation and an initial orbit determination.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Reporting the full picture as a courtesy",
+          "discriminator": "Completeness is not the goal at this phase. The operator needs to know they are at risk; nobody needs their state published while an engagement is still being aimed."
+        },
+        {
+          "cue_id_or_name": "Withholding the object as well",
+          "discriminator": "The object is named. It is only the state that is held back."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1750
+    },
+    {
+      "id": "CUE-118",
+      "name": "Verbal notification carrying a longitude window",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "A verbal notification to operations centres on a developing direct ascent event.",
+      "means": "The verbal call carries the affected longitude window, not the individual target names. The written report carries the names.",
+      "first_action": "Give the longitude range. Names go in the written product.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Giving the same content on both channels",
+          "discriminator": "A deliberate asymmetry. The verbal notification travels faster and less controllably, so it carries the window rather than the names."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-06"
+      ],
+      "difficulty_seed": 1600
+    },
+    {
+      "id": "CUE-119",
+      "name": "Apogee marginally above the belt",
+      "seen_in": [
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "An ascending object whose maximum altitude sits a little above geosynchronous altitude.",
+      "means": "There is a tolerance band. Within about fifty kilometres above the belt the apogee point is still the centre longitude; beyond it the ascending penetration point is.",
+      "first_action": "Compare the maximum altitude against the belt plus the tolerance before choosing the assessment longitude.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Treating belt altitude as a hard line",
+          "discriminator": "An apogee a few tens of kilometres above the belt still uses the apogee longitude. Only a materially higher apogee switches to the penetration point."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-03"
+      ],
+      "difficulty_seed": 1650
+    },
+    {
+      "id": "CUE-120",
+      "name": "No object tracked on the expected trajectory",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE",
+        "PRD-EPHEMERIS"
+      ],
+      "presentation": "Sensors search the posted trajectory and find nothing.",
+      "means": "The trajectory is an estimate. Search around it before concluding there is nothing there.",
+      "first_action": "Extend the search along track by several minutes either side and across track by a few degrees, rather than reporting no detection.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Concluding the cue was false",
+          "discriminator": "A state vector converted to a trajectory carries error in both time and geometry. Absence on the exact line is expected, not informative."
+        }
+      ],
+      "procedure_id": "PROC-DAASAT-GEO",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1550
+    },
+    {
+      "id": "CUE-121",
+      "name": "Handover brief missing next step or checklist position",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "An event briefed at changeover with its history and reporting covered, and no statement of what happens next or where in the procedure it currently sits.",
+      "means": "The incoming operator must re-derive both from a thread they have not read, under time pressure. Two of the six briefing points are missing and they are the two that carry forward.",
+      "first_action": "Ask for the next step and the current checklist step before accepting responsibility.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A thorough brief",
+          "discriminator": "Thoroughness about the past is not the same as clarity about the next action. Check the six points, not the length."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1500
+    },
+    {
+      "id": "CUE-122",
+      "name": "Tasking elevation with no expiry recorded",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "A rank change entered in the running record without an expiry date against it.",
+      "means": "The elevation will become permanent by omission, because nothing will prompt the step-down.",
+      "first_action": "Add the expiry when the elevation is made, not later. The reason and the expiry travel with the object.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "An indefinite requirement",
+          "discriminator": "There is no indefinite elevation. The top ranks are temporary tasking, so if the need is ongoing, that is a standing rank change rather than an elevation."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1350
+    },
+    {
+      "id": "CUE-123",
+      "name": "Record updated only at changeover",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A shift approaching handover with the running record largely untouched since it began.",
+      "means": "The handover is already compromised. What gets briefed will be what is remembered rather than what happened.",
+      "first_action": "Update through the shift. Handover quality is decided hours before handover.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A quiet shift with little to record",
+          "discriminator": "A shift briefed as quiet has been recorded as untrue more than once. Absence of entries and absence of activity are different things."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-06",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1450
+    },
+    {
+      "id": "CUE-124",
+      "name": "Daily task allocated to another cell",
+      "seen_in": [
+        "PRD-NEIGHBORHOOD"
+      ],
+      "presentation": "A routine daily task that this cell has not performed today.",
+      "means": "Either it belongs to another cell on this day, or it has been missed. Those look identical from inside one cell.",
+      "first_action": "Check the allocation before assuming coverage. A task assumed covered by someone else is the commonest way a routine check quietly lapses.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A task this cell owns",
+          "discriminator": "Allocation varies by cell and by weekday. Read it rather than recall it."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1400
+    },
+    {
+      "id": "CUE-125",
+      "name": "Delta column carrying natural drift",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A verified manoeuvre determination shows a large right ascension change and a moving argument of perigee alongside very small changes in period and semi-major axis.",
+      "means": "Almost nothing. The delta column reports change across the fit interval, and over a fit spanning a day or more the node regresses and the perigee rotates on their own. The large numbers are natural drift and the small ones are the manoeuvre.",
+      "first_action": "Read the fit interval from the time row, then ask which of these elements would have moved anyway over that span before attributing any of them to a burn.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A genuine plane change",
+          "discriminator": "A plane change puts the energy into inclination and shows a right ascension change out of proportion to the natural rate for that orbit. Natural regression matches the rate you would compute for the orbit and the interval."
+        },
+        {
+          "cue_id_or_name": "CUE-001 residual departure from the zero line",
+          "discriminator": "The residual says the object left its state. The determination table says what the new state is. Neither on its own tells you which element the burn touched."
+        }
+      ],
+      "procedure_id": "PROC-MNV",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "difficulty_seed": 1450,
+      "artefact_ids": []
+    },
+    {
+      "id": "CUE-126",
+      "name": "Elevation with no spare collection capacity",
+      "seen_in": [
+        "PRD-PASS-SCHEDULE"
+      ],
+      "presentation": "An object has just been raised into the ranks that attract dedicated collection, and the schedule shows no rows for it from the constrained sensor type while every existing tasked object still has its own.",
+      "means": "The elevation has been recorded but not resourced. Dedicated capacity is fixed by contract, so an addition requires a removal, and until someone decides which object loses custody the new tasking exists only on paper.",
+      "first_action": "Name the object to be de-tasked, and take the decision to the mission area lead rather than leaving the request open.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "A collection gap from geometry",
+          "discriminator": "A geometric gap closes on its own as the pass geometry comes round. A capacity gap never closes, because nothing was taken away to make room."
+        },
+        {
+          "cue_id_or_name": "A provider outage",
+          "discriminator": "An outage removes rows for every object on that provider. A capacity shortfall removes them for the newest object only."
+        }
+      ],
+      "procedure_id": "PROC-CRM",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_seed": 1350,
+      "artefact_ids": []
+    },
+    {
+      "id": "CUE-127",
+      "name": "Target element set in a proximity report",
+      "seen_in": [
+        "PRD-DC-TABLE"
+      ],
+      "presentation": "A draft proximity report carries appended element sets for the actor and for the object being acted against.",
+      "means": "Possibly a disclosure error. Whether the target's element set may be appended depends on what the target is, not on whether the data is held. Against a friendly target it is withheld; for a protected object or a well-tracked uncorrelated track nothing positional is published at all.",
+      "first_action": "Establish what the target is before the report is published, and strike the appended set where the rule says it does not go.",
+      "confusable_with": [
+        {
+          "cue_id_or_name": "Withholding a state early in a direct ascent event",
+          "discriminator": "That withholding is by phase and is released once the engagement is committed. This one is by the nature of the target and does not relax."
+        },
+        {
+          "cue_id_or_name": "An element set omitted for staleness",
+          "discriminator": "A stale set is a quality problem and is fixed by getting a fresher one. A disclosure withholding is not fixed by better data."
+        }
+      ],
+      "procedure_id": "PROC-FP",
+      "competency_ids": [
+        "CMP-03",
+        "CMP-06"
+      ],
+      "difficulty_seed": 1500,
+      "artefact_ids": []
+    }
+  ]
+}

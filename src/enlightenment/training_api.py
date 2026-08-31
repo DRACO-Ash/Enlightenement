@@ -37,16 +37,15 @@ from typing import TYPE_CHECKING, Any, Final
 
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ConfigDict, Field
 
-from enlightenment import __version__
 from enlightenment.audit import log_event
-from enlightenment.content import ContentStore, Procedure
-from enlightenment.models import DrillAnswer
+from enlightenment.content import ContentPackage
+from enlightenment.scoring import MAX_ANSWER_LENGTH
 from enlightenment.training import (
-    CONFIDENCE_STEPS,
     DEMONSTRATION_OPERATOR,
-    DrillEngine,
     DrillError,
+    DrillLoop,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
@@ -112,8 +111,8 @@ def _content_unavailable(errors: Sequence[str]) -> HTTPException:
 def register_training_routes(
     app: FastAPI,
     *,
-    content: ContentStore,
-    engine: DrillEngine,
+    content: ContentPackage,
+    loop: DrillLoop,
     guard_write: Any,
 ) -> None:
     """Mount the interface and the training API.
@@ -130,7 +129,7 @@ def register_training_routes(
     """
     _register_interface(app)
     _register_library(app, content=content)
-    _register_drill(app, engine=engine, content=content, guard_write=guard_write)
+    _register_drill(app, loop=loop, content=content, guard_write=guard_write)
 
 
 #: Headers on every interface response. Named once so the document and its script cannot drift
@@ -198,159 +197,140 @@ def _register_interface(app: FastAPI) -> None:
         return HTMLResponse(content=markup, headers=_UI_HEADERS)
 
 
-def _register_library(app: FastAPI, *, content: ContentStore) -> None:
-    """Content status and the procedure library. Both read-only, neither scored."""
+def _register_library(app: FastAPI, *, content: ContentPackage) -> None:
+    """What is loaded, and the procedures an operator may read. Never gated, never scored."""
 
-    @app.get("/api/v1/content")
-    async def content_status() -> dict[str, Any]:
-        """What content is loaded, what failed, and who authored it.
+    @app.get("/api/v1/content/manifest")
+    async def manifest() -> dict[str, Any]:
+        """Loaded versions, the content hash and what the package will not let us serve yet.
 
-        The provenance fields are here because the current content set is ILLUSTRATIVE and the
-        interface has to be able to say so on screen. A trainer that cannot tell an operator whether
-        the procedure they just learned is authoritative is worse than no trainer.
+        The hash is the important field. Every run record carries it, so a result from last week
+        stays interpretable against content that has since changed.
         """
-        result = await asyncio.to_thread(content.reload)
-        procedures = [
-            {
-                "id": item.meta.id,
-                "version": item.meta.version,
-                "title": item.meta.title,
-                "status": item.meta.status.value,
-                "authored_by": item.meta.authored_by,
-                "authored_on": item.meta.authored_on.isoformat(),
-                "steps": len(item.steps),
-            }
-            for item in content.all_of("procedures").values()
-            if isinstance(item, Procedure)
-        ]
+        result = content.result
         return {
             "ok": result.ok,
-            "version": __version__,
-            "counts": {kind: len(items) for kind, items in result.items.items()},
+            "content_hash": result.content_hash,
+            "counts": dict(result.counts),
             "errors": list(result.errors[:20]),
-            "procedures": sorted(procedures, key=lambda row: row["id"]),
-            "confidence_steps": {str(step): value for step, value in CONFIDENCE_STEPS.items()},
-            "operator_id": DEMONSTRATION_OPERATOR,
-            "identity": (
-                "Synthetic operator. Sign-in and the supervisor audit trail are flight plan step"
-                " 10, and no named-individual record is written before the DPIA is signed."
-            ),
-            "content_provenance": (
-                "ILLUSTRATIVE content, authored to exercise the interface end to end. Derived from"
-                " public open-source material only. NOT a JCO procedure and not validated by a"
-                " subject-matter expert."
+            "thresholds_source": content.thresholds.source,
+            "scored_scenarios_ready": content.scored_scenarios_ready,
+            "why_not_ready": (
+                ""
+                if content.scored_scenarios_ready
+                else "Thresholds carry placeholders. A scored scenario is refused until"
+                " thresholds.local.json is populated, because an operator seeing a placeholder"
+                " value in the interface is a bug."
             ),
         }
 
-    @app.get("/api/v1/library/{procedure_id}")
+    @app.get("/api/v1/content/procedure/{procedure_id}")
     async def procedure_detail(procedure_id: str) -> dict[str, Any]:
-        """One procedure in full, for the library view and for reading after a drill.
-
-        Reading a procedure is not scored and is deliberately always available: the plan's tone
-        rule is that errors are learning events, and locking the reference behind a completed drill
-        would make looking it up feel like cheating rather than like learning.
-        """
-        found = content.get("procedures", f"{procedure_id}@v1")
-        if not isinstance(found, Procedure):
+        """One procedure, in full. The library is a reference, so nothing here is withheld."""
+        if not content.result.ok:
+            raise _content_unavailable(content.result.errors)
+        found = next((p for p in content.procedures if p.id == procedure_id), None)
+        if found is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "not_found", "message": "No such procedure version is loaded."},
+                detail={"error": "not_found", "message": "No such procedure."},
             )
-        return {
-            "id": found.meta.id,
-            "version": found.meta.version,
-            "title": found.meta.title,
-            "status": found.meta.status.value,
-            "authored_by": found.meta.authored_by,
-            "authored_on": found.meta.authored_on.isoformat(),
-            "change_reason": found.meta.change_reason,
-            "purpose": found.purpose,
-            "entry_conditions": list(found.entry_conditions),
-            "roles": list(found.roles),
-            "steps": [
-                {
-                    "ordinal": step.ordinal,
-                    "action": step.action,
-                    "responsible_role": step.responsible_role,
-                    "note": step.note,
-                    "warning": step.warning,
-                }
-                for step in found.steps
-            ],
-            "threshold_criteria": [
-                {"name": item.name, "condition": item.condition}
-                for item in found.threshold_criteria
-            ],
-            "reporting_requirements": list(found.reporting_requirements),
-            "transition_rules": [
-                {"when": rule.when, "to_procedure_id": rule.to_procedure_id}
-                for rule in found.transition_rules
-            ],
-            "closure_criteria": list(found.closure_criteria),
-        }
+        return {"procedure": found.model_dump(mode="json")}
+
+    @app.get("/api/v1/content/product/{product_id}")
+    async def product_detail(product_id: str) -> dict[str, Any]:
+        """A product definition and its observed layout, so the interface can say how it reads."""
+        if not content.result.ok:
+            raise _content_unavailable(content.result.errors)
+        found = content.product(product_id)
+        if found is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "not_found", "message": "No such product."},
+            )
+        return {"product": found.model_dump(mode="json"), "layout": content.layout(product_id)}
+
+
+class DrillAnswer(BaseModel):
+    """One submitted answer. Validated at the boundary, and nothing here is optional by accident."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    drill_run_id: str = Field(min_length=1, max_length=64)
+    response: str = Field(min_length=1, max_length=MAX_ANSWER_LENGTH)
+    confidence: int = Field(ge=1, le=5)
+    elapsed_ms: int = Field(ge=0, le=3_600_000)
 
 
 def _register_drill(
-    app: FastAPI, *, engine: DrillEngine, content: ContentStore, guard_write: Any
+    app: FastAPI, *, loop: DrillLoop, content: ContentPackage, guard_write: Any
 ) -> None:
-    """The drill loop itself: serve without the answer, score what comes back."""
+    """The drill loop. The one place the production-format rule can be defeated, so it is here."""
 
     @app.get("/api/v1/drill/next")
     async def next_drill(response: Response) -> dict[str, Any]:
-        """The next unanswered drill. Carries no answer key, by construction."""
-        if not content.all_of("drills"):
-            result = await asyncio.to_thread(content.reload)
-            if not result.ok:
-                raise _content_unavailable(result.errors)
+        """Serve the next item. **No accept value, no reject value, no explanation, no answer.**
+
+        `no-store`, because a cached drill payload is a drill an operator can re-read after
+        seeing the reveal, and the spacing model assumes retrieval rather than recognition.
+        """
+        if not content.result.ok:
+            raise _content_unavailable(content.result.errors)
         try:
-            served = await asyncio.to_thread(engine.serve, operator_id=DEMONSTRATION_OPERATOR)
+            served = await asyncio.to_thread(loop.serve, operator_id=DEMONSTRATION_OPERATOR)
         except DrillError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={"error": "no_drill", "message": str(exc)},
             ) from None
-        # Never cached. A cached drill is the same instantiation twice, which defeats the
-        # template-versus-instance split, and a cached answer page would be a stale reveal.
         response.headers["cache-control"] = "no-store"
         return served.as_dict()
 
     @app.post("/api/v1/drill/answer")
     async def answer_drill(payload: DrillAnswer, request: Request) -> dict[str, Any]:
-        """Score one produced answer and return the full decomposition.
+        """Score one answer and return the full decomposition.
 
         A write: it moves a rating, schedules the cue and appends a run record. So it passes a
-        strict-tier limiter, which is what the plan asks for on the scoring endpoint by name, and
-        specifically its own `DRILL_LIMIT` bucket rather than the gated writes' one.
+        strict-tier limiter, and specifically its own `DRILL_LIMIT` bucket rather than the gated
+        writes' one, because an open route must not be able to spend a gated route's allowance.
+
+        Idempotent on the run id: a second submission returns the first result rather than
+        rescoring, so a double-click cannot move a rating twice.
         """
         guard_write(request)
         try:
             scored = await asyncio.to_thread(
-                engine.score,
-                operator_id=DEMONSTRATION_OPERATOR,
-                item_id=payload.item_id,
-                classification=payload.classification,
-                first_action=payload.first_action,
+                loop.score,
+                run_id=payload.drill_run_id,
+                response=payload.response,
                 confidence=payload.confidence,
+                elapsed_ms=payload.elapsed_ms,
+                operator_id=DEMONSTRATION_OPERATOR,
             )
         except DrillError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"error": "unscorable", "message": str(exc)},
             ) from None
-        # Audited without the answer text and without the score. The plan forbids a personal
-        # performance figure in any log line, and the operator's own words are performance data;
-        # the item and the content hash are what an incident actually needs.
+        # The item and the actor, and neither the submitted answer nor any score. The plan forbids
+        # a personal performance figure in a log line, and an operator's own words are
+        # performance data.
         log_event(
             "drill.answered",
             actor=DEMONSTRATION_OPERATOR,
             itemId=scored.item_id,
-            procedureId=scored.procedure_id,
         )
         return scored.as_dict()
 
-    @app.get("/api/v1/dashboard")
-    async def dashboard(response: Response) -> dict[str, Any]:
-        """Where the operator stands, what has decayed, and what is due."""
-        payload = await asyncio.to_thread(engine.dashboard, operator_id=DEMONSTRATION_OPERATOR)
+    @app.get("/api/v1/me")
+    async def me(response: Response) -> dict[str, Any]:
+        """Where the operator stands.
+
+        **Never a bare competency estimate.** The interval is part of the value: a figure with no
+        interval invites a claim the data cannot support, and this is the number a supervisor
+        would read.
+        """
+        if not content.result.ok:
+            raise _content_unavailable(content.result.errors)
         response.headers["cache-control"] = "no-store"
-        return payload
+        return await asyncio.to_thread(loop.dashboard, operator_id=DEMONSTRATION_OPERATOR)

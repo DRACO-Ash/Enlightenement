@@ -1,0 +1,974 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.7.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "Live Fly 25-2 practice day and execution days 1, 3 and 4, May 2025",
+      "Live Fly 26-1 days 1 to 4, November 2025",
+      "Exercise ASTRAL VORTEX, Pacific cell after action report, selected observations",
+      "JCO NOTSO corpus, 3124 released notifications, April 2022 to March 2026",
+      "Exercise ASTRAL VORTEX, Meridian advanced operator observations",
+      "JCO Photometry Change procedure",
+      "JCO Timing Standards, authoritative"
+    ],
+    "review_status": "draft",
+    "redaction_note": "REDACTION CRITICAL. The source after action reports name individual operators, national contingents, satellite designators, thread identifiers, internal tool names, provider names and email addresses. NONE of that appears here. Two categories were excluded on principle rather than merely omitted: individual and nationality-linked performance criticism, which is personal data about identifiable people and does not belong in a distributable training artefact under any circumstances; and internal tool names and click-paths. What remains is behaviour patterns and timings. The Pacific source additionally names internal procedures, a controlling instruction reference, fusion provider organisations and a specific object with its identifiers. All are excluded; the identifier issue is recorded as a format pattern rather than by example. The advanced-operator observation source is the most sensitive in the package: it names approximately a dozen individuals by name and nationality alongside adverse performance judgements including complacency, laziness and apathy. Every name, nationality and individual judgement has been excluded. Only the behaviour pattern survives, stated impersonally."
+  },
+  "_why_this_file_exists": "Everything else in this package trains what an operator should do. This file records what this cell actually does wrong, how often, and over what period. It is the difference between a trainer built on doctrine and a trainer built on evidence. Where a recurrence appears in two exercises six months apart with different crews, it is a systemic gap rather than an individual one, and the training must target it directly rather than hoping general competence absorbs it.",
+  "headline_finding": {
+    "statement": "The dominant failure mode of this cell is not error. It is latency and hesitation.",
+    "evidence": "Across six recorded direct ascent events, first report latencies were 37, 49, 55, 56, 60 and 61 minutes from initial indication. The published standard is two-legged: 60 minutes from initial indications, or 30 minutes from the last provider product dropped, whichever is earlier. Against the first leg alone, five of six were Qualified and one Partial. **The contemporaneous exercise assessments recorded these same events as late**, which indicates they were being judged against the 30 minute leg, the one that governs whenever providers deliver quickly. That is consistent with the second leg being routinely missed but cannot be confirmed without provider product drop timestamps.",
+    "counter_evidence": "On the final day of the second exercise the same cell delivered six direct ascent first reports in sixteen to thirty minutes, most in the twenty to twenty-five band. Nothing about the events was easier. What changed was that the crew had done enough of them that the response had become the norm.",
+    "implication": "The gap is still latency rather than analytical error, and the exercise assessors said so at the time. But the mechanism is more specific than first stated: the crew must track two clocks and know which governs, and the governing leg flips depending on provider speed, which the crew does not control. An operator tracking only the 60 minute leg will systematically miss the standard whenever providers are fast, and fast providers are the good case.",
+    "design_consequence": "Latency scored against both legs with the governing one identified. A new trainable competence follows and is now covered: recognising which leg governs. See CUE-103 and DRL-0114.",
+    "evidence_confidence": "Qualitative finding supported by contemporaneous assessment. **The quantification is not currently defensible** and requires provider drop times. An earlier version of this register asserted six breaches against a flat 30 minute standard; that standard was inferred and was wrong."
+  },
+  "patterns": [
+    {
+      "id": "REC-001",
+      "name": "Hesitation to publish a time-sensitive first report",
+      "recurrence": "Both exercises, at least four separate days",
+      "observed": [
+        "Crews described as hesitant to pull the trigger on time-sensitive reports",
+        "A tendency to sit on critical information",
+        "Analysts optimising against false positives rather than for speed to characterisation",
+        "Reluctance to commit to a likely course of action",
+        "The tactical freedoms concept available but not enacted"
+      ],
+      "root_cause_recorded": "Confidence, not knowledge. Compounded by cognitive load under surge conditions and by data scarcity making crews conservative.",
+      "trains_out_with": [
+        "CMP-07"
+      ],
+      "trainer_mechanism": "Every time-critical scenario requires a holding report inside minutes, scored on latency with content weighted lightly. Publishing late scores worse than publishing thin. The drill layer builds the reflex so the decision is not made under load for the first time.",
+      "cues": [
+        "CUE-041"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-002",
+      "name": "First report written as a full product rather than one sentence",
+      "recurrence": "Raised explicitly in the first exercise, still visible in the second",
+      "observed": [
+        "A first report assessed as good detail but slow, with the note that the initial notification could have been a single sentence",
+        "A recommended checklist entry giving the crew a pre-formed opening sentence, on the basis that it creates thinking space and builds confidence in generating the first time-sensitive report",
+        "A separate event where a target list had been developed but was not included, and where even a sentence saying it would follow was assessed as sufficient"
+      ],
+      "root_cause_recorded": "Crews treat the first report as the whole assessment rather than as the alert.",
+      "trains_out_with": [
+        "CMP-06",
+        "CMP-07"
+      ],
+      "trainer_mechanism": "The holding report template is a first-class scored product. Scenarios present incomplete pictures deliberately and reward the one-sentence release, and the debrief shows the warning time bought by it.",
+      "cues": [
+        "CUE-041",
+        "CUE-042"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-003",
+      "name": "Late transition into the proximity operations checklist",
+      "recurrence": "At least five separate events across the second exercise",
+      "observed": [
+        "Relative motion products posted by providers showing entry into a circumnavigation, with the thread not transitioned until hours later",
+        "Repeated assessments that the checklist could have been initiated earlier",
+        "Indications present on the preceding shift but not transitioned until the following one",
+        "A recommendation to define automatic transition triggers on posting of a relative motion product or a close approach entry"
+      ],
+      "root_cause_recorded": "Thread ownership ambiguity across shifts, and an absence of an explicit trigger linking a product to a procedure transition.",
+      "trains_out_with": [
+        "CMP-03",
+        "CMP-08"
+      ],
+      "trainer_mechanism": "This is the clearest cue-to-action pairing in the whole package. A relative motion product showing circumnavigation entry is a trigger, and the trained response is to transition immediately rather than to deliberate. Drilled to reflex.",
+      "cues": [
+        "CUE-043"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-004",
+      "name": "Basic checklist steps skipped",
+      "recurrence": "Described as a trend across previous exercise periods, not a single occurrence",
+      "observed": [
+        "Mandatory notification calls being skipped",
+        "Assessed as either complacency, or critical steps not standing out sufficiently in a dense checklist",
+        "Recommendation that critical steps be visually distinguished"
+      ],
+      "root_cause_recorded": "Presentation of the checklist as much as operator discipline.",
+      "trains_out_with": [
+        "CMP-03"
+      ],
+      "trainer_mechanism": "Mandatory notification steps are scored as trigger events in their own right, and omitting one is a distinct scored failure rather than a deduction absorbed into an overall mark. The debrief names the missed call.",
+      "cues": [
+        "CUE-044"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-005",
+      "name": "Object identification errors and ambiguity",
+      "recurrence": "Both exercises",
+      "observed": [
+        "Catalogue number entry errors in published reports",
+        "Verbal reporting on a second concurrent event lacking firm object identification and lacking clarity on which object was parent and which was child",
+        "Recommendation for a three-check rule and for screen sharing whenever identifiers are quoted"
+      ],
+      "root_cause_recorded": "Cognitive load under concurrent events, and transcription without a second reader.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Scenarios seed identifier ambiguity between a parent and a newly separated object and score whether the report distinguishes them explicitly. Concurrent-event scenarios reproduce the load under which this occurs.",
+      "cues": [
+        "CUE-045"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-006",
+      "name": "Template artefacts and omissions in published reports",
+      "recurrence": "First exercise, and the underlying discipline gap persists",
+      "observed": [
+        "A published report retaining unfilled template placeholders",
+        "Basic standard verbiage missing",
+        "A report stating that a target list had been developed without including it or saying when it would follow"
+      ],
+      "root_cause_recorded": "Publication without a second reader under time pressure.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "A pre-publication check is a scored step. Drills present a draft containing a residual placeholder or a dangling reference and require the operator to find it before release.",
+      "cues": [
+        "CUE-046"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-007",
+      "name": "Known information omitted from a report",
+      "recurrence": "First exercise, with a comparable pattern in the second",
+      "observed": [
+        "A provider supplied details of an earlier close approach on the current day and it was not included in the report, which addressed only the following day",
+        "Reports assessed as needing more clarification even where the analysis behind them was sound"
+      ],
+      "root_cause_recorded": "The report is written from the analyst's current focus rather than from a sweep of what the thread already contains.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Scenarios plant a relevant detail early in the thread that is easy to lose by the time the report is written, and score whether it appears.",
+      "cues": [
+        "CUE-047"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-008",
+      "name": "Thread lifecycle and ownership failures",
+      "recurrence": "Throughout the second exercise, escalating with tempo",
+      "observed": [
+        "Threads ripe for a report left untouched for extended periods, one proximity event un-actioned for at least an hour",
+        "Event closure actions lagging until prompted",
+        "Threads remaining open longer than necessary, consuming attention on resolved issues",
+        "Peak concurrent thread count reaching around thirty-five",
+        "Uneven transitions between analysts",
+        "Operators leaving shift without handing over active work",
+        "Recommendations for a triage role, a per-analyst thread ceiling of around three concurrent critical threads, an ageing callout at fifteen to twenty minutes, and lanes for active, monitoring and ready to close"
+      ],
+      "root_cause_recorded": "Absence of explicit ownership and closure discipline rather than a knowledge gap. Recorded as a discipline issue, not a training issue, which is precisely why a trainer can address it.",
+      "trains_out_with": [
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Multi-event scenarios present more threads than can be actively worked, and score triage, ageing awareness and closure alongside analysis. This is the only mechanism in the package that trains prioritisation under overload.",
+      "cues": [
+        "CUE-048",
+        "CUE-049"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-009",
+      "name": "Reliance on explicit cueing rather than proactive monitoring",
+      "recurrence": "Second exercise, day two, explicitly",
+      "observed": [
+        "Injects present in a monitored channel and not picked up until the site lead prompted",
+        "Once cued, tasking and information flow were assessed as solid",
+        "Hesitation to query providers for clarification, described as an unwillingness to engage to understand"
+      ],
+      "root_cause_recorded": "Confidence and role clarity at the start of a shift rather than capability. Performance improved through the day, described as a warm-up rhythm issue.",
+      "trains_out_with": [
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Some scenarios begin with an indication already sitting unactioned, and latency is measured from when it appeared rather than from when the operator noticed it. This is the only fair way to score proactive monitoring.",
+      "cues": [
+        "CUE-050"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-010",
+      "name": "Threshold ambiguity on just-below-threshold proximity",
+      "recurrence": "Second exercise, day one, raised as a policy gap",
+      "observed": [
+        "A discussion on a collection platform sitting near a commercial asset exposed uncertainty about when sub-threshold proximity behaviour warrants a report",
+        "Site lead discretion exists but was assessed as needing clearer support and worked examples"
+      ],
+      "root_cause_recorded": "Genuine policy ambiguity rather than operator error. The threshold is a judgement and crews had no calibrated reference for it.",
+      "trains_out_with": [
+        "CMP-05",
+        "CMP-07"
+      ],
+      "trainer_mechanism": "Deliberately ambiguous seeds sitting just inside and just outside the threshold, with the debrief showing the expert reasoning either way rather than asserting a single right answer. Where the honest answer is that it is a judgement call, the trainer teaches the reasoning, not a verdict.",
+      "cues": [
+        "CUE-051"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-011",
+      "name": "Assessment running ahead of the evidence",
+      "recurrence": "Second exercise, day four",
+      "observed": [
+        "Assessments leaning ahead of the evidence, specifically on docking and relative motion judgements",
+        "Assessed as reflecting gaps in familiarity with expected satellite behaviours and capabilities"
+      ],
+      "root_cause_recorded": "Unfamiliarity with the range of normal behaviour, so unusual and significant are conflated.",
+      "trains_out_with": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "trainer_mechanism": "This is the mirror image of the headline finding and both must be trained. Latency is the dominant failure on time-critical events; over-claiming is the dominant failure on ambiguous proximity events. The merge and docking discrimination drills exist for exactly this, and they are already the hardest items in the bank.",
+      "cues": [
+        "CUE-020"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-012",
+      "name": "Procedural uncertainty at a transition between event types",
+      "recurrence": "Second exercise, day three, on two separate events",
+      "observed": [
+        "Confusion over whether to rename an existing thread or spawn a new one when transitioning from a direct ascent event to breakup processing",
+        "Assessed as a checklist sequencing clarity issue"
+      ],
+      "root_cause_recorded": "The transition between two procedures is under-specified relative to either procedure taken alone.",
+      "trains_out_with": [
+        "CMP-03"
+      ],
+      "trainer_mechanism": "Scenarios deliberately cross procedure boundaries and score the transition itself as a trigger event, not merely the handling either side of it.",
+      "cues": [
+        "CUE-052"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-013",
+      "name": "Evidence arriving out of expected order",
+      "recurrence": "Second exercise, day three",
+      "observed": [
+        "A debris cloud report arrived before the launch confirmation it related to, causing temporary confusion and slowing situational awareness",
+        "The launch notification had been missed because attention was on concurrent events"
+      ],
+      "root_cause_recorded": "Crews expect a canonical sequence and are slowed when reality does not supply one.",
+      "trains_out_with": [
+        "CMP-02",
+        "CMP-08"
+      ],
+      "trainer_mechanism": "A dedicated scenario delivers the consequence before the cause. Operators must reason backwards from an effect to its likely origin rather than waiting for the expected trigger.",
+      "cues": [
+        "CUE-053"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-014",
+      "name": "Non-routine workflow handled poorly",
+      "recurrence": "Second exercise, day two",
+      "observed": [
+        "A combined multi-object proximity thread handed over from another cell caused processing uncertainty",
+        "Assessed as showing that non-routine workflows are not rehearsed, or that deviation from process is treated as impermissible",
+        "Noted that under surge conditions this must be understood",
+        "An open question recorded on whether a consolidated report or separate per-event reports serve clarity better"
+      ],
+      "root_cause_recorded": "Training covers the standard case only, so any variation is treated as a blocker rather than as a judgement.",
+      "trains_out_with": [
+        "CMP-03",
+        "CMP-07"
+      ],
+      "trainer_mechanism": "A proportion of scenario seeds deliberately arrive in a non-standard shape. The scored behaviour is proceeding sensibly rather than stalling, and the debrief makes explicit that deviation handled with judgement is correct.",
+      "cues": [
+        "CUE-054"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-015",
+      "name": "Handover quality determines shift performance",
+      "recurrence": "Both exercises, repeatedly, in both directions",
+      "observed": [
+        "A comprehensive handover produced a strong opening posture and clear initial focus",
+        "A handover delayed by late arrivals produced a slow start and delayed pickup of injects",
+        "Fatigue at the end of a long shift degrading handover quality, with the observation that operators in comparable domains work around a third of the shift length before enforced rest",
+        "Operators leaving without handing over, creating continuity gaps and unfinished reports",
+        "The explicit assessment that the foundation of a successful shift is a solid handover"
+      ],
+      "root_cause_recorded": "Fatigue and an absence of an enforced check-out standard, rather than unwillingness.",
+      "trains_out_with": [
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Some scenarios begin mid-event with a handover brief of varying quality, and score what the operator does about the gaps in it. A deliberately poor handover is a distractor: the trained response is to identify and close the gaps, not to proceed on what was given.",
+      "cues": [
+        "CUE-055"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-016",
+      "name": "Over-reliance on fusion providers",
+      "recurrence": "First exercise, raised as a forward risk",
+      "observed": [
+        "An explicit recommendation to encourage independent analytical tooling so crews do not become complacent and reliant on fusion providers",
+        "Value noted where independent tooling provided contrast to the primary fusion picture"
+      ],
+      "root_cause_recorded": "Convenience. The fused product is easier than independent analysis.",
+      "trains_out_with": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "trainer_mechanism": "Some seeds present a provider assessment that is wrong or incomplete, and score whether the operator checks it independently. The provider score column artefact serves the same purpose.",
+      "cues": [
+        "CUE-033"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-017",
+      "name": "Simulated and real data contamination",
+      "recurrence": "Both exercises, as an infrastructure fault with a direct analytical consequence",
+      "observed": [
+        "Real world data persisting after simulated data was activated for an object, undermining the fidelity of the environment particularly for automated analytics and photometric analysis",
+        "Anomalous simulated radar observations at a range inconsistent with any plausible sensor",
+        "Providers integrating simulated data by mixed methods in the absence of central guidance"
+      ],
+      "root_cause_recorded": "Infrastructure and guidance, not operator error.",
+      "trains_out_with": [
+        "CMP-05"
+      ],
+      "trainer_mechanism": "Added to the artefact library. An observation that is physically implausible for the sensor that supposedly produced it is a data integrity signal, and recognising it is a competency regardless of whether the cause is exercise infrastructure or a real pipeline fault.",
+      "cues": [
+        "CUE-056"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-018",
+      "name": "Surge posture without surge staffing",
+      "recurrence": "Second exercise, days one and three",
+      "observed": [
+        "Surge posture without surge staffing creating cognitive overload",
+        "The team operating at or near full capacity with limited depth",
+        "Surge support offered reactively mid-shift rather than through a planned posture",
+        "Brief dips in situational awareness during peak periods, with quick recovery"
+      ],
+      "root_cause_recorded": "Staffing and planning rather than individual performance. Explicitly not assessed as a leadership deficiency.",
+      "trains_out_with": [
+        "CMP-08",
+        "CMP-07"
+      ],
+      "trainer_mechanism": "The trainer cannot fix staffing. It can make the individual more efficient under load and can make the overload condition familiar rather than novel, which is where most of the situational awareness dip comes from.",
+      "cues": [
+        "CUE-048"
+      ],
+      "severity": "high",
+      "honest_limitation": "This is a resourcing problem and no training application will solve it. Recording it here so the trainer is not credited with fixing something it cannot."
+    },
+    {
+      "id": "REC-019",
+      "name": "Procedure introduced without preparatory training",
+      "recurrence": "Confirmed in both cells and across two exercises. Originally recorded in one region, now corroborated in the other.",
+      "observed": [
+        "A new procedure released to the cell on the weekend immediately before a Monday exercise start, with the expectation it would be used",
+        "A second, draft procedure released on the same timeline for use against exercise events",
+        "No difference, continuation or gap training provided before crews were expected to apply either",
+        "Assessed as reducing the opportunity to develop common understanding, identify ambiguities, ask questions and practise before operational employment",
+        "The recorded conclusion that the exercise ended up testing initial operator understanding rather than application of the procedure",
+        "A later exercise saw a last-minute switch in the data format providers were expected to ingest, alongside a pivot to a new procedure for a major event type",
+        "Recorded that even senior instructors and mission area leads were still unfamiliar with the changed procedure, and that this affected report timings",
+        "The explicit conclusion that an exercise of that scale should be run on well-established procedures, and that changes to provider requirements should be communicated adequately beforehand",
+        "Separately, an experienced lead returning after several months away began the exercise already behind on controlling instructions and procedure changes, which affected their participation for the day"
+      ],
+      "root_cause_recorded": "Procedures entered service faster than training could follow. Explicitly not a criticism of trialling draft procedures, which was assessed as appropriate.",
+      "trains_out_with": [
+        "CMP-03"
+      ],
+      "trainer_mechanism": "This is the observation the application most directly answers. A procedure is content in this package, not code. A new or changed procedure can be authored, drilled and rehearsed by the whole cell in the days before it enters service, and the spacing scheduler can re-surface the specific steps that changed rather than making operators re-learn the whole thing. Difference training on demand is a capability claim this evidence supports directly.",
+      "cues": [
+        "CUE-057"
+      ],
+      "severity": "highest",
+      "product_implication": "Add a procedure-change mode: when a procedure version increments, the loader diffs it against the previous version and the drill layer prioritises cues attached to the changed steps for every operator who had previously demonstrated competence on the old version.",
+      "note": "Now the most corroborated pattern in the register: three separate instances across two cells and two exercises. The returning-operator observation extends it beyond new procedures to currency decay generally, which the procedure-change policy already covers but should be widened to cover absence rather than only change."
+    },
+    {
+      "id": "REC-020",
+      "name": "Inconsistent object identifier representation across products",
+      "recurrence": "Pacific cell, observed across products from more than one provider, and corroborating a Meridian pattern by a different mechanism",
+      "observed": [
+        "Alpha-numeric and six-digit numeric identifiers used inconsistently and in some cases interchangeably for the same object",
+        "Some products using the numeric representation as the satellite name while retaining the alpha-numeric form in the identifier field",
+        "Operators observed entering the numeric representation into the identifier field",
+        "Observed across products from more than one provider",
+        "Work to agree a common standard already underway",
+        "A procedure issued subsequently resolves the standard: where a catalogue number exceeds the five-digit range the object carries both a numeric identifier and an Alpha-5 designator, and reports are to provide both together so the identifier and element set can be cross-referenced"
+      ],
+      "root_cause_recorded": "An unresolved standards question at the time of the exercise observation. Now partly resolved: the convention is to carry both forms rather than to choose between them.",
+      "trains_out_with": [
+        "CMP-01",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Scenarios present the same object under both representations across different products and score whether the operator notices they are the same object, and whether the correct representation reaches the report. Note that this is a live standards issue: the trainer teaches recognition of the ambiguity rather than asserting which form is right, because that has not yet been settled. The standard is now known, so the training states it: provide both forms together. The recognition skill remains, because provider products will continue to vary until the convention propagates.",
+      "cues": [
+        "CUE-058"
+      ],
+      "severity": "medium",
+      "cross_reference": "Connects to a known catalogue rollover issue as the catalogue moves beyond five-digit numbering. This will get worse before the standard settles it."
+    },
+    {
+      "id": "REC-021",
+      "name": "Discovery procedure entered without first applying separation",
+      "recurrence": "Pacific cell, observed during exercise execution",
+      "observed": [
+        "Operators proceeding directly to uncorrelated track discovery when new objects were detected separating from, or in the immediate vicinity of, a red asset",
+        "The procedural position being that an object separating from a red asset should initially be treated as a separation, with discovery applied subsequently where the object remains unidentified",
+        "Assessed as risking inconsistent event classification and omission of the assessment considerations specific to a separation"
+      ],
+      "root_cause_recorded": "The two procedures share an entry cue and the branch is not sufficiently distinct in operators' minds.",
+      "trains_out_with": [
+        "CMP-02",
+        "CMP-03"
+      ],
+      "trainer_mechanism": "Already the highest-weighted classification discrimination in the package, and this observation confirms it. The sequencing nuance is now explicit in both procedures: separation first when the parent is a red asset, discovery subsequently if the object remains unidentified. They are sequential stages of one event, not alternative paths.",
+      "cues": [
+        "CUE-017",
+        "CUE-059"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-022",
+      "name": "Notification processes simulated rather than exercised",
+      "recurrence": "Pacific cell, throughout exercise activity",
+      "observed": [
+        "Mass notification and higher headquarters notifications simulated by posting a message in the event thread rather than exercising the process used to prepare, coordinate and conduct them",
+        "Assessed as removing the opportunity to exercise the full process and to assess operator familiarity with it",
+        "A dedicated simulated notification channel proposed so wording could be drafted, reviewed and coordinated before dissemination"
+      ],
+      "root_cause_recorded": "Exercise design convenience, with a direct training cost.",
+      "trains_out_with": [
+        "CMP-06",
+        "CMP-03"
+      ],
+      "trainer_mechanism": "A direct instruction for this application: never let a notification be marked complete without the operator producing the wording. A notification step that can be satisfied by clicking done teaches exactly the habit this observation warns about. Scenarios require the verbal call content to be composed, and it is scored against the same must-state list as a written report.",
+      "cues": [
+        "CUE-044"
+      ],
+      "severity": "high",
+      "design_consequence": "Changes the scoring of every mandatory notification step in the package from a completion flag to a produced artefact."
+    },
+    {
+      "id": "REC-023",
+      "name": "Format mismatch at an external interface",
+      "recurrence": "Pacific cell, on launch indications",
+      "observed": [
+        "Launch locations supplied by an external partner in one coordinate format while the procedure requires another",
+        "Creating an additional conversion step and an avoidable opportunity for transcription or conversion error",
+        "The required format having been set following earlier consultation with providers"
+      ],
+      "root_cause_recorded": "An interface standards mismatch outside the cell's control, with the cost landing on the operator under time pressure.",
+      "trains_out_with": [
+        "CMP-04",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Scenarios supply the indication in the partner's format and require conversion before use, under time pressure, on the procedure where seconds matter most. The conversion is trivial in isolation and error-prone at tempo, which is exactly why it should be practised rather than assumed.",
+      "cues": [
+        "CUE-060"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-024",
+      "name": "Presence and availability not signalled",
+      "recurrence": "Pacific cell, inconsistently across the exercise",
+      "observed": [
+        "Operators not consistently indicating when temporarily stepping away from their position",
+        "Designated status indicators not consistently applied in accordance with the controlling instruction",
+        "Assessed as reducing crew situational awareness and potentially delaying coordination during high-tempo activity"
+      ],
+      "root_cause_recorded": "Etiquette discipline in a distributed, multi-site operating model.",
+      "trains_out_with": [
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Limited. This is a crew behaviour in a shared operating environment, and a single-operator trainer can teach that it matters and why, but cannot practise it. Recorded honestly as partly out of scope.",
+      "cues": [],
+      "severity": "low",
+      "honest_limitation": "A single-operator application cannot train crew presence signalling. It can include it in the handover and lifecycle content so operators understand the cost of not doing it."
+    },
+    {
+      "id": "REC-025",
+      "name": "Observation reported without a pattern of life comparison",
+      "recurrence": "Corpus-wide across four years and 3124 released reports",
+      "observed": [
+        "Explicit pattern of life assessment appears in 34.6 per cent of released reports",
+        "Consequence-related content is more common at 64.7 per cent, so the weaker half of the pair is the pattern of life comparison",
+        "Reports frequently precise about the observation and silent on whether it is normal for the object"
+      ],
+      "root_cause_recorded": "Reports are written as records of what was seen rather than as assessments of what it means. The analytical step is performed and then not written down.",
+      "trains_out_with": [
+        "CMP-02",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Every report drill requires three answers in order: what happened, is this normal for this object, and what does it mean. A no-impact statement counts as a complete answer to the third and scores fully; silence does not.",
+      "cues": [
+        "CUE-064"
+      ],
+      "severity": "highest",
+      "note": "The largest single quality gap in the entire evidence base, measured on the largest sample available."
+    },
+    {
+      "id": "REC-026",
+      "name": "Uncertainty signalled but not sized",
+      "recurrence": "Corpus-wide",
+      "observed": [
+        "2,197 reports use hedging language; only 9.4 per cent of those also state a confidence level",
+        "Confidence appears in 7.8 per cent of reports overall",
+        "Explicit collection limitations are rarer still once ongoing-analysis boilerplate is excluded"
+      ],
+      "root_cause_recorded": "The possible-versus-verified register is being used as though it were a full confidence statement. It is a coarse two-state signal.",
+      "trains_out_with": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Confidence is required on every scored judgement and is scored by proper scoring rule. Report drills fail on an unsized hedge even where the underlying assessment is correct.",
+      "cues": [
+        "CUE-061"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-027",
+      "name": "Rates published without direction, and states without provenance",
+      "recurrence": "Corpus-wide",
+      "observed": [
+        "Only 29.4 per cent of quoted drift rates carry an east or west direction",
+        "Of reports appending an element set, 23.1 per cent name no provider and 40.0 per cent give no time current",
+        "Delta-v units are well handled at 99.6 per cent and are not a gap"
+      ],
+      "root_cause_recorded": "Conventions assumed shared with the reader. A rate without direction is half a number, and the reader has less context than the author.",
+      "trains_out_with": [
+        "CMP-04",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Report drills score every quantity for units, every rate for direction, every delta for the word Change, and every appended state for provider and time current.",
+      "cues": [
+        "CUE-062",
+        "CUE-063"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-028",
+      "name": "Under-served report types carry the worst quality",
+      "recurrence": "Corpus-wide, structural",
+      "observed": [
+        "Launch is 24 per cent of reporting volume with a median completeness of 8 of 21",
+        "Photometric change is 15 per cent of volume with a median of 9",
+        "Proximity operations, at 8 per cent of volume, scores highest at 17",
+        "Direct ascent scores lowest at 6, on a small sample, and is the type where time pressure is greatest"
+      ],
+      "root_cause_recorded": "Attention and structure have followed operational interest rather than reporting volume. The types with a fixed block to fill score well; those without do not.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Per-type reporting guidance now exists for all five common types, and the scope recommendation is to add a photometric procedure and a launch scenario to v1.",
+      "cues": [
+        "CUE-064"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-029",
+      "name": "Reporting quality is improving, which is itself the evidence",
+      "recurrence": "Four-year trend",
+      "observed": [
+        "Median completeness rose from 6 of 21 in 2022 to 14 in 2026",
+        "Median report length rose from 102 words to 618 across the same period",
+        "The improvement is continuous rather than stepped"
+      ],
+      "root_cause_recorded": "Sustained institutional learning through repetition and feedback.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Target the current standard rather than the four-year average, and use the corpus trend to set the bar. The corpus contains its own proof that this improves with practice, which is more persuasive to an operator than any external benchmark.",
+      "cues": [],
+      "severity": "low",
+      "note": "Recorded as a positive finding. It also means any measurement of the application's effect must be against the current trend rather than against a historical baseline, or the trainer will be credited with improvement that was already happening."
+    },
+    {
+      "id": "REC-030",
+      "name": "Acting on the latest post without reading the thread",
+      "recurrence": "Recorded as a standing Meridian observation and confirmed again during the most recent exercise",
+      "observed": [
+        "Analysts quick to flag a newly posted manoeuvre, but few demonstrating they had read the previous reports or the thread itself",
+        "A single provider post containing both a verification of a previously reported possible manoeuvre and an additional new possible manoeuvre, with the analyst reporting only the new one and not understanding that the earlier one also needed verifying",
+        "A published report requiring correction before release as a result"
+      ],
+      "root_cause_recorded": "The thread is treated as a notification feed rather than as the record of the event.",
+      "trains_out_with": [
+        "CMP-06",
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Scenarios deliver provider posts containing more than one reportable fact, and score whether both are carried into the report. Other seeds place a detail early in the thread that only matters when the report is written. Reading the thread before writing is a scored step, not an assumption.",
+      "cues": [
+        "CUE-066",
+        "CUE-047"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-031",
+      "name": "Requesting products that have already been provided",
+      "recurrence": "Recorded as happening almost invariably, with multiple analysts",
+      "observed": [
+        "Where a provider had already flagged a manoeuvre and posted the supporting products, an analyst opening the thread would still ask for those products to be re-sent",
+        "The standard product request from the procedure copied into a thread without alteration, in one case directly beneath the products it was requesting",
+        "A thread observed sitting for twenty minutes because the analyst was waiting for products that had already been posted elsewhere",
+        "Assessed as unacceptable where the provider is already stretched"
+      ],
+      "root_cause_recorded": "Procedural literalism. The first step of most procedures is to request a product list, and it is being executed as a script rather than as an assessment of what is actually missing.",
+      "trains_out_with": [
+        "CMP-05",
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Some seeds pre-populate the thread with products before the operator opens it. Requesting what is already present is a scored error; identifying what is genuinely missing and asking only for that is the rewarded behaviour. This inverts a procedural step into a judgement, which is what it always was.",
+      "cues": [
+        "CUE-067"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-032",
+      "name": "Non-specific requests to providers",
+      "recurrence": "Multiple analysts, repeatedly",
+      "observed": [
+        "Generic requests for an update posted in thread without naming the specific product needed",
+        "Requests posted without directly tagging the provider, making it near impossible for them to track across a large number of concurrent threads",
+        "Requests posted in writing rather than asked verbally where that would have been faster",
+        "Assessed as analysts signalling proactivity without knowing what to ask for, leaving the provider or supervisor to work it out"
+      ],
+      "root_cause_recorded": "Not knowing which product answers the outstanding question. The generic request is a substitute for the specific one.",
+      "trains_out_with": [
+        "CMP-05"
+      ],
+      "trainer_mechanism": "Product request is already a scored response format. It is now scored on specificity: naming the product, naming what it will resolve, and directing it to the right party. A generic request scores zero even though it is technically an action.",
+      "cues": [
+        "CUE-068"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-033",
+      "name": "Event stage misread, wrong procedural branch entered",
+      "recurrence": "Most recent exercise",
+      "observed": [
+        "An analyst overseeing a direct ascent event beginning to draft a pre-launch report, apparently unaware that the launch had already occurred",
+        "Resulting in a delayed first report on a time-critical event",
+        "A supervisor unaware that a separation was occurring on a thread they had assigned, because the assigned analyst was working a different event"
+      ],
+      "root_cause_recorded": "Situational awareness of where the event currently sits, rather than knowledge of the procedure.",
+      "trains_out_with": [
+        "CMP-02",
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Scenarios begin mid-event at a randomised stage, requiring the operator to establish where the event has reached before selecting an action. Entering a stage that has already passed is a distinct scored error.",
+      "cues": [
+        "CUE-069"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-034",
+      "name": "Procedure followed without understanding its purpose",
+      "recurrence": "Most recent exercise, and consistent with an earlier recommendation that the gap is the why rather than the what",
+      "observed": [
+        "An analyst declining to attach debris states to a breakup notification on the reasoning that the debris originated from a friendly object, demonstrating no grasp of why debris is tracked at all",
+        "The resulting report delayed by around an hour",
+        "A supervisor believing a breakup event could be closed as soon as initial indications had been reported, unaware of the handover obligation to the cataloguing authority",
+        "An earlier exercise recommendation stating plainly that the gap is the why, and that improving understanding would improve confidence, situational awareness and report timings"
+      ],
+      "root_cause_recorded": "Procedures learned as sequences rather than as reasoning. When a case falls outside the remembered sequence, there is nothing to reason from.",
+      "trains_out_with": [
+        "CMP-03",
+        "CMP-02"
+      ],
+      "trainer_mechanism": "Every procedure step in this package already carries a why field, and it is used in the debrief rather than only in authoring. Drills ask why a step exists, not only what it is, because an operator who knows why a step exists recalls it and one who memorised a list does not.",
+      "cues": [
+        "CUE-070"
+      ],
+      "severity": "highest"
+    },
+    {
+      "id": "REC-035",
+      "name": "Domain vocabulary misread",
+      "recurrence": "Most recent exercise",
+      "observed": [
+        "A provider note on poor visibility during a proximity update interpreted as a weather report and passed to the supervisor as such",
+        "Angular information in a proximity product not interpreted correctly"
+      ],
+      "root_cause_recorded": "Terms that have an everyday meaning and a specific technical meaning are read in the everyday sense.",
+      "trains_out_with": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "trainer_mechanism": "Drills present provider phrasing that carries a technical meaning and require the operational reading. The glossary is a supporting reference rather than the mechanism, because recognition under tempo is the skill.",
+      "cues": [
+        "CUE-071"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "REC-036",
+      "name": "Problems raised only when they block action",
+      "recurrence": "Most recent exercise, more than one occasion",
+      "observed": [
+        "Connectivity and communication problems not raised at the start of shift, and surfacing only when the analyst was required to act on their threads",
+        "Analysts leaving shift unexpectedly, requiring reachback to other teams",
+        "An outgoing provider representative declining to give the incoming crew an update and directing them to a channel instead"
+      ],
+      "root_cause_recorded": "A problem that is not yet blocking is not perceived as reportable.",
+      "trains_out_with": [
+        "CMP-08"
+      ],
+      "trainer_mechanism": "Partly trainable. Scenarios seed a degraded condition that is not yet blocking, and reward declaring it early. The wider crew behaviour is out of scope for a single-operator trainer and is recorded as such.",
+      "cues": [
+        "CUE-072"
+      ],
+      "severity": "medium",
+      "honest_limitation": "A trainer can teach that early declaration matters. It cannot make someone speak up in a shared room."
+    },
+    {
+      "id": "REC-037",
+      "name": "Running record not maintained, degrading the handover",
+      "recurrence": "Most recent exercise, and the mechanism behind an existing handover pattern",
+      "observed": [
+        "Thread tracking pages not updated by either the supervisor or the responsible analysts",
+        "Handover to the incoming cell characterising several threads as having seen little activity, which was untrue",
+        "Assessed as producing a poor-quality handover",
+        "Separately, advanced operators spending time before changeover adding minimum information to the tracking system on behalf of a supervisor who was not following threads"
+      ],
+      "root_cause_recorded": "The handover is only as good as the record kept during the shift. Handover quality is decided hours before handover happens.",
+      "trains_out_with": [
+        "CMP-08",
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Extends the existing handover scenario. The operator maintains a running record during the scenario and the handover they produce is generated from it, so a thin record produces a thin handover and the cost is visible immediately rather than at the end.",
+      "cues": [
+        "CUE-055"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-038",
+      "name": "Review step bypassed under tempo",
+      "recurrence": "Most recent exercise",
+      "observed": [
+        "Advanced operators not given the opportunity to review reports before release on several occasions",
+        "Basic errors consequently appearing in published reports, including an incorrect date on the report itself"
+      ],
+      "root_cause_recorded": "Under tempo the review step is treated as optional because it is the only step with no external prompt.",
+      "trains_out_with": [
+        "CMP-06"
+      ],
+      "trainer_mechanism": "Corroborates the existing pre-publication check. The draft-check drill now includes a wrong date among its seeded defects, because that is what a real bypassed review produced.",
+      "cues": [
+        "CUE-046"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-039",
+      "name": "Two manoeuvres solved as one",
+      "recurrence": "Most recent exercise, provider-side, with a direct analytical consequence",
+      "observed": [
+        "Manoeuvres mis-summarised, with a single large manoeuvre solved where two had occurred",
+        "Leading at times to an inaccurate picture of proximity operations and incorrect categorisation",
+        "Described from the provider side as very large manoeuvres that no automatic filter can keep up with, and that once two sum together the resolution loop struggles"
+      ],
+      "root_cause_recorded": "Solver limitation under high manoeuvre rates, not analyst error. The consequence lands on the analyst.",
+      "trains_out_with": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "trainer_mechanism": "Added to the artefact library. Seeds present a solved single manoeuvre whose element signature is inconsistent with one burn, requiring the operator to challenge the provider summary rather than accept it.",
+      "cues": [
+        "CUE-073"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "REC-040",
+      "name": "Provider display conventions not standardised",
+      "recurrence": "Most recent exercise",
+      "observed": [
+        "Pre-manoeuvre and post-manoeuvre relative motion plots with the colour assignment varying between deliveries",
+        "A recommendation that the convention be fixed so one colour always denotes the post-manoeuvre case"
+      ],
+      "root_cause_recorded": "An unresolved standards question with the provider, as with identifier representation and waterfall orientation.",
+      "trains_out_with": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "trainer_mechanism": "Seeds vary the convention and score whether the operator checks the legend before reading the plot. This is now the third instance of the same class of failure, alongside waterfall orientation and identifier representation, and they are drilled as one habit: read the convention before reading the product.",
+      "cues": [
+        "CUE-074"
+      ],
+      "severity": "medium"
+    }
+  ],
+  "what_went_well_worth_preserving": {
+    "note": "The register would be dishonest if it recorded only failures, and the things that worked are as instructive as the things that did not.",
+    "items": [
+      "Splitting the floor into an overview cell and a product cell accelerated release on a complex direct ascent event",
+      "Screen sharing while quoting states and identifiers measurably improved shared understanding and reduced transcription error",
+      "A pre-impact brief before an expected breakup noticeably strengthened crew readiness",
+      "Providers present in the same coordination call as the command team improved responsiveness all week",
+      "A thinking out loud culture lowered language barriers across a multinational crew",
+      "Structured direct ascent reporting workflows were assessed as mature and resilient even under high analytical load, and were explicitly recommended for preservation unchanged",
+      "Confidence visibly grew as events became routine, which is the entire thesis of this application stated by an exercise observer rather than by a designer",
+      "A mission area lead scheduling a synchronisation briefing during a shift to coordinate the crew, review current activity, manage tasking and set priorities, assessed as a positive coordination mechanism worth retaining for high-tempo or complex operations",
+      "Pairing a recently qualified supervisor with an experienced one from another cell for a partial shift, which was assessed as a reassuring steer and worked well as a combination",
+      "White cell representatives consistently contactable, with a short debrief at the end of each exercise day covering general observations",
+      "A provider team communicating tool problems immediately so that others could attach documentation on their behalf, rather than letting the problem surface as a gap"
+    ]
+  },
+  "calibration_data": {
+    "note": "Observed timings used to calibrate scoring targets. These are the cell's own performance, so the targets are neither aspirational nor arbitrary.",
+    "first_report_latency_minutes": {
+      "standard": "Two-legged. 60 minutes from initial indications, or 30 minutes from the last provider product dropped, whichever is earlier",
+      "bands": {
+        "qualified": "60/30",
+        "partial": "90/60",
+        "unqualified": ">90/60"
+      },
+      "geo_direct_ascent_exception": {
+        "initial_warning": {
+          "qualified": 30,
+          "partial": 60,
+          "unqualified": ">60"
+        },
+        "tracked_object": {
+          "qualified": 90,
+          "partial": 120,
+          "unqualified": ">120"
+        }
+      },
+      "daily_crew_operations": "No official timing standards. Latency must not be scored on these tasks.",
+      "observed_from_indication": [
+        37,
+        49,
+        55,
+        56,
+        60,
+        61
+      ],
+      "observed_achieved_range": [
+        16,
+        30
+      ],
+      "note": "Provider drop times unavailable, so the governing leg cannot be reconstructed for the observed events.",
+      "trainer_target": "Score against the published bands directly. They need no defending as fair because they are the standard the operator is held to in role."
+    },
+    "detection_latency_minutes": {
+      "note": "On one exercise day a manoeuvre into proximity conditions began at a known time, with provider alerting at plus sixty-eight minutes against an expectation of thirty to forty-five, and verification at plus seventy-one minutes against data sufficient roughly an hour earlier.",
+      "trainer_use": "Detection latency is measured separately from reporting latency, because they have different causes and different fixes."
+    },
+    "thread_load": {
+      "observed_peak_concurrent": 35,
+      "recommended_ceiling_per_analyst": 3,
+      "ageing_callout_minutes": [
+        15,
+        20
+      ],
+      "trainer_use": "Multi-event scenarios present more threads than can be actively worked, with triage and ageing awareness scored explicitly."
+    }
+  },
+  "_cross_cell_analysis": {
+    "note": "Two cells, two exercises, different crews and different continents. Where a failure appears in both it is systemic and the training must target it directly. Where it appears in one it may still be worth training, but it should not be presented as a universal weakness.",
+    "systemic_confirmed_in_both_cells": [
+      {
+        "pattern": "Object identifier handling",
+        "meridian": "Catalogue number transcription errors and parent-child ambiguity under concurrent load",
+        "pacific": "Alpha-numeric and six-digit numeric identifiers used inconsistently and interchangeably across provider products, with operators observed entering the wrong representation",
+        "reading": "Same competency, two different mechanisms. One is a load problem and one is a standards problem. Both produce a wrong identifier in a report, and the trainer should exercise both.",
+        "register_ids": [
+          "REC-005",
+          "REC-020"
+        ]
+      },
+      {
+        "pattern": "Notification discipline",
+        "meridian": "Mandatory notification calls being skipped, described as a trend across exercise periods",
+        "pacific": "Notifications treated as notionally complete by posting in a thread rather than exercising the actual process",
+        "reading": "Systemic, and the Pacific observation explains part of the Meridian one. If a notification is routinely simulated by a chat message during training, the muscle for actually making it is never built.",
+        "register_ids": [
+          "REC-004",
+          "REC-022"
+        ]
+      },
+      {
+        "pattern": "Non-routine and newly introduced procedures",
+        "meridian": "A combined multi-object thread handed over from another cell caused processing uncertainty, assessed as showing non-routine workflows are not rehearsed",
+        "pacific": "That same class of procedure was issued immediately before the exercise with no difference, continuation or gap training before crews were expected to apply it A later exercise in the other cell repeated the pattern with a different procedure and a changed data format, with senior staff also unfamiliar.",
+        "reading": "This is the most important finding in the register. Two cells recorded opposite ends of a single failure. One cell was handed an unfamiliar procedure with no training and applied it; the receiving cell then found the resulting product confusing. Neither AAR alone shows the whole chain. The failure was never operator understanding, it was that the procedure entered service faster than the training did. With a third instance in the second cell, this is no longer a regional observation. It is the most corroborated pattern in the register.",
+        "register_ids": [
+          "REC-014",
+          "REC-019"
+        ]
+      },
+      {
+        "pattern": "Event classification at the separation branch",
+        "meridian": "Not recorded directly, but the branch is the most consequential decision in the separation family",
+        "pacific": "Operators observed proceeding directly to uncorrelated track discovery for objects separating from a red asset, bypassing the separation procedure entirely",
+        "reading": "Corroborates the design decision to make this branch the highest-weighted classification drill in the package. The Pacific observation adds a sequencing nuance the training decks do not state plainly: separation first, discovery subsequently if the object remains unidentified.",
+        "register_ids": [
+          "REC-021"
+        ]
+      }
+    ],
+    "cell_specific_so_far": {
+      "meridian": [
+        "First report latency and hesitation to publish",
+        "Late transition into the proximity checklist",
+        "Thread lifecycle and closure discipline under surge"
+      ],
+      "pacific": [
+        "Procedure novelty without preparatory training",
+        "Coordinate format mismatch at an external interface",
+        "Presence and availability signalling"
+      ],
+      "caution": "Absence from one register is not evidence of absence in that cell. The two sources have different authors, formats and scopes, and the Pacific report states explicitly that its observations are selected rather than all-inclusive. Treat cell-specific as not yet corroborated rather than as not present."
+    },
+    "design_consequence": "Systemic patterns are drilled for every operator regardless of cell. Cell-specific patterns are available but weighted by the operator's own performance rather than by assumption, because telling a Pacific operator they hesitate on reports when the evidence for that came from another cell would be both wrong and insulting."
+  },
+  "_source_weighting": {
+    "note": "How to read the corpora against each other, learned by getting it wrong once.",
+    "rules": [
+      "The released notification corpus is the authority on what these operators produce. It is the output of the audience being trained.",
+      "The weekly activity reports aggregate across three regional cells and several mission areas, so frequency within them does not indicate scope for this audience. Electromagnetic interference was prominent there and is owned elsewhere entirely.",
+      "Exercise after action reports are the authority on how operators fail, not on what they do. Their frequency reflects what an observer chose to write down.",
+      "Procedures are the authority on what should happen. Where a procedure and the corpus disagree, that disagreement is itself a training finding rather than an error in either.",
+      "Where two sources conflict on scope, the notification corpus wins."
+    ]
+  }
+}

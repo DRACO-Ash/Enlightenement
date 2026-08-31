@@ -1,6 +1,6 @@
 [project]
 name = "enlightenment"
-version = "0.23.20"
+version = "0.24.0"
 description = "Orbital warfare training application for the Bluestaq App Store."
 requires-python = ">=3.12,<3.13"
 
@@ -36,6 +36,12 @@ exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# `tools/validate_content.py` is VENDORED: it ships inside Ash's content package, it is the
+# authority on whether the content is valid, and it is run rather than reimplemented. Reformatting
+# it would put a diff between this copy and his source and make every future package update a
+# merge. Excluded from format and lint for that reason and no other; it is still executed as leg 2
+# of the verification loop, which is the check that actually matters for a file we do not own.
+extend-exclude = ["tools/validate_content.py"]
 
 [tool.ruff.lint]
 # The whole recommended profile, not a hand-picked subset. The Foundations lesson is

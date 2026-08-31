@@ -1,0 +1,1573 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "2.2.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "SJ-21 / SJ-25 RPO and Docking Event AAR",
+      "Cosmos 2558 / Object C Separation AAR",
+      "Intelsat 33E Break-Up After Action Report",
+      "TJS-15 After Action Review",
+      "Cosmos 2589 Launch AAR",
+      "JCO CT decks, all",
+      "DRAFT: JCO vendor product standardization",
+      "Live Fly 25-2 and 26-1 after action reports",
+      "JCO Photometry Change procedure",
+      "JCO Weekly Activity Reports, 76 editions, via behaviour-library.json",
+      "JCO Launch procedure",
+      "synthesis-ladder.json tier five",
+      "JCO Quick Reference Card, P&D primary sorting",
+      "JCO Changeover procedure"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Historical basis fields reference publicly reported events and are generalised. Generated scenarios use synthetic objects with fictitious identifiers; dataMode is set to SIMULATED or EXERCISE on all generated records. No live watchlist membership is encoded."
+  },
+  "_design_note": "Every template holds the expected response fixed and randomises the instantiation. Each carries at least one distractor trigger event, because a scenario in which every anomaly is real trains over-reporting. Solvability is asserted before a scenario is served: if the expected response cannot be reached from the data available in that seed, the seed is rejected rather than scored.",
+  "scenario_templates": [
+    {
+      "id": "SCN-MNV-BASELINE",
+      "name": "Something moved",
+      "procedure_ids": [
+        "PROC-MNV"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "You are on shift. A provider has posted a residual plot on an object under standing tasking and flagged a possible manoeuvre. Work the event.",
+      "historical_basis": "Generic manoeuvre detection and characterisation as taught in JCO continuation training. No single event.",
+      "seed_params": {
+        "varies": [
+          "burn direction",
+          "burn magnitude",
+          "epoch age of the state",
+          "observation density either side",
+          "which artefact is present, if any",
+          "time of day and collection geometry",
+          "whether pattern of life supports routine station-keeping",
+          "resulting geometry relative to nearby objects"
+        ],
+        "fixed": [
+          "the procedure",
+          "the reporting obligation",
+          "the order of the first two steps"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "A residual departure is presented with a possible manoeuvre label from the provider.",
+          "expected_response": [
+            "Check epoch age of the state",
+            "Check observation density either side of the departure"
+          ],
+          "acceptable_alternatives": [
+            "Request observations covering the period before assessing"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-05"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-2",
+          "at": "T+2m",
+          "event": "The residual component is visible and identifies in-plane or out-of-plane.",
+          "expected_response": [
+            "State whether the burn is in-plane or out-of-plane",
+            "Infer the candidate burn directions from that"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-3",
+          "at": "T+5m",
+          "event": "A DC table is delivered.",
+          "expected_response": [
+            "Read the Delta column",
+            "Name the burn direction from the element signature",
+            "Sanity-check the delta-v against the altitude change"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+8m",
+          "event": "On some seeds, the reported drift rate is physically impossible because the two states have a near-zero epoch separation.",
+          "expected_response": [
+            "Reject the derived rate",
+            "Check epoch separation of the inputs",
+            "Request states with a usable separation"
+          ],
+          "competency_ids": [
+            "CMP-04",
+            "CMP-05"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-5",
+          "at": "T+10m",
+          "event": "On some seeds, the manoeuvre is entirely consistent with the object's established station-keeping cadence.",
+          "expected_response": [
+            "Compare against pattern of life",
+            "Assess as routine and report on that basis rather than as a manoeuvre of intent"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-6",
+          "at": "T+14m",
+          "event": "Reporting decision point.",
+          "expected_response": [
+            "State possible or verified with confidence",
+            "Include time, delta-v, period, perigee, apogee, inclination and drift rate",
+            "State the resulting geometry and any affected objects",
+            "State collection limitations"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-06"
+          ],
+          "weight": 0.15
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "residual series with the stated departure",
+          "epoch metadata on all states",
+          "DC table consistent with the seeded burn",
+          "pattern of life history of at least four cycles"
+        ],
+        "check": "The seeded burn direction must be recoverable from the DC table Delta column alone, and the pattern of life history must be long enough to support or refute a routine assessment."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "developing",
+      "expected_duration_min": 15,
+      "sparta_ids": [
+        "REC-0005"
+      ]
+    },
+    {
+      "id": "SCN-RPO-APPROACH",
+      "name": "Closing on the belt",
+      "procedure_ids": [
+        "PROC-RPO",
+        "PROC-MNV"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "An object of interest has been drifting along the belt for several days. Predictive surveillance has flagged an upcoming crossing. Work the event as it develops.",
+      "historical_basis": "Patterned on publicly reported GEO rendezvous and proximity behaviour, including sustained perching by collection platforms and multi-week approach sequences between two co-located objects.",
+      "seed_params": {
+        "varies": [
+          "drift rate and whether it is slowing",
+          "plane relationship and whether deltas are closing",
+          "relative motion geometry: natural, forced, drifting or perch",
+          "standoff distance held",
+          "which phenomenologies are available",
+          "whether cross-tagging occurs",
+          "collection gaps from eclipse and exclusion",
+          "whether the target is red or blue"
+        ],
+        "fixed": [
+          "the procedure",
+          "the escalation obligation on a precision plane match",
+          "the requirement to report before the picture is complete"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "A waterfall shows two traces converging in longitude.",
+          "expected_response": [
+            "Request a neighbourhood constrained by inclination and RAAN",
+            "State that longitude convergence alone is not proximity"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-04"
+          ],
+          "weight": 0.12
+        },
+        {
+          "id": "TE-2",
+          "at": "T+4m",
+          "event": "The neighbourhood shows inclination and RAAN deltas. On some seeds these are precision matched and held.",
+          "expected_response": [
+            "Verify epoch ages first",
+            "Assess the plane relationship",
+            "On a precision match, notify higher headquarters promptly and maximise tasking"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04",
+            "CMP-06"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+8m",
+          "event": "A TRIC plot is delivered showing the relative motion geometry.",
+          "expected_response": [
+            "Classify natural, forced, drifting or perch",
+            "Classify the RPO phase",
+            "State whether fuel is being spent to maintain the geometry"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+12m",
+          "event": "On some seeds, the objects converge close enough that optical merges them while RF still separates them.",
+          "expected_response": [
+            "Assess as unresolved rather than docked",
+            "State that cross-tagging is expected at this separation",
+            "Report the ambiguity rather than the conclusion"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-05"
+          ],
+          "weight": 0.18,
+          "distractor": true
+        },
+        {
+          "id": "TE-5",
+          "at": "T+16m",
+          "event": "On some seeds the object of interest and the object approached are both red.",
+          "expected_response": [
+            "Report anyway",
+            "State that practising against an own-nation asset is a recognised precursor"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-6",
+          "at": "T+20m",
+          "event": "Reporting decision point with an incomplete picture.",
+          "expected_response": [
+            "Publish without waiting for completeness",
+            "State type, phase, separation, POCA, plane relationship and delta-v assessment",
+            "State confidence and what would change it",
+            "State collection limitations"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-06"
+          ],
+          "weight": 0.15
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "waterfall with at least five days",
+          "neighbourhood with epoch ages and plane deltas",
+          "TRIC with POCA and RIC components",
+          "phenomenology availability metadata"
+        ],
+        "check": "The seeded RPO type must be unambiguously recoverable from the TRIC across the number of revolutions plotted, and the plane relationship must be recoverable from the neighbourhood."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "competent",
+      "expected_duration_min": 22,
+      "sparta_ids": [
+        "REC-0005",
+        "REC-0005.03",
+        "IA-0005",
+        "EXF-0005"
+      ]
+    },
+    {
+      "id": "SCN-SEP-OR-BREAK",
+      "name": "Now there are two",
+      "procedure_ids": [
+        "PROC-SEP",
+        "PROC-BRK",
+        "PROC-UCT"
+      ],
+      "regime": "LEO",
+      "narrative_frame": "A tracking attempt on a single object has returned more than one. Establish what has happened and take the right path.",
+      "historical_basis": "Patterned on publicly reported sub-satellite deployments from long-lived parent platforms, and on fragmentation events detected through photometric expansion.",
+      "seed_params": {
+        "varies": [
+          "headcount, two or three or more",
+          "parent state of behaviour, red or blue",
+          "whether a parent manoeuvre is co-timed",
+          "whether the new object manoeuvres afterwards",
+          "whether the headcount is genuine or a tracking artefact",
+          "how far into the parent's life the release falls",
+          "whether an unranked object sits inside the threat geometry",
+          "collection geometry and gaps"
+        ],
+        "fixed": [
+          "the branch logic",
+          "the requirement to confirm headcount across passes",
+          "the differing reporting obligations of the three branches"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "A multiple headcount is reported.",
+          "expected_response": [
+            "Confirm the count across more than one pass before committing",
+            "Establish whether the parent is red or blue"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-03"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-2",
+          "at": "T+3m",
+          "event": "The branch decision must be taken.",
+          "expected_response": [
+            "Three or more to breakup",
+            "Two on a red parent to separation",
+            "Two on a blue parent to UCT discovery",
+            "State that intent can override count"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-03"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+6m",
+          "event": "On some seeds the apparent second object is a tracking artefact and does not reappear on subsequent passes.",
+          "expected_response": [
+            "Do not commit to a processing path on a single unconfirmed count",
+            "State the count as unconfirmed and continue verification"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-05"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-4",
+          "at": "T+9m",
+          "event": "Tasking must be set on both objects.",
+          "expected_response": [
+            "State explicitly which rank applies to the parent and which to the new object"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.1
+        },
+        {
+          "id": "TE-5",
+          "at": "T+12m",
+          "event": "A neighbourhood is delivered, filtered to ranked objects only on some seeds.",
+          "expected_response": [
+            "Ask what filter was applied",
+            "Request the unfiltered or HRR-plus-UCT view",
+            "Include any unranked object inside the threat geometry"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-06"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-6",
+          "at": "T+16m",
+          "event": "On some seeds the new object performs a manoeuvre after separation.",
+          "expected_response": [
+            "Assess as an active payload",
+            "Reassess reach and threat with the new state",
+            "Report the verified manoeuvre separately from the separation"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04",
+            "CMP-06"
+          ],
+          "weight": 0.2
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "multi-pass headcount evidence",
+          "parent state of behaviour",
+          "parent manoeuvre history",
+          "post-separation state series for the new object",
+          "unfiltered neighbourhood"
+        ],
+        "check": "The seeded branch must be determinable from the evidence available at the branch point, and where the count is an artefact the subsequent passes must genuinely fail to reproduce it."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "competent",
+      "expected_duration_min": 20,
+      "sparta_ids": [
+        "IA-0008",
+        "IA-0008.02"
+      ]
+    },
+    {
+      "id": "SCN-BRK-ANOMALY",
+      "name": "No contact",
+      "procedure_ids": [
+        "PROC-BRK"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "An operator has reported losing contact with a satellite and has asked for support. Establish what happened.",
+      "historical_basis": "Patterned on the publicly reported loss of a geosynchronous communications satellite where the event occurred during solar exclusion and passive radio frequency signals had dropped away.",
+      "seed_params": {
+        "varies": [
+          "whether the object is in solar exclusion",
+          "whether passive RF has dropped",
+          "time until the next optical pass",
+          "fragment count growth rate",
+          "energy of the event and therefore Gabbard spread",
+          "whether prior anomaly indicators exist",
+          "cause: failure, collision, shedding or intercept"
+        ],
+        "fixed": [
+          "the requirement to establish collection geometry before interpreting absence",
+          "the requirement to report headcount as a floor",
+          "the handover obligation"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "No signal and no recent observations.",
+          "expected_response": [
+            "Establish whether the object is in solar exclusion or eclipse",
+            "State that absence during predicted exclusion is not evidence"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-05"
+          ],
+          "weight": 0.2,
+          "distractor": true
+        },
+        {
+          "id": "TE-2",
+          "at": "T+5m",
+          "event": "A pass schedule is available.",
+          "expected_response": [
+            "Identify the next optical visibility window",
+            "Increase tasking rank to secure the collection"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-03"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+10m",
+          "event": "Optical collection returns photometry showing a large expansion in magnitude and a widening spread.",
+          "expected_response": [
+            "Assess as a fragmentation",
+            "Use the expansion to bracket the event time",
+            "Confirm headcount"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-02"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+15m",
+          "event": "An early fragment count is available.",
+          "expected_response": [
+            "Report the count as a minimum rather than a total",
+            "State that counts grow as the cloud spreads and correlation improves"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-06"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-5",
+          "at": "T+20m",
+          "event": "Cause must be assessed.",
+          "expected_response": [
+            "State a cause with confidence from failure, collision, shedding or intercept",
+            "Support it with the Gabbard spread, photometric signature and any prior anomaly indicators"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04",
+            "CMP-05"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-6",
+          "at": "T+25m",
+          "event": "Closure planning.",
+          "expected_response": [
+            "Plan handover to the cataloguing authority",
+            "Maintain coverage of the debris cloud until handover completes",
+            "Provide close approach information to affected operators"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.1
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "collection geometry including exclusion and eclipse windows",
+          "pass schedule",
+          "photometric series spanning the event",
+          "fragment states sufficient for a Gabbard diagram",
+          "prior anomaly history"
+        ],
+        "check": "The seeded cause must be distinguishable from at least one alternative using the products available, and the exclusion window must genuinely explain the initial data absence where that seed is used."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "proficient",
+      "expected_duration_min": 28,
+      "sparta_ids": [
+        "IA-0008.03",
+        "EX-0018"
+      ]
+    },
+    {
+      "id": "SCN-PS-DAILY",
+      "name": "The daily sweep",
+      "procedure_ids": [
+        "PROC-PS"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "It is the start of your shift. Run predictive surveillance across the drifting objects of interest and set the tasking position for the day.",
+      "historical_basis": "Daily predictive surveillance execution as taught in JCO continuation training.",
+      "seed_params": {
+        "varies": [
+          "how many objects are drifting",
+          "epoch ages across the neighbourhood",
+          "which crossings fall inside the projection window",
+          "whether drift is slowing on any object",
+          "delta-v cost to close from the current geometry",
+          "whether current tasking already aligns with the standard"
+        ],
+        "fixed": [
+          "the required filters on the neighbourhood request",
+          "the order of the analytical steps",
+          "the requirement to produce a tasking position even when no change is needed"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "Neighbourhoods must be requested.",
+          "expected_response": [
+            "Apply the required projection window and inclination filter",
+            "State that the filters are a requirement, not a preference"
+          ],
+          "competency_ids": [
+            "CMP-03"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-2",
+          "at": "T+3m",
+          "event": "Neighbourhoods are delivered with mixed epoch ages.",
+          "expected_response": [
+            "Verify epoch ages before assessing any distance",
+            "Flag objects whose states are too old to assess"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-05"
+          ],
+          "weight": 0.25,
+          "distractor": true
+        },
+        {
+          "id": "TE-3",
+          "at": "T+7m",
+          "event": "Points of closest approach in the window must be identified.",
+          "expected_response": [
+            "Identify each crossing and its time",
+            "Confirm the tasking rank of both objects against the standard"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-03"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+11m",
+          "event": "On some seeds an object's drift is decreasing and it appears to be preparing to park.",
+          "expected_response": [
+            "Raise tasking",
+            "Assess the resulting geometry against nearby assets",
+            "Treat as a reportable development"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.25
+        },
+        {
+          "id": "TE-5",
+          "at": "T+15m",
+          "event": "The daily output must be produced.",
+          "expected_response": [
+            "Request the tasking changes, or state explicitly that current tasking aligns",
+            "Record the position for the day"
+          ],
+          "competency_ids": [
+            "CMP-06"
+          ],
+          "weight": 0.15
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "neighbourhoods for each drifting object",
+          "epoch metadata",
+          "projected crossings in the window",
+          "drift history sufficient to detect a slowing trend"
+        ],
+        "check": "Every seeded crossing must fall inside the projection window, and where drift is seeded as slowing the trend must be detectable across the history provided."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-03",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "foundation",
+      "expected_duration_min": 16,
+      "sparta_ids": [
+        "REC-0005"
+      ]
+    },
+    {
+      "id": "SCN-DAASAT-GEO-CLOCK",
+      "name": "Ninety minutes",
+      "procedure_ids": [
+        "PROC-DAASAT-GEO",
+        "PROC-BRK"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "A cue has arrived indicating a launch on a high-altitude ballistic profile. Operators need warning and the clock is running.",
+      "historical_basis": "Patterned on the publicly discussed geosynchronous direct ascent test profile and the associated JCO processing timeline.",
+      "seed_params": {
+        "varies": [
+          "apogee above or below belt altitude",
+          "crossing longitude",
+          "quality and timing of the initial cue",
+          "when acquisition succeeds",
+          "whether a separation is detected",
+          "which objects fall inside the initial and refined bands",
+          "whether an impact occurs"
+        ],
+        "fixed": [
+          "the phase structure",
+          "the requirement to publish before the picture is good",
+          "the requirement not to wait for a solve on separation detection"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "The cue arrives with time, location and azimuth.",
+          "expected_response": [
+            "Determine whether apogee is at or below belt altitude or above it",
+            "Select the correct assessment longitude accordingly"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-03",
+            "CMP-04"
+          ],
+          "weight": 0.25
+        },
+        {
+          "id": "TE-2",
+          "at": "T+10m",
+          "event": "An initial target list is available across a wide band.",
+          "expected_response": [
+            "Make a verbal notification",
+            "Publish an initial report listing blue assets and well-tracked uncorrelated tracks at risk",
+            "State that the list may change"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+45m",
+          "event": "Acquisition succeeds and a state is generated.",
+          "expected_response": [
+            "Narrow the band",
+            "Publish a refined report now including red objects"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+100m",
+          "event": "On some seeds, no significant change occurs during the coast phase.",
+          "expected_response": [
+            "Do not republish unchanged information",
+            "Continue refining the state"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-06"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-5",
+          "at": "T+210m",
+          "event": "On some seeds, a separation is detected.",
+          "expected_response": [
+            "Make an immediate verbal notification",
+            "Publish the flash report immediately without waiting for an orbit determination",
+            "Follow with the refined target assessment when the solve completes"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-06"
+          ],
+          "weight": 0.2
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "initial cue with time, location and azimuth",
+          "ascent ephemeris",
+          "belt objects with identifiers within the candidate bands",
+          "acquisition timeline"
+        ],
+        "check": "The correct assessment longitude must be determinable from the seeded apogee relationship, and the target list must be non-empty within the seeded band."
+      },
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "difficulty_band": "expert",
+      "expected_duration_min": 30,
+      "sparta_ids": [
+        "IA-0008.03"
+      ]
+    },
+    {
+      "id": "SCN-SURGE-CONCURRENT",
+      "name": "More than you can hold",
+      "procedure_ids": [
+        "PROC-CRM",
+        "PROC-DAASAT-GEO",
+        "PROC-RPO",
+        "PROC-BRK"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "Two time-critical events land within minutes of each other while proximity threads are already running. You cannot work all of it properly. Decide what you are not working, and say so.",
+      "historical_basis": "Patterned on exercise days where near-simultaneous direct ascent events with concurrent proximity threads drove first report latency past an hour and peak concurrent thread counts to around thirty-five.",
+      "seed_params": {
+        "varies": [
+          "how many events arrive and how close together",
+          "which threads are already ripe at start",
+          "which threads are resolved but still open",
+          "whether a mandatory notification is outstanding",
+          "which provider is degraded",
+          "the order in which evidence arrives"
+        ],
+        "fixed": [
+          "that the load exceeds capacity",
+          "that triage is scored",
+          "that latency runs from indication rather than from noticing"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "Two time-critical indications arrive within minutes, with proximity threads already open.",
+          "expected_response": [
+            "Publish a holding alert on each time-critical event inside minutes",
+            "Do not serialise the two"
+          ],
+          "competency_ids": [
+            "CMP-06",
+            "CMP-07"
+          ],
+          "weight": 0.25
+        },
+        {
+          "id": "TE-2",
+          "at": "T+5m",
+          "event": "Thread load now exceeds what can be actively worked.",
+          "expected_response": [
+            "Triage explicitly into active, monitoring and ready to close",
+            "Order by the published event priority rather than by recency or by which arrived loudest",
+            "State what is not being worked"
+          ],
+          "competency_ids": [
+            "CMP-08"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+12m",
+          "event": "Some open threads are resolved and consuming attention.",
+          "expected_response": [
+            "Close the resolved threads deliberately"
+          ],
+          "competency_ids": [
+            "CMP-08"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-4",
+          "at": "T+18m",
+          "event": "A ripe proximity thread has sat untouched since before the surge began.",
+          "expected_response": [
+            "Sweep for untouched threads",
+            "Action or explicitly defer it with a reason"
+          ],
+          "competency_ids": [
+            "CMP-08",
+            "CMP-07"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-5",
+          "at": "T+25m",
+          "event": "On some seeds, one of the concurrent events is a routine station-keep that does not warrant escalation.",
+          "expected_response": [
+            "Assess as routine",
+            "Do not spend surge capacity on it"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-08"
+          ],
+          "weight": 0.2,
+          "distractor": true
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "indications with posting timestamps",
+          "open thread list with last activity times",
+          "products for each active event",
+          "pattern of life history for the routine seed"
+        ],
+        "check": "Total workable capacity must be genuinely exceeded, and at least one thread must be closable and one ripe, so triage has a correct answer."
+      },
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_band": "expert",
+      "expected_duration_min": 30,
+      "sparta_ids": [
+        "IA-0008.03"
+      ],
+      "triage_authority": {
+        "source": "Quick Reference Card, P&D primary sorting",
+        "note": "Triage is now scored against the published priority order rather than against authoring judgement. This was previously a gap: the scenario scored triage with no authoritative order behind it.",
+        "threshold_ref": "triage.priority_order"
+      }
+    },
+    {
+      "id": "SCN-OUT-OF-ORDER",
+      "name": "Consequence first",
+      "procedure_ids": [
+        "PROC-BRK",
+        "PROC-DAASAT-LEO"
+      ],
+      "regime": "LEO",
+      "narrative_frame": "Evidence of an outcome has arrived and nothing explains it yet. Work it.",
+      "historical_basis": "Patterned on an exercise day where a debris cloud report preceded the launch confirmation that explained it, causing confusion and slowing situational awareness.",
+      "seed_params": {
+        "varies": [
+          "how long the explaining indication is delayed",
+          "whether it arrives at all",
+          "whether attention is already committed to another event",
+          "the true cause among failure, collision, shedding and intercept",
+          "collection geometry"
+        ],
+        "fixed": [
+          "that the consequence arrives before the cause",
+          "that the effect procedure governs"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "Fragmentation evidence arrives with no indication of a cause.",
+          "expected_response": [
+            "Start the procedure governing the effect",
+            "Do not wait for the expected trigger"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-08"
+          ],
+          "weight": 0.3
+        },
+        {
+          "id": "TE-2",
+          "at": "T+6m",
+          "event": "Reasoning backwards to a likely cause.",
+          "expected_response": [
+            "Generate candidate causes",
+            "Check timing and geometry for a plausible causal link"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.25
+        },
+        {
+          "id": "TE-3",
+          "at": "T+12m",
+          "event": "On some seeds a related indication arrives late and confirms the link.",
+          "expected_response": [
+            "Connect it to the running event rather than opening a new one",
+            "Execute the transition deliberately and state what carries across"
+          ],
+          "competency_ids": [
+            "CMP-03"
+          ],
+          "weight": 0.25
+        },
+        {
+          "id": "TE-4",
+          "at": "T+18m",
+          "event": "On some seeds the late indication is unrelated and coincidental.",
+          "expected_response": [
+            "Test the causal link before connecting them",
+            "Keep them separate and say why"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-05"
+          ],
+          "weight": 0.2,
+          "distractor": true
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "fragmentation evidence",
+          "collection geometry",
+          "candidate cause evidence",
+          "timing of any late indication"
+        ],
+        "check": "The causal link must be testable from timing and geometry, and on coincidental seeds must be genuinely refutable."
+      },
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-05",
+        "CMP-08"
+      ],
+      "difficulty_band": "proficient",
+      "expected_duration_min": 22,
+      "sparta_ids": [
+        "IA-0008.03"
+      ]
+    },
+    {
+      "id": "SCN-HANDOVER-GAP",
+      "name": "What they did not tell you",
+      "procedure_ids": [
+        "PROC-CRM",
+        "PROC-RPO",
+        "PROC-MNV"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "You have just taken the handover. Get the picture straight, then work it.",
+      "historical_basis": "Patterned on exercise handovers of varying quality, including one delayed by late arrivals and followed by slow inject pickup, and cases where indications present on the previous shift were not transitioned until the following one.",
+      "seed_params": {
+        "varies": [
+          "how complete the brief is",
+          "how many open threads are omitted",
+          "whether an omitted thread is ripe or resolved",
+          "whether an untransitioned trigger sits on a previous shift's thread",
+          "how stale the states are"
+        ],
+        "fixed": [
+          "that the brief is reconcilable against the open thread list",
+          "that latency on an inherited ripe thread runs from when the trigger appeared"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "A handover brief covering most but not all open threads.",
+          "expected_response": [
+            "Reconcile the briefed set against the open record",
+            "Identify events not covered",
+            "Check each briefed event against the six-point standard, particularly next step and current checklist position"
+          ],
+          "competency_ids": [
+            "CMP-08"
+          ],
+          "weight": 0.3
+        },
+        {
+          "id": "TE-2",
+          "at": "T+5m",
+          "event": "An omitted thread carries an untransitioned proximity trigger from the previous shift.",
+          "expected_response": [
+            "Transition it immediately",
+            "Recognise that the clock started when the trigger appeared, not at handover"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-07",
+            "CMP-08"
+          ],
+          "weight": 0.3
+        },
+        {
+          "id": "TE-3",
+          "at": "T+12m",
+          "event": "On some seeds another omitted thread is fully resolved.",
+          "expected_response": [
+            "Close it",
+            "Do not spend attention re-establishing a finished picture"
+          ],
+          "competency_ids": [
+            "CMP-08"
+          ],
+          "weight": 0.2,
+          "distractor": true
+        },
+        {
+          "id": "TE-4",
+          "at": "T+18m",
+          "event": "End of shift approaches with work outstanding.",
+          "expected_response": [
+            "Brief each open event against the six points",
+            "State next steps and current checklist step for each",
+            "Ensure every open thread carries a timer and every elevation an expiry"
+          ],
+          "competency_ids": [
+            "CMP-06",
+            "CMP-08"
+          ],
+          "weight": 0.2
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "handover brief",
+          "full open thread list with last activity",
+          "products on omitted threads",
+          "trigger timestamps"
+        ],
+        "check": "Every omitted thread must be discoverable by reconciling the brief against the thread list, and the untransitioned trigger must be unambiguous once seen."
+      },
+      "competency_ids": [
+        "CMP-03",
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_band": "competent",
+      "expected_duration_min": 22,
+      "sparta_ids": [
+        "REC-0005"
+      ],
+      "brief_standard": {
+        "source": "JCO Changeover procedure",
+        "threshold_ref": "crm.handover_brief_points",
+        "note": "The handover brief is now scored against the published six-point standard rather than against authoring judgement."
+      }
+    },
+    {
+      "id": "SCN-PHOT-CHANGE",
+      "name": "Something looks different",
+      "procedure_ids": [
+        "PROC-PHOT",
+        "PROC-MNV",
+        "PROC-RPO"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "A provider has flagged a change in an object's light curve. Establish whether it is real, what caused it, and whether it is reportable.",
+      "historical_basis": "Photometric change is the third most common report type in real reporting volume and among the lowest scoring for quality, with reports frequently precise about the observation and silent on its meaning.",
+      "seed_params": {
+        "varies": [
+          "which of the five change signatures is present",
+          "whether the change is real or one of the three collection explanations",
+          "how many sensors and which hemispheres saw it",
+          "whether a close approach falls in the window and whether lighting was favourable",
+          "whether a co-timed manoeuvre exists",
+          "whether the object is subject to a suppression rule",
+          "whether the object carries an Alpha-5 designator",
+          "whether the change is consistent with pattern of life"
+        ],
+        "fixed": [
+          "that suppression rules are checked before analysis",
+          "that the three scepticism checks precede any assessment of cause",
+          "that phase angle window and magnitudes are required content"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "An indication of photometric change arrives.",
+          "expected_response": [
+            "Check suppression rules before beginning analysis",
+            "Check whether the object is docked"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-08"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-2",
+          "at": "T+3m",
+          "event": "The light curve is available.",
+          "expected_response": [
+            "Name which of the five change signatures is present",
+            "Compare intervals at matched phase angle"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-02"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+7m",
+          "event": "On some seeds the change is visible on one sensor only, or from a different hemisphere than the rest of the data.",
+          "expected_response": [
+            "Run the three scepticism checks",
+            "Request the sensor or hemisphere view",
+            "Do not assess as real until corroborated"
+          ],
+          "competency_ids": [
+            "CMP-05"
+          ],
+          "weight": 0.25,
+          "distractor": true
+        },
+        {
+          "id": "TE-4",
+          "at": "T+12m",
+          "event": "A close approach falls inside the change window.",
+          "expected_response": [
+            "Establish whether lighting was favourable",
+            "State time, distance and lighting together",
+            "Include or exclude it as the cause explicitly"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-5",
+          "at": "T+18m",
+          "event": "The report must be produced.",
+          "expected_response": [
+            "State phase angle window, magnitude change and direction, and magnitudes before and after",
+            "State the assessed cause or state it as unknown",
+            "State whether consistent with pattern of life",
+            "State longitude and drift rate with direction"
+          ],
+          "competency_ids": [
+            "CMP-06"
+          ],
+          "weight": 0.2
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "light curve against phase angle across multiple intervals",
+          "sensor and hemisphere metadata",
+          "neighbourhood with close approaches in the window",
+          "lighting geometry",
+          "pattern of life history"
+        ],
+        "check": "The seeded cause must be distinguishable from at least one alternative using the products available, and on collection-artefact seeds the supporting view must genuinely eliminate the change."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06",
+        "CMP-08"
+      ],
+      "difficulty_band": "proficient",
+      "expected_duration_min": 22,
+      "sparta_ids": [
+        "REC-0005",
+        "REC-0001"
+      ]
+    },
+    {
+      "id": "SCN-LAUNCH-WINDOW",
+      "name": "Window opens",
+      "procedure_ids": [
+        "PROC-LAUNCH",
+        "PROC-RPO"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "A launch is expected. Work it from pre-notice through to whatever it becomes.",
+      "historical_basis": "Launch is the second most common report type in real reporting volume and among the lowest scoring for quality, with reports frequently reduced to nominals with no assessment.",
+      "seed_params": {
+        "varies": [
+          "whether the payload is threat, unknown or non-threat",
+          "whether the launch time slips and by how much",
+          "whether acquisition succeeds and after how many passes",
+          "whether the nominal is correct or wrong in plane",
+          "destination regime and whether a transfer is involved",
+          "what is in plane or near the destination longitude",
+          "whether the launch fails"
+        ],
+        "fixed": [
+          "that pre-launch, liftoff and initial track are separate reporting obligations",
+          "that a candidate track is published on before separation",
+          "that a wrong nominal and an absent object look identical"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T-26h",
+          "event": "Pre-notice indicators arrive with a payload of uncertain character.",
+          "expected_response": [
+            "Determine whether this is processed and on which path",
+            "Treat unknown as a reason to process rather than to skip"
+          ],
+          "competency_ids": [
+            "CMP-03",
+            "CMP-02"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-2",
+          "at": "T-24h",
+          "event": "The window opens in a day.",
+          "expected_response": [
+            "Publish the pre-launch report",
+            "State expected regime and orbital characteristics",
+            "State what is in plane or near the destination"
+          ],
+          "competency_ids": [
+            "CMP-06"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T-2h",
+          "event": "On some seeds the launch time slips.",
+          "expected_response": [
+            "Re-rotate the nominal to the new time",
+            "Redistribute",
+            "Re-run the in-plane or apogee assessment because RAAN has changed"
+          ],
+          "competency_ids": [
+            "CMP-04",
+            "CMP-08"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-4",
+          "at": "T+40m",
+          "event": "A candidate track is obtained before separation.",
+          "expected_response": [
+            "Publish immediately without waiting for identification"
+          ],
+          "competency_ids": [
+            "CMP-06",
+            "CMP-07"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-5",
+          "at": "T+3h",
+          "event": "On some seeds no track is obtained across several passes because the nominal is wrong in plane.",
+          "expected_response": [
+            "Reassess the nominal before concluding the launch failed"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-05"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-6",
+          "at": "T+8h",
+          "event": "On some seeds the object is in a parking orbit bound for a higher regime.",
+          "expected_response": [
+            "State current orbit and intended destination separately",
+            "Keep the event open across the transfer"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-06"
+          ],
+          "weight": 0.1
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "pre-notice indicators",
+          "nominal with rotation metadata",
+          "pass schedule against the nominal",
+          "coplanar or neighbourhood assessment for the destination",
+          "actual insertion state where acquisition succeeds"
+        ],
+        "check": "Where the nominal is seeded wrong in plane, the error must be recoverable by re-examining the rotation and profile rather than by guessing."
+      },
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "difficulty_band": "competent",
+      "expected_duration_min": 26,
+      "sparta_ids": [
+        "REC-0001"
+      ]
+    },
+    {
+      "id": "SCN-CONTESTED-BOARD",
+      "name": "Everything you have",
+      "procedure_ids": [
+        "PROC-RPO",
+        "PROC-MNV",
+        "PROC-PHOT",
+        "PROC-CRM"
+      ],
+      "regime": "GEO",
+      "narrative_frame": "Everything available is on the board. Some of it disagrees, some of it is old, and one provider is down. Work out what is happening and be ready to defend it.",
+      "historical_basis": "Composite of recorded conditions: provider degradation during exercise activity, stale states in delivered products, varying display conventions, and assessments made under genuine contradiction.",
+      "seed_params": {
+        "varies": [
+          "which provider is degraded",
+          "which products conflict and whether the conflict is material",
+          "how stale each state is",
+          "whether the display convention differs from the last delivery",
+          "which anatomy question the available evidence cannot answer",
+          "the strength of the challenge posed afterwards"
+        ],
+        "fixed": [
+          "that the board is full",
+          "that some contradiction is unresolvable",
+          "that an assessment is required regardless",
+          "that a challenge follows"
+        ]
+      },
+      "trigger_events": [
+        {
+          "id": "TE-1",
+          "at": "T+0",
+          "event": "The full board is presented with degraded elements.",
+          "expected_response": [
+            "Establish what is degraded before reading anything",
+            "Check conventions on each product"
+          ],
+          "competency_ids": [
+            "CMP-01",
+            "CMP-05"
+          ],
+          "weight": 0.15
+        },
+        {
+          "id": "TE-2",
+          "at": "T+8m",
+          "event": "Two products disagree materially.",
+          "expected_response": [
+            "Prefer the product closer to the observations",
+            "State which you believe and why"
+          ],
+          "competency_ids": [
+            "CMP-05"
+          ],
+          "weight": 0.2
+        },
+        {
+          "id": "TE-3",
+          "at": "T+15m",
+          "event": "On some seeds a contradiction is present that does not change the conclusion.",
+          "expected_response": [
+            "Recognise it as immaterial",
+            "Say so rather than resolving it or ignoring it"
+          ],
+          "competency_ids": [
+            "CMP-05"
+          ],
+          "weight": 0.15,
+          "distractor": true
+        },
+        {
+          "id": "TE-4",
+          "at": "T+25m",
+          "event": "The assessment is due.",
+          "expected_response": [
+            "Conclusion, evidence chain, eliminated alternative, proportionate confidence, falsifier, gaps",
+            "Answer all eight anatomy questions from evidence"
+          ],
+          "competency_ids": [
+            "CMP-02",
+            "CMP-04",
+            "CMP-06"
+          ],
+          "weight": 0.3
+        },
+        {
+          "id": "TE-5",
+          "at": "T+32m",
+          "event": "A challenge is posed to the assessment.",
+          "expected_response": [
+            "Defend with evidence, or revise where the challenge is good"
+          ],
+          "competency_ids": [
+            "CMP-05",
+            "CMP-07"
+          ],
+          "weight": 0.2
+        }
+      ],
+      "solvability": {
+        "required_data": [
+          "full product set with degradation metadata",
+          "conflicting pair with a determinable resolution",
+          "one immaterial contradiction",
+          "evidence sufficient for at least six of eight anatomy questions"
+        ],
+        "check": "A defensible conclusion must be reachable despite the contradictions, and at least one anatomy question must be genuinely unanswerable so the gaps statement has something to contain."
+      },
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06",
+        "CMP-07"
+      ],
+      "difficulty_band": "expert",
+      "expected_duration_min": 40,
+      "sparta_ids": [
+        "REC-0005",
+        "IA-0005"
+      ]
+    }
+  ],
+  "_behaviour_library_link": {
+    "note": "Scenario generators draw behavioural realism from behaviour-library.json rather than inventing it. Each archetype supplies quantified norms for manoeuvre magnitudes, approach distances, pattern of life cadences and multi-object choreography, generalised from two years of weekly reporting.",
+    "requirement": "Every scenario seed that involves an object of interest should draw its behavioural profile from an archetype, so that pattern of life comparison has something real to compare against. A generated object with no history cannot support the pattern of life assessment that most report types require.",
+    "tempo": "Seeds should carry running events alongside new ones, and some should present an event whose meaningful history began months earlier. A trainer composed entirely of fresh events teaches a tempo that does not exist."
+  }
+}

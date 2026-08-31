@@ -1,0 +1,426 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.2.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "JCO NOTSO corpus, 3124 released notifications, April 2022 to March 2026",
+      "DRAFT: JCO vendor product standardization (DOK amends)",
+      "DA ASAT Theory and Procedure (2 FEB 26), example report structures",
+      "JCO CT decks, reporting objectives",
+      "Red team of v1.8.1, finding 3; owner decision 29 August 2026: option B",
+      "Pattern recalibration against the full corpus, 29 August 2026. Supersedes earlier figures produced by faulty detection."
+    ],
+    "review_status": "draft",
+    "redaction_note": "REDACTION CRITICAL. Derived from 3124 real released notifications containing live object names, catalogue numbers, element sets, longitudes, provider names, analyst names and operational assessments. NONE of that appears here. Every exemplar below is SYNTHESISED to preserve a structural pattern; no exemplar is quoted from the corpus and no object in any exemplar is real. Statistics are aggregate and non-attributable."
+  },
+  "_why_this_file_exists": "The templates say what a report must contain. This says what good and bad actually look like across four years of real output, and it is the only part of the package derived from a large sample rather than from a handful of documents. It exists because reporting is the competency where the gap between the written standard and the released product is widest, and because operators learn to write by grading writing.",
+  "corpus_evidence": {
+    "scale": "3124 released notifications across 1089 event threads, April 2022 to March 2026.",
+    "thread_shape": {
+      "single_report_events": "35 per cent of events carried exactly one report",
+      "median_reports_per_event": 2,
+      "ninetieth_percentile": 5,
+      "maximum_observed": 36,
+      "reading": "Multiple reports on a developing event are normal, not exceptional. An operator who treats the first report as the deliverable is working against the grain of how the cell actually reports."
+    },
+    "type_mix": {
+      "Manoeuvre": "42 per cent",
+      "Launch": "24 per cent",
+      "Photometric": "15 per cent",
+      "RPO": "8 per cent",
+      "Separation": "7 per cent",
+      "everything_else": "4 per cent, including breakup, uncorrelated track, direct ascent, reentry and conjunction",
+      "scope_implication": "This materially changes the training priority. Launch is the second most common report type and photometric the third, and both are currently under-served in this package. Manoeuvre, RPO and separation together account for 57 per cent, so the confirmed v1 scope covers the majority but leaves the second and third most common types untrained."
+    },
+    "quality_trend": {
+      "median_completeness_by_year": {
+        "2022": 6,
+        "2023": 7,
+        "2024": 10,
+        "2025": 11,
+        "2026": 14
+      },
+      "median_words_by_year": {
+        "2022": 102,
+        "2023": 121,
+        "2024": 291,
+        "2025": 440,
+        "2026": 618
+      },
+      "reading": "Reporting quality has improved substantially and continuously. This is real institutional learning and it means the trainer should target the current standard rather than the four-year average. It also means the corpus contains its own worked examples of improvement, which is more persuasive to an operator than any external benchmark."
+    },
+    "field_presence": {
+      "note": "Recalibrated 29 August 2026. Percentage of 3,123 narratives containing each element.",
+      "time_header": 98.3,
+      "appended_state": 83.1,
+      "register_possible": 75.3,
+      "consequence_content": 64.7,
+      "state_provider_named": 64.1,
+      "products_referenced": 51.3,
+      "limitation_or_ongoing": 50.1,
+      "state_time_given": 49.9,
+      "delta_v_quoted": 46.6,
+      "register_verified": 42.7,
+      "pattern_of_life_assessment": 34.6,
+      "full_specifics_block": 34.2,
+      "drift_rate_quoted": 29.6,
+      "drift_direction_given": 10.4,
+      "confidence_level_stated": 7.8,
+      "template_residue": 2.1,
+      "pai_paragraph_explicit": 1.0
+    },
+    "quality_by_type": {
+      "note": "Median completeness score out of 21 checks, with median word count.",
+      "RPO": {
+        "score": 17,
+        "words": 1374,
+        "reading": "The best-reported event type by a clear margin. When the cell writes about proximity operations it writes well."
+      },
+      "Manoeuvre": {
+        "score": 14,
+        "words": 290,
+        "reading": "Solid and consistent, helped by having a fixed specifics block to fill."
+      },
+      "Breakup": {
+        "score": 10,
+        "words": 4992,
+        "reading": "Very long and only moderately complete. Length is not quality."
+      },
+      "Separation": {
+        "score": 10,
+        "words": 531
+      },
+      "Photometric": {
+        "score": 9,
+        "words": 232,
+        "reading": "Third most common type, second worst quality. The largest single opportunity in the corpus."
+      },
+      "Launch": {
+        "score": 8,
+        "words": 236,
+        "reading": "Second most common type, poor quality. Frequently just nominals with no assessment."
+      },
+      "DA-ASAT": {
+        "score": 6,
+        "words": 217,
+        "reading": "Lowest scoring type, though on a small sample. The type where time pressure is highest and structure most needed."
+      }
+    }
+  },
+  "the_four_ambiguity_failures": {
+    "note": "Quantified from the corpus. These are the specific ways a report becomes unusable, ordered by how often they occur.",
+    "failures": [
+      {
+        "id": "AMB-01",
+        "name": "Hedging without qualifying the uncertainty",
+        "frequency": "2,197 narratives use hedging language. Only 9.4 per cent of those also state a confidence level, so roughly 1,990 reports hedge without sizing the doubt. Confidence appears in 7.8 per cent of reports overall.",
+        "why_it_matters": "Appears to, possibly, likely and believed to all signal doubt without sizing it. The recipient cannot tell whether to act. Hedging is not the problem; unsized hedging is.",
+        "fix": "Every hedge carries a confidence level, or is replaced by a statement of what is known and what is not.",
+        "competency_ids": [
+          "CMP-05",
+          "CMP-06"
+        ],
+        "note": "Recalibrated. Earlier figures of 1,899 hedged and 24 per cent sized were produced by looser patterns. The gap is larger than first reported, not smaller."
+      },
+      {
+        "id": "AMB-02",
+        "name": "Numbers without the qualifier that makes them readable",
+        "frequency": "Delta-v is quoted with units in 99.6 per cent of cases, so units are not the problem. **Direction on drift rates is: only 29.4 per cent of quoted drift rates carry an east or west direction.** A smaller number list orbital elements as bare values where a change cannot be distinguished from an absolute.",
+        "why_it_matters": "A number whose meaning depends on a convention the reader must guess is worse than no number, because it will be used. An apogee figure that might be a change or might be a value has two readings differing by thousands of kilometres.",
+        "fix": "Direction on every rate. The word Change on every delta. Units are already well handled and do not need drilling.",
+        "competency_ids": [
+          "CMP-04",
+          "CMP-06"
+        ],
+        "note": "**CORRECTED.** An earlier version claimed 42 per cent of delta-v figures lacked units. That was wrong and was produced by a faulty pattern. The real qualifier gap is direction on drift rates, and it is severe."
+      },
+      {
+        "id": "AMB-03",
+        "name": "State quoted without provenance",
+        "frequency": "Of the 2,595 narratives appending an element set, 23.1 per cent do not name a provider and 40.0 per cent do not give the time the state was current.",
+        "why_it_matters": "A state without an epoch cannot be assessed for staleness, and a state without a source cannot be reconciled against another provider's. Both are needed before anyone downstream can use it.",
+        "fix": "Every appended state carries the time it was current and the provider, and a confidence annotation where the state is weak.",
+        "competency_ids": [
+          "CMP-05",
+          "CMP-06"
+        ]
+      },
+      {
+        "id": "AMB-04",
+        "name": "Observation without consequence",
+        "frequency": "Consequence-related content appears in 64.7 per cent of narratives, and an explicit pattern of life assessment in 34.6 per cent.",
+        "why_it_matters": "This is the most consequential gap in the corpus. A report that says what happened without saying what it means transfers the analytical burden to a recipient who has less context than the author. Most reports in this corpus describe; the good ones assess.",
+        "fix": "Every report answers three questions in order: what happened, is it normal for this object, and what does it mean for anyone. A statement that there is no impact is a complete answer and is far better than silence.",
+        "competency_ids": [
+          "CMP-02",
+          "CMP-06"
+        ],
+        "note": "**CORRECTED.** An earlier version claimed 38 per cent contained any impact statement. That figure came from a narrower pattern. The broader calibrated pattern gives 64.7 per cent, so consequence is better handled than first reported. **Pattern of life at 34.6 per cent remains the real gap on this axis**, and it is the one the training should target."
+      }
+    ],
+    "fifth_failure_worth_naming": {
+      "id": "AMB-05",
+      "name": "Template residue reaching publication",
+      "frequency": "65 released reports, 2.1 per cent, contain unfilled placeholders or template boilerplate.",
+      "why_it_matters": "Small in percentage terms and large in credibility terms. It is also the most trivially preventable failure in the entire corpus: one read before release.",
+      "competency_ids": [
+        "CMP-06"
+      ]
+    }
+  },
+  "quality_ladder": {
+    "note": "Four levels, derived by grading the corpus. Operators progress up it, and the trainer scores against the level the event warrants rather than always demanding level four.",
+    "levels": [
+      {
+        "level": 1,
+        "name": "Bare observation",
+        "description": "Something happened and here are some numbers. Often accurate and specific, but with no house frame, no register, no assessment and no consequence. The information is present; the structure is not.",
+        "corpus_prevalence": "Common in the earliest years and still present. Median completeness around six of twenty-one checks.",
+        "what_is_missing": [
+          "Basis clause",
+          "Possible or verified register",
+          "Pattern of life comparison",
+          "Impact statement",
+          "Confidence"
+        ],
+        "synthesised_exemplar": "JDay 214 1800z. Providers have detected a signature change on OBJECT ALPHA. The change occurred on 2 Aug between 1704z and 1708z from two sites. The spike is at minus 23 degrees solar phase angle with an increase of 3 visual magnitude.",
+        "why_it_fails": "Everything stated is true and useful, and a recipient still cannot tell whether this matters, how confident anyone is, or what happens next. It reads as a sensor report rather than as an assessment."
+      },
+      {
+        "level": 2,
+        "name": "Structured observation",
+        "description": "The house frame is present. Basis clause, register, object and identifier, event time with Julian day, and numbers in the standard block. The reader can parse it quickly and knows how confident to be at the possible-versus-verified level.",
+        "corpus_prevalence": "The modal report in recent years. Median completeness around ten to fourteen.",
+        "what_is_missing": [
+          "Pattern of life comparison",
+          "Impact",
+          "Confidence beyond the register",
+          "Limitations"
+        ],
+        "synthesised_exemplar": "JDay 214 at 1800z. Based on current observations, providers have verified a manoeuvre by OBJECT ALPHA occurring at 1704z on 2 Aug, JDay 214. The satellite manoeuvred with a delta-v of 1.5 m/s. The specifics of the manoeuvre are: Time of Manoeuvre 02Aug1704z. Delta V 1.5 m/s. Period Change minus 122.9 secs. Apogee Change minus 62.4 km. Perigee Change minus 17.8 km. Inclination Change plus 0.002 degs. Current Drift Rate 0.53 E deg per day. Post manoeuvre state as of 1750z provided by PROVIDER ONE follows.",
+        "why_it_fails": "Complete as a record and thin as an assessment. It tells the recipient what the object did and leaves them to work out whether that is unusual or whether it affects them."
+      },
+      {
+        "level": 3,
+        "name": "Assessed",
+        "description": "Adds the two questions that turn a record into intelligence: is this normal for this object, and what does it mean for anyone. Pattern of life is compared explicitly and the consequence is stated, including when the consequence is nothing.",
+        "corpus_prevalence": "Roughly a third of the corpus reaches this. It is the level the current best practice sits at.",
+        "adds": [
+          "Pattern of life comparison with the reasoning behind it",
+          "Resulting geometry and objects affected",
+          "An explicit no-impact statement where that is the finding"
+        ],
+        "synthesised_exemplar": "Adds to level two: The satellite manoeuvred from 20 degrees east longitude, reversing drift from 0.47 deg per day west to 0.53 deg per day east. This does not appear to be a station-keeping manoeuvre but is consistent with the historical pattern of life for this object, which has previously reversed drift on reaching approximately this longitude. A neighbourhood of nearby ranked objects is attached showing the close approaches resulting from this manoeuvre.",
+        "why_it_works": "Note the apparent contradiction that is actually the sharpest sentence in it: not station-keeping, yet within pattern of life. Those are different claims and holding both is precise rather than confused. Note also that the pattern of life claim carries its reasoning, so a reader can disagree with it."
+      },
+      {
+        "level": 4,
+        "name": "Calibrated",
+        "description": "Adds explicit confidence, states what is not known, names the assumptions, and says what would change the assessment. Almost nothing in the corpus reaches this: confidence appears in 17 per cent of reports and collection limitations in 4 per cent.",
+        "corpus_prevalence": "Rare. This is the target state and it is where the training should aim.",
+        "adds": [
+          "Confidence level on the assessment, not only the possible-versus-verified register",
+          "Collection limitations such as exclusion, eclipse, gaps or single-source dependency",
+          "Assumptions named as assumptions",
+          "What additional data would resolve the remaining uncertainty",
+          "Confidence annotated inline on any weak appended state"
+        ],
+        "synthesised_exemplar": "Adds to level three: Assessed with medium confidence. The object was in solar exclusion for the preceding 30 hours, so the manoeuvre is bracketed rather than timed precisely, and the pattern of life comparison rests on four prior cycles rather than a full history. A single provider currently holds the post-manoeuvre state and it is annotated low confidence. An optical pass at approximately 0400z should resolve the timing and either confirm or revise this assessment.",
+        "why_it_works": "The recipient now knows exactly how much weight to put on it and when it will firm up. This is also the level that protects the analyst: an assessment that later changes was flagged as provisional rather than looking like an error."
+      }
+    ],
+    "important_caveat": "Level four is not always the target. A holding report is a deliberate level one and is correct at that moment, because latency dominates on a time-critical first release. The trainer scores against the level the event and the moment warrant, and issuing a level four report forty minutes late is worse than a level one at four minutes."
+  },
+  "what_to_include_and_what_to_cut": {
+    "note": "The corpus shows length is not quality. Breakup reports average around five thousand words at only moderate completeness, while the best manoeuvre reports achieve high completeness in three to four hundred. Operators need to know what earns its place.",
+    "always_include": [
+      "Julian day and time header",
+      "Basis clause naming the evidence base",
+      "Register word, possible or verified, sustained through the body",
+      "Object identifiers, and for related objects the role of each",
+      "Event time with Julian day",
+      "The standard specifics block, complete and in fixed order, with a not-applicable value where a field does not apply",
+      "Pattern of life comparison, affirmative or negative",
+      "Impact, including an explicit statement of no impact where that is the finding",
+      "Appended states with the time current and the provider named",
+      "Confidence, and any collection limitation"
+    ],
+    "include_when_relevant": [
+      "Publicly available information, hedged and in its own paragraph",
+      "A caveat where a product was generated from a superseded state",
+      "What would resolve the remaining uncertainty",
+      "Products reference"
+    ],
+    "usually_cut": [
+      "Raw provider chat pasted wholesale into the narrative",
+      "Multiple states from every provider where two suffice to show agreement; state that sources agree instead",
+      "Full history restated in every report on a developing thread; carry forward only the standing context needed to make the new content intelligible",
+      "Background on the object repeated verbatim in every report of a long thread",
+      "Speculation beyond what the evidence supports, which belongs in the thread rather than in the released report"
+    ],
+    "the_length_test": "If a sentence does not tell the recipient what happened, whether it is normal, what it means, or how confident to be, it is probably not earning its place."
+  },
+  "per_type_guidance": {
+    "note": "What each of the five common report types needs, with the specific weakness the corpus shows for each.",
+    "types": [
+      {
+        "type": "Manoeuvre",
+        "share": "42 per cent",
+        "corpus_weakness": "Pattern of life stated in only 45 per cent and confidence in only 23 per cent, despite this being the best-structured type overall.",
+        "must_do": [
+          "Complete the specifics block, all seven fields, fixed order",
+          "State drift rate with direction before and after",
+          "Compare against the object's own history and give the reasoning",
+          "Distinguish not-station-keeping from not-in-pattern-of-life; they are different claims"
+        ]
+      },
+      {
+        "type": "Launch",
+        "share": "24 per cent",
+        "corpus_weakness": "Second most common type, second lowest quality. Frequently just nominal element sets with no narrative and no assessment.",
+        "must_do": [
+          "State what is expected to result, not only what was launched",
+          "State which nominal is current and how it was rotated",
+          "Name any assumption made in the absence of orbit information, as an assumption",
+          "Say which objects are in-plane or otherwise affected",
+          "Give the expected next observable and when"
+        ]
+      },
+      {
+        "type": "Photometric",
+        "share": "15 per cent",
+        "corpus_weakness": "Third most common type, second lowest quality. Reports are often precise about the observation and silent on its meaning.",
+        "must_do": [
+          "State the solar equatorial phase angles at which the change was observed, because a magnitude claim is not assessable without them",
+          "State the magnitude of the change and its direction",
+          "State whether it was seen from more than one sensor and more than one hemisphere",
+          "Compare against the object's own established curve",
+          "Say what it indicates, including reversion to normal, and whether anything is at risk"
+        ]
+      },
+      {
+        "type": "RPO",
+        "share": "8 per cent",
+        "corpus_weakness": "Highest quality type in the corpus. The weakness here is length rather than content.",
+        "must_do": [
+          "Keep the standing context to what a reader needs for this report",
+          "State type, phase, separation and point of closest approach",
+          "State the plane relationship and the cost of further closure",
+          "Publish repeatedly as the picture develops rather than waiting"
+        ]
+      },
+      {
+        "type": "Separation",
+        "share": "7 per cent",
+        "corpus_weakness": "Parent and child roles not always distinguished, and the subsequent behaviour of the new object often under-reported.",
+        "must_do": [
+          "Name both objects by identifier and by role, every time",
+          "State the estimated separation time and how it was derived",
+          "State whether the new object has manoeuvred, because that is the discriminator that matters",
+          "State what cannot be confirmed where the identity of the separated object is ambiguous"
+        ]
+      }
+    ]
+  },
+  "trainer_mechanisms": {
+    "note": "How this model becomes training rather than a style guide.",
+    "mechanisms": [
+      "Grade a report. The operator is shown a synthesised report and asked which ladder level it reaches and what is missing. Scored against the level and the specific gaps.",
+      "Raise a level. The operator is given a level two report and the underlying products, and must produce the level three or four version. This is the core report-writing drill.",
+      "Find the ambiguity. A report containing one of the five named failures, with the operator required to identify and fix it.",
+      "Cut it down. An over-long report with the operator required to remove what does not earn its place without losing anything that does.",
+      "Choose the level. Given a moment in a developing event, decide which ladder level is correct now. Sometimes the right answer is level one, immediately.",
+      "Write the next one. Given a thread with two prior reports and new evidence, write the follow-on, carrying forward only the standing context that is needed."
+    ],
+    "scoring_note": "Report drills are scored against the ladder level warranted by the moment, the presence of the required elements for the type, and the absence of the five ambiguity failures. Latency is scored separately and dominates on first releases."
+  },
+  "scope_recommendation": {
+    "finding": "The confirmed v1 scope of manoeuvre, proximity operations, and separation versus breakup covers 57 per cent of real reporting volume. Launch at 24 per cent and photometric at 15 per cent are the second and third most common types, and both score in the bottom three for quality.",
+    "recommendation": "Add a photometric change procedure and a launch scenario to v1, or accept that the two largest quality opportunities in the corpus are untrained. Photometric is the stronger candidate of the two: it has no dedicated procedure in the package at all, the products are already modelled, and the failure mode is precisely the observation-without-consequence gap that dominates the corpus.",
+    "owner": "Ash",
+    "status": "TBC, re-verify"
+  },
+  "free_text_scoring": {
+    "decision": "Expert comparison, chosen by the owner on 29 August 2026, architected so that model-assisted scoring can replace the assessment layer later without re-authoring content.",
+    "what_it_does": [
+      "The operator writes the report as free text with no field constraints, because constrained fields would train form-filling rather than argument.",
+      "The scorer runs deterministic element detection over the text: the required elements for that event type, the eight anatomy questions, the five ambiguity failures, and the register consistency check. All are pattern-based and offline.",
+      "The debrief then places the operator's report beside the expert's version of the same report, section by section, with the detected elements marked present or absent on both.",
+      "The operator self-assesses the difference in argument quality, prompted by three specific questions rather than left to a general comparison."
+    ],
+    "what_it_does_not_do": [
+      "It does not mark prose quality, and the interface says so plainly rather than implying a judgement it cannot make.",
+      "It does not score the correctness of an assessment beyond whether the required elements are present and the stated confidence is calibrated.",
+      "It cannot detect a well-written wrong argument, which is its principal limitation and is stated to the operator."
+    ],
+    "why_this_is_defensible": "Self-explanation against a model answer is among the better evidenced techniques available, and it puts the operator in the position of judging rather than being judged, which suits an audience motivated by mastery. It also costs nothing architecturally: no egress, no running cost, deterministic, and it preserves exact replay.",
+    "self_assessment_prompts": [
+      "Which of the eight anatomy questions did the expert answer that you did not?",
+      "Where the expert stated a confidence and you did not, what evidence were they weighing that you were not?",
+      "What did the expert leave out that you included, and why do you think they left it out?"
+    ],
+    "deterministic_checks": [
+      {
+        "check": "required_elements_present",
+        "method": "Pattern match against the must-state list for the event type",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "anatomy_questions_answered",
+        "method": "Pattern match for each of the eight questions, reported as answered, implied or absent",
+        "competency_id": "CMP-02"
+      },
+      {
+        "check": "register_consistent",
+        "method": "Possible-register opening matched by possible-register body",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "hedge_sized",
+        "method": "Any hedging term accompanied by a confidence level",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "quantities_qualified",
+        "method": "Units on quantities, direction on rates, change word on deltas",
+        "competency_id": "CMP-04"
+      },
+      {
+        "check": "state_provenance",
+        "method": "Appended states carry a time current and a provider",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "consequence_stated",
+        "method": "An impact statement present, including an explicit no-impact statement",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "template_residue",
+        "method": "Placeholder or boilerplate detection",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "specifics_block_complete",
+        "method": "All fields present in fixed order, not-applicable acceptable, absent line not",
+        "competency_id": "CMP-06"
+      }
+    ],
+    "upgrade_path_to_model_assisted": {
+      "note": "Recorded so the later swap is a component replacement rather than a rebuild.",
+      "requirements": [
+        "The expert version of every scored report already exists as content, which is the comparison and would become the reference answer for a model scorer",
+        "The deterministic checks remain as a floor regardless, so a model scorer adds judgement on top rather than replacing the objective layer",
+        "The assessment layer sits behind an interface so it can be swapped",
+        "Any model-assisted scoring breaks the air-gap posture and the deterministic replay guarantee, and both would need explicit decisions before adoption"
+      ]
+    }
+  },
+  "_measurement_note": {
+    "warning": "Figures in earlier versions of this file were produced by cruder detection patterns and several were wrong. The delta-v units figure in particular was produced by a pattern with a zero-width lookahead bug that caused it to match everything.",
+    "corrected": "All figures below are recomputed with the calibrated patterns in report-detection-patterns.json against 3,123 narratives.",
+    "caveat": "Detection is pattern-based and will undercount unconventional phrasing. Treat every figure as a floor. Where a figure drives an operator-facing claim, the claim is written to survive the figure being somewhat higher."
+  }
+}

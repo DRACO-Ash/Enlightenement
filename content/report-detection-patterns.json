@@ -1,0 +1,397 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.0.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "Calibrated against 3,123 released notification narratives, 2022 to 2026"
+    ],
+    "review_status": "draft"
+  },
+  "_why_this_file_exists": "The Assessment Strategy specifies expert-comparison scoring with a deterministic element-detection layer. This is that layer, implementable. Every pattern has been run against the real corpus and its match rate recorded, so an implementation can be verified rather than assumed correct.",
+  "_implementation_notes": {
+    "engine": "Python re, case-insensitive where flagged. No third-party dependency.",
+    "input": "The operator's report text as a single string.",
+    "output": "One boolean per check, plus the conditional results. Never a score. Scoring is the rubric's job.",
+    "verification": "Run every pattern over the corpus and compare against expected_match_rate. A deviation beyond tolerance means the pattern was transcribed wrongly.",
+    "known_limitation": "Pattern detection undercounts unconventional phrasing. Every rate is a floor. This is stated to the operator in the debrief: absence of a detected element prompts a check rather than asserting a failure."
+  },
+  "_calibration_warning": "Patterns are easy to get subtly wrong in ways that silently invert the result. An earlier version of the delta-v pattern placed a negative lookahead after a zero-width match, so it fired on every report and produced a completely false statistic that reached operator-facing content. **Test every pattern against the corpus before trusting it.**",
+  "checks": [
+    {
+      "id": "CHK-01",
+      "name": "time_header",
+      "pattern": "\\bjday\\s*\\d{1,3}\\b|\\b\\d{4}\\s*z\\b",
+      "flags": "i",
+      "expected_match_rate": 98.3,
+      "tolerance": 2.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "Julian day and Zulu time header",
+      "on_absent": "No time header. Every report opens with Julian day and time."
+    },
+    {
+      "id": "CHK-02",
+      "name": "register_possible",
+      "pattern": "\\b(possible|potential|probable|suspected)\\b",
+      "flags": "i",
+      "expected_match_rate": 75.3,
+      "tolerance": 3.0,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "Possible-register language"
+    },
+    {
+      "id": "CHK-03",
+      "name": "register_verified",
+      "pattern": "\\bverif(?:y|ied|ication)\\b|\\bconfirmed\\b",
+      "flags": "i",
+      "expected_match_rate": 42.7,
+      "tolerance": 3.0,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "Verified-register language"
+    },
+    {
+      "id": "CHK-04",
+      "name": "confidence_level",
+      "pattern": "\\b(?:low|medium|moderate|high)[\\s-]confidence\\b|\\bconfidence[\\s:]+(?:is\\s+)?(?:low|medium|moderate|high)\\b|\\bwith\\s+(?:low|medium|moderate|high)\\s+confidence\\b",
+      "flags": "i",
+      "expected_match_rate": 7.8,
+      "tolerance": 2.0,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "An explicit confidence level",
+      "on_absent": "No confidence level stated. Present in under 8 per cent of real reports, and the largest single gap in the corpus."
+    },
+    {
+      "id": "CHK-05",
+      "name": "hedge",
+      "pattern": "\\b(?:appears?\\s+to|appeared\\s+to|possibly|likely|may\\s+have|might\\s+have|could\\s+have|believed\\s+to|seems?\\s+to)\\b",
+      "flags": "i",
+      "expected_match_rate": 70.3,
+      "tolerance": 3.0,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "Hedging language. Not a failure in itself; feeds CND-01"
+    },
+    {
+      "id": "CHK-06",
+      "name": "pattern_of_life",
+      "pattern": "pattern[\\s-]of[\\s-]life|\\bPoL\\b|historical\\s+pattern|(?:within|outside|not\\s+within)\\s+the\\s+(?:historical\\s+)?pattern|station[\\s-]?keep\\w*",
+      "flags": "i",
+      "expected_match_rate": 34.6,
+      "tolerance": 3.0,
+      "competency_id": "CMP-02",
+      "objective": "TO3.1",
+      "detects": "An explicit pattern of life comparison",
+      "on_absent": "No pattern of life assessment. Present in about a third of real reports and the weaker half of the assessment pair."
+    },
+    {
+      "id": "CHK-07",
+      "name": "consequence",
+      "pattern": "\\b(?:at\\s+risk|close\\s+approach\\w*|objects?\\s+of\\s+concern|impact\\w*|threat\\w*|conjunct\\w*|nearby\\s+(?:object|satellite|payload)|neighbou?rhood\\s+(?:is\\s+|has\\s+been\\s+)?provided|co-?located|co-?planar|no\\s+objects?\\s+(?:at\\s+risk|of\\s+interest|of\\s+concern))\\b",
+      "flags": "i",
+      "expected_match_rate": 64.7,
+      "tolerance": 4.0,
+      "competency_id": "CMP-06",
+      "objective": "TO3.2",
+      "detects": "Consequence or affected-object content, including an explicit no-impact statement",
+      "on_absent": "No consequence stated. An explicit statement that nobody is affected satisfies this check."
+    },
+    {
+      "id": "CHK-08",
+      "name": "limitation",
+      "pattern": "solar\\s+exclusion|\\beclipse\\b|collection\\s+gap|no\\s+(?:further\\s+|additional\\s+)?(?:data|observations)|limited\\s+data|unable\\s+to\\s+(?:confirm|determine|assess)|cannot\\s+confirm|awaiting\\s+(?:further|additional|more)|pending\\s+(?:further|additional|more)|analysis\\s+is\\s+ongoing",
+      "flags": "i",
+      "expected_match_rate": 50.1,
+      "tolerance": 4.0,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "A stated limitation or ongoing-analysis marker",
+      "caveat": "Inflated by the standing analysis-is-ongoing phrase. A stricter variant excluding it detects substantive limitations only and is preferred for scoring; see CHK-08b."
+    },
+    {
+      "id": "CHK-08b",
+      "name": "limitation_substantive",
+      "pattern": "solar\\s+exclusion|\\beclipse\\b|collection\\s+gap|no\\s+(?:further\\s+|additional\\s+)?(?:data|observations)|limited\\s+data|unable\\s+to\\s+(?:confirm|determine|assess)|cannot\\s+confirm",
+      "flags": "i",
+      "expected_match_rate": 2.0,
+      "tolerance": 1.5,
+      "competency_id": "CMP-05",
+      "objective": "TO5.2",
+      "detects": "A substantive collection or data limitation, excluding standing boilerplate",
+      "note": "**Use this one for scoring.** CHK-08 is retained for comparability with earlier figures."
+    },
+    {
+      "id": "CHK-09",
+      "name": "specifics_block",
+      "pattern": "--\\s*(?:time\\s+of\\s+man|delta\\s*[- ]?v|period\\s+change)",
+      "flags": "i",
+      "expected_match_rate": 34.2,
+      "tolerance": 3.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "The standard specifics block",
+      "on_absent": "No specifics block. Required on manoeuvre reports, in fixed order, with a not-applicable value where a field does not apply."
+    },
+    {
+      "id": "CHK-10",
+      "name": "delta_v_quoted",
+      "pattern": "delta\\s*[- ]?v\\s*(?:of\\s+)?[:=]?\\s*[-+]?\\d",
+      "flags": "i",
+      "expected_match_rate": 46.6,
+      "tolerance": 3.0,
+      "competency_id": "CMP-04",
+      "objective": "TO5.2",
+      "detects": "A delta-v figure. Feeds CND-02"
+    },
+    {
+      "id": "CHK-11",
+      "name": "delta_v_units",
+      "pattern": "delta\\s*[- ]?v\\s*(?:of\\s+)?[:=]?\\s*[-+]?\\d+(?:\\.\\d+)?\\s*\\(?\\s*(?:m/s|mps|m\\s+per\\s+s)",
+      "flags": "i",
+      "expected_match_rate": 46.4,
+      "tolerance": 3.0,
+      "competency_id": "CMP-04",
+      "objective": "TO5.2",
+      "detects": "A delta-v figure carrying units",
+      "note": "**This pattern replaced a broken one.** The original placed a negative lookahead after a zero-width match and fired on every report, producing a false 42 per cent deficit that reached a drill. The true deficit is 0.4 per cent."
+    },
+    {
+      "id": "CHK-12",
+      "name": "drift_quoted",
+      "pattern": "drift\\s*(?:rate)?[^.\\n]{0,30}?\\d+(?:\\.\\d+)?\\s*(?:deg|°)",
+      "flags": "i",
+      "expected_match_rate": 29.6,
+      "tolerance": 3.0,
+      "competency_id": "CMP-04",
+      "objective": "TO5.2",
+      "detects": "A drift rate figure. Feeds CND-03"
+    },
+    {
+      "id": "CHK-13",
+      "name": "drift_direction",
+      "pattern": "drift[^.\\n]{0,60}?(?:\\b[EW]\\b|east|west)",
+      "flags": "i",
+      "expected_match_rate": 10.4,
+      "tolerance": 3.0,
+      "competency_id": "CMP-04",
+      "objective": "TO5.2",
+      "detects": "A drift rate carrying an east or west direction",
+      "note": "**This is the real qualifier gap.** Only 29.4 per cent of quoted drift rates carry a direction. A rate without direction tells the reader the object is moving and not which way."
+    },
+    {
+      "id": "CHK-14",
+      "name": "state_appended",
+      "pattern": "^\\s*1\\s+\\d{5}",
+      "flags": "im",
+      "expected_match_rate": 83.1,
+      "tolerance": 3.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "An appended element set. Feeds CND-04 and CND-05"
+    },
+    {
+      "id": "CHK-15",
+      "name": "state_provider",
+      "pattern": "provided\\s+by|from\\s+(?:kbr|northstar|numerica|exo|leolabs|slingshot|safran|spacetrack|space[\\s-]?track)\\b",
+      "flags": "i",
+      "expected_match_rate": 64.1,
+      "tolerance": 4.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "A named provider for an appended state",
+      "note": "Provider names are configuration. Implementations should read the provider list from the local thresholds file rather than hardcoding it."
+    },
+    {
+      "id": "CHK-16",
+      "name": "state_time_current",
+      "pattern": "\\bas\\s+of\\s+\\d|\\bstate\\s+at\\s+\\d|\\btle\\s+as\\s+of\\b",
+      "flags": "i",
+      "expected_match_rate": 49.9,
+      "tolerance": 4.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "The time an appended state was current"
+    },
+    {
+      "id": "CHK-17",
+      "name": "template_residue",
+      "pattern": "\\bddmmm\\b|\\bhhmmz?\\b|\\bXX\\.XX\\b|\\bXXXX\\b|\\[insert|\\[payload|\\[provider\\]|excluding\\s+elements\\s+not\\s+significantly",
+      "flags": "i",
+      "expected_match_rate": 2.1,
+      "tolerance": 1.5,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "Unfilled template placeholders",
+      "polarity": "negative",
+      "on_present": "Template placeholder text survived into the report. One read end to end before release catches this."
+    },
+    {
+      "id": "CHK-18",
+      "name": "products_referenced",
+      "pattern": "click\\s+link|products\\s+(?:are\\s+)?(?:provided|attached)|neighbou?rhood\\s+is\\s+provided",
+      "flags": "i",
+      "expected_match_rate": 51.3,
+      "tolerance": 4.0,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "A products reference"
+    },
+    {
+      "id": "CHK-19",
+      "name": "pai_paragraph",
+      "pattern": "\\bPAI\\b\\s+(?:suggests|indicates)|publicly\\s+available\\s+information",
+      "flags": "i",
+      "expected_match_rate": 1.0,
+      "tolerance": 1.0,
+      "competency_id": "CMP-05",
+      "objective": "TO3.3",
+      "detects": "A hedged publicly-available-information paragraph",
+      "note": "Low corpus rate reflects a convention adopted recently rather than a gap. Do not present a low score here as a failure without checking the reporting period."
+    },
+    {
+      "id": "CHK-20",
+      "name": "alpha5_dual",
+      "pattern": "\\(\\s*\\d{5,6}\\s*\\|\\s*[A-Z]\\d{4}\\s*\\)",
+      "flags": "",
+      "expected_match_rate": 0.0,
+      "tolerance": 0.5,
+      "competency_id": "CMP-06",
+      "objective": "TO5.2",
+      "detects": "Both identifier forms provided together for a catalogue number above the five-digit range",
+      "note": "Zero occurrences in the corpus because the convention post-dates it. Scored only where the scenario seeds such an object."
+    }
+  ],
+  "conditional_checks": [
+    {
+      "id": "CND-01",
+      "name": "hedge_sized",
+      "base": "CHK-05",
+      "requires": "CHK-04",
+      "measured_satisfaction": 9.4,
+      "competency_id": "CMP-05",
+      "fails_when": "The report hedges and states no confidence level",
+      "operator_message": "You hedged without sizing the doubt. Add a confidence level, or replace the hedge with what is known and what is not. Fewer than one in ten real reports that hedge also state a confidence."
+    },
+    {
+      "id": "CND-02",
+      "name": "delta_v_qualified",
+      "base": "CHK-10",
+      "requires": "CHK-11",
+      "measured_satisfaction": 99.6,
+      "competency_id": "CMP-04",
+      "fails_when": "A delta-v is quoted without units",
+      "operator_message": "Delta-v quoted without units.",
+      "note": "Rarely fails in practice. Retained because when it does fail the consequence is severe."
+    },
+    {
+      "id": "CND-03",
+      "name": "drift_qualified",
+      "base": "CHK-12",
+      "requires": "CHK-13",
+      "measured_satisfaction": 29.4,
+      "competency_id": "CMP-04",
+      "fails_when": "A drift rate is quoted without an east or west direction",
+      "operator_message": "Drift rate quoted without a direction. A rate without direction tells the reader the object is moving and not which way, and this is the most commonly omitted qualifier in real reporting."
+    },
+    {
+      "id": "CND-04",
+      "name": "state_provenance_provider",
+      "base": "CHK-14",
+      "requires": "CHK-15",
+      "measured_satisfaction": 76.9,
+      "competency_id": "CMP-06",
+      "fails_when": "A state is appended without a named provider",
+      "operator_message": "Appended state without a provider. It cannot be reconciled against another source."
+    },
+    {
+      "id": "CND-05",
+      "name": "state_provenance_time",
+      "base": "CHK-14",
+      "requires": "CHK-16",
+      "measured_satisfaction": 60.0,
+      "competency_id": "CMP-06",
+      "fails_when": "A state is appended without the time it was current",
+      "operator_message": "Appended state without the time it was current. Staleness cannot be judged, so the state cannot safely be used."
+    },
+    {
+      "id": "CND-06",
+      "name": "register_consistent",
+      "base": "CHK-02",
+      "requires": null,
+      "custom": "Where the opening sentence is in the possible register, the body must not assert the event as established. Detect by comparing register markers in the first sentence against the remainder.",
+      "competency_id": "CMP-05",
+      "fails_when": "A possible-register opening is followed by a body that asserts the event as fact",
+      "operator_message": "Register drifted. You opened in the possible register and the body reads as established. Sustain the register through the report."
+    }
+  ],
+  "anatomy_detection": {
+    "note": "The eight event anatomy questions, detected for the debrief. Reported as answered, implied or absent rather than pass or fail, because implicit answers are common and are a coaching point rather than an error.",
+    "questions": [
+      {
+        "q": 1,
+        "name": "mechanism",
+        "pattern": "burn|manoeuv|man[eo]uver|period\\s+change|inclination\\s+change|in-?track|cross-?track|radial|separat|fragment",
+        "flags": "i"
+      },
+      {
+        "q": 2,
+        "name": "platform_class",
+        "pattern": "\\bPAI\\b|mission\\s+of|supports\\s+(?:military|commercial)|constellation|payload\\s+type|rocket\\s+body|upper\\s+stage",
+        "flags": "i"
+      },
+      {
+        "q": 3,
+        "name": "normality",
+        "pattern": "pattern[\\s-]of[\\s-]life|\\bPoL\\b|historical|routine|station[\\s-]?keep|first\\s+time|not\\s+previously",
+        "flags": "i"
+      },
+      {
+        "q": 4,
+        "name": "cost",
+        "pattern": "delta\\s*[- ]?v|fuel|expensive|deliberate|significant\\s+man",
+        "flags": "i"
+      },
+      {
+        "q": 5,
+        "name": "enablement",
+        "pattern": "could\\s+now|enables?|allows?\\s+(?:it|the\\s+object)|places?\\s+it\\s+(?:within|in\\s+range)|capable\\s+of\\s+(?:reaching|closing)|from\\s+this\\s+(?:position|geometry)",
+        "flags": "i",
+        "note": "Weakest question in both the package and the corpus. Weighted most heavily in the debrief."
+      },
+      {
+        "q": 6,
+        "name": "affected",
+        "pattern": "at\\s+risk|affect\\w+|objects?\\s+of\\s+concern|no\\s+objects?\\s+(?:at\\s+risk|of\\s+concern)|impact\\w*\\s+(?:to|on)",
+        "flags": "i"
+      },
+      {
+        "q": 7,
+        "name": "alternatives",
+        "pattern": "may\\s+(?:also|alternatively)\\s+be|cannot\\s+(?:rule\\s+out|confirm)|could\\s+(?:also|equally)\\s+be|rather\\s+than|as\\s+opposed\\s+to|ruled?\\s+out",
+        "flags": "i"
+      },
+      {
+        "q": 8,
+        "name": "confidence_and_change",
+        "pattern": "confidence|would\\s+(?:confirm|resolve|change)|further\\s+(?:observation|collection|analysis)|next\\s+(?:pass|opportunity)|awaiting",
+        "flags": "i"
+      }
+    ]
+  },
+  "verification_procedure": {
+    "note": "Run this before trusting an implementation.",
+    "steps": [
+      "Load a corpus of released report narratives.",
+      "Run every check and record the match rate.",
+      "Compare against expected_match_rate within tolerance.",
+      "Any check outside tolerance has been transcribed wrongly. Do not adjust the expected rate to fit; fix the pattern.",
+      "Run the conditional checks and compare against measured_satisfaction.",
+      "Where no corpus is available, the expected rates still serve as a sanity check against synthetic text: a check matching 100 per cent or 0 per cent of everything is almost certainly broken."
+    ],
+    "failure_mode_to_watch": "A pattern that matches everything looks like a working detector until someone computes a percentage from it. Assert both a floor and a ceiling."
+  }
+}

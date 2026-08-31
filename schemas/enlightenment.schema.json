@@ -1,0 +1,1108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bluestaq.uk/enlightenment/schemas/enlightenment.schema.json",
+  "title": "ENLIGHTENMENT training content schema",
+  "description": "Authoritative schema for every content type consumed by the ENLIGHTENMENT scenario, drill, scoring and debrief engines. Content is data, not code: nothing here requires a deployment to change. Every file that validates against a $def in this schema is loadable at runtime.",
+  "$defs": {
+    "contentVersion": {
+      "type": "object",
+      "description": "Version block carried by every content file. Immutable versions with pointers: a scored run records the hash it was scored under so the debrief stays interpretable when the procedure moves on.",
+      "required": [
+        "schema_version",
+        "content_version",
+        "author",
+        "updated",
+        "source_refs",
+        "review_status"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "content_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "author": {
+          "type": "string",
+          "minLength": 2
+        },
+        "updated": {
+          "type": "string",
+          "format": "date"
+        },
+        "source_refs": {
+          "type": "array",
+          "description": "Which source documents this content was authored from. Traceability is a review requirement, not a nicety.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "review_status": {
+          "enum": [
+            "draft",
+            "redaction_reviewed",
+            "active",
+            "deprecated"
+          ]
+        },
+        "redaction_note": {
+          "type": "string"
+        }
+      }
+    },
+    "competency": {
+      "type": "object",
+      "description": "One scoring axis. Six exist; they are ours, invented because no external JCO framework applies, and are versioned like any other content.",
+      "required": [
+        "id",
+        "name",
+        "definition",
+        "novice_behaviour",
+        "expert_behaviour",
+        "measured_by"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^CMP-[0-9]{2}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string",
+          "minLength": 20
+        },
+        "novice_behaviour": {
+          "type": "string",
+          "description": "What failure on this axis actually looks like. Used verbatim in debrief copy."
+        },
+        "expert_behaviour": {
+          "type": "string",
+          "description": "The target behaviour, phrased so an operator can recognise it in themselves."
+        },
+        "measured_by": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "drill_accuracy",
+              "drill_latency",
+              "classification_correctness",
+              "procedure_step_recall",
+              "threshold_judgement",
+              "confidence_calibration",
+              "report_content",
+              "artefact_rejection",
+              "product_request_correctness"
+            ]
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "description": "A vendor or fusion-provider product an operator must be able to request, read and validate. Authored from the JCO vendor product standardisation draft, which defines what a compliant product must contain.",
+      "required": [
+        "id",
+        "name",
+        "purpose",
+        "regime",
+        "must_contain",
+        "reads_as",
+        "common_misreads"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PRD-[A-Z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "regime": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "LEO",
+              "MEO",
+              "GEO",
+              "HEO",
+              "XGEO",
+              "ANY"
+            ]
+          }
+        },
+        "must_contain": {
+          "type": "array",
+          "description": "Compliance checklist. An operator competency is recognising when a delivered product is non-compliant and asking for it again.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "reads_as": {
+          "type": "string",
+          "description": "How to actually read it. Written for someone who has never seen one."
+        },
+        "common_misreads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "request_phrasing": {
+          "type": "string",
+          "description": "How an operator asks for it, so the app can train the ask as well as the read."
+        }
+      }
+    },
+    "artefact": {
+      "type": "object",
+      "description": "A data artefact that mimics a real signal. Ranked as a peer hypothesis, never a footnote. This library is what stops the app teaching that anomalies are obvious.",
+      "required": [
+        "id",
+        "name",
+        "presents_as",
+        "true_cause",
+        "discriminator",
+        "competency_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ART-[0-9]{3}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "presents_as": {
+          "type": "string",
+          "description": "What the operator sees, phrased as the tempting wrong conclusion."
+        },
+        "true_cause": {
+          "type": "string"
+        },
+        "discriminator": {
+          "type": "string",
+          "description": "The specific check that separates artefact from real signal. This is the teachable move."
+        },
+        "competency_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CMP-[0-9]{2}$"
+          }
+        },
+        "source_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "procedure": {
+      "type": "object",
+      "description": "One JCO procedure expressed as data. Steps, thresholds, decision points, reporting requirements and closure criteria. Editable by a content author without a code deployment.",
+      "required": [
+        "id",
+        "name",
+        "short_name",
+        "purpose",
+        "entry_conditions",
+        "regime",
+        "steps",
+        "decision_points",
+        "reporting",
+        "closure_criteria",
+        "competency_ids",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PROC-[A-Z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "short_name": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 30
+        },
+        "entry_conditions": {
+          "type": "array",
+          "description": "What causes an operator to enter this procedure. These are the cues the drill layer trains to recognition.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "not_this_procedure_when": {
+          "type": "array",
+          "description": "Explicit discrimination against the look-alike procedures. The single most valuable field in the file.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regime": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "LEO",
+              "MEO",
+              "GEO",
+              "HEO",
+              "XGEO",
+              "ANY"
+            ]
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "n",
+              "action",
+              "role",
+              "why"
+            ],
+            "properties": {
+              "n": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "action": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "SEA",
+                  "CuOps",
+                  "MAL",
+                  "CMC",
+                  "C2",
+                  "Fusion",
+                  "Provider",
+                  "Any"
+                ]
+              },
+              "why": {
+                "type": "string",
+                "description": "Rationale. Operators who know why a step exists recall it; operators who memorise a list do not."
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^PRD-[A-Z0-9-]+$"
+                }
+              },
+              "threshold_ref": {
+                "type": "string",
+                "description": "Key into the local thresholds file. Operational numbers are never hardcoded in shipped content."
+              },
+              "time_standard": {
+                "type": "string"
+              },
+              "common_error": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "decision_points": {
+          "type": "array",
+          "description": "Branches where the operator must judge, not follow. These carry the scoring weight.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "question",
+              "branches"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "branches": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "condition",
+                    "then"
+                  ],
+                  "properties": {
+                    "condition": {
+                      "type": "string"
+                    },
+                    "then": {
+                      "type": "string"
+                    },
+                    "goto_procedure": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "reporting": {
+          "type": "object",
+          "required": [
+            "notso_required",
+            "time_standard",
+            "must_state"
+          ],
+          "properties": {
+            "notso_required": {
+              "enum": [
+                "always",
+                "conditional",
+                "never"
+              ]
+            },
+            "condition": {
+              "type": "string"
+            },
+            "time_standard": {
+              "type": "string"
+            },
+            "must_state": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "verbal_required": {
+              "type": "boolean"
+            },
+            "escalation": {
+              "type": "string"
+            }
+          }
+        },
+        "closure_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "competency_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CMP-[0-9]{2}$"
+          }
+        },
+        "sparta_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "active",
+            "deprecated"
+          ]
+        }
+      }
+    },
+    "cue": {
+      "type": "object",
+      "description": "An atomic recognisable pattern. The unit the drill layer trains and the spacing scheduler tracks. A cue is not a fact; it is a thing seen in data that implies an action.",
+      "required": [
+        "id",
+        "name",
+        "seen_in",
+        "presentation",
+        "means",
+        "first_action",
+        "confusable_with",
+        "competency_ids",
+        "difficulty_seed"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^CUE-[0-9]{3}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "seen_in": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^PRD-[A-Z0-9-]+$"
+          },
+          "minItems": 1
+        },
+        "presentation": {
+          "type": "string",
+          "description": "What it looks like on the product, in plain words."
+        },
+        "means": {
+          "type": "string"
+        },
+        "first_action": {
+          "type": "string",
+          "description": "The instant-recall target. What the operator does next, unprompted."
+        },
+        "confusable_with": {
+          "type": "array",
+          "description": "The discrimination pairs. Interleaving these is what builds expert perception rather than rote association.",
+          "items": {
+            "type": "object",
+            "required": [
+              "cue_id_or_name",
+              "discriminator"
+            ],
+            "properties": {
+              "cue_id_or_name": {
+                "type": "string"
+              },
+              "discriminator": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "procedure_id": {
+          "type": "string",
+          "pattern": "^PROC-[A-Z0-9-]+$"
+        },
+        "competency_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CMP-[0-9]{2}$"
+          }
+        },
+        "difficulty_seed": {
+          "type": "integer",
+          "minimum": 800,
+          "maximum": 2400,
+          "description": "Starting Elo for this cue's items. Calibrated from live data after first cohort; seeded from authoring judgement."
+        },
+        "artefact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ART-[0-9]{3}$"
+          }
+        }
+      }
+    },
+    "drillItem": {
+      "type": "object",
+      "description": "One rated drill. The answer is NEVER present on screen: the operator produces it. Recognition formats are explicitly excluded because they do not build recall.",
+      "required": [
+        "id",
+        "cue_id",
+        "stimulus",
+        "prompt",
+        "answer",
+        "response_format",
+        "elo",
+        "explain"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^DRL-[0-9]{4}$"
+        },
+        "cue_id": {
+          "type": "string",
+          "pattern": "^CUE-[0-9]{3}$"
+        },
+        "stimulus": {
+          "type": "object",
+          "description": "What is rendered. Generated from the physics core plus the noise model, never a static image.",
+          "required": [
+            "product_id",
+            "generator",
+            "params"
+          ],
+          "properties": {
+            "product_id": {
+              "type": "string",
+              "pattern": "^PRD-[A-Z0-9-]+$"
+            },
+            "generator": {
+              "type": "string",
+              "description": "MUST be one of the twelve canonical generators declared in the _generator_contract block of drills.json. Ten product renderers plus two composition modes. Do not implement any other generator name."
+            },
+            "params": {
+              "type": "object"
+            }
+          }
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "response_format": {
+          "enum": [
+            "free_classification",
+            "numeric_estimate",
+            "ordered_actions",
+            "threshold_call",
+            "product_request",
+            "yes_no_with_reason",
+            "cross_product_reconciliation",
+            "reasoned_argument",
+            "anatomy_question",
+            "no_action_correct"
+          ],
+          "description": "No multiple_choice value exists in this enum. That is deliberate and load-bearing: a visible answer defeats retrieval practice. cross_product_reconciliation requires two or more products. reasoned_argument is scored on argument structure rather than a single right answer. anatomy_question asks one of the eight event anatomy questions. no_action_correct covers items where the correct answer is no report or no escalation."
+        },
+        "answer": {
+          "type": "object",
+          "required": [
+            "accept",
+            "reject"
+          ],
+          "properties": {
+            "accept": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "description": "Multiple valid answers are the norm. Partial credit is expected."
+            },
+            "partial": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "credit",
+                  "note"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "credit": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "reject": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "why_wrong"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "why_wrong": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "tolerance": {
+              "type": "object",
+              "properties": {
+                "absolute": {
+                  "type": "number"
+                },
+                "relative": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "elo": {
+          "type": "integer",
+          "minimum": 800,
+          "maximum": 2400
+        },
+        "confidence_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Brier-scored. Teaches calibration, which is competency axis five."
+        },
+        "time_target_s": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "explain": {
+          "type": "string",
+          "description": "Shown on reveal. This is the retrieval-practice payoff and must teach, not merely mark."
+        },
+        "artefact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^ART-[0-9]{3}$"
+          }
+        }
+      }
+    },
+    "scenarioTemplate": {
+      "type": "object",
+      "description": "A parameterised scenario. The expected response is fixed; the instantiation is seeded. Near-infinite variation of a small procedure set without breaking training validity.",
+      "required": [
+        "id",
+        "name",
+        "procedure_ids",
+        "regime",
+        "narrative_frame",
+        "seed_params",
+        "trigger_events",
+        "solvability",
+        "competency_ids",
+        "difficulty_band"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^SCN-[A-Z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "procedure_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^PROC-[A-Z0-9-]+$"
+          },
+          "minItems": 1
+        },
+        "regime": {
+          "enum": [
+            "LEO",
+            "MEO",
+            "GEO",
+            "HEO",
+            "XGEO"
+          ]
+        },
+        "narrative_frame": {
+          "type": "string",
+          "description": "Framing shown to the operator. Operational language, never gamified."
+        },
+        "historical_basis": {
+          "type": "string",
+          "description": "The public event this is patterned on. Generalised, never a live protected object."
+        },
+        "seed_params": {
+          "type": "object",
+          "description": "What varies between instantiations. Every one of these must be randomised or the operator learns the instance, not the pattern.",
+          "required": [
+            "varies"
+          ],
+          "properties": {
+            "varies": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 3
+            },
+            "fixed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "trigger_events": {
+          "type": "array",
+          "description": "EBAT structure: each event is a deliberate opportunity to exhibit a targeted competency, with a pre-defined expected response. This is what makes automated scoring defensible.",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "at",
+              "event",
+              "expected_response",
+              "competency_ids",
+              "weight"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string",
+                "description": "Scenario-relative time or condition."
+              },
+              "event": {
+                "type": "string"
+              },
+              "expected_response": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "acceptable_alternatives": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "competency_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^CMP-[0-9]{2}$"
+                }
+              },
+              "weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "distractor": {
+                "type": "boolean",
+                "default": false,
+                "description": "True where the event is an artefact or benign explanation the operator should NOT escalate. Scenarios without distractors teach over-reporting."
+              }
+            }
+          }
+        },
+        "solvability": {
+          "type": "object",
+          "required": [
+            "required_data",
+            "check"
+          ],
+          "properties": {
+            "required_data": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "check": {
+              "type": "string",
+              "description": "The assertion the generator runs before serving. An unsolvable scenario is a scoring injustice."
+            }
+          }
+        },
+        "competency_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^CMP-[0-9]{2}$"
+          }
+        },
+        "difficulty_band": {
+          "enum": [
+            "foundation",
+            "developing",
+            "competent",
+            "proficient",
+            "expert"
+          ]
+        },
+        "expected_duration_min": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "sparta_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "expertTrace": {
+      "type": "object",
+      "description": "What an expert saw, when, and why. Overlaid on the operator's own run in the debrief. The scoring is only ever as good as the trace behind it, so author and date are mandatory.",
+      "required": [
+        "id",
+        "scenario_id",
+        "author",
+        "authored",
+        "observations",
+        "decision_rationale"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^TRC-[A-Z0-9-]+$"
+        },
+        "scenario_id": {
+          "type": "string",
+          "pattern": "^SCN-[A-Z0-9-]+$"
+        },
+        "author": {
+          "type": "string"
+        },
+        "authored": {
+          "type": "string",
+          "format": "date"
+        },
+        "validated_by": {
+          "type": "string"
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "at",
+              "saw",
+              "on_product",
+              "concluded"
+            ],
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "saw": {
+                "type": "string",
+                "description": "The specific visual feature. Rendered as the debrief highlight on the operator's own data."
+              },
+              "on_product": {
+                "type": "string",
+                "pattern": "^PRD-[A-Z0-9-]+$"
+              },
+              "concluded": {
+                "type": "string"
+              },
+              "confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "ruled_out": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The hypotheses the expert actively discarded. Novices rarely generate these; showing them is the highest-value part of the debrief."
+              }
+            }
+          }
+        },
+        "decision_rationale": {
+          "type": "string",
+          "minLength": 40
+        },
+        "would_have_missed": {
+          "type": "string",
+          "description": "Honest note on what even the expert found hard. Prevents the trace reading as omniscient, which damages trust."
+        }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "description": "Config-driven scoring as decision tables. No monolithic scoring function. Every point gained or lost must name the rule and the evidence in the debrief.",
+      "required": [
+        "id",
+        "applies_to",
+        "rules",
+        "aggregation"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^RUB-[A-Z0-9-]+$"
+        },
+        "applies_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "when",
+              "award",
+              "competency_id",
+              "explain"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "when": {
+                "type": "string",
+                "description": "Declarative condition evaluated against the run event log."
+              },
+              "award": {
+                "type": "number"
+              },
+              "competency_id": {
+                "type": "string",
+                "pattern": "^CMP-[0-9]{2}$"
+              },
+              "explain": {
+                "type": "string",
+                "description": "Operator-facing sentence used verbatim in the debrief."
+              },
+              "cap": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "aggregation": {
+          "type": "object",
+          "required": [
+            "method"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "weighted_sum",
+                "competency_mean",
+                "min_of_axes"
+              ]
+            },
+            "speed_factor": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "max_bonus": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": "string"
+                }
+              }
+            },
+            "calibration": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "rule": {
+                  "enum": [
+                    "brier",
+                    "log"
+                  ]
+                },
+                "weight": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "progressionStage": {
+      "type": "object",
+      "description": "Mastery-gated progression. Unlocks are earned by demonstrated competence, never by time served or points accrued.",
+      "required": [
+        "id",
+        "name",
+        "order",
+        "unlocks",
+        "gate",
+        "rationale"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^STG-[0-9]{2}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unlocks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "gate": {
+          "type": "object",
+          "required": [
+            "criteria"
+          ],
+          "properties": {
+            "criteria": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "override_allowed": {
+              "type": "boolean",
+              "default": true,
+              "description": "Operators may test out upward. Autonomy is a motivational requirement, not a concession."
+            }
+          }
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "scaffolds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Support faded as the operator advances, per the expertise-reversal effect."
+        }
+      }
+    }
+  }
+}

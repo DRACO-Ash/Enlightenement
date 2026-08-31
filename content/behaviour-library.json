@@ -1,0 +1,353 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.3.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "JCO Weekly Activity Reports, 76 editions, 2023 to 2026",
+      "GEO Direct Ascent Anti-Satellite Weapons Advanced Training Module",
+      "JCO Quick Reference Card, pattern of life notes",
+      "JCO Red Predictive Surveillance procedure, pattern of life notes"
+    ],
+    "review_status": "draft",
+    "redaction_note": "REDACTION CRITICAL. The weekly reports name hundreds of specific objects with catalogue numbers, longitudes, report links and named personnel across three regional cells. None appears here. Every archetype is generalised to a behaviour class with its quantified norms retained, because the numbers are what make a generated scenario feel real and the identities are what must not travel. An operator trained on these archetypes recognises the behaviour anywhere; one trained on the identities only recognises those objects."
+  },
+  "_why_this_file_exists": "Scenario templates say what varies. This says what the variation should look like so a generated scenario feels like something that actually happens. Two years of weekly reporting contains the pattern-of-life norms, the manoeuvre magnitudes, the approach distances and the multi-object choreography that no amount of physics gets you. Without it the generator produces events that are physically valid and behaviourally implausible, and experienced operators will notice within one scenario.",
+  "corpus_shape": {
+    "reports": 76,
+    "span": "2023 to 2026, weekly, compiled across three regional cells",
+    "event_emphasis_by_mention": {
+      "Launch": "highest",
+      "Manoeuvre": "second",
+      "Photometric change": "third",
+      "Separation": "fourth",
+      "Electromagnetic interference": "fifth",
+      "RPO": "sixth",
+      "Conjunction": "seventh",
+      "xGEO and cislunar": "eighth",
+      "Docking, uncorrelated tracks, direct ascent, reentry, breakup": "long tail"
+    },
+    "reading": "Consistent with the released report corpus and with one addition: electromagnetic interference appears prominently in weekly reporting and does not appear in the released notification corpus or in this package at all. That is a gap worth a decision rather than an omission worth ignoring."
+  },
+  "archetypes": [
+    {
+      "id": "BHV-01",
+      "name": "Distance-maintaining avoidance",
+      "class": "Manoeuvre, GEO",
+      "description": "An object that manoeuvres specifically to preserve a minimum separation from other objects, consistently and over long periods. The manoeuvre is triggered by an upcoming close approach and its effect is to increase the resulting distance.",
+      "quantified_norms": {
+        "maintained_separation": "Consistently manoeuvres to keep close approaches above roughly thirty kilometres",
+        "manoeuvre_magnitude": "Period changes of the order of ten seconds, in either direction",
+        "effect_observed": "Pre-manoeuvre approaches in the twenty to thirty kilometre range become post-manoeuvre approaches of forty-five to one hundred and sixty-five kilometres",
+        "timing": "Executed days ahead of the projected approach"
+      },
+      "why_it_matters_for_training": "This is the single most instructive archetype in the corpus, because it is a manoeuvre by an object of interest that is entirely benign in intent and correctly assessed as within pattern of life. An operator who treats every manoeuvre by such an object as significant will over-report constantly. Recognising deliberate distance-keeping is what allows the genuinely anomalous manoeuvre to stand out.",
+      "seed_parameters": [
+        "pre-approach distance",
+        "post-approach distance",
+        "period change magnitude and sign",
+        "days of lead time",
+        "how many prior cycles of the same behaviour are visible"
+      ],
+      "correct_assessment": "Avoidance activity within pattern of life. Report if the object is of standing interest, stating the pattern of life finding explicitly.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "corroboration": "Independently confirmed three times. Weekly reporting, the quick reference card, and the predictive surveillance procedure each record objects manoeuvring to increase minimum distance below roughly thirty kilometres. The archetype was generalised before any of those references were seen and the figure matched each time."
+    },
+    {
+      "id": "BHV-02",
+      "name": "Deploy then sustained proximity, with the child as the active vehicle",
+      "class": "Separation into RPO, extended timescale",
+      "description": "A parent platform deploys a sub-satellite. The pair then conducts proximity operations across months, with the deployed object rather than the parent performing the manoeuvring. Approaches close to single-digit kilometres are sustained rather than transient. The deployed object may later go quiet.",
+      "quantified_norms": {
+        "deploy_to_rpo_interval": "Proximity activity develops over weeks and continues across months rather than days",
+        "sustained_approach_distance": "Approaches sustained as close as around two kilometres",
+        "active_party": "The deployed child, not the parent, performs the manoeuvres",
+        "later_state": "The deployed object may appear inactive for months afterwards, and a photometric change on an apparently dead object is itself notable"
+      },
+      "why_it_matters_for_training": "It teaches that a separation is the opening of a story rather than an event, that the child is usually the interesting object, and that the timescale is months. A trainer built only on shift-length scenarios cannot convey this, so the scenario should present the history rather than the moment.",
+      "seed_parameters": [
+        "time since deployment",
+        "which object is manoeuvring",
+        "sustained approach distance",
+        "whether the child has gone quiet",
+        "whether a photometric change accompanies it"
+      ],
+      "correct_assessment": "Assess the child as an active payload, track the pair as a system, and note explicitly which of the two is manoeuvring.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-03",
+      "name": "Coordinated inclination change across a launch group",
+      "class": "Manoeuvre, LEO, multi-object",
+      "description": "Several objects launched together perform significant inclination changes within days of each other, the effect of which is to plane match with a foreign constellation. One object of the group moves first, and the remainder follow.",
+      "quantified_norms": {
+        "inclination_change_magnitude": "Of the order of a few tenths of a degree to nearly one degree per object, which is substantial for the regime",
+        "resulting_plane_deltas": "Inclination deltas to the matched objects reduced to roughly a tenth of a degree, with RAAN deltas from a few hundredths to about one degree",
+        "resulting_close_approach": "Approaches in the single-digit kilometre range following the manoeuvres",
+        "group_timing": "First object moves days ahead of the others, so the earliest one is the warning for the rest",
+        "time_since_launch": "Weeks after a common launch"
+      },
+      "why_it_matters_for_training": "The first object in the group is the indicator and the remainder are the confirmation. An operator who assesses each manoeuvre individually misses that this is a coordinated campaign, and the corpus shows the pattern only becomes obvious in retrospect. This is the strongest argument in the package for reading across objects rather than down a thread.",
+      "seed_parameters": [
+        "number of objects in the group",
+        "spacing between their manoeuvres",
+        "inclination change per object",
+        "resulting plane deltas",
+        "whether an earlier group member already moved"
+      ],
+      "correct_assessment": "Report as coordinated activity across the launch group, name the earlier precedent, and assess the plane match against the affected constellation rather than object by object.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-04",
+      "name": "Photometric change driven by a lit close approach",
+      "class": "Photometric, GEO",
+      "description": "A brightness change coinciding with a close approach where the observing geometry favoured one object viewing the other. Lighting quality is the discriminator between a plausible mechanism and a coincidence.",
+      "quantified_norms": {
+        "magnitude_change": "Commonly between around half and three visual magnitudes",
+        "phase_angle_windows": "Changes are reported across specific windows, frequently in the sixty to ninety degree band or in the negative eighty to negative forty-five band",
+        "close_approach_distances": "Associated approaches typically in the twenty-five to one hundred and thirty-five kilometre range",
+        "lighting": "Stated explicitly as favourable or unfavourable, and the assessment turns on it"
+      },
+      "why_it_matters_for_training": "The corpus shows this assessment made well repeatedly: change identified, candidate approach identified, lighting evaluated, pattern of life compared, and a conclusion drawn including where the conclusion is that the cause is unknown. It is the best available worked model of the photometry procedure being executed properly.",
+      "seed_parameters": [
+        "magnitude and direction of change",
+        "phase angle window",
+        "approach distance and time",
+        "lighting favourable or not",
+        "whether consistent with pattern of life"
+      ],
+      "correct_assessment": "State the change, the window, the candidate approach with distance and lighting, the pattern of life finding, and the cause including unknown where that is honest.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-05",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-05",
+      "name": "Return to pattern of life",
+      "class": "Photometric, GEO",
+      "description": "An object whose signature departed from its established curve returns to it, sometimes within a day. The return is reported as an event in its own right.",
+      "quantified_norms": {
+        "duration_of_departure": "Frequently around a day, sometimes longer",
+        "reporting": "Reported as a distinct change, not as a closure"
+      },
+      "why_it_matters_for_training": "Operators under-report this. A return to normal closes the loop for a recipient still holding the original report, and it is also evidence about the nature of the original change: a transient departure and a permanent one mean different things. Both directions are reportable.",
+      "seed_parameters": [
+        "duration of departure",
+        "whether the return is complete or partial",
+        "whether a cause was ever established"
+      ],
+      "correct_assessment": "Report the return explicitly, and use its transience as evidence in reassessing the original change.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-06",
+      "name": "Drift, stop and park",
+      "class": "Manoeuvre, GEO",
+      "description": "An object drifting along the belt executes a manoeuvre that reduces its drift rate to near zero, parking it at a longitude. The reporting then addresses which objects are plane matched at that longitude and at what deltas.",
+      "quantified_norms": {
+        "drift_before": "Frequently between roughly half a degree and nearly two degrees per day",
+        "drift_after": "Reduced to a few hundredths of a degree per day",
+        "assessment_content": "Nearest plane-matched object identified with its inclination delta, and neighbours listed with their deltas and longitudes"
+      },
+      "why_it_matters_for_training": "The park is not the event. Where it parked and who is plane matched there is the event. The corpus consistently follows a drift stop with an assessment of the neighbourhood, and that is the habit to train.",
+      "seed_parameters": [
+        "drift before and after",
+        "parked longitude",
+        "nearest plane-matched object and its delta",
+        "whether the slot is registered to another party"
+      ],
+      "correct_assessment": "Report the drift stop, the parked longitude, and the plane relationships at that longitude with deltas.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-07",
+      "name": "Orbit raising campaign with predictable pauses",
+      "class": "Manoeuvre sequence, transfer orbit",
+      "description": "An object transferring to its operational orbit performs a repeating sequence of apogee or perigee manoeuvres, with pauses at predictable intervals. Photometric variation across the campaign is consistent with the transfer rather than with anything else.",
+      "quantified_norms": {
+        "manoeuvre_magnitude": "Large, from tens to several hundred metres per second at apogee",
+        "cadence": "Repeating, with pauses at regular altitude intervals such that the next manoeuvre can be anticipated",
+        "accompanying_photometry": "Brightness varies through the campaign and is consistent with pattern of life for an object in transfer"
+      },
+      "why_it_matters_for_training": "This is the archetype that teaches prediction. Once the cadence is established the analyst can say when the next manoeuvre is due, which converts reporting from reactive to anticipatory. The corpus contains assessments that state the object is on time to perform the next one.",
+      "seed_parameters": [
+        "manoeuvre magnitude",
+        "cadence and altitude interval",
+        "how many cycles are visible",
+        "target longitude"
+      ],
+      "correct_assessment": "Report the manoeuvre as part of an established campaign, state the expected next event, and assess accompanying photometry as consistent with transfer.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-08",
+      "name": "First-ever behaviour from a known object",
+      "class": "Manoeuvre, any regime",
+      "description": "An object with an established and limited behavioural history performs something it has never been observed doing, such as a first inclination change. The novelty is the finding, and the resulting geometry may bring it near an object of interest.",
+      "quantified_norms": {
+        "magnitude": "Often small, and the significance is the novelty rather than the size",
+        "assessment_language": "Reported explicitly as not within pattern of life and as the first time this behaviour has been tracked for this object"
+      },
+      "why_it_matters_for_training": "Directly counters the instinct to weight significance by magnitude. A slight inclination change on an object that has never changed inclination is more informative than a large routine station-keep, and saying it is the first time is what makes the report land.",
+      "seed_parameters": [
+        "magnitude",
+        "length of prior history",
+        "whether the resulting geometry closes on anything",
+        "how many manoeuvres in the sequence"
+      ],
+      "correct_assessment": "Report as outside pattern of life, state explicitly that it is the first observed instance, and assess the resulting geometry.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-09",
+      "name": "Docked pair manoeuvring as one",
+      "class": "RPO outcome, GEO",
+      "description": "Two objects assessed as docked manoeuvre together as a single body, producing large combined inclination and period changes across a sequence, and bringing the pair closer to other objects.",
+      "quantified_norms": {
+        "manoeuvre_sequence": "Several manoeuvres across days, with period changes of the order of tens to over a hundred seconds and inclination changes of several degrees",
+        "drift_management": "Drift rate raised then slowed across the sequence, indicating a deliberate repositioning rather than a single move",
+        "consequence": "The pair ends nearer to other objects of interest"
+      },
+      "why_it_matters_for_training": "The reporting subject becomes the pair rather than either object. Operators trained on single objects struggle with this, and the corpus shows the correct handling: name both, describe the sequence, and assess the resulting proximity for the pair.",
+      "seed_parameters": [
+        "number of manoeuvres",
+        "period and inclination changes per manoeuvre",
+        "drift profile across the sequence",
+        "which objects the pair ends near"
+      ],
+      "correct_assessment": "Report the pair as one manoeuvring body, list the sequence with times and changes, and assess resulting proximity.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-10",
+      "name": "Manoeuvre and photometric change on the same object in one period",
+      "class": "Combined, GEO",
+      "description": "An object performs a series of station-keeping manoeuvres while its photometry also changes, with the photometry having recently returned to nominal before departing again. The two may or may not be related and the assessment says which.",
+      "quantified_norms": {
+        "manoeuvre_character": "Routine station-keeping across consecutive days",
+        "photometric_change": "Of the order of one visual magnitude, in a stated phase angle window",
+        "assessment": "Cause of the photometric change stated as unknown with a speculative link to surveillance or manoeuvre activity, clearly labelled as speculation"
+      },
+      "why_it_matters_for_training": "The correct handling is a combined report, which the photometry procedure explicitly provides for. It also models honest speculation: the corpus states the cause is unknown and then offers a speculative link, clearly marked. That is exactly the calibrated register the released report corpus otherwise lacks.",
+      "seed_parameters": [
+        "number of manoeuvres",
+        "photometric magnitude and window",
+        "whether the two are causally linked",
+        "recent photometric history"
+      ],
+      "correct_assessment": "Combined report covering both, with the causal link stated as established, speculative or absent.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05",
+        "CMP-06"
+      ]
+    },
+    {
+      "id": "BHV-11",
+      "name": "Park near target, hold a bounded standoff",
+      "class": "RPO, GEO",
+      "description": "An object parks near a target and maintains a bounded minimum distance over an extended period, station-keeping frequently to hold the position. Occasional approaches close inside the usual floor.",
+      "quantified_norms": {
+        "typical_standoff": "Maintained within a band of roughly ten to sixty kilometres",
+        "occasional_closest_approach": "Occasionally inside ten kilometres",
+        "station_keeping": "Frequent while parked near a target",
+        "longitudinal_range": "Operates across a wide but bounded longitude range, relocating between targets"
+      },
+      "why_it_matters_for_training": "Distinct from distance-maintaining avoidance, which increases separation, and from a perch, which is tighter and usually element-matched. This archetype holds a deliberate bounded standoff and stays. The frequent station-keeping is the tell that the position is being actively maintained rather than passively held.",
+      "seed_parameters": [
+        "standoff band",
+        "frequency of station-keeping",
+        "whether an approach breaches the usual floor",
+        "time parked before relocating"
+      ],
+      "correct_assessment": "Assess as a sustained parking posture within pattern of life for the class, and report a breach of the usual standoff floor as a departure from it.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ]
+    },
+    {
+      "id": "BHV-12",
+      "name": "Bounded longitude patrol with turn-arounds",
+      "class": "Manoeuvre and RPO, GEO",
+      "description": "An object operates within established longitude bounds, drifting between them and reversing at each limit. The turn-around is predictable and is where proximity opportunities arise, because the object slows and reverses near whatever occupies that longitude.",
+      "quantified_norms": {
+        "bounds": "Established east and west limits, typically spanning a wide arc of the belt",
+        "turnaround_margin": "Within about five degrees of a bound, a turn is imminent",
+        "behaviour_at_turn": "Drift slows, reverses, and the object lingers longer near that longitude than anywhere else on its patrol"
+      },
+      "why_it_matters_for_training": "It converts predictive surveillance from monitoring into forecasting. The bounds are known, so the turn is predictable, so the opportunity is predictable. This is the clearest case in the package where an analyst can be ahead of an event rather than behind it.",
+      "seed_parameters": [
+        "bound positions",
+        "current distance from a bound",
+        "drift rate",
+        "what occupies the longitude at the turn"
+      ],
+      "correct_assessment": "Raise tasking before the turn, post a potential activity alert, and watch for proximity operations at the turn rather than after it.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04",
+        "CMP-07"
+      ]
+    }
+  ],
+  "tempo_realism": {
+    "note": "What a normal week contains, for scenario pacing.",
+    "findings": [
+      "A typical weekly report carries three to five significant events across three regional cells",
+      "Manoeuvre and photometric change dominate; direct ascent and breakup are rare",
+      "Several events in any week are the continuation of something already running rather than something new",
+      "Events routinely span weeks or months, and the weekly report frequently references activity from prior months as context"
+    ],
+    "trainer_use": "Scenarios should carry running events alongside new ones, and some seeds should present an event whose meaningful history began months earlier. A trainer composed entirely of fresh events teaches a tempo that does not exist."
+  },
+  "scope_boundary": {
+    "note": "Verified scope exclusions. Recorded so that a future reader does not mistake an absence for an oversight and re-open a closed question.",
+    "exclusions": [
+      {
+        "topic": "Electromagnetic interference",
+        "status": "Out of scope, verified with the owner on 29 August 2026",
+        "reason": "Carried by a different mission area and not the responsibility of the operators this application trains.",
+        "evidence_that_prompted_the_question": "Electromagnetic interference appears prominently across two years of weekly activity reporting, which compiles across mission areas, while being entirely absent from the released notification corpus. The weekly reports were the misleading source: they aggregate wider than this application's audience.",
+        "consequence": "No procedure, products, cues, drills or artefacts. Any electromagnetic interference material appearing in a future source is filtered out at authoring rather than assessed on merit.",
+        "watch_item": "Where an event crosses mission areas, such as interference coinciding with a proximity event, the boundary is the reporting responsibility rather than the observation. An operator may still need to recognise that something belongs to another mission area and hand it on, and that recognition is in scope even though the analysis is not."
+      }
+    ],
+    "method_note": "This is a useful correction to how the corpora are read. The weekly activity reports aggregate across three regional cells and several mission areas, so frequency within them does not indicate scope for this audience. The released notification corpus is the better guide to what these operators actually produce, and where the two disagree the notification corpus wins."
+  }
+}

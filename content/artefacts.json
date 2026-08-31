@@ -1,0 +1,287 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.4.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "CONTEXT-001 LEARNED register",
+      "SJ-21 / SJ-25 RPO and Docking Event AAR (cross-tagging findings)",
+      "Intelsat 33E Break-Up After Action Report (solar exclusion, RF dropout)",
+      "Cosmos 2558 / Object C Separation AAR (UDL discoverability, obs without states)",
+      "DRAFT: JCO vendor product standardization (hemispheric bias, sensor view)",
+      "JCO CT Launch and xGEO (20 JAN 26) sensor limitations",
+      "Fusion provider TRIC results screen observed 28 Aug 2026",
+      "Live Fly 25-2 and 26-1 after action reports",
+      "Exercise ASTRAL VORTEX, Pacific cell after action report",
+      "Exercise ASTRAL VORTEX, Meridian advanced operator observations"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Artefact classes described generically. No provider fault attribution and no live object identifiers."
+  },
+  "artefacts": [
+    {
+      "id": "ART-001",
+      "name": "Near-duplicate epoch drift explosion",
+      "presents_as": "A longitude drift rate of an implausible magnitude, for example millions of degrees per day, suggesting a catastrophic manoeuvre or a solver failure worth escalating.",
+      "true_cause": "Two element sets separated by a near-zero epoch gap. The drift rate is computed as a longitude difference divided by a time difference approaching zero, so the quotient diverges. The object has not moved unusually at all.",
+      "discriminator": "Check the epoch separation between the two states before believing any rate derived from them. If the gap is sub-second, discard the derived rate and request states with a usable separation. A physically impossible number is an arithmetic artefact until proven otherwise.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "CONTEXT-001 LEARNED register, ASTRA 1M case"
+    },
+    {
+      "id": "ART-002",
+      "name": "Optical cross-tagging during close approach",
+      "presents_as": "Two objects appear to merge into one, or swap identities, suggesting a docking or a capture.",
+      "true_cause": "Electro-optical sensors cannot resolve the two objects below a few kilometres of separation, so observations are attributed to the wrong object or fused into a single track. The objects may remain physically distinct.",
+      "discriminator": "Ask whether a second phenomenology still separates them. Radio frequency signatures often remain distinguishable when optical has merged, particularly if the objects use different bands. Merged optical plus separable RF means unresolved, not docked. Only sustained single-object detection across phenomenologies supports a merged-state assessment.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "source_ref": "SJ-21 / SJ-25 AAR: cross-tagging first observed at approximately 10 km separation; EO fusion between 2 and 5 km; RF remained distinguishable"
+    },
+    {
+      "id": "ART-003",
+      "name": "Solar exclusion masquerading as loss of the object",
+      "presents_as": "Observations stop entirely, suggesting the object has been destroyed, has manoeuvred away, or has gone dark.",
+      "true_cause": "The object has entered the solar exclusion zone where optical sensors cannot collect. At higher altitudes an object can remain in exclusion for multiple days.",
+      "discriminator": "Check the pass schedule and the solar geometry before concluding anything from an absence of data. An absence during a predicted exclusion is not evidence. State the gap as a limitation in any report rather than treating it as a finding.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "source_ref": "Intelsat 33E AAR; JCO CT Launch and xGEO solar exclusion note"
+    },
+    {
+      "id": "ART-004",
+      "name": "Hemispheric bias in photometry",
+      "presents_as": "A step change in brightness suggesting a configuration change, deployment or attitude anomaly.",
+      "true_cause": "The observing sensors shifted between hemispheres, changing the viewing geometry and therefore the apparent magnitude, with no change to the object at all.",
+      "discriminator": "Request the hemisphere view. If the change disappears when hemispheres are separated, the object did not change. This is precisely why the product standard requires a supporting view alongside the seven day overlay.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization, Photometry section"
+    },
+    {
+      "id": "ART-005",
+      "name": "Single-sensor photometric anomaly",
+      "presents_as": "A clear brightness anomaly on the overlay, apparently well defined and worth reporting.",
+      "true_cause": "One sensor with a calibration or processing issue is producing the feature. No other sensor sees it.",
+      "discriminator": "Request the sensor view. An anomaly present on one sensor and absent on all others is a sensor story, not a satellite story. Report it as such if at all.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization, Photometry section"
+    },
+    {
+      "id": "ART-006",
+      "name": "Phase angle change read as an object change",
+      "presents_as": "Gradual brightening or dimming across days, suggesting a slow attitude drift or degradation.",
+      "true_cause": "The solar phase angle is changing through the observing period. Brightness varies with phase angle even when the object is entirely stable.",
+      "discriminator": "Compare like phase angle with like phase angle. This is why the product standard requires the phase angles at which a change was observed to be stated. Without that, a brightness claim is not assessable.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization; CONTEXT-001 photometric analysis notes"
+    },
+    {
+      "id": "ART-007",
+      "name": "Stale state generating a phantom close approach",
+      "presents_as": "A neighbourhood showing an alarming close approach distance requiring immediate escalation.",
+      "true_cause": "The state used for one or both objects is days old. The propagated position carries an uncertainty far larger than the reported miss distance, so the number is precise but meaningless.",
+      "discriminator": "Read the epoch column first, every time, before reading any distance. A distance computed from a stale state is a hypothesis, not a measurement. Request an updated state before escalating.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-05"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization, Neighborhood section; JCO CT Predictive Surveillance step Verify Epoch Ages"
+    },
+    {
+      "id": "ART-008",
+      "name": "HRR-filtered neighbourhood hiding the affected object",
+      "presents_as": "A clean neighbourhood implying nothing of consequence is nearby, supporting a decision not to report.",
+      "true_cause": "The neighbourhood was filtered to ranked objects only, and the object actually at risk carried no rank at the time.",
+      "discriminator": "Ask what the filter was. Request the unfiltered or HRR-plus-UCT view. An absence in a filtered product is not an absence in reality. Objects acquire relevance before they acquire a rank.",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-06"
+      ],
+      "source_ref": "Cosmos 2558 / Object C Separation AAR recommended action on unfiltered neighbourhoods"
+    },
+    {
+      "id": "ART-009",
+      "name": "Observations present, state absent",
+      "presents_as": "No orbital state can be found for an object of interest, suggesting it is untracked and therefore not assessable.",
+      "true_cause": "A provider is tracking the object as an uncorrelated track and publishing observations, but has not published a state. The data exists; it is not discoverable through the route being used.",
+      "discriminator": "Search for observations, not only states, and ask providers directly whether they hold tracks. Absence of a state is not absence of data.",
+      "competency_ids": [
+        "CMP-05",
+        "CMP-01"
+      ],
+      "source_ref": "Cosmos 2558 / Object C Separation AAR, UDL discoverability finding"
+    },
+    {
+      "id": "ART-010",
+      "name": "Reference frame assumed rather than read",
+      "presents_as": "A state vector that places an object kilometres from where every other source says it is, suggesting a manoeuvre or a bad solve.",
+      "true_cause": "The state is in a different reference frame than assumed. Some sources omit the frame field entirely and a wrong default was applied.",
+      "discriminator": "Read the frame field. Where it is absent, establish the provider default rather than guessing. A frame mismatch produces a consistent offset rather than a random one, which is itself a tell.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "CONTEXT-001 LEARNED register, reference frame handling by provider"
+    },
+    {
+      "id": "ART-011",
+      "name": "Observation gap read as a manoeuvre",
+      "presents_as": "A residual plot showing observations departing from zero immediately after a gap, suggesting a manoeuvre during the gap.",
+      "true_cause": "The state degraded across an extended gap with no observations to constrain it. The departure reflects propagation error accumulating, not the object moving.",
+      "discriminator": "Look at observation density either side of the departure. A manoeuvre departs from a well-constrained fit; propagation error departs from a starved one. Request observations preceding and during the suspect period, which is exactly why the product standard requires them.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization, Residual plots section"
+    },
+    {
+      "id": "ART-012",
+      "name": "Catalogued object mistaken for a new discovery",
+      "presents_as": "An apparently new object near an asset of interest, prompting UCT discovery processing.",
+      "true_cause": "The object is already in the catalogue but carries no rank and had not been surfaced by the filtered products in use.",
+      "discriminator": "Check the catalogue before opening discovery processing, and check whether the object is simply unranked rather than unknown. The processing path differs and the reporting obligation differs with it.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03"
+      ],
+      "source_ref": "Cosmos 2558 / Object C Separation AAR, catalogue and rank interaction finding"
+    },
+    {
+      "id": "ART-013",
+      "name": "Pattern of life station-keep read as manoeuvre of intent",
+      "presents_as": "A verified manoeuvre on a red object of interest, apparently significant.",
+      "true_cause": "The object performs routine station-keeping on a regular cadence and this burn is consistent with that pattern in timing, magnitude and direction.",
+      "discriminator": "Compare against the object's own history before assessing intent. The product standard asks providers to state whether timing is consistent with pattern of life for exactly this reason. Note also that a break in an established pattern is itself the signal, so an object that stops station-keeping is as interesting as one that starts.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-04"
+      ],
+      "source_ref": "DRAFT: JCO vendor product standardization, Residual plots recommendation; Cosmos 2558 AAR note on cessation of monthly station-keeps"
+    },
+    {
+      "id": "ART-014",
+      "name": "Slow-moving xGEO object filtered as a star",
+      "presents_as": "No detections of an object known to be in the field of view, suggesting loss of custody.",
+      "true_cause": "At xGEO distances the object moves so slowly that sensor processing filters it as a background star, and its visual magnitude may be beyond sensor sensitivity in any case.",
+      "discriminator": "Know the regime limits of the sensors in use before interpreting a null result. For xGEO, absence of optical detection is close to uninformative without specialised collection.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "JCO CT Launch and xGEO (20 JAN 26), xGEO Challenges (Sensors)"
+    },
+    {
+      "id": "ART-015",
+      "name": "Multiple headcount from a tracking artefact",
+      "presents_as": "A headcount of two on a single object, triggering separation processing.",
+      "true_cause": "A spurious correlation, a nearby unrelated object drawn into the track, or a processing duplicate has produced an apparent second object that does not exist.",
+      "discriminator": "Seek confirmation across passes and, where possible, across phenomenologies before committing to a processing path. Headcount drives the branch between breakup, separation and UCT discovery, so a false headcount sends the whole response down the wrong procedure.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "source_ref": "JCO CT Space Warfare and Separation (29 SEP 25), multiple headcount decision tree"
+    },
+    {
+      "id": "ART-016",
+      "name": "State update marker counted as a manoeuvre",
+      "presents_as": "Several distinct marks along a relative motion track, suggesting a sequence of manoeuvres and therefore forced motion.",
+      "true_cause": "The marks indicate where the orbit solution was updated, for either the reference or the secondary object. A solution can be refitted many times without the object doing anything.",
+      "discriminator": "Check the residuals across the same period. A manoeuvre shows a departure; a state update does not. Also note that the product distinguishes reference from non-reference state changes, so read which object the mark belongs to before attributing behaviour to either.",
+      "competency_ids": [
+        "CMP-02",
+        "CMP-05"
+      ],
+      "source_ref": "Fusion provider TRIC results screen, state change markers"
+    },
+    {
+      "id": "ART-017",
+      "name": "Provider score treated as the assessment",
+      "presents_as": "A ranked score column on the neighbourhood that appears to identify which objects matter.",
+      "true_cause": "The score is a provider heuristic blending several factors with weightings the operator did not choose and may not know.",
+      "discriminator": "Treat the score as an input alongside delta-v, plane deltas and epoch age, never as a conclusion. An object with a low score and a cheap closure cost still warrants attention.",
+      "competency_ids": [
+        "CMP-05"
+      ],
+      "source_ref": "Fusion provider neighbourhood results screen, Score column"
+    },
+    {
+      "id": "ART-018",
+      "name": "Light curve read as a time series",
+      "presents_as": "A rising then falling brightness curve that looks like the object brightened and then dimmed over the observing period.",
+      "true_cause": "The horizontal axis is solar equatorial phase angle, not time. The shape is the object's brightness as a function of viewing geometry and is entirely expected.",
+      "discriminator": "Read the axis label before reading the curve. Change is a later interval sitting off the earlier curve at matched phase angle, not a slope across the plot.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04"
+      ],
+      "source_ref": "Fusion provider vis mag light curve screen"
+    },
+    {
+      "id": "ART-019",
+      "name": "Observation inconsistent with its stated phenomenology",
+      "presents_as": "A detection attributed to a sensor type, appearing to extend coverage or confirm a picture.",
+      "true_cause": "Contaminated, mislabelled or synthetic data entering the pipeline. Observed in exercise conditions where real data persisted after simulated data was activated, and where radar observations appeared at ranges no contracted sensor could achieve.",
+      "discriminator": "Check the observation against the known performance envelope of the sensor type that supposedly produced it. A detection requiring a capability the network does not have is a data problem, not a discovery. Then check whether other data from the same source is affected before relying on any of it.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "Exercise observations of anomalous simulated radar observations and real data persisting after simulation activation"
+    },
+    {
+      "id": "ART-020",
+      "name": "One object appearing as two through identifier representation",
+      "presents_as": "Two entries that look like separate objects, or a mismatch between products suggesting one has stale or wrong data.",
+      "true_cause": "The same object represented in an alpha-numeric identifier form in one product and an all-numeric expansion in another, with some products additionally placing the numeric form in the satellite name field.",
+      "discriminator": "Compare orbital elements and epochs. Two representations of one object carry identical states. Then establish which field you are reading, because the identifier field and the name field do not always hold what their labels suggest.",
+      "competency_ids": [
+        "CMP-01",
+        "CMP-06"
+      ],
+      "source_ref": "Observed across products from more than one fusion provider during exercise activity, with a common standard still being agreed"
+    },
+    {
+      "id": "ART-021",
+      "name": "Coordinate converted wrongly under time pressure",
+      "presents_as": "A launch location that produces a plausible but incorrect target set, with everything downstream internally consistent and wrong.",
+      "true_cause": "A value supplied in minutes and seconds treated as decimal degrees, or converted in haste. The error is invisible because the resulting analysis is coherent.",
+      "discriminator": "Check the notation of the source value before converting, convert deliberately rather than mentally, and have the result checked before it enters a product. A sanity check against the known launch site helps, because a mis-converted coordinate usually lands somewhere implausible.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-06"
+      ],
+      "source_ref": "Format mismatch between external launch indications and the coordinate format required by procedure"
+    },
+    {
+      "id": "ART-022",
+      "name": "Two manoeuvres solved as a single burn",
+      "presents_as": "A provider summary reporting one unusually large manoeuvre, with a delta-v and element changes that appear authoritative.",
+      "true_cause": "Two or more burns occurring close together and summed by the solver into a single solution. Under high manoeuvre rates automatic filtering struggles, and once burns sum the resolution becomes difficult.",
+      "discriminator": "Check whether the element signature is explicable by one burn direction. A single in-track burn changes period and eccentricity; a single radial burn leaves period alone. A combination that no single direction explains suggests a summed pair. Cross-check against the relative motion plot, where a summed solution often fails to match the observed geometry, and challenge the summary rather than accepting it.",
+      "competency_ids": [
+        "CMP-04",
+        "CMP-05"
+      ],
+      "source_ref": "Provider-side solver limitation observed during exercise activity, producing inaccurate proximity pictures and incorrect categorisation"
+    }
+  ]
+}

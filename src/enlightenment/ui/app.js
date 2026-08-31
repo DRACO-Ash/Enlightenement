@@ -1,611 +1,626 @@
-/*
- * ENLIGHTENMENT operator interface. No framework, no build step, no external request.
- *
- * Three rules this file holds, each from the flight plan:
- *
- * 1. EVERY untrusted value is written with textContent, never innerHTML. Content is authored by a
- *    human and served as JSON, and "authored by us" is not a reason to skip escaping: the content
- *    tree is edited without a code deployment, so an authoring mistake would otherwise become a
- *    scripting bug. No markup-parsing sink is used anywhere in this file, and a test asserts
- *    their absence by name - including the two dynamic-code sinks, which would defeat the strict
- *    script-src by another route.
- * 2. The answer key is never requested before an answer is committed. The drill payload has no
- *    answer field; the reveal arrives as the response to the POST.
- * 3. Status is never colour alone. Every verdict sets a shape glyph and a text label as well as a
- *    class.
- */
 'use strict';
+/*
+ * The operator interface.
+ *
+ * Two rules this file holds, and both are checked by tests rather than trusted:
+ *
+ * 1. NOTHING is ever assigned as markup. Every value from the server reaches the document
+ *    through textContent or through a namespaced SVG element created by name. The content is
+ *    authored and the server is ours, but "the data is trusted" is how every one of these bugs
+ *    starts, and the cost of the discipline is nil.
+ * 2. Plots are drawn from the panel description the server sends, honouring its axes. An
+ *    inverted axis is inverted because a magnitude axis runs brighter upward; a renderer that
+ *    ignored the flag would teach the opposite of the signature.
+ *
+ * Colour: the recency ramp is the ONLY place red appears. A verdict never uses it. In the real
+ * toolset red means "most recent data", and a red verdict here would teach an operator to read
+ * one colour two unrelated ways.
+ */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/* Confidence steps and the probability each asserts. A proper scoring rule needs a number, and
+ * these are the five the training layer scores against. */
+const CONFIDENCE = [
+  { step: 1, label: 'Guess', probability: 15 },
+  { step: 2, label: 'Lean', probability: 35 },
+  { step: 3, label: 'Fair', probability: 55 },
+  { step: 4, label: 'Sure', probability: 75 },
+  { step: 5, label: 'Certain', probability: 93 },
+];
+
+/* Role to CSS custom property. Roles come from the generator, never colours, so the palette
+ * lives in one place and a renderer cannot pick a hex value. */
+const ROLE_COLOURS = {
+  'series-a': 'var(--sig)',
+  'series-b': 'var(--you)',
+  'track': 'var(--sig)',
+  'state-change': 'var(--cue)',
+  'minimum': 'var(--recent)',
+  'reference': 'var(--ink4)',
+  'object-held': 'var(--sig)',
+  'object-drift': 'var(--you)',
+};
 
 const state = {
   drill: null,
-  answered: false,
-  procedures: [],
-  confidenceSteps: {},
+  confidence: 0,
+  servedAt: 0,
+  busy: false,
 };
 
-const $ = (id) => document.getElementById(id);
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
 
-function announce(message) {
-  // One live region, updated deliberately and sparingly: the accessibility standard here warns
-  // against a chatty live region, and a drill that narrated every keystroke would be unusable.
-  $('live').textContent = message;
+function svg(tag, attributes) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attributes || {})) {
+    node.setAttribute(key, String(value));
+  }
+  return node;
+}
+
+function clear(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
 }
 
 async function api(path, options) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'content-type': 'application/json', ...(options && options.headers) },
-  });
-  const body = await response.json().catch(() => null);
+  const response = await fetch(path, Object.assign({ headers: { 'accept': 'application/json' } }, options));
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = body && body.detail;
-    const message =
-      (detail && (detail.message || detail.error)) ||
-      (body && body.error) ||
-      `Request failed with status ${response.status}`;
+    const message = (detail && (detail.message || detail.error)) || 'The request failed.';
     throw new Error(message);
   }
   return body;
 }
 
-/* ------------------------------------------------------------------ plotting */
+function banner(message) {
+  const node = document.getElementById('banner');
+  if (!message) { node.classList.add('hidden'); clear(node); return; }
+  clear(node);
+  node.appendChild(el('span', null, message));
+  node.classList.remove('hidden');
+}
 
-/*
- * Drawn from scratch on a canvas. The palette constants are duplicated from the stylesheet on
- * purpose: a canvas cannot read a CSS custom property without a getComputedStyle round trip per
- * frame, and a stale duplicate here is a visual bug rather than an accessibility one. The rule
- * that matters is honoured either way - Blue 1 is a structural stroke and never a status colour.
- */
-const PALETTE = {
-  grid: '#385FAF',
-  axis: '#739BCF',
-  ink: '#E8EDF5',
-  series: ['#739BCF', '#27AE60', '#E06C69', '#9FB0CC'],
-};
+/* ---------------------------------------------------------------- plot drawing */
 
-function drawPlot(canvas, plot) {
-  const ratio = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth || 900;
-  const height = canvas.clientHeight || 320;
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, width, height);
+const PLOT_WIDTH = 620;
+const PLOT_HEIGHT = 260;
+const PAD = { left: 58, right: 16, top: 14, bottom: 40 };
 
-  const pad = { left: 74, right: 18, top: 16, bottom: 42 };
-  const inner = { w: width - pad.left - pad.right, h: height - pad.top - pad.bottom };
+/* Text inside a plot must not scale with the plot, and this is measured rather than assumed.
+ * A plot in a wide column renders LARGER than its own coordinate system and one in a narrow
+ * column renders smaller: the artboards had the second case and the true floor was 7.3 px, and
+ * the first pass at this file had the first case and axis captions rendered at 23 px. So the
+ * font size is set after layout from the actual ratio, floored so nothing carrying meaning
+ * lands under this. */
+const AXIS_FONT_PX = 13;
 
-  const xs = plot.series.flatMap((s) => s.x);
-  const ys = plot.series.flatMap((s) => s.y);
-  if (!xs.length || !ys.length) { return; }
-
-  // A degenerate range would divide by zero and paint a flat line at the top of the box. Padding a
-  // zero span by a unit keeps a genuinely constant series readable instead of invisible.
-  let [x0, x1] = [Math.min(...xs), Math.max(...xs)];
-  let [y0, y1] = [Math.min(...ys), Math.max(...ys)];
-  if (x1 - x0 === 0) { x0 -= 1; x1 += 1; }
-  if (y1 - y0 === 0) { y0 -= 1; y1 += 1; }
-  const yPad = (y1 - y0) * 0.08;
-  y0 -= yPad; y1 += yPad;
-
-  const sx = (v) => pad.left + ((v - x0) / (x1 - x0)) * inner.w;
-  const sy = (v) => pad.top + inner.h - ((v - y0) / (y1 - y0)) * inner.h;
-
-  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
-  ctx.lineWidth = 1;
-
-  // Grid and tick labels. Blue 1 for the grid lines, which is a structural fill; the LABELS use
-  // Blue 2, because Blue 1 at 2.45:1 never carries text.
-  for (let i = 0; i <= 4; i += 1) {
-    const value = y0 + ((y1 - y0) * i) / 4;
-    const y = sy(value);
-    ctx.strokeStyle = PALETTE.grid;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
-    ctx.fillStyle = PALETTE.axis;
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillText(formatTick(value), pad.left - 8, y);
+function extent(values) {
+  let low = Infinity, high = -Infinity;
+  for (const value of values) {
+    if (!Number.isFinite(value)) continue;
+    if (value < low) low = value;
+    if (value > high) high = value;
   }
-  for (let i = 0; i <= 4; i += 1) {
-    const value = x0 + ((x1 - x0) * i) / 4;
-    const x = sx(value);
-    ctx.fillStyle = PALETTE.axis;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(formatTick(value), x, pad.top + inner.h + 8);
-  }
+  if (low === Infinity) return [0, 1];
+  if (low === high) return [low - 1, high + 1];
+  return [low, high];
+}
 
-  ctx.strokeStyle = PALETTE.axis;
-  ctx.beginPath();
-  ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top + inner.h);
-  ctx.lineTo(width - pad.right, pad.top + inner.h);
-  ctx.stroke();
+function axisRange(axis, values) {
+  const [low, high] = extent(values);
+  const min = axis && axis.minimum !== null && axis.minimum !== undefined ? axis.minimum : low;
+  const max = axis && axis.maximum !== null && axis.maximum !== undefined ? axis.maximum : high;
+  return min === max ? [min - 1, max + 1] : [min, max];
+}
 
-  ctx.fillStyle = PALETTE.axis;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText(plot.x_label, pad.left + inner.w / 2, height - 6);
-  ctx.save();
-  ctx.translate(14, pad.top + inner.h / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText(plot.y_label, 0, 0);
-  ctx.restore();
+function ramp(fraction) {
+  /* Recency: most recent at one end, oldest at the other, and this is the one place red is used.
+   * Three stops rather than a gradient function so the two halves are separately legible. */
+  if (fraction <= 0.5) return 'var(--recent)';
+  if (fraction <= 0.85) return 'var(--older)';
+  return 'var(--oldest)';
+}
 
-  // A relative track is a path in space, so it is drawn as a path with points; a time series is
-  // drawn as a line. Both get markers when the series is sparse, because the RPO item whose
-  // correct answer is "indeterminate" IS sparse and a smoothed line would hide that.
-  plot.series.forEach((series, index) => {
-    const colour = PALETTE.series[index % PALETTE.series.length];
-    ctx.strokeStyle = colour;
-    ctx.fillStyle = colour;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    series.x.forEach((xv, i) => {
-      const px = sx(xv); const py = sy(series.y[i]);
-      if (i === 0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
-    });
-    ctx.stroke();
-    if (series.x.length <= 24) {
-      series.x.forEach((xv, i) => {
-        ctx.beginPath();
-        ctx.arc(sx(xv), sy(series.y[i]), 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    }
+function drawPanel(panel) {
+  const wrap = el('div');
+  if (panel.title) wrap.appendChild(el('p', 'panel-title', panel.title));
+
+  const groups = (panel.marks || []).concat(panel.steps || []);
+  const xs = [], ys = [];
+  for (const group of groups) { xs.push(...group.x); ys.push(...group.y); }
+  const [x0, x1] = axisRange(panel.x, xs);
+  const [y0, y1] = axisRange(panel.y, ys);
+
+  const frame = svg('svg', {
+    viewBox: `0 0 ${PLOT_WIDTH} ${PLOT_HEIGHT}`,
+    width: '100%',
+    role: 'img',
+    'aria-label': panel.title || 'plot',
+    style: 'display:block',
   });
+
+  const plotW = PLOT_WIDTH - PAD.left - PAD.right;
+  const plotH = PLOT_HEIGHT - PAD.top - PAD.bottom;
+  const sx = (value) => PAD.left + ((value - x0) / (x1 - x0)) * plotW;
+  /* The inverted flag, honoured. Not a preference: a magnitude axis runs brighter upward. */
+  const sy = (value) => {
+    const t = (value - y0) / (y1 - y0);
+    return panel.y && panel.y.inverted
+      ? PAD.top + t * plotH
+      : PAD.top + plotH - t * plotH;
+  };
+
+  for (let i = 0; i <= 4; i += 1) {
+    const y = PAD.top + (i / 4) * plotH;
+    frame.appendChild(svg('line', { x1: PAD.left, y1: y, x2: PLOT_WIDTH - PAD.right, y2: y, stroke: 'var(--grid)', 'stroke-width': 1 }));
+    const value = panel.y && panel.y.inverted
+      ? y0 + (i / 4) * (y1 - y0)
+      : y1 - (i / 4) * (y1 - y0);
+    const label = svg('text', {
+      x: PAD.left - 8, y: y + 4, fill: 'var(--ink3)',
+      'font-size': AXIS_FONT_PX, 'text-anchor': 'end', 'font-family': 'var(--data)',
+    });
+    label.textContent = formatTick(value);
+    frame.appendChild(label);
+  }
+  for (let i = 0; i <= 4; i += 1) {
+    const x = PAD.left + (i / 4) * plotW;
+    const label = svg('text', {
+      x, y: PLOT_HEIGHT - PAD.bottom + 20, fill: 'var(--ink3)',
+      'font-size': AXIS_FONT_PX, 'text-anchor': 'middle', 'font-family': 'var(--data)',
+    });
+    label.textContent = formatTick(x0 + (i / 4) * (x1 - x0));
+    frame.appendChild(label);
+  }
+
+  for (const group of groups) {
+    drawGroup(frame, group, sx, sy);
+  }
+
+  const axisLabel = svg('text', {
+    x: PLOT_WIDTH / 2, y: PLOT_HEIGHT - 4, fill: 'var(--ink4)',
+    'font-size': AXIS_FONT_PX, 'text-anchor': 'middle', 'font-family': 'var(--data)',
+  });
+  axisLabel.textContent = axisCaption(panel.x);
+  frame.appendChild(axisLabel);
+
+  wrap.appendChild(frame);
+  /* Deferred to the next frame, when the SVG has a box to measure. */
+  requestAnimationFrame(() => sizePlotText(frame));
+  const yCaption = el('p', 'panel-note', `Vertical: ${axisCaption(panel.y)}${panel.y && panel.y.inverted ? ' · inverted, brighter upward' : ''}`);
+  wrap.appendChild(yCaption);
+  for (const note of panel.notes || []) wrap.appendChild(el('p', 'panel-note', note));
+  return wrap;
+}
+
+function sizePlotText(frame) {
+  const box = frame.getBoundingClientRect();
+  const viewBox = frame.viewBox && frame.viewBox.baseVal;
+  if (!box.width || !viewBox || !viewBox.width) return;
+  const scale = box.width / viewBox.width;
+  if (!Number.isFinite(scale) || scale <= 0) return;
+  const size = Math.max(AXIS_FONT_PX / scale, AXIS_FONT_PX / 3);
+  for (const text of frame.querySelectorAll('text')) {
+    text.setAttribute('font-size', size.toFixed(2));
+  }
+}
+
+function axisCaption(axis) {
+  if (!axis) return '';
+  return axis.unit ? `${axis.label} (${axis.unit})` : axis.label;
 }
 
 function formatTick(value) {
   const magnitude = Math.abs(value);
-  if (magnitude >= 100) { return value.toFixed(0); }
-  if (magnitude >= 1) { return value.toFixed(1); }
+  if (magnitude >= 10000) return `${(value / 1000).toFixed(1)}k`;
+  if (magnitude >= 100) return value.toFixed(0);
+  if (magnitude >= 1) return value.toFixed(2);
   return value.toFixed(3);
 }
 
-function renderPlotTable(plot) {
-  // The keyboard and screen-reader path to the same data. Not a fallback: an operator who wants
-  // the numbers should be able to have the numbers.
-  const host = $('plot-table');
-  host.textContent = '';
-  plot.series.forEach((series) => {
-    const table = document.createElement('table');
-    const caption = document.createElement('caption');
-    caption.className = 'hint';
-    caption.style.textAlign = 'left';
-    caption.textContent = series.label;
-    table.appendChild(caption);
-    const head = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    [plot.x_label, plot.y_label].forEach((text) => {
-      const th = document.createElement('th');
-      th.textContent = text;
-      headRow.appendChild(th);
-    });
-    head.appendChild(headRow);
-    table.appendChild(head);
-    const body = document.createElement('tbody');
-    // Every eighth point when the series is dense: a 96-row table read aloud is not accessible,
-    // it is only complete. The shape is what the operator needs and eight-point sampling keeps it.
-    const stride = series.x.length > 24 ? 8 : 1;
-    series.x.forEach((xv, i) => {
-      if (i % stride !== 0) { return; }
-      const row = document.createElement('tr');
-      [formatTick(xv), formatTick(series.y[i])].forEach((text) => {
-        const td = document.createElement('td');
-        td.className = 'num';
-        td.textContent = text;
-        row.appendChild(td);
-      });
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    host.appendChild(table);
-  });
-}
-
-/* --------------------------------------------------------------------- drill */
-
-function renderConfidence() {
-  const host = $('confidence');
-  host.textContent = '';
-  const labels = { 1: 'Guessing', 2: 'Leaning', 3: 'Fairly sure', 4: 'Confident', 5: 'Certain' };
-  Object.keys(state.confidenceSteps).sort().forEach((step) => {
-    const probability = state.confidenceSteps[step];
-    const label = document.createElement('label');
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = 'confidence';
-    input.value = step;
-    if (step === '3') { input.checked = true; }
-    const text = document.createElement('span');
-    text.textContent = labels[step] || `Step ${step}`;
-    const pct = document.createElement('span');
-    pct.className = 'pct';
-    pct.textContent = `${Math.round(probability * 100)}%`;
-    label.append(input, text, pct);
-    host.appendChild(label);
-  });
-}
-
-async function loadDrill() {
-  $('reveal').hidden = true;
-  state.answered = false;
-  $('submit-answer').disabled = false;
-  $('classification').value = '';
-  $('first-action').value = '';
-  $('drill-title').textContent = 'Loading a drill…';
-  try {
-    const drill = await api('/api/v1/drill/next');
-    state.drill = drill;
-    $('drill-title').textContent = drill.title;
-    $('drill-procedure').textContent = drill.procedure_title;
-    $('drill-axis').textContent = drill.axis;
-    $('drill-difficulty').textContent = String(drill.difficulty);
-    $('drill-rating').textContent = String(drill.operator_rating);
-    $('drill-prompt').textContent = drill.prompt;
-    $('plot-desc').textContent = drill.plot.description;
-    drawPlot($('plot'), drill.plot);
-    renderPlotTable(drill.plot);
-    $('classification').focus();
-    announce(`New drill: ${drill.title}. ${drill.plot.description}`);
-  } catch (error) {
-    $('drill-title').textContent = 'No drill available';
-    $('drill-prompt').textContent = error.message;
-    announce(`Could not load a drill. ${error.message}`);
+function drawGroup(frame, group, sx, sy) {
+  const colour = ROLE_COLOURS[group.role] || 'var(--sig)';
+  if (group.glyph === 'line' || group.glyph === 'step') {
+    drawPath(frame, group, sx, sy, colour);
+    return;
+  }
+  /* A plus-cross scatter, not a polyline. A connecting line asserts continuity between
+   * observations that are not continuous, and it hides the pass structure. */
+  const size = group.glyph === 'dot' ? 3 : 2.6;
+  for (let i = 0; i < group.x.length; i += 1) {
+    const x = sx(group.x[i]);
+    const y = sy(group.y[i]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const stroke = group.ramp && group.ramp.length === group.x.length ? ramp(group.ramp[i]) : colour;
+    if (group.glyph === 'dot' || group.glyph === 'square') {
+      frame.appendChild(svg(group.glyph === 'dot' ? 'circle' : 'rect',
+        group.glyph === 'dot'
+          ? { cx: x, cy: y, r: size, fill: stroke }
+          : { x: x - size, y: y - size, width: size * 2, height: size * 2, fill: 'none', stroke, 'stroke-width': 1.3 }));
+      continue;
+    }
+    if (group.glyph === 'bar') {
+      frame.appendChild(svg('rect', { x, y: y - 4, width: 3, height: 8, fill: stroke }));
+      continue;
+    }
+    frame.appendChild(svg('path', {
+      d: `M${x - size} ${y}H${x + size}M${x} ${y - size}V${y + size}`,
+      stroke, 'stroke-width': 1.1, 'stroke-linecap': 'round',
+    }));
   }
 }
 
-function renderReveal(result) {
-  const verdict = $('verdict');
-  verdict.className = `verdict ${result.correct ? 'hit' : 'miss'}`;
-  // Shape AND text AND colour. The glyph is the part that survives deuteranopia and a monochrome
-  // screenshot, which is why it is not decoration.
-  verdict.querySelector('.glyph').textContent = result.correct ? '▲' : '▼';
-  verdict.querySelector('.text').textContent = result.correct
-    ? `Correct. ${result.calibration}.`
-    : result.confused_with
-      ? `Not this one. You called it "${result.confused_with}", which is the look-alike this item discriminates against. ${result.calibration}.`
-      : `Not this one. ${result.calibration}.`;
+function drawPath(frame, group, sx, sy, colour) {
+  const parts = [];
+  for (let i = 0; i < group.x.length; i += 1) {
+    const x = sx(group.x[i]);
+    const y = sy(group.y[i]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (parts.length === 0) { parts.push(`M${x.toFixed(2)} ${y.toFixed(2)}`); continue; }
+    /* A staircase for a step series. Discrete state changes are steps in the real products, and
+     * a curve through them asserts a transition that did not happen. */
+    parts.push(group.glyph === 'step' ? `H${x.toFixed(2)}V${y.toFixed(2)}` : `L${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  if (!parts.length) return;
+  frame.appendChild(svg('path', {
+    d: parts.join(''), fill: 'none', stroke: colour, 'stroke-width': 1.6, 'stroke-linejoin': 'round',
+  }));
+}
 
-  $('reveal-points').textContent = `${result.points.toFixed(2)} of 100`;
-  const delta = result.rating_delta >= 0 ? `+${result.rating_delta}` : String(result.rating_delta);
-  $('reveal-rating').textContent = `${result.rating_after} (${delta})`;
-  $('reveal-due').textContent = `${result.next_due_in_days} day(s)`;
-  $('reveal-cue').textContent = result.expert_cue;
+function drawTable(stimulus) {
+  const wrap = el('div', 'tablewrap');
+  const table = el('table');
+  const head = el('thead');
+  const headRow = el('tr');
+  for (const column of stimulus.columns) {
+    const th = el('th', column.align === 'right' ? 'r' : null, column.label);
+    headRow.appendChild(th);
+  }
+  head.appendChild(headRow);
+  table.appendChild(head);
+  const body = el('tbody');
+  for (const row of stimulus.rows) {
+    const tr = el('tr');
+    for (const column of stimulus.columns) {
+      const raw = row[column.key];
+      const value = raw === null || raw === undefined ? '—'
+        : (typeof raw === 'boolean' ? (raw ? 'yes' : 'no') : String(raw));
+      const classes = [column.align === 'right' ? 'r' : '', column.emphasis ? 'em' : ''].filter(Boolean).join(' ');
+      tr.appendChild(el('td', classes || null, value));
+    }
+    body.appendChild(tr);
+  }
+  table.appendChild(body);
+  wrap.appendChild(table);
+  return wrap;
+}
 
-  const body = $('reveal-lines');
-  body.textContent = '';
-  result.lines.forEach((line) => {
-    const row = document.createElement('tr');
-    const cells = [
-      line.rule,
-      line.axis,
-      line.available > 0 ? `${line.awarded} / ${line.available}` : '—',
-      line.evidence,
-    ];
-    cells.forEach((text, index) => {
-      const td = document.createElement('td');
-      if (index === 2) { td.className = 'num'; }
-      td.textContent = text;
-      row.appendChild(td);
+function ramped(stimulus) {
+  /* Whether any group on this surface encodes recency in colour. If one does, a role swatch
+   * beside it is a lie: the points are drawn in the ramp, not in the role colour. */
+  for (const panel of stimulus.panels || []) {
+    for (const group of (panel.marks || []).concat(panel.steps || [])) {
+      if (group.ramp && group.ramp.length === group.x.length && group.x.length) return true;
+    }
+  }
+  return false;
+}
+
+function buildLegend(stimulus) {
+  const legend = el('div', 'legend');
+  const usesRamp = ramped(stimulus);
+  if (usesRamp) {
+    for (const [label, colour] of [['most recent', 'var(--recent)'], ['older', 'var(--older)'], ['oldest', 'var(--oldest)']]) {
+      const item = el('span');
+      const swatch = el('i');
+      swatch.style.background = colour;
+      item.appendChild(swatch);
+      item.appendChild(el('span', null, label));
+      legend.appendChild(item);
+    }
+  }
+  for (const [label, role] of stimulus.legend) {
+    const item = el('span');
+    if (!usesRamp) {
+      const swatch = el('i');
+      swatch.style.background = ROLE_COLOURS[role] || 'var(--sig)';
+      item.appendChild(swatch);
+    }
+    item.appendChild(el('span', null, usesRamp ? `· ${label}` : label));
+    legend.appendChild(item);
+  }
+  return legend;
+}
+
+function drawStimulus(stimulus) {
+  const scope = el('div', 'scope');
+  const head = el('div', 'scope-head');
+  const title = el('span');
+  title.appendChild(el('b', null, stimulus.title));
+  head.appendChild(title);
+  for (const [key, value] of stimulus.header || []) {
+    head.appendChild(el('span', null, `${key}: ${value}`));
+  }
+  head.appendChild(el('span', null, stimulus.product_id));
+  scope.appendChild(head);
+
+  if (stimulus.panels && stimulus.panels.length) {
+    const panels = el('div', stimulus.panels.length > 1 ? 'panels multi' : 'panels');
+    for (const panel of stimulus.panels) panels.appendChild(drawPanel(panel));
+    scope.appendChild(panels);
+  }
+  if (stimulus.columns && stimulus.columns.length) {
+    scope.appendChild(drawTable(stimulus));
+  }
+  if (stimulus.legend && stimulus.legend.length) {
+    scope.appendChild(buildLegend(stimulus));
+  }
+  if (stimulus.reads_as) {
+    scope.appendChild(el('p', 'foot', stimulus.reads_as));
+  }
+  if (stimulus.footer) scope.appendChild(el('div', 'foot', stimulus.footer));
+  return scope;
+}
+
+/* ---------------------------------------------------------------- the drill loop */
+
+function renderConfidence() {
+  const group = document.getElementById('confidence-group');
+  clear(group);
+  for (const option of CONFIDENCE) {
+    const button = el('button', null, null);
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(state.confidence === option.step));
+    button.appendChild(el('span', null, option.label));
+    button.appendChild(document.createTextNode(' '));
+    button.appendChild(el('span', null, `${option.probability}`));
+    button.addEventListener('click', () => {
+      state.confidence = option.step;
+      renderConfidence();
     });
-    body.appendChild(row);
-  });
+    group.appendChild(button);
+  }
+}
 
-  const accepted = result.accepted_classifications.slice(0, 3).join(', ');
-  $('reveal-procedure').textContent =
-    `${result.procedure_title}. Step one: ${result.first_step} ` +
-    `Accepted answers for this item included: ${accepted}.`;
+const RESPONSE_LABELS = {
+  free_classification: 'Name the event',
+  ordered_actions: 'The actions, in order',
+  yes_no_with_reason: 'Yes or no, and why',
+  numeric_estimate: 'Your number',
+  threshold_call: 'Your call against the threshold',
+  product_request: 'Which product do you ask for',
+  anatomy_question: 'Your answer',
+  no_action_correct: 'What do you do',
+  cross_product_reconciliation: 'Reconcile the products',
+  reasoned_argument: 'Your argument',
+};
 
-  $('reveal').hidden = false;
-  $('next-drill').focus();
-  announce(
-    `${result.correct ? 'Correct' : 'Incorrect'}. ${result.points.toFixed(0)} points. ` +
-    `Expert cue: ${result.expert_cue}`,
-  );
+async function loadDrill() {
+  banner('');
+  document.getElementById('reveal').classList.add('hidden');
+  document.getElementById('answer-form').classList.add('hidden');
+  document.getElementById('drill-prompt').textContent = 'Loading a drill…';
+  clear(document.getElementById('stimuli'));
+  try {
+    const drill = await api('/api/v1/drill/next');
+    state.drill = drill;
+    state.confidence = 0;
+    state.servedAt = Date.now();
+    document.getElementById('drill-kicker').textContent = `${drill.item_id} · ${drill.cue_id || 'no cue'}`;
+    document.getElementById('drill-prompt').textContent = drill.prompt;
+    document.getElementById('drill-meta').textContent =
+      `Rated ${drill.elo}. Target ${drill.time_target_s} seconds. Content ${drill.content_hash.slice(0, 12)}.`;
+    const host = document.getElementById('stimuli');
+    for (const stimulus of drill.stimulus) host.appendChild(drawStimulus(stimulus));
+    document.getElementById('response-label').textContent =
+      RESPONSE_LABELS[drill.response_format] || 'Your answer';
+    document.getElementById('response').value = '';
+    renderConfidence();
+    document.getElementById('answer-form').classList.remove('hidden');
+    document.getElementById('response').focus();
+  } catch (error) {
+    banner(error.message);
+    document.getElementById('drill-prompt').textContent = 'No drill available.';
+  }
+}
+
+const VERDICT_GLYPH = { accept: '▲', partial: '◆', reject: '▼', none: '○', unscorable: '○' };
+
+function renderReveal(result) {
+  const host = document.getElementById('reveal');
+  clear(host);
+
+  const verdict = el('div', `verdict ${result.matched}`);
+  const heading = el('h3');
+  heading.appendChild(el('span', 'glyph', VERDICT_GLYPH[result.matched] || '○'));
+  heading.appendChild(document.createTextNode(
+    result.matched === 'accept' ? 'Correct.'
+      : result.matched === 'partial' ? 'Right, and imprecise.'
+      : result.matched === 'reject' ? 'That is a named wrong answer.'
+      : result.matched === 'unscorable' ? 'This item could not be scored.'
+      : 'Not a recognised answer.'));
+  verdict.appendChild(heading);
+  if (result.why_wrong) verdict.appendChild(el('p', null, result.why_wrong));
+  if (result.note) verdict.appendChild(el('p', null, result.note));
+  if (result.explain) verdict.appendChild(el('p', null, result.explain));
+  host.appendChild(verdict);
+
+  host.appendChild(el('h2', null, 'Where the score went'));
+  const table = el('table');
+  const head = el('thead');
+  const headRow = el('tr');
+  for (const label of ['Rule', 'Award', 'Why']) {
+    headRow.appendChild(el('th', label === 'Award' ? 'r' : null, label));
+  }
+  head.appendChild(headRow);
+  table.appendChild(head);
+  const body = el('tbody');
+  for (const component of result.score_components) {
+    const tr = el('tr');
+    tr.appendChild(el('td', null, component.rule_id));
+    tr.appendChild(el('td', 'r em', component.award.toFixed(2)));
+    tr.appendChild(el('td', null, component.explain));
+    body.appendChild(tr);
+  }
+  const totalRow = el('tr');
+  totalRow.appendChild(el('td', null, 'Total'));
+  totalRow.appendChild(el('td', 'r em', result.total.toFixed(2)));
+  totalRow.appendChild(el('td', null, `Rating ${result.rating_before} to ${result.rating_after}. Due again in ${result.next_due_in_days} day${result.next_due_in_days === 1 ? '' : 's'}.`));
+  body.appendChild(totalRow);
+  table.appendChild(body);
+  const wrap = el('div', 'tablewrap');
+  wrap.appendChild(table);
+  host.appendChild(wrap);
+
+  host.appendChild(el('p', 'note', `Calibration: ${result.calibration}. Brier ${result.brier.toFixed(3)}.`));
+  if (result.unimplemented_rules && result.unimplemented_rules.length) {
+    host.appendChild(el('p', 'panel-note',
+      `${result.unimplemented_rules.length} rule(s) in this rubric have no predicate yet and were not evaluated: ${result.unimplemented_rules.join(', ')}.`));
+  }
+
+  const next = el('button', 'act', 'Next drill');
+  next.type = 'button';
+  next.addEventListener('click', loadDrill);
+  host.appendChild(next);
+  host.classList.remove('hidden');
+  next.focus();
 }
 
 async function submitAnswer(event) {
   event.preventDefault();
-  if (!state.drill || state.answered) { return; }
-  const classification = $('classification').value.trim();
-  const firstAction = $('first-action').value.trim();
-  if (!classification || !firstAction) {
-    announce('Both the event name and the first action are needed before committing.');
+  if (state.busy || !state.drill) return;
+  const response = document.getElementById('response').value.trim();
+  if (!response) { banner('Type your call first.'); return; }
+  if (state.drill.confidence_required && !state.confidence) {
+    banner('Say how sure you are. Calibration is scored.');
     return;
   }
-  const chosen = document.querySelector('input[name="confidence"]:checked');
-  $('submit-answer').disabled = true;
+  state.busy = true;
+  document.getElementById('submit').disabled = true;
   try {
     const result = await api('/api/v1/drill/answer', {
       method: 'POST',
+      headers: { 'content-type': 'application/json', 'accept': 'application/json' },
       body: JSON.stringify({
-        item_id: state.drill.item_id,
-        classification,
-        first_action: firstAction,
-        confidence: chosen ? Number(chosen.value) : 3,
+        drill_run_id: state.drill.drill_run_id,
+        response,
+        confidence: state.confidence || 3,
+        elapsed_ms: Math.max(0, Date.now() - state.servedAt),
       }),
     });
-    state.answered = true;
+    document.getElementById('answer-form').classList.add('hidden');
     renderReveal(result);
+    banner('');
   } catch (error) {
-    $('submit-answer').disabled = false;
-    announce(`Could not score that answer. ${error.message}`);
+    banner(error.message);
+  } finally {
+    state.busy = false;
+    document.getElementById('submit').disabled = false;
   }
 }
 
-/* ----------------------------------------------------------------- dashboard */
+/* ---------------------------------------------------------------- other surfaces */
 
-async function loadDashboard() {
-  const data = await api('/api/v1/dashboard');
-  $('dash-rating').textContent = String(data.rating);
-  $('dash-runs').textContent = String(data.runs_total);
-  $('dash-due').textContent = String(data.due_now.length);
-  $('dash-items').textContent = String(data.items_total);
-
-  const axes = $('dash-axes');
-  axes.textContent = '';
-  data.axes.forEach((axis) => {
-    const row = document.createElement('tr');
-    const name = document.createElement('td');
-    name.textContent = axis.axis;
-    const attempts = document.createElement('td');
-    attempts.className = 'num';
-    attempts.textContent = String(axis.attempts);
-    const accuracy = document.createElement('td');
-    accuracy.className = 'num';
-    accuracy.textContent = axis.accuracy === null ? 'not measured' : `${Math.round(axis.accuracy * 100)}%`;
-    const interval = document.createElement('td');
-    if (axis.interval) {
-      const track = document.createElement('div');
-      track.className = 'bar-track';
-      const fill = document.createElement('div');
-      fill.className = 'bar-fill';
-      fill.style.width = `${Math.round((axis.accuracy || 0) * 100)}%`;
-      const band = document.createElement('div');
-      band.className = 'bar-ci';
-      band.style.left = `${Math.round(axis.interval[0] * 100)}%`;
-      band.style.width = `${Math.max(2, Math.round((axis.interval[1] - axis.interval[0]) * 100))}%`;
-      track.append(fill, band);
-      interval.appendChild(track);
-      const text = document.createElement('span');
-      text.className = 'hint';
-      text.textContent = `${Math.round(axis.interval[0] * 100)}% to ${Math.round(axis.interval[1] * 100)}%`;
-      interval.appendChild(text);
-    } else {
-      interval.className = 'empty';
-      interval.textContent = 'no attempts yet';
-    }
-    const brier = document.createElement('td');
-    brier.className = 'num';
-    brier.textContent = axis.mean_brier === null ? '—' : axis.mean_brier.toFixed(3);
-    row.append(name, attempts, accuracy, interval, brier);
-    axes.appendChild(row);
-  });
-
-  const coverage = $('dash-coverage');
-  coverage.textContent = '';
-  data.coverage.forEach((entry) => {
-    const row = document.createElement('tr');
-    [entry.procedure_id, entry.items, entry.attempted, entry.demonstrated].forEach((value, index) => {
-      const td = document.createElement('td');
-      if (index > 0) { td.className = 'num'; }
-      td.textContent = String(value);
-      row.appendChild(td);
-    });
-    coverage.appendChild(row);
-  });
-
-  const recent = $('dash-recent');
-  recent.textContent = '';
-  if (!data.recent.length) {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
-    cell.colSpan = 5;
-    cell.className = 'empty';
-    cell.textContent = 'Nothing recorded yet. Answer a drill and it appears here.';
-    row.appendChild(cell);
-    recent.appendChild(row);
-  }
-  data.recent.forEach((run) => {
-    const row = document.createElement('tr');
-    const when = document.createElement('td');
-    when.textContent = run.answered_at.slice(0, 16).replace('T', ' ');
-    const item = document.createElement('td');
-    item.textContent = run.item_id;
-    const outcome = document.createElement('td');
-    outcome.className = run.correct ? 'verdict hit' : 'verdict miss';
-    outcome.textContent = run.correct ? '▲ correct' : '▼ missed';
-    const confidence = document.createElement('td');
-    confidence.className = 'num';
-    confidence.textContent = String(run.confidence);
-    const points = document.createElement('td');
-    points.className = 'num';
-    points.textContent = run.points.toFixed(1);
-    row.append(when, item, outcome, confidence, points);
-    recent.appendChild(row);
-  });
-}
-
-/* ------------------------------------------------------------------- library */
-
-function renderLibrary() {
-  const list = $('library-list');
-  list.textContent = '';
-  state.procedures.forEach((procedure) => {
-    const row = document.createElement('tr');
-    const name = document.createElement('td');
-    const button = document.createElement('button');
-    button.className = 'ghost';
-    button.textContent = procedure.title;
-    button.addEventListener('click', () => loadProcedure(procedure.id));
-    name.appendChild(button);
-    const steps = document.createElement('td');
-    steps.className = 'num';
-    steps.textContent = String(procedure.steps);
-    const status = document.createElement('td');
-    status.textContent = procedure.status;
-    row.append(name, steps, status);
-    list.appendChild(row);
-  });
-  // The honest statement of the content gap, on screen rather than only in a commit message.
-  $('library-gap').textContent =
-    `${state.procedures.length} procedures loaded. The flight plan's definition of done requires ` +
-    'all fifteen seeded as data; the remaining twelve are not named in the plan, so they are not ' +
-    'invented here. Ash to supply the names and content.';
-}
-
-async function loadProcedure(id) {
-  const host = $('procedure-detail');
+async function loadProgress() {
+  const host = document.getElementById('progress-body');
+  clear(host);
   try {
-    const procedure = await api(`/api/v1/library/${encodeURIComponent(id)}`);
-    host.textContent = '';
-    const heading = document.createElement('h2');
-    heading.textContent = procedure.title;
-    const meta = document.createElement('p');
-    meta.className = 'meta-row';
-    meta.textContent =
-      `${procedure.id} ${procedure.version} · ${procedure.status} · authored by ` +
-      `${procedure.authored_by} on ${procedure.authored_on}`;
-    const purpose = document.createElement('p');
-    purpose.textContent = procedure.purpose;
-    host.append(heading, meta, purpose);
-
-    appendList(host, 'Entry conditions', procedure.entry_conditions);
-
-    const stepsHeading = document.createElement('h3');
-    stepsHeading.textContent = 'Steps';
-    host.appendChild(stepsHeading);
-    const ol = document.createElement('ol');
-    ol.className = 'steps';
-    procedure.steps.forEach((step) => {
-      const li = document.createElement('li');
-      const action = document.createElement('div');
-      action.textContent = step.action;
-      const role = document.createElement('div');
-      role.className = 'step-role';
-      role.textContent = step.responsible_role;
-      li.append(action, role);
-      if (step.warning) {
-        const warning = document.createElement('div');
-        warning.className = 'step-warning';
-        // Prefixed with a word, not only a colour: the alert red is text-safe at 4.66:1 but the
-        // meaning must not depend on it.
-        warning.textContent = `Warning: ${step.warning}`;
-        li.appendChild(warning);
-      }
-      if (step.note) {
-        const note = document.createElement('div');
-        note.className = 'step-note';
-        note.textContent = `Note: ${step.note}`;
-        li.appendChild(note);
-      }
-      ol.appendChild(li);
-    });
-    host.appendChild(ol);
-
-    if (procedure.threshold_criteria.length) {
-      const thresholds = procedure.threshold_criteria.map((item) => `${item.name}: ${item.condition}`);
-      appendList(host, 'Threshold criteria', thresholds);
+    const me = await api('/api/v1/me');
+    document.getElementById('progress-identity').textContent = me.identity;
+    const table = el('table');
+    const head = el('thead');
+    const headRow = el('tr');
+    for (const label of ['Competency', 'Attempts', 'Estimate', 'Interval']) {
+      headRow.appendChild(el('th', label === 'Competency' ? null : 'r', label));
     }
-    appendList(host, 'Reporting requirements', procedure.reporting_requirements);
-    appendList(host, 'Closure criteria', procedure.closure_criteria);
-    announce(`Loaded procedure ${procedure.title}.`);
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = el('tbody');
+    for (const competency of me.competencies) {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, competency.name || competency.competency_id));
+      tr.appendChild(el('td', 'r', String(competency.attempts)));
+      /* "Not measured" and "measured at zero" are different statements and are rendered
+       * differently. A bare estimate never appears: the interval is part of the value. */
+      tr.appendChild(el('td', 'r', competency.measured ? `${Math.round(competency.estimate * 100)}%` : 'not measured'));
+      tr.appendChild(el('td', 'r', competency.interval
+        ? `${Math.round(competency.interval[0] * 100)} to ${Math.round(competency.interval[1] * 100)}`
+        : '—'));
+      body.appendChild(tr);
+    }
+    table.appendChild(body);
+    const wrap = el('div', 'tablewrap');
+    wrap.appendChild(table);
+    host.appendChild(wrap);
+    host.appendChild(el('p', 'note',
+      `Drill rating ${me.drill_rating}. ${me.runs_total} answers recorded. ${me.due_now} items due now.`));
   } catch (error) {
-    host.textContent = '';
-    const heading = document.createElement('h2');
-    heading.textContent = 'Could not load that procedure';
-    const detail = document.createElement('p');
-    detail.className = 'empty';
-    detail.textContent = error.message;
-    host.append(heading, detail);
+    banner(error.message);
   }
 }
 
-function appendList(host, title, values) {
-  if (!values || !values.length) { return; }
-  const heading = document.createElement('h3');
-  heading.textContent = title;
-  const ul = document.createElement('ul');
-  values.forEach((value) => {
-    const li = document.createElement('li');
-    li.textContent = value;
-    ul.appendChild(li);
-  });
-  host.append(heading, ul);
-}
-
-/* ---------------------------------------------------------------- navigation */
-
-const VIEWS = [
-  ['tab-drill', 'view-drill', null],
-  ['tab-dashboard', 'view-dashboard', loadDashboard],
-  ['tab-library', 'view-library', null],
-];
-
-function show(targetTab, options) {
-  VIEWS.forEach(([tabId, viewId, onShow]) => {
-    const selected = tabId === targetTab;
-    $(tabId).setAttribute('aria-selected', String(selected));
-    $(viewId).hidden = !selected;
-    if (selected && onShow) {
-      onShow().catch((error) => announce(`Could not load that view. ${error.message}`));
-    }
-  });
-  // The hash carries the view, so a screen is linkable and the back button works. Written with
-  // replaceState rather than assigning location.hash: assigning would fire hashchange and re-enter
-  // this function, and a tab switch that recursed once would eventually recurse always.
-  if (!options || !options.fromHash) {
-    history.replaceState(null, '', `#${targetTab.replace('tab-', '')}`);
-  }
-}
-
-function viewFromHash() {
-  const wanted = `tab-${window.location.hash.replace('#', '')}`;
-  return VIEWS.some(([tabId]) => tabId === wanted) ? wanted : 'tab-drill';
-}
-
-async function boot() {
-  VIEWS.forEach(([tabId]) => $(tabId).addEventListener('click', () => show(tabId)));
-  $('answer-form').addEventListener('submit', submitAnswer);
-  $('next-drill').addEventListener('click', loadDrill);
-  $('open-procedure').addEventListener('click', () => {
-    if (state.drill) { show('tab-library'); loadProcedure(state.drill.procedure_id); }
-  });
-  $('toggle-table').addEventListener('click', () => {
-    const table = $('plot-table');
-    const open = table.hidden;
-    table.hidden = !open;
-    $('toggle-table').setAttribute('aria-expanded', String(open));
-    $('toggle-table').textContent = open ? 'Hide the data table' : 'Read the data as a table';
-  });
-  window.addEventListener('resize', () => {
-    if (state.drill) { drawPlot($('plot'), state.drill.plot); }
-  });
-
-  window.addEventListener('hashchange', () => show(viewFromHash(), { fromHash: true }));
-
+async function loadLibrary() {
+  const host = document.getElementById('library-body');
+  clear(host);
   try {
-    const content = await api('/api/v1/content');
-    state.procedures = content.procedures;
-    state.confidenceSteps = content.confidence_steps;
-    $('build').textContent = `build ${content.version}`;
-    $('foot-identity').textContent = `${content.operator_id} · ${content.identity}`;
-    const provenance = $('provenance');
-    provenance.textContent = '';
-    const strong = document.createElement('strong');
-    strong.textContent = 'Illustrative content. ';
-    provenance.append(strong, document.createTextNode(content.content_provenance));
-    if (!content.ok) {
-      const errors = document.createElement('div');
-      errors.textContent = `Content errors: ${content.errors.join(' | ')}`;
-      provenance.appendChild(errors);
+    const manifest = await api('/api/v1/content/manifest');
+    const scope = el('div', 'scope');
+    const head = el('div', 'scope-head');
+    head.appendChild(el('span', null, 'Loaded content'));
+    head.appendChild(el('span', null, `hash ${manifest.content_hash.slice(0, 16)}`));
+    scope.appendChild(head);
+    const list = el('div', 'legend');
+    for (const [kind, count] of Object.entries(manifest.counts)) {
+      list.appendChild(el('span', null, `${kind}: ${count}`));
     }
-    renderConfidence();
-    renderLibrary();
+    scope.appendChild(list);
+    scope.appendChild(el('div', 'foot', `Thresholds from ${manifest.thresholds_source}.`));
+    host.appendChild(scope);
+    if (!manifest.scored_scenarios_ready) {
+      host.appendChild(el('p', 'banner', manifest.why_not_ready));
+    }
   } catch (error) {
-    announce(`Could not read content status. ${error.message}`);
+    banner(error.message);
   }
-  await loadDrill();
-  show(viewFromHash(), { fromHash: true });
 }
 
-boot();
+/* ---------------------------------------------------------------- shell */
+
+const VIEWS = { drill: loadDrill, progress: loadProgress, library: loadLibrary };
+
+function show(name) {
+  for (const view of Object.keys(VIEWS)) {
+    document.getElementById(`view-${view}`).classList.toggle('hidden', view !== name);
+  }
+  for (const button of document.querySelectorAll('#nav button')) {
+    if (button.dataset.view === name) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  const loader = VIEWS[name];
+  if (loader) loader();
+}
+
+function boot() {
+  document.getElementById('answer-form').addEventListener('submit', submitAnswer);
+  for (const button of document.querySelectorAll('#nav button')) {
+    button.addEventListener('click', () => show(button.dataset.view));
+  }
+  api('/api/v1/content/manifest').then((manifest) => {
+    document.getElementById('rail-status').textContent =
+      manifest.ok ? `${manifest.counts.drills} drills · ${manifest.content_hash.slice(0, 8)}` : 'content fault';
+    if (!manifest.ok) banner(manifest.errors.join(' '));
+  }).catch(() => {
+    document.getElementById('rail-status').textContent = 'offline';
+  });
+  show('drill');
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();

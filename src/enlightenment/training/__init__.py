@@ -1,27 +1,36 @@
-"""The training layer: the drill loop, its scoring, and per-operator progress.
+"""The training layer: the drill loop, the rating and spacing model, and stored progress.
 
-Flight plan steps 6 and 7 (scoring engine, drill loop) for the drill surface. Scenario mode on a
-running clock is step 11 and is not here yet; the scoring engine's decision-table path reads the
-rubric from the content tree when that lands, and the drill's own weights stay in
-:func:`~enlightenment.training.scoring.explain_score`.
+The drill loop moved to `drill.py` when the real content package landed. The illustrative engine,
+its answer matcher and its three shaped plot generators are retired: matching now lives in
+`enlightenment.scoring` against the authored key, and stimuli come from the ten registered product
+renderers in `enlightenment.generators` rather than from three shapes invented here.
 
-Nothing in this package performs I/O except :class:`~enlightenment.training.progress.ProgressStore`,
-which is the one place operator state is written, and it is deliberately narrow so the SQLite swap
-the flight plan settles on is one class rather than a refactor.
+What survived unchanged is the part that was never about the content: the Elo pairing, the Brier
+calibration score, the spacing intervals and the atomic progress store.
 """
 
 from __future__ import annotations
 
-from enlightenment.training.engine import DrillEngine, DrillError, ScoredDrill, ServedDrill
-from enlightenment.training.progress import (
-    AXES,
+from enlightenment.training.drill import (
     DEMONSTRATION_OPERATOR,
+    DRILL_RUBRIC_ID,
+    DrillError,
+    DrillLoop,
+    ScoredDrill,
+    ServedDrill,
+)
+from enlightenment.training.progress import (
+    AxisProgress,
+    CueSchedule,
     OperatorProgress,
     ProgressStore,
+    RunRecord,
+    now_utc,
 )
 from enlightenment.training.scoring import (
-    CONFIDENCE_STEPS,
-    DEFAULT_OPERATOR_RATING,
+    CONFIDENT_AT,
+    UNSURE_AT,
+    RatingChange,
     ScoreLine,
     brier_score,
     calibration_verdict,
@@ -33,14 +42,18 @@ from enlightenment.training.scoring import (
 )
 
 __all__ = [
-    "AXES",
-    "CONFIDENCE_STEPS",
-    "DEFAULT_OPERATOR_RATING",
+    "CONFIDENT_AT",
     "DEMONSTRATION_OPERATOR",
-    "DrillEngine",
+    "DRILL_RUBRIC_ID",
+    "UNSURE_AT",
+    "AxisProgress",
+    "CueSchedule",
     "DrillError",
+    "DrillLoop",
     "OperatorProgress",
     "ProgressStore",
+    "RatingChange",
+    "RunRecord",
     "ScoreLine",
     "ScoredDrill",
     "ServedDrill",
@@ -50,5 +63,6 @@ __all__ = [
     "expected_score",
     "explain_score",
     "next_interval_days",
+    "now_utc",
     "update_ratings",
 ]

@@ -1,0 +1,120 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.2.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "ENLIGHTENMENT flight plan v1.0, Outcomes and success measures",
+      "JCO CT-RPO (15 APR 25) objectives",
+      "JCO CT Orbital Elements, Maneuvers and Orbit Determination (22 DEC 25) objectives",
+      "JCO CT Space Warfare and Separation (29 SEP 25) objectives",
+      "JCO CT Crew Resource Management and Breakup (29 JUL 26) objectives",
+      "JCO CT Predictive Surveillance (28 APR 26) objectives",
+      "Live Fly 25-2 after action reports, May 2025",
+      "Live Fly 26-1 after action reports, November 2025"
+    ],
+    "review_status": "draft",
+    "redaction_note": "No protected object identifiers, click-paths or channel conventions present."
+  },
+  "competencies": [
+    {
+      "id": "CMP-01",
+      "name": "Cue detection",
+      "definition": "Noticing that something in the delivered data is not nominal, and noticing it early. This is perception before interpretation: the operator has not yet decided what it is, only that it warrants attention.",
+      "novice_behaviour": "Scans the whole product evenly, fixates on the largest visual feature, and reports only what is labelled. Misses the small step change because nothing drew attention to it.",
+      "expert_behaviour": "Knows where on each product the informative region is, checks it first, and registers a deviation against an internalised baseline of what normal looks like for that object class and regime.",
+      "measured_by": [
+        "drill_accuracy",
+        "drill_latency",
+        "product_request_correctness"
+      ]
+    },
+    {
+      "id": "CMP-02",
+      "name": "Event classification",
+      "definition": "Naming the event correctly and, critically, discriminating it from its look-alikes. Separation against breakup. Station-keeping against a manoeuvre of intent. Cross-tagging against a genuine merge.",
+      "novice_behaviour": "Reaches for the first plausible label and stops. Treats headcount as decisive on its own. Cannot say why it is not the neighbouring category.",
+      "expert_behaviour": "Generates the competing classifications explicitly, names the discriminating evidence for each, and states which additional product would settle it. Holds the classification loosely while the evidence is thin.",
+      "measured_by": [
+        "classification_correctness",
+        "artefact_rejection",
+        "confidence_calibration"
+      ]
+    },
+    {
+      "id": "CMP-03",
+      "name": "Procedure recall",
+      "definition": "Knowing without reference which procedure governs the event, what the first action is, and what the reporting obligation and time standard are. This is the instant-recall target the whole application exists to build.",
+      "novice_behaviour": "Knows a procedure exists and goes looking for it. Correct eventually, slow always. Under time pressure, defaults to escalating everything or nothing.",
+      "expert_behaviour": "Enters the right procedure unprompted, executes step one while the products are still arriving, and knows the reporting clock started at receipt rather than at conclusion.",
+      "measured_by": [
+        "procedure_step_recall",
+        "drill_latency",
+        "ordered_actions"
+      ]
+    },
+    {
+      "id": "CMP-04",
+      "name": "Physical reasoning",
+      "definition": "Judging whether what the data claims is physically possible, and reading orbital behaviour for intent. Does that drift rate follow from that altitude difference. Is that delta-v plausible for that platform. Does that geometry cost fuel, and therefore mean something.",
+      "novice_behaviour": "Accepts numbers because they are printed. Cannot sanity-check a drift rate or a delta-v, so cannot tell a solver artefact from a manoeuvre.",
+      "expert_behaviour": "Carries approximate relationships and uses them as a filter. Recognises when a reported value is impossible before investigating why. Reads a fuel-expensive manoeuvre as a statement of intent.",
+      "measured_by": [
+        "numeric_estimate",
+        "artefact_rejection",
+        "threshold_judgement"
+      ]
+    },
+    {
+      "id": "CMP-05",
+      "name": "Uncertainty and calibration",
+      "definition": "Matching stated confidence to the evidence actually held, and ranking data artefacts as peer hypotheses rather than footnotes. Includes knowing which product would reduce the uncertainty and asking for it.",
+      "novice_behaviour": "Binary. Either certain or paralysed. Reports a possible manoeuvre with the same language as a verified one. Never considers that the sensor, the solver or the epoch might be the story.",
+      "expert_behaviour": "States confidence explicitly and proportionately, labels possible against verified, names what would change the assessment, and treats an artefact hypothesis with the same seriousness as a threat hypothesis until one is eliminated.",
+      "measured_by": [
+        "confidence_calibration",
+        "artefact_rejection",
+        "product_request_correctness"
+      ]
+    },
+    {
+      "id": "CMP-06",
+      "name": "Reporting",
+      "definition": "Producing the right content, at the right threshold, at the right time, in the form the recipient can act on. Includes knowing when not to report, and knowing that an incomplete timely report can beat a complete late one.",
+      "novice_behaviour": "Writes everything known rather than what the recipient needs. Waits for certainty and misses the time standard. Or escalates every anomaly and erodes the value of the alert.",
+      "expert_behaviour": "Leads with the assessment and the affected assets, states confidence, publishes within the standard, and updates as the picture firms rather than holding for a perfect first report.",
+      "measured_by": [
+        "report_content",
+        "threshold_judgement",
+        "drill_latency"
+      ]
+    },
+    {
+      "id": "CMP-07",
+      "name": "Decision commitment under time pressure",
+      "definition": "Publishing before the picture is complete, acting on a trigger without waiting to be told, and naming a likely course of action with a confidence level rather than waiting for certainty. Added because exercise evidence shows this, not analytical error, is the dominant failure of the cell.",
+      "novice_behaviour": "Waits. Optimises against being wrong rather than against being late, and so produces a complete report after the warning value has expired. Holds critical information while assembling the full assessment. Will not commit to a likely explanation even when asked directly.",
+      "expert_behaviour": "Releases a one-sentence alert within minutes and lets the assessment follow. Distinguishes the alert from the analysis and knows the recipient needs planning time more than certainty. Names a likely course of action with an explicit confidence level, and updates it without embarrassment when it changes.",
+      "measured_by": [
+        "drill_latency",
+        "threshold_judgement",
+        "confidence_calibration",
+        "report_content"
+      ]
+    },
+    {
+      "id": "CMP-08",
+      "name": "Event lifecycle ownership",
+      "definition": "Noticing an indication without being cued, transitioning a thread when the trigger appears, holding a workable number of concurrent events, closing what is finished, and handing over what is not. Added because exercise evidence records these as discipline failures rather than knowledge gaps, which is exactly what repetition fixes.",
+      "novice_behaviour": "Waits to be tasked. Leaves an event open long after it is resolved and leaves a ripe one untouched because nobody assigned it. Under load, works the newest thread rather than the most important. Leaves at end of shift with work in an ambiguous state.",
+      "expert_behaviour": "Sweeps for what has not been touched, transitions on the trigger rather than on discussion, keeps concurrent load inside what can be worked properly, closes deliberately, and hands over what remains in a form the next person can pick up cold.",
+      "measured_by": [
+        "procedure_step_recall",
+        "drill_latency",
+        "product_request_correctness",
+        "threshold_judgement"
+      ]
+    }
+  ]
+}

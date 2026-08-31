@@ -1,0 +1,1378 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.4.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "DA ASAT Theory and Procedure, General Processing Concepts (2 FEB 26)",
+      "JCO CT Crew Resource Management and Breakup (29 JUL 26)",
+      "JCO CT Predictive Surveillance (28 APR 26)",
+      "JCO CT Launch and xGEO (20 JAN 26)",
+      "JCO CT Space Weather and Orbital Laws (6 NOV 25)",
+      "Cosmos 2589 Launch AAR",
+      "TJS-15 After Action Review",
+      "GEO Direct Ascent Anti-Satellite Weapons Advanced Training Module",
+      "JCO Launch procedure",
+      "JCO Changeover procedure",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Object watchlists, tasking rank values and distance thresholds are externalised to the local thresholds file and are not shipped. Procedure structure and reasoning only."
+  },
+  "procedures": [
+    {
+      "id": "PROC-DAASAT-LEO",
+      "name": "LEO direct ascent anti-satellite processing",
+      "short_name": "DA-ASAT LEO",
+      "purpose": "Identify which satellites are at risk from a ground-launched interceptor targeting low Earth orbit, warn the affected operators, and confirm afterwards whether any target was struck. The interceptor itself will not be tracked; the entire value of the procedure is in target filtering and post-event verification.",
+      "entry_conditions": [
+        "A notice to airmen or mariners consistent with an interceptor launch profile",
+        "A cue from partners identifying time, location and azimuth of a detected launch",
+        "State vectors received for an ascending object on a suborbital profile"
+      ],
+      "not_this_procedure_when": [
+        "The launch is an orbital insertion, which is launch processing",
+        "The trajectory is directed at geosynchronous altitudes, which follows the GEO variant"
+      ],
+      "regime": [
+        "LEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Extract launch site location, latitude, time window and centre azimuth from the available indication.",
+          "role": "SEA",
+          "why": "These four values determine everything downstream. Latitude bounds the inclinations that can be reached, the time window bounds the RAANs and therefore what is overhead, and the azimuth determines whether the shot is trailing or chasing.",
+          "common_error": "Proceeding without the azimuth and therefore filtering targets far too broadly."
+        },
+        {
+          "n": 2,
+          "action": "Build three filtered target lists: blue high reportable assets, launching country payloads, and launching country rocket bodies.",
+          "role": "Fusion",
+          "why": "A test is as likely to be conducted against an own-nation object as against anyone else's. Filtering only for blue assets misses the most probable target set entirely.",
+          "threshold_ref": "daasat_leo.target_filter.inclination_rule"
+        },
+        {
+          "n": 3,
+          "action": "Run the target assessment against the filtered candidates using the site location, azimuth band and time window.",
+          "role": "Fusion",
+          "why": "This converts a launch indication into a named list of objects that could be reached, which is the only thing an operator can act on.",
+          "threshold_ref": "daasat_leo.search_window.azimuth_band"
+        },
+        {
+          "n": 4,
+          "action": "Task each candidate target for one pass before the launch window and multiple passes afterwards.",
+          "role": "SEA",
+          "why": "The pre-window pass establishes a baseline of the object intact. Without it there is nothing to compare the post-event passes against, and a headcount change cannot be attributed.",
+          "threshold_ref": "daasat_leo.pass_counts"
+        },
+        {
+          "n": 5,
+          "action": "Publish a NOTSO identifying blue and red satellites at risk. Update it if the target set changes; if it has not changed, do not republish.",
+          "role": "CuOps",
+          "why": "Warning value comes from timeliness and from not diluting the alert. An unchanged repeat report trains recipients to ignore the channel.",
+          "time_standard": "report.notso_standard"
+        },
+        {
+          "n": 6,
+          "action": "Do not task the interceptor. Continue checking each candidate target until every one has a post-window pass showing a single object, or a multiple headcount is detected.",
+          "role": "SEA",
+          "why": "Interceptor flight times are minutes and the trajectory does not cross the sensor network, so tasking it wastes collection that the targets need. Verification is the mission.",
+          "threshold_ref": "daasat_leo.pass_counts"
+        },
+        {
+          "n": 7,
+          "action": "On any multiple headcount, relay to higher headquarters immediately and transition to breakup processing.",
+          "role": "CuOps",
+          "why": "A headcount change on a candidate target is the impact indication. It is the single most consequential observation in the procedure.",
+          "products": [
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "Continue verifying the remaining targets even after one impact is confirmed.",
+          "role": "SEA",
+          "why": "More than one interceptor may have been employed. Stopping at the first confirmed impact risks missing a second.",
+          "common_error": "Closing the event on the first confirmed breakup."
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "DAL-D1",
+          "question": "Has a multiple headcount been detected on any candidate target?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Relay immediately, publish, and transition to breakup processing for the affected object.",
+              "goto_procedure": "PROC-BRK"
+            },
+            {
+              "condition": "No, and all targets have a post-window pass with a headcount of one",
+              "then": "Assess as no impact detected. Close with that assessment stated explicitly."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Launch indication source, time, location and azimuth",
+          "Blue and red satellites assessed at risk",
+          "Basis of the target filtering",
+          "That the target list may change with further information",
+          "Post-window verification status for each candidate"
+        ],
+        "verbal_required": true,
+        "escalation": "Immediate relay of any multiple headcount on a potentially targeted object."
+      },
+      "closure_criteria": [
+        "Every candidate target has at least one post-window pass verified",
+        "Any breakup transitioned and processed",
+        "Final assessment published stating whether an impact was detected"
+      ],
+      "competency_ids": [
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "IA-0008.03"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-DAASAT-GEO",
+      "name": "GEO direct ascent anti-satellite processing",
+      "short_name": "DA-ASAT GEO",
+      "purpose": "Provide successive, progressively refined warnings to high value assets during the hours-long ascent of an interceptor toward geosynchronous altitude, so that operators have time to upload commands and move out of the threatened volume.",
+      "entry_conditions": [
+        "A cue identifying time, location and azimuth of a detected launch on a high-altitude profile",
+        "State vectors received for an ascending object whose apogee is at or near geosynchronous altitude",
+        "A launch occurring in a lighting window favourable to an electro-optical seeker, which is itself a weak indicator worth noting even absent other cues"
+      ],
+      "not_this_procedure_when": [
+        "The profile terminates in low Earth orbit, which follows the LEO variant",
+        "The launch is an orbital insertion, which is launch processing"
+      ],
+      "regime": [
+        "GEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Determine the targeting point. If apogee is at or below geosynchronous altitude, assess against the longitude at or directly above apogee. If apogee is above it, assess against the point where the trajectory penetrates the belt on the ascending side.",
+          "role": "SEA",
+          "why": "The two cases produce different longitudes and therefore different target lists. Getting this wrong invalidates the entire warning.",
+          "common_error": "Assessing against apogee longitude when the trajectory passes through the belt on the way up."
+        },
+        {
+          "n": 2,
+          "action": "Assess the lighting geometry at the projected intercept time. An electro-optical seeker requires the target illuminated while the launch site is not, which constrains when a combat launch is plausible.",
+          "role": "SEA",
+          "why": "This is the sharpest predictive constraint available. A launch outside a favourable seeker lighting window is less likely to be a combat engagement, and one inside it during an otherwise ambiguous period is more so. It costs nothing to check and it sharpens the assessment before any tracking exists.",
+          "threshold_ref": "daasat_geo.seeker_phase_angle",
+          "common_error": "Treating lighting as a collection consideration only, when it is also a targeting constraint on the adversary."
+        },
+        {
+          "n": 3,
+          "action": "Build an initial target list from the ephemeris assessment across a wide longitude band around the assessed crossing point.",
+          "role": "Fusion",
+          "why": "Early state knowledge is coarse, so the initial band must be wide. A narrow early list gives false reassurance to operators just outside it.",
+          "threshold_ref": "daasat_geo.initial_band_deg"
+        },
+        {
+          "n": 4,
+          "action": "Make a verbal notification and publish an initial NOTSO listing blue high reportable assets and well-tracked uncorrelated tracks at risk.",
+          "role": "CuOps",
+          "why": "This first report is the one that buys the operator planning time. It is deliberately published before the picture is good, because a late perfect report is worthless.",
+          "time_standard": "daasat_geo.initial_notso"
+        },
+        {
+          "n": 5,
+          "action": "Direct sensor providers to execute search tactics to acquire the ascending object, then track it and push data.",
+          "role": "MAL",
+          "why": "Acquisition is what converts a predicted trajectory into a measured one, and the refined warning depends on it.",
+          "products": [
+            "PRD-EPHEMERIS"
+          ]
+        },
+        {
+          "n": 6,
+          "action": "On acquisition, generate a state, narrow the longitude band and publish a refined NOTSO that now includes red as well as blue objects.",
+          "role": "CuOps",
+          "why": "The second warning is the actionable one: narrow enough to prioritise, early enough to act on. Red objects are included because the target may be an own-nation asset.",
+          "threshold_ref": "daasat_geo.refined_band_deg",
+          "time_standard": "daasat_geo.refined_notso"
+        },
+        {
+          "n": 7,
+          "action": "During extended coast, refine the state as data arrives. Do not publish again unless the state or the target set changes significantly.",
+          "role": "SEA",
+          "why": "No further burns are expected in this phase. Republishing unchanged information dilutes the alerting channel at the moment it most needs credibility.",
+          "products": [
+            "PRD-EPHEMERIS"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "On detection of a separation, make an immediate verbal notification and publish a flash report stating that a separated object has been detected. Do not wait for an orbit determination.",
+          "role": "CuOps",
+          "why": "The separation is the commitment. Waiting for a solve costs the operator the last of their reaction time, and the report should be prepared in advance so it can be issued immediately.",
+          "products": [
+            "PRD-WATERFALL"
+          ],
+          "time_standard": "daasat_geo.separation_notso"
+        },
+        {
+          "n": 9,
+          "action": "On completion of the orbit determination for the separated object, publish the refined target assessment.",
+          "role": "CuOps",
+          "why": "The separated object's state identifies which asset is actually at risk, narrowing from a list to a name.",
+          "threshold_ref": "daasat_geo.kkv_target_radius"
+        },
+        {
+          "n": 10,
+          "action": "At the time of expected intercept, monitor both the separated object and the at-risk assets to determine whether an impact occurred.",
+          "role": "SEA",
+          "why": "The event does not end at the warning. Establishing whether a protected satellite was struck is the closing obligation.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 11,
+          "action": "Advise that the threatened asset should not manoeuvre too early. The ascending vehicle may receive in-flight trajectory updates, and a target that moves before the final update simply gets retargeted.",
+          "role": "CuOps",
+          "why": "The single most counterintuitive point in the whole procedure. Warning time exists so the operator can prepare rather than act immediately, and precision targeting updates require a substantial window of tracking data that must be resolved before the terminal burn. Moving inside that window wastes the manoeuvre.",
+          "threshold_ref": "daasat_geo.update_window"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "DAG-D1",
+          "question": "Where is apogee relative to the belt?",
+          "branches": [
+            {
+              "condition": "Apogee at or below geosynchronous altitude",
+              "then": "Assess against the longitude at or directly above apogee."
+            },
+            {
+              "condition": "Apogee above geosynchronous altitude",
+              "then": "Assess against the ascending-side belt penetration point."
+            }
+          ]
+        },
+        {
+          "id": "DAG-D2",
+          "question": "Has a separation been detected?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Issue the pre-prepared flash report immediately without waiting for an orbit determination, then follow with the refined target assessment when the solve completes."
+            },
+            {
+              "condition": "No",
+              "then": "Continue tracking and refining through the coast phase."
+            }
+          ]
+        },
+        {
+          "id": "DAG-D3",
+          "question": "Did an impact occur?",
+          "branches": [
+            {
+              "condition": "A breakup is observed on a target",
+              "then": "Transition to breakup processing and report.",
+              "goto_procedure": "PROC-BRK"
+            },
+            {
+              "condition": "No breakup observed and targets remain intact",
+              "then": "Close with an explicit no-impact assessment and the evidence for it."
+            }
+          ]
+        },
+        {
+          "id": "DAG-D4",
+          "question": "What should the threatened asset be advised to do, and when?",
+          "branches": [
+            {
+              "condition": "Early in the flight, before any separation or terminal burn",
+              "then": "Advise preparation rather than movement: reallocate users to other platforms, select or generate an evasion plan, upload emergency commands, and warm thruster catalyst beds. Do not advise moving yet, because in-flight updates can retarget an early mover."
+            },
+            {
+              "condition": "After the terminal adjustment or separation, when the intercept path is committed",
+              "then": "This is when movement has effect, because divert capability on the final path is limited. Advise the evasion manoeuvre."
+            },
+            {
+              "condition": "Inside the terminal search window",
+              "then": "The seeker is already searching a narrow field. Advise that the asset should not be in that volume when it starts."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "time_standard": "daasat_geo.initial_notso",
+        "must_state": [
+          "That launch indications of a possible direct ascent event exist, with the source and the time or window",
+          "The launching country",
+          "The estimated time the trajectory reaches the belt",
+          "The assessed longitudinal crossing band",
+          "The potential target list with identifiers, using an explicit marker where a well-tracked uncorrelated track has no catalogue number",
+          "That the target list may change with further observations and that analysis is ongoing",
+          "Where known, the lighting geometry at projected intercept, since it bears on the plausibility of the engagement",
+          "Advice on timing of any evasion, distinguishing preparation now from movement later"
+        ],
+        "verbal_required": true,
+        "escalation": "Verbal at each phase transition: initial assessment, refined assessment, separation detection and intercept outcome."
+      },
+      "closure_criteria": [
+        "Intercept window has passed and target status is verified",
+        "Any resulting breakup transitioned and processed",
+        "Final assessment published with the outcome stated explicitly"
+      ],
+      "competency_ids": [
+        "CMP-04",
+        "CMP-03",
+        "CMP-06",
+        "CMP-02",
+        "CMP-07",
+        "CMP-05"
+      ],
+      "sparta_ids": [
+        "IA-0008.03"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-PS",
+      "name": "Predictive surveillance",
+      "short_name": "Predictive Surv",
+      "purpose": "Anticipate rather than react. Monitor upcoming longitudinal crossings between drifting objects of interest and the objects near them, raise tasking before the crossing rather than after, and give asset owners time to prepare.",
+      "entry_conditions": [
+        "Daily task execution; this procedure runs every day in every cell",
+        "A drifting object of interest approaches the vicinity of another object",
+        "A drift rate change suggests an object is preparing to park"
+      ],
+      "not_this_procedure_when": [
+        "An event is already unfolding, in which case the relevant event procedure governs",
+        "The object is not drifting and has no upcoming crossing"
+      ],
+      "regime": [
+        "GEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Request neighbourhoods for the drifting objects of interest, applying the required projection window and inclination filter.",
+          "role": "SEA",
+          "why": "The filters are a requirement rather than a preference. An unfiltered or differently filtered request produces a product that cannot be compared day to day.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ],
+          "threshold_ref": "ps.scope.drifting_threshold"
+        },
+        {
+          "n": 2,
+          "action": "Verify epoch ages across every object in the neighbourhood before assessing anything.",
+          "role": "SEA",
+          "why": "This is the first analytical step for a reason. Every close approach time and distance in the product is only as good as the state it came from.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ],
+          "common_error": "Reading the close approach column before the epoch column."
+        },
+        {
+          "n": 3,
+          "action": "Identify the points of closest approach in the projection window.",
+          "role": "SEA",
+          "why": "These are the moments where an object of interest could act. Knowing them in advance is the entire point of the procedure.",
+          "products": [
+            "PRD-NEIGHBORHOOD",
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 4,
+          "action": "Confirm the tasking rank of both the object of interest and the object it is approaching, against the standard for that object class and distance.",
+          "role": "SEA",
+          "why": "Raising the rank increases observation cadence, which is what allows a manoeuvre to be detected quickly rather than eventually.",
+          "threshold_ref": "ps.close_approach_criteria.standard"
+        },
+        {
+          "n": 5,
+          "action": "Assess the delta-v required for the object of interest to close the distance from its current geometry.",
+          "role": "SEA",
+          "why": "A crossing where closure would be cheap is a materially different warning from one where it would be expensive. Cost is the proxy for opportunity.",
+          "products": [
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 6,
+          "action": "Request the tasking changes, or state explicitly that current tasking already aligns with the standard.",
+          "role": "SEA",
+          "why": "The procedure produces a tasking action every day, including the action of confirming no change is needed. Silence is not an output.",
+          "threshold_ref": "ps.tasking_windows.hours_before_toca"
+        },
+        {
+          "n": 7,
+          "action": "Where the assessment surfaces behaviour of concern, open the relevant event procedure.",
+          "role": "SEA",
+          "why": "Predictive surveillance does not itself produce a report, but it frequently produces the reason to start one.",
+          "products": [
+            "PRD-WATERFALL"
+          ]
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "PS-D1",
+          "question": "Is the object of interest slowing its drift?",
+          "branches": [
+            {
+              "condition": "Drift is decreasing and the object appears to be preparing to park",
+              "then": "Raise tasking and assess the resulting geometry against nearby assets. A parking manoeuvre near an asset of interest is a reportable development."
+            },
+            {
+              "condition": "Drift is steady",
+              "then": "Continue standard predictive surveillance tasking around the projected crossing."
+            }
+          ]
+        },
+        {
+          "id": "PS-D2",
+          "question": "Does the assessment surface behaviour warranting an event?",
+          "branches": [
+            {
+              "condition": "A manoeuvre is indicated",
+              "then": "Open manoeuvre processing.",
+              "goto_procedure": "PROC-MNV"
+            },
+            {
+              "condition": "Proximity is being established or sustained",
+              "then": "Open RPO processing.",
+              "goto_procedure": "PROC-RPO"
+            },
+            {
+              "condition": "Nothing of concern",
+              "then": "Record the daily execution and the tasking position."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "never",
+        "condition": "This procedure does not itself produce a report. It frequently produces the reason to open an event that does.",
+        "time_standard": "ps.daily_execution",
+        "must_state": [
+          "Tasking changes requested, or explicit confirmation that current tasking aligns with the standard",
+          "Points of closest approach identified in the window",
+          "Epoch age concerns where states were too old to assess"
+        ],
+        "verbal_required": false
+      },
+      "closure_criteria": [
+        "Daily execution complete across all objects of interest currently drifting",
+        "Tasking position stated for each",
+        "Any events opened and linked"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-04",
+        "CMP-05"
+      ],
+      "sparta_ids": [
+        "REC-0005"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-LAUNCH",
+      "name": "Launch processing",
+      "short_name": "Launch",
+      "purpose": "Anticipate where a launch will place its objects, warn before it happens, acquire and identify what results, and report at each phase so partners know what has entered orbit and where it is going. Second most common report type by volume and among the lowest scoring for quality, so structure matters here more than almost anywhere.",
+      "entry_conditions": [
+        "Pre-notice indicators from open sources such as media or social media posts",
+        "A published airspace or maritime notice consistent with a launch",
+        "Ship movements or other pre-launch indicators",
+        "Higher headquarters designating a launch for processing",
+        "Transition from another procedure where the launch is meaningfully linked"
+      ],
+      "not_this_procedure_when": [
+        "The profile is suborbital and directed at an on-orbit object, which is direct ascent processing",
+        "The event is a deployment from an established on-orbit object, which is separation",
+        "The launch is assessed as non-threat, which follows an abbreviated path with no full event record"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO",
+        "XGEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Receive and record pre-notice indicators from open sources.",
+          "role": "Provider",
+          "why": "Open source indicators frequently precede any formal notice, and the earlier the event opens the more preparation time everyone downstream gets."
+        },
+        {
+          "n": 2,
+          "action": "Determine whether this launch is processed at all, and if so on which path. All launches by countries of concern are processed. Others are processed only at the direction of the owning agency or higher headquarters. Within that, establish whether the payload is a threat, unknown or designated object, or a non-threat.",
+          "role": "CuOps",
+          "why": "The branch decides the entire workload. A non-threat launch follows an abbreviated path; a threat or unknown payload gets the full event record. If unsure, ask rather than assume.",
+          "threshold_ref": "launch.processing_criteria",
+          "common_error": "Processing everything to full depth, or dropping something because the payload is unfamiliar. Unknown is a reason to process, not a reason to skip."
+        },
+        {
+          "n": 3,
+          "action": "Assemble a launch plan from what is currently known: date and time, location and facility, vehicle, payload if known, intended orbit, and any weather or airspace notices.",
+          "role": "Provider",
+          "why": "These fields are what make the event record intelligible to everyone joining it later, and they are the inputs to the nominal."
+        },
+        {
+          "n": 4,
+          "action": "Generate nominal numbers and include them in the event title and thread. The payload takes the first number in sequence, the rocket body the second, and any additional objects follow in order. Alert all providers to the numbers generated.",
+          "role": "CuOps",
+          "why": "Providers use these to refer to the objects until they are catalogued. Everyone must be using the same identifiers from the outset or products cannot be reconciled later.",
+          "common_error": "Generating numbers without alerting providers, or assigning them out of sequence so the payload and rocket body are ambiguous."
+        },
+        {
+          "n": 5,
+          "action": "Create the event record with the full title format: event type, payload with nominal number, vehicle with nominal number, location, date, time and regime. Set timers for the window opening, the expected launch time, the window closing, and a reminder a day ahead of window open.",
+          "role": "CuOps",
+          "why": "The timer a day before window open is what triggers the pre-launch report. Without it the report is written when someone remembers rather than when it is due."
+        },
+        {
+          "n": 6,
+          "action": "Monitor pre-launch indicators through to the window. Notices, media, ship movements. These may move the expected time, close the event, or identify the payload.",
+          "role": "Provider",
+          "why": "A launch window is a moving target and the nominal is only as good as the time it was rotated to."
+        },
+        {
+          "n": 7,
+          "action": "Verify that the thread details match the published closure areas, achievable inclinations and other indicators.",
+          "role": "SEA",
+          "why": "A mismatch between the plan and the notices means one of them is wrong, and finding out before launch is considerably cheaper than after."
+        },
+        {
+          "n": 8,
+          "action": "Obtain the launch nominal and rotate it to the expected launch time. Post both the unrotated and rotated forms, stating the date and launch time it was rotated to.",
+          "role": "Provider",
+          "why": "Launch time determines RAAN. A nominal rotated to the wrong time is right in size and wrong in plane, which looks superficially correct and sends collection to the wrong part of the sky.",
+          "common_error": "Providers working from differently rotated nominals at the same time, producing incompatible products."
+        },
+        {
+          "n": 9,
+          "action": "Assess what is at risk. For low orbit provide a coplanar assessment; for the belt provide a neighbourhood at apogee. Entry within a small longitude margin of a high reportable system may be a potential risk.",
+          "role": "Provider",
+          "why": "The launch matters to whoever it arrives next to. This is the assessment that makes the report actionable rather than informative.",
+          "products": [
+            "PRD-COCO",
+            "PRD-NEIGHBORHOOD"
+          ],
+          "threshold_ref": "launch.longitude_risk_margin"
+        },
+        {
+          "n": 10,
+          "action": "A day before the launch window opens, publish the pre-launch report. If launch is imminent, this may be deferred into the liftoff phase.",
+          "role": "CuOps",
+          "why": "Pre-launch reporting is a distinct obligation from liftoff and post-launch reporting, and partners plan around it.",
+          "time_standard": "report.notso_standard"
+        },
+        {
+          "n": 11,
+          "action": "On liftoff, re-run the in-plane or apogee assessment if the actual launch time differed from the nominal, and publish the liftoff report. Publish regardless of whether all information is available.",
+          "role": "CuOps",
+          "why": "The procedure states it plainly: if you do not have all the information, publish anyway. A different actual launch time means a different RAAN and a different at-risk set, so the re-run is not optional."
+        },
+        {
+          "n": 12,
+          "action": "Task providers to search manually at the highest rank until an initial track is obtained.",
+          "role": "SEA",
+          "why": "Nothing is catalogued yet, so automated tasking cannot help. Manual tasking is the only route to first custody."
+        },
+        {
+          "n": 13,
+          "action": "Monitor for initial track. Where a pass is missed, continue for up to a defined number of attempts before reassessing.",
+          "role": "SEA",
+          "why": "A missed pass is not a failed launch. Repeated misses may equally mean the nominal is wrong, and reassessing the nominal is usually more productive than a fourth attempt.",
+          "threshold_ref": "launch.missed_pass_limit"
+        },
+        {
+          "n": 14,
+          "action": "On obtaining a candidate track, publish a report immediately, even before payload separation.",
+          "role": "CuOps",
+          "why": "Stated explicitly in the procedure: a report should be distributed as soon as a candidate track is obtained, even prior to payload separation, to ensure timely awareness. This is the clearest instruction in any procedure that latency beats completeness."
+        },
+        {
+          "n": 15,
+          "action": "Produce an initial state and assess the object against what is in plane or at apogee, updating the pass schedule.",
+          "role": "Provider",
+          "why": "The initial state converts a track into an object, and only then can risk be assessed properly rather than from the nominal.",
+          "products": [
+            "PRD-PASS-SCHEDULE",
+            "PRD-COCO",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 16,
+          "action": "Once catalogued, apply the tasking profile for the assessed threat status, regime and object type. Payload and rocket body are tasked differently, and each rank has a duration after which it steps down.",
+          "role": "SEA",
+          "why": "Tasking is not one decision but a schedule. Ranks step down on a timetable, and forgetting the step-down leaves collection capacity tied up on an object that no longer needs it.",
+          "threshold_ref": "launch.tasking_profiles"
+        },
+        {
+          "n": 17,
+          "action": "Where the object is bound for a higher regime, continue the event while it transfers. A transfer may take weeks.",
+          "role": "SEA",
+          "why": "An object in a parking or transfer orbit has not arrived. The final destination is the reportable outcome and it may be a month away.",
+          "threshold_ref": "launch.transfer_duration"
+        },
+        {
+          "n": 18,
+          "action": "On arrival in the operational regime, publish the completion report with the final orbital characteristics, and for the belt the parked longitude.",
+          "role": "CuOps",
+          "why": "Where a payload ends up is the outcome that matters to everyone nearby."
+        },
+        {
+          "n": 19,
+          "action": "Consider transition. Where the object meets the criteria for a plane match of concern, transition to proximity operations processing. Do not rename the thread; create a new one and link the two.",
+          "role": "CuOps",
+          "why": "A launch that ends in a plane match is two events, not one. The linkage preserves the history without confusing the record."
+        },
+        {
+          "n": 20,
+          "action": "Close only when the closure conditions are met: objects catalogued, added to the reportable list as needed, baseline and pattern of life tasking established, and custody held to the standard for the regime and rank.",
+          "role": "CuOps",
+          "why": "Custody standards differ by regime and rank, and low orbit lower-ranked objects do not require custody before closing. Closing early on an object that still needs custody is how an object is quietly lost.",
+          "threshold_ref": "launch.closure_custody"
+        },
+        {
+          "n": 21,
+          "action": "Where the launch is cancelled, fails, or the event ends without an insertion, publish a closure or failure report at the mission area lead's discretion and record the reason.",
+          "role": "CuOps",
+          "why": "Partners who received the pre-launch report are still holding it. A failure is as reportable as a success."
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "LCH-D1",
+          "question": "Is this launch processed, and on which path?",
+          "branches": [
+            {
+              "condition": "Launched by a country of concern with a threat, unknown or designated payload",
+              "then": "Full event record and the complete procedure."
+            },
+            {
+              "condition": "Launched by a country of concern but assessed non-threat",
+              "then": "Abbreviated path: open a thread in the non-threat channel with the standard title, pin it, and skip to the liftoff phase."
+            },
+            {
+              "condition": "Any other launch",
+              "then": "Process only at the direction of the owning agency or higher headquarters."
+            }
+          ]
+        },
+        {
+          "id": "LCH-D2",
+          "question": "The expected launch time has moved. What follows?",
+          "branches": [
+            {
+              "condition": "Time has changed",
+              "then": "Re-rotate the nominal to the new time and re-run the in-plane or apogee assessment, because RAAN and therefore the at-risk set have both changed."
+            },
+            {
+              "condition": "Time unchanged",
+              "then": "Continue with the current nominal."
+            }
+          ]
+        },
+        {
+          "id": "LCH-D3",
+          "question": "No track has been obtained on the expected passes.",
+          "branches": [
+            {
+              "condition": "Within the permitted number of missed passes",
+              "then": "Continue attempting acquisition."
+            },
+            {
+              "condition": "Beyond it",
+              "then": "Reassess the nominal before concluding anything about the launch. A nominal wrong in plane is indistinguishable from an absent object."
+            }
+          ]
+        },
+        {
+          "id": "LCH-D4",
+          "question": "Is the object where it will stay?",
+          "branches": [
+            {
+              "condition": "In a parking or transfer orbit bound for a higher regime",
+              "then": "State the current orbit and the intended destination explicitly, and keep the event open through the transfer."
+            },
+            {
+              "condition": "Arrived in its operational regime",
+              "then": "Publish the completion report and consider closure or transition."
+            }
+          ]
+        },
+        {
+          "id": "LCH-D5",
+          "question": "Does the resulting orbit meet the criteria for a plane match of concern?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Transition to proximity operations processing, creating a new linked thread rather than renaming.",
+              "goto_procedure": "PROC-RPO"
+            },
+            {
+              "condition": "No",
+              "then": "Continue to closure."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "condition": "Pre-launch, liftoff, initial track and completion are each separate reporting obligations. Publish on obtaining a candidate track even before payload separation, and publish even where information is incomplete.",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Vehicle type, launch site and country",
+          "Date and Julian day, with the window and the expected time where known",
+          "Payload name, or explicitly unknown payload, with military or commercial character and mission where known",
+          "The likely regime and orbital characteristics: inclination and RAAN for low orbit, parked longitude for the belt",
+          "Where bound for a higher regime, the current orbit and the intended destination stated separately",
+          "Objects in plane or at risk near the destination",
+          "Both the rotated and unrotated nominals, with the time the rotation was made and the provider",
+          "For low orbit, the explicit limitation that commercial observation is not available before cataloguing and that the cataloguing authority is the final determination",
+          "Where the indication came from outside the organisation, an opening that attributes it to that source rather than to internal observation",
+          "Mission summary for the payload and its constellation where applicable",
+          "Where a catalogue number exceeds the five-digit range, both the numeric identifier and the Alpha-5 designator"
+        ],
+        "verbal_required": true
+      },
+      "closure_criteria": [
+        "All objects catalogued and added to the reportable list as needed",
+        "Baseline and pattern of life tasking established",
+        "Custody held to the standard for the regime and rank, noting that lower-ranked low orbit objects do not require custody before closure",
+        "Completion report published, or a failure or cancellation report where applicable",
+        "Reason for closure recorded"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "sparta_ids": [
+        "REC-0001"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-CRM",
+      "name": "Changeover, crew resource management and handover",
+      "short_name": "Changeover",
+      "purpose": "Transfer the operating picture, open events, tasking state and outstanding obligations from one crew to the next without loss, and maintain crew coordination and error management through the shift. The foundation of a successful shift is a solid handover, and handover quality is decided by the record kept during the preceding shift rather than by the briefing itself.",
+      "entry_conditions": [
+        "Scheduled changeover between shifts",
+        "A stand-up where there is no off-going crew to hand over",
+        "Any moment where an operator notices an error, needs help, or has a degraded condition",
+        "After a significant event, where time allows"
+      ],
+      "not_this_procedure_when": [
+        "An event is unfolding that requires the governing event procedure first. Handover of an active event happens within this procedure, but working the event does not"
+      ],
+      "regime": [
+        "ANY"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Thirty minutes before changeover, the oncoming crew joins and listens to closeout activity.",
+          "role": "Any",
+          "why": "Listening before briefing gives the oncoming crew context that no brief conveys. They hear the shift ending rather than a summary of it.",
+          "threshold_ref": "crm.pre_changeover_minutes"
+        },
+        {
+          "n": 2,
+          "action": "The off-going crew finalises active events and closes those that have expired.",
+          "role": "Any",
+          "why": "An expired event handed over is work the next crew must first understand and then discard. Closing it is faster for everyone and it is the off-going crew who knows why."
+        },
+        {
+          "n": 3,
+          "action": "Update the running record with changeover notes: shift details and assignees, short-term tasking, rank tasking changes, events, active and pending launches, passive radio frequency tasking, exercises, and additional notes.",
+          "role": "CuOps",
+          "why": "This is where handover quality is actually determined. A record updated through the shift produces a handover that reflects reality; one updated at the end produces a brief that says little happened, which has been recorded as untrue.",
+          "common_error": "Leaving the record until changeover, or leaving it to the supervisor. Advanced operators have had to populate it on someone else's behalf before changeover."
+        },
+        {
+          "n": 4,
+          "action": "Annotate every tasking change with its object, the reason, and an expiry date.",
+          "role": "CuOps",
+          "why": "An elevation with no expiry becomes permanent by omission. The expiry is what makes the step-down happen, and the top ranks are temporary tasking by definition.",
+          "threshold_ref": "crm.tasking_annotation"
+        },
+        {
+          "n": 5,
+          "action": "Mark each record item as requiring briefing, complete, or no longer needed.",
+          "role": "CuOps",
+          "why": "The next crew needs to know what to attend to, not everything that happened. An unmarked record forces them to triage someone else's shift."
+        },
+        {
+          "n": 6,
+          "action": "Update timers so every open thread carries one, named for the event it marks.",
+          "role": "Any",
+          "why": "A timer is how an obligation survives a shift change. An open thread without one depends on somebody remembering."
+        },
+        {
+          "n": 7,
+          "action": "Five minutes before changeover, identify all pending events whose timers expire during the next shift, and confirm both crews are ready and logged into all systems.",
+          "role": "Any",
+          "why": "The incoming crew inherits every timer that fires on their watch. Knowing which ones before taking responsibility is the difference between anticipating and reacting."
+        },
+        {
+          "n": 8,
+          "action": "Brief each open and active event against the six-point standard: why the event was opened, who tasked which object and to what rank, which timers affect the next shift, what reporting has already been done, the next steps, and the current checklist step.",
+          "role": "CuOps",
+          "why": "Six points, and the last two are the ones most often dropped. An event handed over without its next step and its current position in the procedure leaves the incoming operator to re-derive both, under time pressure, from a thread they have not read.",
+          "threshold_ref": "crm.handover_brief_points"
+        },
+        {
+          "n": 9,
+          "action": "Receive supporting briefs: space weather impact, upcoming launches, wider information pertinent to operations, ongoing sensor issues, and custody status.",
+          "role": "Any",
+          "why": "The event picture is not the whole picture. Sensor degradation and custody gaps shape what the next shift can actually do."
+        },
+        {
+          "n": 10,
+          "action": "The oncoming crew accepts responsibility explicitly, and queries anything not briefed.",
+          "role": "Any",
+          "why": "Acceptance is a positive act. Reconciling the briefed set against the open record is how gaps left by a tired crew get caught, and fatigue at the end of a long shift is expected rather than a failing.",
+          "common_error": "Proceeding on what was briefed without checking it against what is open."
+        },
+        {
+          "n": 11,
+          "action": "Follow every open thread so that activity reaches the crew now responsible for it.",
+          "role": "Any",
+          "why": "An unfollowed thread is one nobody is watching. This is the mechanical step that makes ownership real."
+        },
+        {
+          "n": 12,
+          "action": "Release the off-going crew.",
+          "role": "Any",
+          "why": "An explicit release marks the transfer. Operators leaving without handing over has been recorded as creating continuity gaps."
+        },
+        {
+          "n": 13,
+          "action": "Review the crew information file for process changes, and record having read it.",
+          "role": "MAL",
+          "why": "This is the currency mechanism. Procedures change, sometimes shortly before they are needed, and the acknowledgement record is how a supervisor knows who is current and who is not.",
+          "common_error": "Reading without recording, which leaves nobody able to tell who has seen a change."
+        },
+        {
+          "n": 14,
+          "action": "Complete the attendance record.",
+          "role": "MAL",
+          "why": "Staffing against schedule is what surge posture is judged against later."
+        },
+        {
+          "n": 15,
+          "action": "Perform the daily tasks allocated to this cell for this day.",
+          "role": "CuOps",
+          "why": "Daily tasks are divided across cells and days rather than repeated by everyone. A cell that assumes another has done its task leaves a gap that nobody sees.",
+          "threshold_ref": "crm.daily_tasks"
+        },
+        {
+          "n": 16,
+          "action": "Brief threats and errors. Threats are external: data latency, adversary action, real world influences, competing commitments. Errors are internal: currency, experience, familiarity with the event type, missed taskings, and the risk of not speaking up.",
+          "role": "Any",
+          "why": "Naming both early lets the crew plan for recovery rather than discover the gap during an event. It takes well under a minute.",
+          "threshold_ref": "crm.tem_brief_duration"
+        },
+        {
+          "n": 17,
+          "action": "Through the shift, speak up on noticing an error or needing help, and declare degraded conditions before they block action.",
+          "role": "Any",
+          "why": "The entire purpose of crew resource management. Every other step is subordinate to it, and problems raised only when they block action have repeatedly cost time at the worst moment."
+        },
+        {
+          "n": 18,
+          "action": "Debrief after a shift or a major event.",
+          "role": "MAL",
+          "why": "Debriefs are the strongest single intervention available for improving team performance, and their value depends on honest constructive acknowledgement rather than blame.",
+          "threshold_ref": "crm.debrief_after_event"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "CRM-D1",
+          "question": "Is there an off-going crew to hand over?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Full changeover."
+            },
+            {
+              "condition": "No",
+              "then": "The oncoming crew performs a stand-up, establishing the picture from the record rather than from a brief. The record is the only source, which is why it is maintained through every shift."
+            }
+          ]
+        },
+        {
+          "id": "CRM-D2",
+          "question": "Does the briefed set match the open record?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Accept responsibility."
+            },
+            {
+              "condition": "No",
+              "then": "Query the off-going crew before they are released. After release the gap is yours to reconstruct."
+            }
+          ]
+        },
+        {
+          "id": "CRM-D3",
+          "question": "Is something wrong, unclear, or beyond current capacity?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Say so immediately. Escalate, ask, or hand off. Do not absorb it silently."
+            },
+            {
+              "condition": "No",
+              "then": "Continue, and remain available to challenge others."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "never",
+        "time_standard": "crm.debrief_after_event",
+        "must_state": [
+          "Why each open event was opened",
+          "Who tasked which object and to what rank",
+          "Which timers affect the next shift",
+          "What reporting has been accomplished",
+          "Next steps",
+          "Current checklist step for each event",
+          "Threats and errors identified",
+          "Sensor issues and custody status"
+        ],
+        "verbal_required": true
+      },
+      "closure_criteria": [
+        "All open events briefed against the six-point standard",
+        "Record reconciled against the briefed set",
+        "Responsibility explicitly accepted",
+        "Open threads followed by the incoming crew",
+        "Process changes reviewed and acknowledged",
+        "Off-going crew released"
+      ],
+      "competency_ids": [
+        "CMP-03",
+        "CMP-05",
+        "CMP-06",
+        "CMP-08"
+      ],
+      "sparta_ids": [],
+      "status": "active"
+    },
+    {
+      "id": "PROC-DOCK",
+      "name": "Docked object processing",
+      "short_name": "Docked",
+      "purpose": "Establish whether two objects have joined into a single physical body, decide which is the primary, and hold custody of the pair so that a later separation is recognised as a separation rather than as a new object.",
+      "entry_conditions": [
+        "Two objects that were resolved separately now appear as one in photometry, residuals and image chips",
+        "A proximity event closes to the point where the pair can no longer be resolved",
+        "A provider reports a suspected mating or docking",
+        "An object in the docked log is being reassessed"
+      ],
+      "not_this_procedure_when": [
+        "The objects are merely unresolved because of cross-tagging at close separation, which is an ambiguity to report rather than a docking to assess",
+        "The pair is separating, which is separation processing",
+        "The event is a proximity approach that has not merged, which remains rendezvous and proximity operations"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Confirm the single-object appearance across all three product types before calling anything: photometry, residuals and image chips.",
+          "role": "SEA",
+          "why": "One product showing a merged appearance is a resolution limit. Three showing it together is evidence. Docking is one of the few calls where the discriminator is agreement across product types rather than any single signature.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-RESIDUAL"
+          ],
+          "common_error": "Calling a docking off an unresolved image alone."
+        },
+        {
+          "n": 2,
+          "action": "Establish whether either object was assessed as having a docking capability, and set the evidence bar accordingly.",
+          "role": "SEA",
+          "why": "The duration of merged appearance required to call a possible or a verified docking doubles where the capability was not expected. Prior expectation sets the bar, not the evidence alone.",
+          "threshold_ref": "docking.evidence_duration",
+          "common_error": "Applying the short bar to an object with no assessed docking capability, which turns a surprise into a routine call."
+        },
+        {
+          "n": 3,
+          "action": "Notify the operations centres where either object sits at one of the gated ranks, and open the event record with the pair named in the title.",
+          "role": "MAL",
+          "why": "Notification here is rank gated rather than automatic. A friendly pair carries the do-not-report marker in the title so that the record exists without a report being generated.",
+          "threshold_ref": "docking.notification_gate"
+        },
+        {
+          "n": 4,
+          "action": "Declare which object is the primary and post that declaration to the event channel.",
+          "role": "MAL",
+          "why": "The primary is the object being docked to. The pair takes the primary's positional data, and from this point only the primary's states and products are posted. Without an explicit declaration two providers will publish two sets of states for one physical object.",
+          "threshold_ref": "docking.primary_rule",
+          "common_error": "Leaving the primary implicit and accumulating duplicate states for a single body."
+        },
+        {
+          "n": 5,
+          "action": "Report a possible docking where the merged appearance holds for the shorter duration, and only where a red object is ingressing on another satellite.",
+          "role": "CuOps",
+          "why": "The reporting trigger is the ingress, not the merge. A merge between objects of no concern is a custody matter rather than a warning.",
+          "threshold_ref": "docking.reporting_rule",
+          "time_standard": "report.notso_standard"
+        },
+        {
+          "n": 6,
+          "action": "Maintain tasking through the merged period, recognising that an increase buys little at the higher ranks and a great deal at the lower ones.",
+          "role": "MAL",
+          "why": "The observation cadence attached to each rank determines the headroom. The pair must be watched often enough that a separation is caught on the pass it happens rather than a day later.",
+          "threshold_ref": "hrr.increase_headroom_rule",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Publish a verified docking report once the merged appearance has held for the longer duration for the applicable capability case.",
+          "role": "CuOps",
+          "why": "The verified call commits the pair to a single custody line. It should not be made on the strength of the possible call.",
+          "threshold_ref": "docking.evidence_duration",
+          "products": [
+            "PRD-NEIGHBORHOOD",
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "Where the indication came from outside own observations, state that source in the basis clause instead of the standard observation clause, and confirm the object is at or above the rank at which outside sources are used at all.",
+          "role": "CuOps",
+          "why": "Register follows provenance. A report that opens with the standard observation clause when the finding came from elsewhere overstates what is held.",
+          "threshold_ref": "docking.outside_source_rule"
+        },
+        {
+          "n": 9,
+          "action": "Hold the event and any increased tasking open past the docking completion, to catch follow-up circularisation, drift halt or stabilisation.",
+          "role": "SEA",
+          "why": "The interesting behaviour usually follows the docking rather than accompanying it. Closing on the verified call discards the manoeuvres that say what the docking was for.",
+          "threshold_ref": "docking.post_docking_hold_hr"
+        },
+        {
+          "n": 10,
+          "action": "Cancel where a possible docking was published and the objects turn out not to have docked. Record the reason in the event channel and the crew log.",
+          "role": "MAL",
+          "why": "Cancellation is mandatory where a possible was published; a closure report on a genuine docking is optional. The asymmetry exists because an uncancelled possible leaves a false pair standing in the recipient's picture.",
+          "threshold_ref": "docking.reporting_rule",
+          "common_error": "Treating cancellation as optional because closure is."
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "DCK-D1",
+          "question": "Was a docking capability expected for either object?",
+          "branches": [
+            {
+              "condition": "Yes, from publicly available information",
+              "then": "Apply the shorter evidence durations for possible and verified."
+            },
+            {
+              "condition": "No, or unknown",
+              "then": "Apply the longer durations. The same evidence must persist for twice as long before the same call is made."
+            }
+          ]
+        },
+        {
+          "id": "DCK-D2",
+          "question": "Is this a docking or an unresolved pair?",
+          "branches": [
+            {
+              "condition": "The merged appearance holds across photometry, residuals and image chips for the applicable duration",
+              "then": "Assess as docking and proceed."
+            },
+            {
+              "condition": "Only one product type shows a merge, or the separation is inside the cross-tagging distance",
+              "then": "Assess as unresolved. Report the ambiguity rather than the conclusion and continue proximity processing.",
+              "goto_procedure": "PROC-RPO"
+            }
+          ]
+        },
+        {
+          "id": "DCK-D3",
+          "question": "What happens when the pair separates?",
+          "branches": [
+            {
+              "condition": "A second object reappears from a declared docked pair",
+              "then": "Enter separation processing, carry the docked history into the report, and update the docked log. The separated object may not be the object that docked, and saying so plainly is better analysis than choosing.",
+              "goto_procedure": "PROC-SEP"
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "conditional",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Which object is the primary and which is the secondary",
+          "The time or window of the docking and how it was bracketed",
+          "That the merged appearance was seen across photometry, residuals and image chips, or which of those is missing",
+          "Whether a docking capability was expected, and therefore which evidence bar was applied",
+          "Current geometry of the pair as a single body",
+          "What cannot be confirmed, in particular the identity of either component where the pair cannot be resolved",
+          "Element sets for the docked pair with the time current and the provider named"
+        ],
+        "verbal_required": true,
+        "escalation": "Verbal on the possible call where either object is at a gated rank."
+      },
+      "closure_criteria": [
+        "Primary declared and states consolidated onto it",
+        "Event held past docking completion for the required period with tasking maintained",
+        "Docked log updated with the pair and the date",
+        "Where a possible was published and did not hold, a cancellation issued"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06",
+        "CMP-08"
+      ],
+      "sparta_ids": [],
+      "status": "active"
+    },
+    {
+      "id": "PROC-FP",
+      "name": "Force package processing",
+      "short_name": "Force package",
+      "purpose": "Handle two or more objects acting together against a localised target set as one event, so that the collaboration is the reported finding rather than a series of separate proximity reports that never add up.",
+      "entry_conditions": [
+        "Two or more objects exhibiting collaborative proximity behaviour against a localised target set",
+        "A launch or newly catalogued object assessed as potentially proximity capable and joining an existing group",
+        "An object already in a force package manoeuvring during persistent operations",
+        "An object appearing to depart a force package"
+      ],
+      "not_this_procedure_when": [
+        "A single actor against a single target, which is rendezvous and proximity operations",
+        "Objects that are co-located but show no collaborative behaviour",
+        "The objects have merged, which is docked object processing"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Establish whether the objects of interest are proximity capable, at what standoff they normally operate, and whether any is parked in a slot not assigned to it.",
+          "role": "PAIR",
+          "why": "Pre-assessment is what makes the later call fast. A new launch is assumed proximity capable until information says otherwise, and an object conclusively assessed as not capable exits here.",
+          "threshold_ref": "rpo.parking_criteria"
+        },
+        {
+          "n": 2,
+          "action": "Assess the group against the plane matching, persistence and parking criteria, treating a launch or manoeuvre into a critical plane match as proximity operations until shown otherwise.",
+          "role": "SEA",
+          "why": "The criteria are the same as for a single actor. What makes this a force package is that more than one object meets them against the same target set.",
+          "threshold_ref": "rpo.plane_match_deg",
+          "products": [
+            "PRD-COCO",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 3,
+          "action": "Where the group is closing by right ascension drift rather than by manoeuvre, escalate on days to closure rather than on distance.",
+          "role": "SEA",
+          "why": "A drift closure has no manoeuvre to detect. The only warning available is the countdown, and it is read off the coplanar product rather than the neighbourhood.",
+          "threshold_ref": "rpo.plane_match_via_drift",
+          "products": [
+            "PRD-COCO"
+          ],
+          "common_error": "Waiting for a manoeuvre that is never going to come."
+        },
+        {
+          "n": 4,
+          "action": "Notify the operations centres where any object in the group sits at a gated rank, and open a single event record naming the actors and the target.",
+          "role": "MAL",
+          "why": "One record for the group is the point of the procedure. Separate records per actor lose the collaboration, which is the finding.",
+          "threshold_ref": "separation.notification_gate"
+        },
+        {
+          "n": 5,
+          "action": "Identify the important objects inside the event and confirm they have recent states and are not in manoeuvre or recovery status before publishing anything about them.",
+          "role": "SEA",
+          "why": "Reporting a position for an object whose state is stale or whose solution is mid-recovery puts a wrong number into a warning. The check costs a minute.",
+          "threshold_ref": "force_package.important_object_definition"
+        },
+        {
+          "n": 6,
+          "action": "Publish the force package report, describing the collaborative behaviour and giving the manoeuvre specifics and the proximity specifics for each actor separately.",
+          "role": "CuOps",
+          "why": "The recipient needs to know which actor did what. A single merged description of the group reads as narrative and cannot be acted on.",
+          "time_standard": "report.notso_standard",
+          "products": [
+            "PRD-TRIC",
+            "PRD-NEIGHBORHOOD",
+            "PRD-RESIDUAL"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Apply the element set disclosure rules before appending any states: include the target set against a red target, withhold it against a friendly one, and never publish positional data for a protected object or a well-tracked uncorrelated track.",
+          "role": "CuOps",
+          "why": "The report is the disclosure. Deciding this at the point of appending states, rather than at the point of drafting, is how the rule gets missed.",
+          "threshold_ref": "force_package.element_set_disclosure",
+          "common_error": "Appending every element set held because the product had them."
+        },
+        {
+          "n": 8,
+          "action": "Where detail is thin, publish an initial report anyway and reassess after further observations.",
+          "role": "CuOps",
+          "why": "The explicit instruction is to err towards releasing. A group forming against a target is time-sensitive in a way that a complete description is not.",
+          "threshold_ref": "force_package.reporting_bias"
+        },
+        {
+          "n": 9,
+          "action": "Increase tasking across the group, including similar red objects in the same area rather than only the observed actors.",
+          "role": "CuOps",
+          "why": "A force package implies more participants than have been seen. Tasking only the objects already detected guarantees the picture stays incomplete.",
+          "threshold_ref": "hrr.increase_headroom_rule"
+        },
+        {
+          "n": 10,
+          "action": "Report each subsequent manoeuvre inside the event rather than opening new ones, naming the force package and the effect on relative geometry.",
+          "role": "CuOps",
+          "why": "The whole value of the construct is continuity. A manoeuvre reported outside the event is a manoeuvre report; reported inside it, it is evidence about intent.",
+          "products": [
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 11,
+          "action": "Consider termination when the plane matching, persistence and parking criteria are no longer met and no new target has been identified.",
+          "role": "SEA",
+          "why": "Exit is by the same criteria as entry. Stating the reason for closure in the record is what lets a later crew tell a genuine departure from a lapse in attention.",
+          "threshold_ref": "rpo.plane_match_deg"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "FP-D1",
+          "question": "Is this one event or several?",
+          "branches": [
+            {
+              "condition": "Two or more objects acting against a localised target set",
+              "then": "One force package event. Report manoeuvres, proximity and photometry from inside it."
+            },
+            {
+              "condition": "A single actor against a single target",
+              "then": "Rendezvous and proximity operations.",
+              "goto_procedure": "PROC-RPO"
+            }
+          ]
+        },
+        {
+          "id": "FP-D2",
+          "question": "May the target element set be appended?",
+          "branches": [
+            {
+              "condition": "Red actor against a red target",
+              "then": "Include the target element set."
+            },
+            {
+              "condition": "Red actor against a friendly target",
+              "then": "Do not include the target element set."
+            },
+            {
+              "condition": "The target is a protected object or a well-tracked uncorrelated track",
+              "then": "No element set and no positional data. Refer to its presence in the area only."
+            }
+          ]
+        },
+        {
+          "id": "FP-D3",
+          "question": "Have the objects merged?",
+          "branches": [
+            {
+              "condition": "Two objects in the group can no longer be resolved",
+              "then": "Enter docked object processing for that pair while the force package event continues.",
+              "goto_procedure": "PROC-DOCK"
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "conditional",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Every actor and the target set, with identifiers",
+          "Which behaviour each actor exhibited, named against the proximity taxonomy",
+          "The manoeuvre specifics block for each manoeuvre, in the fixed field order",
+          "The proximity specifics for each actor: type, closest approach, time, radial, in-track and cross-track",
+          "A plain statement of what the group appears to be doing",
+          "Element sets consistent with the disclosure rules and no others"
+        ],
+        "verbal_required": true,
+        "escalation": "Verbal where any object in the group is at a gated rank."
+      },
+      "closure_criteria": [
+        "Entry criteria no longer met and no new target identified",
+        "Reason for closure recorded in the event channel and the crew log",
+        "Departing actors returned to baseline tasking",
+        "Final report published or a decision recorded not to publish one"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-06",
+        "CMP-07",
+        "CMP-08"
+      ],
+      "sparta_ids": [],
+      "status": "draft",
+      "status_note": "The source procedure is itself marked draft. Held at draft here to match, and not to be used for scored assessment until the source is issued."
+    }
+  ]
+}

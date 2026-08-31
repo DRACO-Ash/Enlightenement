@@ -2,6 +2,95 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.24 (2026-08-31)
+
+**What.** The application, built on Ash's real content package. A minor bump rather than a patch,
+because the illustrative content, the illustrative drill engine and its three shaped plot
+generators are all gone and what replaced them is a different thing.
+
+**The package.** ENLIGHTENMENT training system v2.10.0, 31 August: 140 drills, 127 cues, 13
+procedures, 12 scenario templates, 67 rubric rules, five expert traces, ten product definitions
+with nine observed layouts, a JSON schema, three build specifications, an authoritative timing
+standard and a standard-library validator. Built from a corpus of 3,124 released reports, nine
+exercise sources, eleven procedures, five product screens and two years of weekly reporting. It
+validates clean: 0 errors, 19 warnings, and the warnings are the standing gaps rather than faults.
+
+**The architecture, stated because it is the whole thing.** Content is data and the engine is
+code, and the test that draws the line is whether the count changes when a content author does
+their job. Ten product generators does not. 140 drills does. So: no hardcoded scenario, no switch
+over event types, no scoring rule in Python; and hand-written classes for the generators, the
+physics, the evaluator and the scheduler. The build guidance predicted both failure modes and both
+were avoided, including the over-correction of trying to express drawing logic in JSON.
+
+**Loader.** `content/` now holds the package, and `tools/validate_content.py` runs as leg 2 of the
+verification loop, before any code analyser, because the content is the asset and ten seconds of
+validation is the cheapest rung that can catch a content fault. Three loader behaviours the
+guidance names as content decisions that would otherwise be omitted: a scored scenario is refused
+while thresholds carry placeholders, a content fault is reported rather than raised so the health
+paths stay 200, and every run record carries the content hash it was scored under.
+
+**Generators.** The canonical twelve from the `_generator_contract` block: ten renderers plus the
+composite and probe composition modes. The 58 legacy names in `params` are traceability only and
+are not implemented; a code-side guard refuses one. A registry keyed by product id is checked at
+LOAD against every product the content references, so a drill pointing at an unbuilt product fails
+before the request that needs it. `tests/test_generators.py` reads the six contract requirements
+out of `product-layouts.json` rather than restating them, so a corrected layout fails a test and
+names the renderer: the waterfall is observation-level scatter with real collection gaps, the
+photometry axis is inverted, the relative-motion panels use independent scales, the residual scale
+is tight and labels its time and beta series, the neighbourhood carries delta-v, score and days to
+crossing, and the determination table runs Initial, Final, Delta with apogee before perigee.
+
+Pass structure is real, from the owner's figures: eight passes a day in two groups for low orbit,
+continuous through local night for geostationary electro-optical, essentially constant for passive
+radio frequency. The sixth contract requirement, that imperfection comes from the noise model
+rather than from uniform noise, is NOT satisfied: the characterisation pass has not run, so the
+amplitudes are chosen rather than measured and every one is marked `PROVISIONAL` in the source and
+on the rendered footer. A test asserts the marker, because making a surface convincing before that
+pass runs makes the shortfall harder to see rather than smaller.
+
+**Scoring, and a finding.** The evaluator reads award, cap, competency and explain from
+`rubrics.json` and none of them appears in Python. **But the rule `when` clauses are prose, not
+machine-evaluable predicates**, and nothing in the content carries a machine key, so a predicate
+cannot be derived from the content. The bridge is a registry keyed by RULE ID that fails CLOSED: a
+rule with no predicate is REPORTED as unimplemented rather than silently scoring zero, because
+"this rule found nothing" and "nobody wired this rule up" are opposite facts. Six of 67 are
+implemented, which is all of `RUB-DRILL` and therefore the whole drill layer; the other 61 belong
+to the scenario runner and the argument surface and are named in every response.
+
+**Matching.** Exact after a narrow, bounded normalisation. No fuzzy matching, because the reject
+list is the load-bearing half of the key and a similarity score would award a named wrong answer
+for looking like a right one. `computed_from_params` is handled as the sentinel it is: the
+generator computes the expected value server-side and an item whose value cannot be resolved is
+REFUSED rather than scored against a guess.
+
+**The loop and the interface.** `POST /api/v1/drill/next` serves stimulus and prompt and nothing
+else; the reveal is the response to the answer, and submission is idempotent on the run id.
+Asserted on the raw response body against the real 140-item library rather than on a parsed
+object. The interface renders the panel description the server sends, honouring inverted axes,
+independent scales, staircases for discrete state, plus-cross scatter rather than polylines, and
+colour as a variable rather than decoration. Nothing is ever assigned as markup.
+
+**One design decision taken provisionally.** Red is reserved for RECENCY on plot surfaces and is
+never used for a verdict, which is the third of the three options in `docs/PLOT-REALISM.md`. In the
+operator's real toolset red means "the most recent data" in at least three views, so a red verdict
+would teach one colour two unrelated ways. Reversible, and Ash's call.
+
+**Retired, and the controls that came with them.** `training/engine.py`, `training/answers.py`,
+`training/plots.py`, `tests/test_content.py` and `tests/test_training.py`. Deleting a suite for a
+module that still EXISTS takes its controls with it, and `progress.py` survived: its file mode,
+its capped history and its degrade-to-defaults path are restored in `tests/test_progress.py`. Two
+register rows record controls that genuinely went, and one records a REVERSAL: the content models
+now set `extra="allow"` deliberately, so a typo in a field the engine does not read is no longer
+caught here, and the strictness moved upstream to the schema and the validator. One row records a
+gap rather than a removal: rubric version pinning is not implemented, and closing it needs a
+decision from the content author about where the pin lives.
+
+**How verified.** Verification loop green, seven legs: 899 passed, 2 skipped, coverage 96.67%.
+Content validator 0 errors. Four new suites, 76 tests. All 140 drills load, all 140 render
+deterministically, and the application was driven in a real browser rather than only tested: the
+drill surface, the reveal with its rule decomposition, and the progress surface all render, with
+zero console errors and zero network requests.
+
 ## V0.23.20 (2026-08-30)
 
 **What.** `docs/TASK-EVIDENCE.md`, and the answers to the five questions `docs/PLOT-REALISM.md`

@@ -47,3 +47,9 @@ noise-model*.json
 # offers to commit. Same class as the worktree entry above: a tool's own working directory
 # has no business being offered to the App Store artefact.
 node_modules/
+
+# The real thresholds. `content/thresholds.example.json` SHIPS and is deliberately not the
+# operational values; the local copy replaces it and must never be committed. The redaction
+# discipline lives here: a threshold in source is a threshold published. The loader refuses to
+# serve a scored scenario until this file exists and declares its placeholders replaced.
+content/thresholds.local.json

@@ -39,7 +39,7 @@ else
 fi
 echo "interpreter: $PY ($("$PY" --version 2>&1))"
 
-green "1/6 environment matches the lock files"
+green "1/7 environment matches the lock files"
 # First, and deliberately so: a mismatch here means every leg below is measuring something
 # other than what ships. Cheapest leg and the one that gives the rest their meaning.
 # All THREE lock files, including the lean one the image installs. Its pins are currently a
@@ -50,23 +50,35 @@ green "1/6 environment matches the lock files"
 "$PY" scripts/check-environment.py "$PY" \
   requirements-runtime.txt requirements.txt requirements-dev.txt
 
-green "2/6 format (ruff format --check)"
+green "2/7 content package validates"
+# Second, and before any analyser touches the code: the content IS the asset, and the
+# application is a delivery mechanism for it. Seventeen assertions, ten seconds, and two of them
+# exist specifically to protect the handover: `generators_canonical` fails if any drill
+# references a generator outside the canonical twelve, and `response_formats_declared` fails if a
+# drill uses a response format the schema does not declare. Both caught real defects during the
+# package's own final review, as did `detection_patterns_compile`.
+#
+# Standard library only and owned by the content author, so it is run rather than reimplemented.
+"$PY" tools/validate_content.py --content-dir content --self-test \
+  | "$PY" -c 'import json,sys; r=json.load(sys.stdin); print("content", r["counts"], "errors", len(r["errors"]), "warnings", len(r["warnings"])); sys.exit(1 if r["errors"] else 0)'
+
+green "3/7 format (ruff format --check)"
 "$PY" -m ruff format --check .
 
-green "3/6 lint (ruff check)"
+green "4/7 lint (ruff check)"
 "$PY" -m ruff check .
 
-green "4/6 types (mypy strict)"
+green "5/7 types (mypy strict)"
 "$PY" -m mypy
 
-green "5/6 tests with coverage (pytest, Cobertura to coverage.xml)"
+green "6/7 tests with coverage (pytest, Cobertura to coverage.xml)"
 "$PY" -m pytest
 if [ ! -s coverage.xml ]; then
   echo "FAIL: coverage.xml is missing or empty; the SonarQube gate would score 0%." >&2
   exit 1
 fi
 
-green "6/6 dependency vulnerability scan (pip-audit)"
+green "7/7 dependency vulnerability scan (pip-audit)"
 # pip-audit exits non-zero both for a real advisory AND for an unreachable advisory
 # endpoint. Those are not the same result: a failure to CHECK is never a pass.
 #

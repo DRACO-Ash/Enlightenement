@@ -10,7 +10,8 @@ rather than cosmetic.** It is not a matter of adding noise or picking better col
 the five real products is a dense, gappy, multi-source scatter that encodes a second variable in
 colour. Every one of ours is a clean, evenly sampled, single-series polyline that encodes nothing.
 
-`src/enlightenment/training/plots.py` already carries the warning in its own module docstring: "a
+The illustrative plot generator (`training/plots.py`, retired in V0.24.0 when the real content
+package landed) already carried the warning in its own module docstring: "a
 shaped series presented as measured data is the clean-training-data-is-negative-training failure
 the plan warns about". That warning was correct and its scope was too small. It described the
 noise amplitude. The problem is the sampling, the clumping, the second dimension, the marker, the

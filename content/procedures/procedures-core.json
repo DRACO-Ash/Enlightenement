@@ -1,0 +1,1266 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.2.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "JCO CT-RPO (15 APR 25)",
+      "JCO CT Space Warfare and Separation (29 SEP 25)",
+      "JCO CT Crew Resource Management and Breakup (29 JUL 26)",
+      "JCO CT Orbital Elements, Maneuvers and Orbit Determination (22 DEC 25)",
+      "DRAFT: JCO vendor product standardization (DOK amends)",
+      "SJ-21 / SJ-25 RPO and Docking Event AAR",
+      "Cosmos 2558 / Object C Separation AAR",
+      "Intelsat 33E Break-Up After Action Report",
+      "Exercise ASTRAL VORTEX, Pacific cell after action report",
+      "JCO Photometry Change procedure"
+    ],
+    "review_status": "draft",
+    "redaction_note": "All operational numeric thresholds are externalised to threshold_ref keys resolved from the local thresholds file, which is not shipped. No protected object lists, no internal tool click-paths, no channel names beyond those already published in unclassified continuation training material. The photometry source contains an explicit do-not-open object exclusion list by catalogue number, a notification tool address, and internal tool click-paths. All are excluded. The procedure teaches that an exclusion list exists and must be checked; it does not carry the list."
+  },
+  "procedures": [
+    {
+      "id": "PROC-MNV",
+      "name": "Manoeuvre detection and characterisation",
+      "short_name": "Manoeuvre",
+      "purpose": "Detect that an object has departed from its orbital state, establish whether the departure is real, characterise the burn by direction and magnitude, and assess whether the resulting geometry changes the threat picture. This is the most frequently executed analytical procedure and the foundation of nearly every other one.",
+      "entry_conditions": [
+        "Residual plot shows a sustained departure from the zero line",
+        "A provider reports a possible or verified manoeuvre",
+        "An object of interest fails to appear where its state predicts",
+        "A predictive surveillance check shows drift rate or longitude inconsistent with the last known state",
+        "An established station-keeping pattern stops"
+      ],
+      "not_this_procedure_when": [
+        "The headcount is greater than one, in which case enter separation, breakup or UCT discovery first and treat manoeuvre as a supporting assessment",
+        "The departure is explained by epoch age or an observation gap, in which case there is no manoeuvre to characterise",
+        "The object is in a launch or orbit-injection sequence, where planned burns are processed under launch"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Verify the state before believing the departure. Check the epoch age of the element set the residuals are computed against, and the observation density either side of the departure.",
+          "role": "SEA",
+          "why": "A departure from a starved or stale fit is propagation error, not a burn. Skipping this step is the single most common way a manoeuvre report becomes an artefact report.",
+          "products": [
+            "PRD-RESIDUAL"
+          ],
+          "threshold_ref": "manoeuvre.max_state_age",
+          "common_error": "Calling a manoeuvre off a single outlying observation rather than a sustained departure."
+        },
+        {
+          "n": 2,
+          "action": "Determine from the residuals whether the departure is in-plane or out-of-plane.",
+          "role": "SEA",
+          "why": "This single read narrows the burn direction before any numbers arrive. In-plane points to in-track or radial; out-of-plane points to cross-track, and therefore to inclination or RAAN, which is the expensive and deliberate kind.",
+          "products": [
+            "PRD-RESIDUAL"
+          ]
+        },
+        {
+          "n": 3,
+          "action": "Request a post-manoeuvre DC table in the standard format, with the standard verbiage block.",
+          "role": "SEA",
+          "why": "Consistency of format is what lets a crew read a manoeuvre the same way every time under time pressure. The verbiage block is copy-ready for the report.",
+          "products": [
+            "PRD-DC-TABLE"
+          ]
+        },
+        {
+          "n": 4,
+          "action": "Characterise the burn from the Delta column. In-track produces a change in period, eccentricity and possibly argument of perigee. Radial produces a change in eccentricity and argument of perigee only. Cross-track produces a change in inclination or RAAN.",
+          "role": "SEA",
+          "why": "The element signature identifies the burn direction without needing the provider to state it, which means the operator can challenge a provider assessment rather than accept it.",
+          "products": [
+            "PRD-DC-TABLE"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Sanity-check the magnitude against the regime. Establish whether the stated delta-v and the resulting altitude and drift changes are consistent with each other.",
+          "role": "SEA",
+          "why": "Approximate physical relationships are a filter against solver artefacts. A delta-v that cannot produce the stated altitude change means one of the two numbers is wrong.",
+          "threshold_ref": "manoeuvre.regime_delta_v_sanity"
+        },
+        {
+          "n": 6,
+          "action": "Compare against the object's own pattern of life. Establish whether timing, magnitude and direction are consistent with routine station-keeping.",
+          "role": "SEA",
+          "why": "Intent is read against a baseline, not in isolation. A burn consistent with pattern of life is usually housekeeping. A break in an established pattern is itself a signal and can matter more than the burn.",
+          "products": [
+            "PRD-RESIDUAL",
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Assess the resulting geometry. Request a neighbourhood constrained by inclination and RAAN, and establish whether the new state closes on, opens from, or plane matches any object of interest.",
+          "role": "SEA",
+          "why": "A manoeuvre matters because of where it leads, not because it happened. The geometry after the burn is the reportable content.",
+          "products": [
+            "PRD-NEIGHBORHOOD",
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "Report, stating clearly whether the manoeuvre is possible or verified, with a confidence level and the supporting phenomenology.",
+          "role": "CuOps",
+          "why": "The distinction between possible and verified drives what the recipient does next. Collapsing the two is a reporting failure even when the assessment is right.",
+          "time_standard": "report.notso_standard"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "MNV-D1",
+          "question": "Is the departure explained by data quality rather than by the object moving?",
+          "branches": [
+            {
+              "condition": "Epoch age exceeds the working limit, or observation density collapsed before the departure",
+              "then": "Treat as unassessable. Request updated states and observations covering the period. Do not report a manoeuvre."
+            },
+            {
+              "condition": "State is current and observations are dense either side",
+              "then": "Proceed to characterisation."
+            }
+          ]
+        },
+        {
+          "id": "MNV-D2",
+          "question": "Is this consistent with the object's established pattern of life?",
+          "branches": [
+            {
+              "condition": "Consistent in timing, magnitude and direction",
+              "then": "Assess as routine. Report if the object is of standing interest, stating the pattern of life assessment."
+            },
+            {
+              "condition": "Inconsistent, or the established pattern has ceased",
+              "then": "Assess as a manoeuvre of interest. Escalate the assessment of resulting geometry."
+            }
+          ]
+        },
+        {
+          "id": "MNV-D3",
+          "question": "Does the resulting geometry establish or close on a proximity relationship?",
+          "branches": [
+            {
+              "condition": "The new state closes on, plane matches, or parks relative to another object",
+              "then": "Transition to the RPO procedure while continuing manoeuvre reporting.",
+              "goto_procedure": "PROC-RPO"
+            },
+            {
+              "condition": "No proximity relationship results",
+              "then": "Report the manoeuvre and continue custody."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "conditional",
+        "condition": "Report where the object is of standing interest, where the manoeuvre establishes or changes a proximity relationship, or where an established pattern of life has broken.",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Whether the manoeuvre is possible or verified, with confidence",
+          "Time of manoeuvre",
+          "Delta-v",
+          "Period change",
+          "Perigee and apogee change",
+          "Inclination change",
+          "Current drift rate",
+          "Resulting geometry and any affected objects",
+          "Supporting phenomenology and any limitations such as collection gaps"
+        ],
+        "verbal_required": false,
+        "escalation": "Verbal where the resulting geometry places an object of interest in proximity to a protected asset."
+      },
+      "closure_criteria": [
+        "A new post-manoeuvre state is established and observations return to the zero line",
+        "The resulting geometry is assessed and reported",
+        "Custody is stable across at least the tasking interval",
+        "Any transition to a follow-on procedure is opened and linked"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "REC-0005"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-RPO",
+      "name": "Rendezvous and proximity operations",
+      "short_name": "RPO",
+      "purpose": "Recognise that one object is deliberately establishing or maintaining proximity to another, characterise the phase and type of the operation, assess intent from the geometry and the fuel cost, and provide maximum warning to affected operators.",
+      "entry_conditions": [
+        "An object is plane matching another: inclination and RAAN deltas closing deliberately",
+        "A drifting object slows or stops drift in the vicinity of an object of interest",
+        "A TRIC plot shows circumnavigation, natural or forced",
+        "An object parks within a standoff distance of an asset of interest",
+        "A manoeuvre assessment concludes the resulting geometry closes on another object",
+        "Repeated close approaches over successive revolutions rather than a single pass"
+      ],
+      "not_this_procedure_when": [
+        "The objects converge in longitude only while remaining separated in plane, so neither lingers",
+        "The proximity is a single unforced pass with no manoeuvre to sustain it, which is a close approach rather than proximity operations",
+        "A new object has appeared from the parent, which is separation processing first"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Establish the plane relationship before anything else. Request a neighbourhood constrained by inclination and RAAN, and for LEO a COCO table.",
+          "role": "SEA",
+          "why": "Plane matching is fuel expensive and therefore deliberate. A close plane match is the strongest single indicator that proximity is intended rather than incidental, and it is the earliest one available.",
+          "products": [
+            "PRD-NEIGHBORHOOD",
+            "PRD-COCO"
+          ],
+          "threshold_ref": "rpo.plane_match_deg"
+        },
+        {
+          "n": 2,
+          "action": "Verify epoch ages on every state used before assessing any distance.",
+          "role": "SEA",
+          "why": "Every proximity number inherits the uncertainty of the state it came from. A stale state produces a precise and meaningless miss distance.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ],
+          "common_error": "Escalating a close approach computed from a state that is days old."
+        },
+        {
+          "n": 3,
+          "action": "Request a TRIC plot with POCA annotated and RIC components at POCA, and read the relative motion geometry.",
+          "role": "SEA",
+          "why": "The shape of the relative motion is the type of the operation. This is the single most information-dense read in the procedure.",
+          "products": [
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 4,
+          "action": "Classify the RPO phase: plane match, shape and alignment, orbit phasing and ingress, or operations and departure.",
+          "role": "SEA",
+          "why": "Phase tells the crew what happens next and therefore what to task and warn for. An object still phasing is hours or days from operations; an object already in a stabilised geometry is not.",
+          "products": [
+            "PRD-TRIC",
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Classify the RPO type against the JCO taxonomy: forced motion circumnavigation, natural motion circumnavigation, drifting NMC, perch, extremely close RPO, possible mating or docking, capture, intercept, illegal parking, or close approach including a series of close approaches.",
+          "role": "SEA",
+          "why": "The taxonomy exists so an event can be articulated consistently to partners. Using the shared vocabulary is what makes a report actionable rather than descriptive.",
+          "threshold_ref": "rpo.type_distances"
+        },
+        {
+          "n": 6,
+          "action": "Assess the delta-v cost of what has been done and of what could be done next from the current geometry.",
+          "role": "SEA",
+          "why": "Fuel spent is intent expressed. An adversary that has paid a large plane-change cost has committed. Equally, an object sitting where a cheap manoeuvre would close the distance is a different warning than one that would need an expensive one.",
+          "products": [
+            "PRD-TRIC",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Increase tasking on both the object of interest and the object at risk, and confirm the resulting collection cadence is adequate for the phase.",
+          "role": "SEA",
+          "why": "Warning is only as good as the next observation. A developing RPO with a sparse pass schedule produces stale warnings.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ],
+          "threshold_ref": "rpo.tasking_ranks"
+        },
+        {
+          "n": 8,
+          "action": "Publish a NOTSO, and continue to publish as the picture develops.",
+          "role": "CuOps",
+          "why": "Multiple reports on a single RPO event are expected, not a failure of the first one. Waiting for a complete picture costs the operator the warning time the procedure exists to give them.",
+          "time_standard": "report.notso_standard"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "RPO-D1",
+          "question": "Is the plane match precise enough to be deliberate?",
+          "branches": [
+            {
+              "condition": "Inclination and RAAN matched within the precision threshold for the regime",
+              "then": "Treat as a deliberate precision match. This requires specific knowledge of the target orbit and is a strong indicator of a prelude to further activity. Notify higher headquarters promptly and consider maximising tasking on the unfolding event."
+            },
+            {
+              "condition": "Planes are close but not precisely matched",
+              "then": "Continue RPO processing and monitor whether the deltas are closing."
+            }
+          ]
+        },
+        {
+          "id": "RPO-D2",
+          "question": "Is the relative motion natural or forced?",
+          "branches": [
+            {
+              "condition": "A closed ellipse traced once per orbit at roughly a two-to-one in-track to radial ratio, unchanged between revolutions",
+              "then": "Natural motion circumnavigation. The geometry is being maintained without further fuel expenditure."
+            },
+            {
+              "condition": "The relative motion geometry changes at discrete points",
+              "then": "Forced motion circumnavigation. Each change is a manoeuvre and the object is actively shaping the relationship."
+            },
+            {
+              "condition": "The ellipse walks along the in-track axis across revolutions",
+              "then": "Drifting NMC. Assess whether the drift is slowing, which would indicate an intent to stabilise."
+            }
+          ]
+        },
+        {
+          "id": "RPO-D3",
+          "question": "Do the objects appear to have merged?",
+          "branches": [
+            {
+              "condition": "Optical shows a single object but a second phenomenology still separates them",
+              "then": "Assess as unresolved rather than docked. Cross-tagging is expected at close separations. Report the ambiguity rather than the conclusion.",
+              "goto_procedure": "PROC-RPO"
+            },
+            {
+              "condition": "Sustained single-object detection across phenomenologies, converged element sets and consistent signatures",
+              "then": "Assess as a possible mating or docking. Consider merged-conditions terminology rather than asserting docking, and define the observation and tagging approach for the merged pair."
+            },
+            {
+              "condition": "The merged pair manoeuvres as one and relocates",
+              "then": "Assess as capture. This is a materially different report from servicing and should state what is known and what is inferred."
+            }
+          ]
+        },
+        {
+          "id": "RPO-D4",
+          "question": "Is the target a red object rather than a blue one?",
+          "branches": [
+            {
+              "condition": "Red against red",
+              "then": "Report anyway. Practising a capability against an own-nation asset is a recognised precursor to employing it against another, and is reportable on that basis."
+            },
+            {
+              "condition": "Red against blue or grey",
+              "then": "Report and escalate per the affected asset."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "condition": "Report a possible RPO as soon as it is developing, including a plane-matched close approach that could develop into one. Multiple reports across an event are expected.",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "The objects involved and their identifiers",
+          "The assessed RPO type and phase",
+          "Current separation and the point of closest approach with time",
+          "Plane relationship, including inclination and RAAN deltas",
+          "Whether relative motion is natural or forced",
+          "Assessed delta-v expended and the cost of further closure",
+          "Confidence, and what would change the assessment",
+          "Collection limitations including eclipse, solar exclusion and cross-tagging risk"
+        ],
+        "verbal_required": true,
+        "escalation": "Prompt notification to higher headquarters on a precision plane match, on transition to an extremely close geometry, or on any indication of mating, capture or intercept."
+      },
+      "closure_criteria": [
+        "The objects have separated and the geometry is no longer sustained",
+        "Or a merged condition is established, reported, and an observation and tagging approach is agreed",
+        "Final NOTSO published and the event transitioned or closed with a stated rationale",
+        "Custody maintained on both objects through closure"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "REC-0005",
+        "REC-0005.03",
+        "IA-0005",
+        "IA-0005.02",
+        "IA-0005.03",
+        "EXF-0005"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-SEP",
+      "name": "Separation processing",
+      "short_name": "Separation",
+      "purpose": "Process the intentional release of a new object from an existing orbiting object, establish what the new object is and what it is doing, and assess the threat it poses to assets in its reach.",
+      "entry_conditions": [
+        "A tracking attempt on a single object returns a headcount of two",
+        "The parent is a red object",
+        "A provider reports a new object associated with an existing parent",
+        "Element set history indicates a new object originated from a known parent",
+        "A co-timed manoeuvre by the parent coincides with the appearance of the new object"
+      ],
+      "not_this_procedure_when": [
+        "The headcount is three or more, which starts as breakup processing",
+        "The parent is a blue object with a headcount of two, which is UCT discovery",
+        "The event is early launch processing, where deployment is expected and handled under launch",
+        "The release is unintentional or unexpected, which is breakup regardless of count"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Establish the headcount and confirm it across more than one pass before committing to a processing path.",
+          "role": "SEA",
+          "why": "Headcount drives the branch between breakup, separation and UCT discovery. A false headcount from a tracking artefact sends the entire response down the wrong procedure.",
+          "products": [
+            "PRD-WATERFALL",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 2,
+          "action": "Confirm the parent is red, and confirm intent. Ask whether the release was intentional and expected.",
+          "role": "SEA",
+          "why": "The difference between separation and breakup is intent, not count. Two objects from a deliberate release is separation; two objects from a failure is a breakup with a low count.",
+          "threshold_ref": "separation.headcount_branch"
+        },
+        {
+          "n": 3,
+          "action": "Add the new object to the tasking list and rank it. Specify explicitly which rank applies to the new object and which applies to the parent.",
+          "role": "SEA",
+          "why": "Ambiguity about whether a tasking instruction refers to the parent, the child or both is a known source of collection failure. State both explicitly.",
+          "threshold_ref": "separation.tasking_ranks",
+          "common_error": "Writing task at a single rank without saying which object it applies to."
+        },
+        {
+          "n": 4,
+          "action": "Establish the separation time by working backwards from element set history and any co-timed parent manoeuvre.",
+          "role": "SEA",
+          "why": "Separation time anchors everything else: what to ask providers to look back at, and whether the release was co-timed with a burn, which speaks to deliberateness.",
+          "products": [
+            "PRD-RESIDUAL"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Request a pass schedule covering the estimated separation time historically, so providers can look back at collections already made.",
+          "role": "SEA",
+          "why": "The data that resolves a separation often already exists and has not been examined. Looking back is faster than tasking forward.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ]
+        },
+        {
+          "n": 6,
+          "action": "Characterise the new object. Is it a payload or debris, is it manoeuvring, is it stable, is it emitting.",
+          "role": "SEA",
+          "why": "An additional object that manoeuvres is an active payload and a different threat proposition entirely from an inert release. A manoeuvre after separation is the strongest single discriminator.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-RESIDUAL"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Assess what is at risk. Request an unfiltered neighbourhood, not an HRR-only view, and assess the reach of the new object.",
+          "role": "SEA",
+          "why": "Objects acquire relevance before they acquire a rank. An HRR-filtered neighbourhood has previously hidden the object that actually mattered.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ],
+          "common_error": "Working only from the ranked view and missing an unranked asset in reach."
+        },
+        {
+          "n": 8,
+          "action": "Compare against the pattern of life for this parent class. Where in the parent's life does this release fall, and does it match previous behaviour.",
+          "role": "SEA",
+          "why": "A release very late in mission, or without the sub-object sequence seen previously, is itself the finding. Pattern comparison turns an event into an assessment.",
+          "products": [
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 9,
+          "action": "Publish a NOTSO for the separation, and publish again on any verified manoeuvre by the new object.",
+          "role": "CuOps",
+          "why": "The separation and the subsequent behaviour are separate reportable facts. The second usually carries more warning value than the first.",
+          "time_standard": "report.notso_standard"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "SEP-D1",
+          "question": "What is the headcount, and is the parent red or blue?",
+          "branches": [
+            {
+              "condition": "Three or more objects",
+              "then": "Enter breakup processing. Additional information may reclassify later.",
+              "goto_procedure": "PROC-BRK"
+            },
+            {
+              "condition": "Two objects, parent is red",
+              "then": "Separation processing. Notify and report."
+            },
+            {
+              "condition": "Two objects, parent is blue",
+              "then": "UCT discovery processing. Reporting is a decision taken with higher headquarters, not automatic.",
+              "goto_procedure": "PROC-UCT"
+            }
+          ]
+        },
+        {
+          "id": "SEP-D2",
+          "question": "Does the new object manoeuvre after separation?",
+          "branches": [
+            {
+              "condition": "Yes",
+              "then": "Assess as an active payload. Reassess reach and threat with the new state, and report the verified manoeuvre separately.",
+              "goto_procedure": "PROC-MNV"
+            },
+            {
+              "condition": "No, and the object remains inert across the tasking interval",
+              "then": "Assess as a passive additional object. Maintain custody and continue to monitor for later activation."
+            }
+          ]
+        },
+        {
+          "id": "SEP-D3",
+          "question": "Does the evidence for intent hold?",
+          "branches": [
+            {
+              "condition": "Release was co-timed with a parent manoeuvre and the object is stable or manoeuvring",
+              "then": "Intent supported. Continue separation processing."
+            },
+            {
+              "condition": "Additional objects appear, or the parent shows signs of an anomaly",
+              "then": "Reclassify as breakup. The count is not decisive; intent is.",
+              "goto_procedure": "PROC-BRK"
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Parent object and new object identifiers",
+          "Estimated separation time and how it was derived",
+          "Headcount and the confidence in it",
+          "Whether the new object is assessed as active or passive, with the evidence",
+          "Any co-timed parent manoeuvre",
+          "Objects at risk within the reach of the new object, ranked and unranked",
+          "Pattern of life comparison against previous behaviour of this parent class",
+          "Confidence and collection limitations"
+        ],
+        "verbal_required": true,
+        "escalation": "Verbal notification on establishing the headcount, before the full assessment is complete."
+      },
+      "closure_criteria": [
+        "Both parent and new object are on element set with all providers",
+        "The new object is characterised as active or passive",
+        "Threat to objects in reach is assessed and reported",
+        "Custody plan is in place for continued monitoring, or the event is transitioned to a state update search",
+        "Where the new object remains unidentified after separation processing, discovery processing is opened and linked as the subsequent stage rather than as an alternative path"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "IA-0008",
+        "IA-0008.02",
+        "REC-0005"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-BRK",
+      "name": "Breakup processing",
+      "short_name": "Breakup",
+      "purpose": "Process an unintentional or unexpected fragmentation, establish the extent and cause, assess the risk to nearby assets, and hand over to the cataloguing authority while maintaining coverage of the debris cloud.",
+      "entry_conditions": [
+        "A tracking attempt returns a headcount of three or more",
+        "A large and sudden increase in visual magnitude consistent with many new reflecting surfaces",
+        "An operator reports loss of contact with a satellite and requests support",
+        "A post-intercept assessment following a direct ascent event",
+        "Debris shedding observed from a tumbling object"
+      ],
+      "not_this_procedure_when": [
+        "The release was intentional and expected, which is separation regardless of count",
+        "The event is a multiple payload deployment during launch processing",
+        "A headcount of two from a red parent, which is separation until evidence says otherwise"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Establish and confirm the headcount, recognising that early counts understate the event.",
+          "role": "SEA",
+          "why": "Fragment counts grow for days as the cloud spreads and providers correlate more tracks. An early count is a floor, not a measurement, and must be reported as such.",
+          "products": [
+            "PRD-WATERFALL"
+          ]
+        },
+        {
+          "n": 2,
+          "action": "Check the collection geometry before interpreting any absence of data. Establish whether the object is in solar exclusion or eclipse, and whether passive RF has dropped.",
+          "role": "SEA",
+          "why": "An absence of signal during a predicted exclusion is not evidence of anything. The Intelsat 33E event occurred during solar exclusion and the sensor picture had to be worked around it.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ]
+        },
+        {
+          "n": 3,
+          "action": "Increase tasking rank to secure optical collection, using the pass schedule to identify visibility windows.",
+          "role": "SEA",
+          "why": "Optical is what establishes headcount and photometric evidence in GEO. Securing the pass is the action that produces the evidence everything else depends on.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ],
+          "threshold_ref": "breakup.tasking_ranks"
+        },
+        {
+          "n": 4,
+          "action": "Examine residual and photometric plots for the signature of the event and to bracket its time.",
+          "role": "SEA",
+          "why": "A large expansion in visual magnitude marks the approximate breakup point. Residuals show when the parent stopped following its state.",
+          "products": [
+            "PRD-RESIDUAL",
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Request a Gabbard diagram once fragment states are available, and characterise the energy and epoch of the event.",
+          "role": "SEA",
+          "why": "The crossing pattern centres on the parent orbit and the spread of the arms indicates the energy, which speaks directly to cause.",
+          "products": [
+            "PRD-GABBARD"
+          ]
+        },
+        {
+          "n": 6,
+          "action": "Assess objects at risk from the debris cloud and provide close approach information as requested.",
+          "role": "SEA",
+          "why": "The reportable content of a breakup for most recipients is not the breakup, it is whether their satellite is now at risk from it.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Assess the potential cause: direct ascent event, orbital attack, tumbling or debris shedding, satellite failure, or collision.",
+          "role": "SEA",
+          "why": "Cause determines who else needs to know and what happens next. It must be assessed explicitly and stated with confidence rather than left implied.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-GABBARD",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "Publish a NOTSO with fused states and close approaches, and continue updating as states firm.",
+          "role": "CuOps",
+          "why": "Breakup reporting is a running commitment, not a single product. States improve for days.",
+          "time_standard": "report.notso_standard"
+        },
+        {
+          "n": 9,
+          "action": "Hand over to the cataloguing authority as quickly as possible, and maintain coverage of the debris cloud until the handover completes.",
+          "role": "MAL",
+          "why": "Cataloguing responsibility sits elsewhere, but the handover can take days to weeks and coverage must not lapse in the meantime.",
+          "time_standard": "breakup.handover_expectation"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "BRK-D1",
+          "question": "Is this a breakup, a separation, or a multiple deployment?",
+          "branches": [
+            {
+              "condition": "Three or more objects with no indication of intent",
+              "then": "Breakup processing."
+            },
+            {
+              "condition": "Three or more objects but consistent with an expected multiple payload deployment",
+              "then": "Reclassify to launch or separation processing as appropriate.",
+              "goto_procedure": "PROC-SEP"
+            },
+            {
+              "condition": "Two objects but the parent shows anomaly indicators",
+              "then": "Breakup processing despite the low count. Intent is the discriminator, not count."
+            }
+          ]
+        },
+        {
+          "id": "BRK-D2",
+          "question": "Is the absence of signal evidence, or is it collection geometry?",
+          "branches": [
+            {
+              "condition": "The object is in solar exclusion or eclipse, or RF has dropped for a geometric reason",
+              "then": "Do not treat the absence as evidence. State it as a limitation and work the collection plan."
+            },
+            {
+              "condition": "Collection was available and the signal is genuinely absent",
+              "then": "Treat as evidence supporting the event."
+            }
+          ]
+        },
+        {
+          "id": "BRK-D3",
+          "question": "Was this the result of an intercept?",
+          "branches": [
+            {
+              "condition": "A direct ascent event was being processed and the target was at risk",
+              "then": "Transition from the direct ascent procedure and report the breakup as the intercept outcome.",
+              "goto_procedure": "PROC-DAASAT-GEO"
+            },
+            {
+              "condition": "No intercept context",
+              "then": "Assess cause from the physical evidence: energy from the Gabbard spread, photometric signature, and prior anomaly indicators."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "always",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Identification of the event type: breakup, separation or UCT discovery",
+          "Headcount with object states as soon as available, stated as a minimum rather than a total",
+          "Estimated time of the event and how it was bracketed",
+          "Threats or impacts to nearby assets, with close approach information",
+          "Potential cause with confidence",
+          "Collection limitations including exclusion, eclipse and RF dropout"
+        ],
+        "verbal_required": true,
+        "escalation": "Verbal as soon as the event is detected, ahead of any full assessment."
+      },
+      "closure_criteria": [
+        "Handover to the cataloguing authority completed",
+        "Debris cloud coverage maintained through the handover period",
+        "Final NOTSO published with the assessed cause and confidence",
+        "Close approach reporting to affected operators established or handed on"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "IA-0008.03",
+        "EX-0018"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-UCT",
+      "name": "Uncorrelated track discovery",
+      "short_name": "UCT Discovery",
+      "purpose": "Investigate an object detected in the vicinity of an asset of interest that does not correlate to anything in the catalogue, determine where it came from and what it is doing, and ensure an undetected object cannot approach a protected payload unobserved.",
+      "entry_conditions": [
+        "A tracking attempt near a blue asset returns a headcount of two",
+        "A sensor detects an object that does not correlate to a catalogued object",
+        "A wide area search returns a candidate that cannot be associated with a known launch",
+        "Observations exist for an object for which no state can be found"
+      ],
+      "not_this_procedure_when": [
+        "An object is separating from, or has appeared in the immediate vicinity of, a red asset. That is a separation first. Discovery applies subsequently if the object remains unidentified after separation processing. Operators have been observed skipping straight here because the object is unidentified, but unidentified is the normal condition at that point and is not what selects this procedure.",
+        "The parent is a red object with a headcount of two, which is separation",
+        "The count is three or more, which starts as breakup",
+        "The object is catalogued but merely unranked, which is a tasking question rather than a discovery"
+      ],
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Confirm there is no identified parent. If the object separated from or appeared alongside a known red asset, leave this procedure and process it as a separation first.",
+          "role": "SEA",
+          "why": "What selects this procedure is the absence of an identified parent, not the absence of an identification for the object itself. Entering here with a known parent omits the assessment considerations that only the separation procedure carries.",
+          "common_error": "Skipping to discovery because the new object is unidentified."
+        },
+        {
+          "n": 2,
+          "action": "Confirm the track does not correlate to a catalogued object, including objects that are catalogued but carry no rank.",
+          "role": "SEA",
+          "why": "An unranked catalogued object looks like a discovery in filtered products but is not one, and the processing path and reporting obligation both differ.",
+          "products": [
+            "PRD-NEIGHBORHOOD"
+          ],
+          "common_error": "Opening discovery processing on an object that is already catalogued but simply not surfaced by the filter in use."
+        },
+        {
+          "n": 3,
+          "action": "Search for observations as well as states, and ask providers directly whether they hold tracks on the object.",
+          "role": "SEA",
+          "why": "A provider may be tracking the object as a UCT and publishing observations without publishing a state. Absence of a state is not absence of data.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ]
+        },
+        {
+          "n": 4,
+          "action": "Generate candidate state estimates from groupings of tracks that may belong to a single object.",
+          "role": "Fusion",
+          "why": "Correlating tracks into a single object is the whole task. Until that succeeds, nothing can be assessed about behaviour or intent.",
+          "products": [
+            "PRD-EPHEMERIS"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Task the candidate states to verify they produce additional tracks on the same object.",
+          "role": "SEA",
+          "why": "A candidate state that does not reacquire is a failed hypothesis. Verification by tasking is what turns a candidate into an object.",
+          "products": [
+            "PRD-PASS-SCHEDULE"
+          ]
+        },
+        {
+          "n": 6,
+          "action": "Attempt to determine origin. Establish whether the object can be associated with a known launch, a known parent, or a previously lost object.",
+          "role": "SEA",
+          "why": "Where it came from usually settles what it is. An object with no plausible origin is a materially more serious finding than one traced to a known parent.",
+          "products": [
+            "PRD-WATERFALL",
+            "PRD-COCO"
+          ]
+        },
+        {
+          "n": 7,
+          "action": "Determine whether the object is a payload or debris, and whether it is manoeuvring.",
+          "role": "SEA",
+          "why": "The threat question reduces to whether the object can choose where it goes.",
+          "products": [
+            "PRD-RESIDUAL",
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 8,
+          "action": "Perform threat determination against nearby assets using neighbourhood and co-planar assessment.",
+          "role": "SEA",
+          "why": "This is the purpose of the procedure: ensuring an unobserved object is not in a position to act against a protected payload.",
+          "products": [
+            "PRD-NEIGHBORHOOD",
+            "PRD-COCO"
+          ]
+        },
+        {
+          "n": 9,
+          "action": "Discuss reporting with higher headquarters. A NOTSO is not automatic for UCT discovery.",
+          "role": "CuOps",
+          "why": "Whether a report is published is a decision taken jointly at the time of discovery rather than a fixed procedural output. Publishing by default is as much an error as failing to report.",
+          "threshold_ref": "uct.reporting_decision"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "UCT-D1",
+          "question": "Where did the object come from?",
+          "branches": [
+            {
+              "condition": "Traceable to a known red parent",
+              "then": "Reclassify to separation processing.",
+              "goto_procedure": "PROC-SEP"
+            },
+            {
+              "condition": "Believed to originate from a blue asset",
+              "then": "Continue to treat as a UCT so that friendly missions and assets remain appropriately observed."
+            },
+            {
+              "condition": "No plausible origin identified",
+              "then": "Continue discovery processing, maintain custody, and escalate the significance of the finding."
+            }
+          ]
+        },
+        {
+          "id": "UCT-D2",
+          "question": "Is a report warranted?",
+          "branches": [
+            {
+              "condition": "Agreed with higher headquarters that the discovery is reportable",
+              "then": "Publish, stating what is known, what is inferred and what remains unresolved."
+            },
+            {
+              "condition": "Agreed that it is not reportable",
+              "then": "Record the decision and its rationale, maintain custody, and continue threat determination."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "conditional",
+        "condition": "Reporting is decided in discussion with higher headquarters at the time of discovery. It is not an automatic output of the procedure.",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "The track or candidate object and how it was detected",
+          "Correlation attempts made and their outcome",
+          "Assessed origin, or an explicit statement that no origin has been established",
+          "Whether the object is assessed as payload or debris, and whether it manoeuvres",
+          "Threat determination against nearby assets",
+          "Confidence, and what additional collection would resolve the remaining uncertainty"
+        ],
+        "verbal_required": true,
+        "escalation": "Escalate promptly where no origin can be established and the object is in the vicinity of a protected asset."
+      },
+      "closure_criteria": [
+        "The track is correlated to an object, or a new object is established with a verified state",
+        "Origin is determined or explicitly recorded as unresolved",
+        "Threat determination performed against nearby assets",
+        "Reporting decision taken and recorded with rationale"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-03",
+        "CMP-05",
+        "CMP-06"
+      ],
+      "sparta_ids": [
+        "REC-0005",
+        "IA-0008.02"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "PROC-PHOT",
+      "name": "Photometric change processing",
+      "short_name": "Photometry",
+      "purpose": "Assess a change in an object's brightness signature, establish whether it is real rather than an artefact of collection, determine what it indicates about the object's configuration or activity, and report it where it meets criteria. Photometric change and signature change are the same event and the terms are used interchangeably.",
+      "entry_conditions": [
+        "A provider reports a change in an object's light curve",
+        "A brightness change is observed against the object's established curve at matched solar phase angle",
+        "A photometric change accompanies a manoeuvre sequence, in which case manoeuvre processing is completed first and this procedure is entered at the assessment stage with a combined report",
+        "A photometric change is observed on an object being tracked from a launch or another event"
+      ],
+      "not_this_procedure_when": [
+        "The apparent change is explained by collection geometry rather than by the object, in which case there is no event",
+        "The object appears on the exclusion list, where no event is opened at all",
+        "The change is a consequence of a fragmentation already being processed, which is breakup"
+      ],
+      "regime": [
+        "GEO",
+        "MEO",
+        "HEO",
+        "LEO"
+      ],
+      "steps": [
+        {
+          "n": 1,
+          "action": "Receive the indication and check it against the exclusion rules before opening anything. Establish whether the object is one for which no event is to be opened, and whether it is a friendly high rate revisit object for which no report is issued unless higher headquarters specifically directs one.",
+          "role": "SEA",
+          "why": "Two suppression rules apply before any analysis. Opening an event on an excluded object, or reporting friendly photometry unbidden, are both errors that no amount of good analysis afterwards recovers.",
+          "threshold_ref": "photometry.exclusions",
+          "common_error": "Beginning analysis before checking whether this object should be processed at all."
+        },
+        {
+          "n": 2,
+          "action": "Check the docked satellites log to establish whether the object is currently docked with another.",
+          "role": "SEA",
+          "why": "A docked pair presents one combined signature. A change on a docked object may be the pair's configuration changing rather than either object individually, and the thread and report must name both.",
+          "products": [
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 3,
+          "action": "Assess the change against notification criteria. The starting point is a visual magnitude change of around half a magnitude, though a smaller change can qualify.",
+          "role": "SEA",
+          "why": "The threshold is a starting point rather than a gate. What matters is the character of the change, not only its size, and site lead discretion applies where the change appears consistent with pattern of life.",
+          "products": [
+            "PRD-PHOTOMETRY"
+          ],
+          "threshold_ref": "photometry.vismag_change"
+        },
+        {
+          "n": 4,
+          "action": "Look for the five change signatures: a sharp change with hard angles, a new feature such as a peak that was not there before, the complete disappearance or transformation of an existing feature, a stable curve becoming a diffuse slope or trend, and a total trend change within a single period.",
+          "role": "SEA",
+          "why": "These are what a real configuration or attitude change looks like on a light curve. Naming which of the five is present makes the assessment specific rather than impressionistic, and it is the difference between reporting a change and reporting what changed.",
+          "products": [
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 5,
+          "action": "Apply the three scepticism checks. Be sceptical if the abnormality comes from a single sensor, if a sensor or source that saw the object the day or week before did not see this change, or if the hemisphere of the observing sensors differs from the rest of the data.",
+          "role": "SEA",
+          "why": "These three account for most apparent photometric changes that are not changes at all. Working through them explicitly is faster than being wrong, and each has a specific supporting view that settles it.",
+          "products": [
+            "PRD-PHOTOMETRY"
+          ],
+          "common_error": "Assessing the change as real without eliminating the single-sensor and hemisphere explanations."
+        },
+        {
+          "n": 6,
+          "action": "If the object is ranked at the highest tasking levels, notify all operations centres immediately. State the object name and identifier, that a photometric change has occurred, any close approaches noted at the time of the change, and when further clarification can be expected.",
+          "role": "CuOps",
+          "why": "The notification precedes the full assessment. Note that it explicitly includes when more will be known, which is what lets the recipient plan rather than wait.",
+          "threshold_ref": "photometry.notify_ranks"
+        },
+        {
+          "n": 7,
+          "action": "Open the thread and record, titled to the convention for the case. A friendly object carries an explicit do-not-report marker in the title, and a docked object names both objects in the title.",
+          "role": "SEA",
+          "why": "The title carries the reporting decision so that anyone joining the thread inherits it. A do-not-report marker in the title prevents a later analyst publishing something that should not be published.",
+          "common_error": "Titling a friendly-object thread without the marker, leaving the suppression rule to be rediscovered."
+        },
+        {
+          "n": 8,
+          "action": "Request the product set: light curve, neighbourhood, waterfall, three-dimensional view, pass schedule and current element set, plus a relative motion plot where there is a close approach within the window.",
+          "role": "SEA",
+          "why": "The light curve is the evidence and the neighbourhood is the consequence. The others establish whether anything nearby explains the change.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-NEIGHBORHOOD",
+            "PRD-WATERFALL",
+            "PRD-PASS-SCHEDULE",
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 9,
+          "action": "Populate the required data set: time window of the change, solar phase angle window, visual magnitude before and after, close approaches within the window with time of closest approach, distance and whether lighting was favourable, current longitude, and current drift rate with direction.",
+          "role": "SEA",
+          "why": "These fields are what make a brightness claim assessable by someone else. A magnitude change without its phase angle window cannot be judged at all, which is why the field exists.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-NEIGHBORHOOD"
+          ]
+        },
+        {
+          "n": 10,
+          "action": "Assess the likely cause and state it. Candidates are a close approach, a manoeuvre, proximity operations, a separation, a breakup, or unknown. State explicitly whether the variation is consistent with the object's historical pattern of life.",
+          "role": "CuOps",
+          "why": "This is the step that turns an observation into an assessment. Unknown is a legitimate answer and is far better than omitting the question, because it tells the recipient the cause is genuinely open rather than unconsidered.",
+          "products": [
+            "PRD-PHOTOMETRY",
+            "PRD-NEIGHBORHOOD",
+            "PRD-TRIC"
+          ]
+        },
+        {
+          "n": 11,
+          "action": "Where a close approach may be the cause, establish whether lighting was favourable. Favourable lighting means sunlight positively illuminating one satellite without blinding the other.",
+          "role": "SEA",
+          "why": "A close approach only explains a signature change if the geometry allowed one object to see or be seen. Lighting turns a coincidence in time into a plausible mechanism.",
+          "products": [
+            "PRD-TRIC"
+          ],
+          "threshold_ref": "photometry.close_approach_km"
+        },
+        {
+          "n": 12,
+          "action": "Publish the report, including the light curve and neighbourhood as required products. Where the change may be associated with a well-tracked uncorrelated track in the area, refer only to its presence and do not provide element sets or positional data for it.",
+          "role": "CuOps",
+          "why": "The suppression on uncorrelated track positional data is deliberate and holds even when the data is available.",
+          "time_standard": "report.notso_standard"
+        },
+        {
+          "n": 13,
+          "action": "Increase tasking as agreed with the operations centres, adjusting search ranking and duration.",
+          "role": "CuOps",
+          "why": "A signature change often precedes or follows something else. Collection cadence is what catches the something else."
+        },
+        {
+          "n": 14,
+          "action": "Conduct the assessment: is the change indicative of a pre-action or post-action observation, and is it indicative of tactics, techniques or procedures for military activity.",
+          "role": "CuOps",
+          "why": "These two questions are the intelligence value of the whole procedure. A brightness change matters because of what it says about intent and capability, not because the brightness changed.",
+          "products": [
+            "PRD-PHOTOMETRY"
+          ]
+        },
+        {
+          "n": 15,
+          "action": "Consider transition. Where the assessment points to a manoeuvre, proximity operations, separation or breakup, move to that procedure and reformat the thread accordingly.",
+          "role": "SEA",
+          "why": "Photometric change is frequently the first observable of something larger. It is an entry point as often as it is an event in itself.",
+          "products": []
+        },
+        {
+          "n": 16,
+          "action": "Close on expiry or at the mission area lead's direction. Close where there has been no activity for a day and no contextual reason to keep the event open. Where the event proves not to have been a valid photometric change, cancel it and issue a report saying so.",
+          "role": "SEA",
+          "why": "Cancellation is a positive act with its own report, not a quiet closure. A recipient who received the original needs to be told it did not stand up.",
+          "threshold_ref": "photometry.closure_hours"
+        }
+      ],
+      "decision_points": [
+        {
+          "id": "PHOT-D1",
+          "question": "Should this event be opened and reported at all?",
+          "branches": [
+            {
+              "condition": "The object appears on the exclusion list",
+              "then": "Do not open an event. Do not provide mission information or element sets for it in any report."
+            },
+            {
+              "condition": "The object is a friendly high rate revisit object",
+              "then": "Do not report unless higher headquarters specifically directs it. Title the thread with the explicit do-not-report marker so the decision travels with the event."
+            },
+            {
+              "condition": "Neither applies",
+              "then": "Proceed."
+            }
+          ]
+        },
+        {
+          "id": "PHOT-D2",
+          "question": "Is the change real, or is it collection?",
+          "branches": [
+            {
+              "condition": "Seen by a single sensor only",
+              "then": "Treat as a sensor story until a second sensor corroborates. Request the sensor view."
+            },
+            {
+              "condition": "Not seen by a source that observed the object the day or week before",
+              "then": "Be sceptical. Establish why that source did not see it."
+            },
+            {
+              "condition": "Observing hemisphere differs from the rest of the data",
+              "then": "Request the hemisphere view. If the change disappears when hemispheres are separated, it was never on the object."
+            },
+            {
+              "condition": "Corroborated across sensors and hemispheres at matched phase angle",
+              "then": "Assess as a real change and proceed to cause."
+            }
+          ]
+        },
+        {
+          "id": "PHOT-D3",
+          "question": "What caused it?",
+          "branches": [
+            {
+              "condition": "A close approach within the window with favourable lighting",
+              "then": "Assess the close approach as the likely cause and state the time, distance and lighting."
+            },
+            {
+              "condition": "A co-timed manoeuvre",
+              "then": "Complete manoeuvre processing first, then return here and publish a combined report."
+            },
+            {
+              "condition": "Consistent with an established attitude or configuration cycle",
+              "then": "Assess as pattern of life and state that explicitly."
+            },
+            {
+              "condition": "No candidate identified",
+              "then": "State the cause as unknown. This is a legitimate assessment and is better than omitting the question."
+            }
+          ]
+        },
+        {
+          "id": "PHOT-D4",
+          "question": "Does this lead somewhere else?",
+          "branches": [
+            {
+              "condition": "Evidence of a manoeuvre",
+              "then": "Transition to manoeuvre processing.",
+              "goto_procedure": "PROC-MNV"
+            },
+            {
+              "condition": "Evidence of sustained proximity",
+              "then": "Transition to proximity operations processing.",
+              "goto_procedure": "PROC-RPO"
+            },
+            {
+              "condition": "Evidence of a new object",
+              "then": "Transition to separation processing.",
+              "goto_procedure": "PROC-SEP"
+            },
+            {
+              "condition": "A large expansion in magnitude with widening spread",
+              "then": "Transition to breakup processing.",
+              "goto_procedure": "PROC-BRK"
+            },
+            {
+              "condition": "No onward indication",
+              "then": "Continue monitoring to closure."
+            }
+          ]
+        }
+      ],
+      "reporting": {
+        "notso_required": "conditional",
+        "condition": "Report where the change meets notification criteria and the object is not subject to a suppression rule. Friendly high rate revisit photometry is not reported unless specifically directed.",
+        "time_standard": "report.notso_standard",
+        "must_state": [
+          "Object name and identifier, and where the catalogue number is above the five-digit range, both the numeric identifier and its Alpha-5 designator so the two can be cross-referenced",
+          "Whether the object is docked with another, naming both",
+          "The date and Julian day of the change",
+          "The solar phase angle window across which the change was observed",
+          "The magnitude of the change and whether brighter or dimmer",
+          "Visual magnitude before and after",
+          "The time window of the change",
+          "The assessed cause, or unknown",
+          "Whether the variation is consistent with the historical pattern of life",
+          "Close approaches within the window with time, distance and whether lighting was favourable",
+          "Current longitude, and drift rate with direction or a statement that the object is stationary",
+          "Publicly available information on mission, hedged and separate, for the object and any secondary object"
+        ],
+        "verbal_required": true,
+        "escalation": "Immediate notification to all operations centres where the object is at the highest tasking ranks, before the full assessment is complete."
+      },
+      "closure_criteria": [
+        "No activity for a day and no contextual reason to keep the event open",
+        "Or the event is cancelled as not a valid photometric change, with a report issued saying so",
+        "Reasoning for closure recorded in the thread and the crew log",
+        "All supporting products uploaded before closure"
+      ],
+      "competency_ids": [
+        "CMP-01",
+        "CMP-02",
+        "CMP-04",
+        "CMP-05",
+        "CMP-06",
+        "CMP-08"
+      ],
+      "sparta_ids": [
+        "REC-0005",
+        "REC-0001"
+      ],
+      "status": "active"
+    }
+  ]
+}

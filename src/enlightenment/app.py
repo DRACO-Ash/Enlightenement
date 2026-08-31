@@ -60,7 +60,8 @@ from enlightenment import __version__
 from enlightenment.audit import ANONYMOUS_ACTOR, audit, log_event, sanitise_log_value
 from enlightenment.auth import AUTH_HEADER, token_ok
 from enlightenment.config import Config, load_config, token_length_bucket
-from enlightenment.content import ContentStore
+from enlightenment.content import ContentPackage
+from enlightenment.generators import build_registry
 from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
 from enlightenment.ratelimit import RateLimiter
@@ -72,7 +73,7 @@ from enlightenment.storage import (
     UnknownSessionError,
     probe_writable,
 )
-from enlightenment.training import DrillEngine, ProgressStore
+from enlightenment.training import DrillLoop, ProgressStore
 from enlightenment.training_api import register_training_routes, resolve_content_root
 
 #: Liveness paths. Cheap, dependency-free, always 200: a downstream outage must never
@@ -830,18 +831,29 @@ def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths)
     paths that would tell an operator why.
     """
     root = paths.content_root if paths.content_root is not None else resolve_content_root()
-    store = ContentStore(root)
-    result = store.reload()
+    package = ContentPackage(root)
+    result = package.load()
     if not result.ok:
         log_event("content.load_failed", root=str(root), errors=len(result.errors))
     else:
         log_event(
             "content.loaded",
             root=str(root),
-            counts={kind: len(items) for kind, items in result.items.items()},
+            content_hash=result.content_hash,
+            counts=dict(result.counts),
+            thresholds=package.thresholds.source,
+            scored_scenarios_ready=package.scored_scenarios_ready,
         )
-    engine = DrillEngine(
-        content=store,
+    registry = build_registry()
+    # The registry check runs HERE, at load, because content pointing at a product nobody built
+    # is a content-and-code disagreement and the cheapest place to catch one is the moment both
+    # sides are present. At request time it would be a 503 an operator has to report.
+    unbuilt = registry.unbuilt({d.stimulus.product_id for d in package.drills})
+    if unbuilt:
+        log_event("content.unbuilt_products", products=list(unbuilt))
+    loop = DrillLoop(
+        content=package,
+        registry=registry,
         progress=ProgressStore(
             paths.progress_path
             if paths.progress_path is not None
@@ -850,7 +862,7 @@ def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths)
     )
     register_training_routes(
         app,
-        content=store,
-        engine=engine,
+        content=package,
+        loop=loop,
         guard_write=lambda request: _guard_drill_rate(runtime, request),
     )

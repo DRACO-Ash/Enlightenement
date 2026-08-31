@@ -3,351 +3,185 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>ENLIGHTENMENT</title>
+<title>Enlightenment</title>
+<!-- Inline, so the shell makes no request that can 404. A dot, not a logo. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230B0B0F'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%2300E6FA'/%3E%3C/svg%3E">
 <!--
-  Dark mission-control, continuous with the PSIRENS visual language, per the flight plan.
+  The operator interface. One document, one script, no external request of any kind: the
+  response sets default-src 'self' and a test fails the build if any shipped asset carries an
+  external URL.
 
-  The palette rules below are CODE STANDARDS in this project, not preferences, and each one comes
-  from a measured contrast figure in the flight plan:
+  Type is the system stack here and NOT yet the vendored PHOSPHOR faces. The faces are in
+  design/phosphor/fonts/, that directory deliberately never ships, and moving them into the
+  served interface means adding them to the _UI_FILES allowlist and a font-src review. Recorded
+  rather than quietly skipped: the mockups render in Saira and this renders in the system stack.
 
-  * Blue 1 #385FAF measures 2.45:1 on navy. It fails the text floor AND the 3:1 graphic floor, so
-    it never carries text and never conveys status. Structural fill and border only, behind
-    lighter marks.
-  * Alert red is #E06C69 (4.66:1) wherever it carries text or a small mark. #C0504D (3.21:1) is
-    retained only for large fills where 3:1 suffices.
-  * Copper-amber is excluded from product UI by house rule, so nothing here uses it. The debrief's
-    "look here" signal is the ink-bright outline plus pulse recommended in open question 13, which
-    is still OPEN with Ash; it is implemented as the recommendation so the interface can be
-    judged, and it is the one visual decision here that may be overturned.
-  * Status is never colour alone. Every verdict carries a shape glyph and a text label.
-  * 18px type floor, because operators read procedure text under time pressure.
-
-  The script is a sibling file rather than inline, which departs from the plan's "single-file SPA"
-  on purpose: the response sets `script-src 'self'`, so an inline script would be blocked, and the
-  alternatives are a maintained hash or 'unsafe-inline'. One extra file is a smaller price than
-  either. No framework, no CDN, no external request: the air-gap posture holds.
+  Colour: red is reserved for RECENCY on plot surfaces and is never used for a verdict. That is
+  the third of the three options in docs/PLOT-REALISM.md and it is provisional until Ash decides.
+  In the real toolset red means "most recent data" in at least three views, so a red verdict here
+  would teach an operator to read the same colour two unrelated ways.
 -->
 <style>
-:root {
-  --navy: #162646;
-  --navy-deep: #101B33;
-  --panel: #1B2C51;
-  --structure: #385FAF;      /* fill and border ONLY. Never text, never status. */
-  --label: #739BCF;
-  --ink: #E8EDF5;
-  --ink-dim: #9FB0CC;
-  --nominal: #27AE60;
-  --alert: #E06C69;          /* text-safe alert */
-  --alert-fill: #C0504D;     /* large fills only */
-  --focus: #E8EDF5;
-  --step: 8px;
-}
-* { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  background: var(--navy);
-  color: var(--ink);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  font-size: 18px;
-  line-height: 1.5;
-}
-body { min-height: 100vh; display: flex; flex-direction: column; }
-a { color: var(--label); }
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-
-.skip {
-  position: absolute; left: -9999px; top: 0; z-index: 10;
-  background: var(--panel); color: var(--ink); padding: var(--step);
-}
-.skip:focus { left: var(--step); }
-
-header.bar {
-  display: flex; align-items: baseline; gap: calc(var(--step) * 2);
-  padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
-  background: var(--navy-deep); border-bottom: 1px solid var(--structure);
-  flex-wrap: wrap;
-}
-header.bar h1 {
-  font-size: 1.15rem; letter-spacing: 0.14em; margin: 0; text-transform: uppercase;
-}
-header.bar .sub { color: var(--ink-dim); font-size: 0.8rem; }
-header.bar .spacer { flex: 1; }
-header.bar .build { color: var(--ink-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
-
-nav.tabs { display: flex; gap: var(--step); padding: 0 calc(var(--step) * 2); background: var(--navy-deep); }
-nav.tabs button {
-  background: transparent; border: 0; border-bottom: 3px solid transparent;
-  color: var(--ink-dim); font: inherit; font-size: 0.95rem;
-  padding: var(--step) calc(var(--step) * 1.5); cursor: pointer;
-}
-nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--label); }
-nav.tabs button:hover { color: var(--ink); }
-
-.notice {
-  margin: 0; padding: var(--step) calc(var(--step) * 2);
-  background: var(--alert-fill); color: #FFFFFF; font-size: 0.85rem;
-}
-.notice strong { letter-spacing: 0.06em; }
-
-main { flex: 1; padding: calc(var(--step) * 2); max-width: 1180px; width: 100%; margin: 0 auto; }
-section[hidden] { display: none; }
-h2 { font-size: 1.3rem; margin: 0 0 var(--step); font-weight: 600; }
-h3 { font-size: 1.05rem; margin: calc(var(--step) * 2) 0 var(--step); color: var(--label); }
-
-.panel {
-  background: var(--panel); border: 1px solid var(--structure);
-  border-radius: 4px; padding: calc(var(--step) * 2); margin-bottom: calc(var(--step) * 2);
-}
-.grid { display: grid; gap: calc(var(--step) * 2); }
-.grid.two { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
-@media (max-width: 900px) { .grid.two { grid-template-columns: 1fr; } }
-
-.meta-row { display: flex; gap: calc(var(--step) * 2); flex-wrap: wrap; color: var(--ink-dim); font-size: 0.82rem; }
-.meta-row b { color: var(--ink); font-weight: 600; }
-
-canvas { width: 100%; height: 320px; display: block; background: var(--navy-deep); border-radius: 3px; }
-.plot-desc { color: var(--ink-dim); font-size: 0.85rem; margin-top: var(--step); }
-
-label { display: block; font-size: 0.85rem; color: var(--label); margin-bottom: 4px; }
-input[type="text"] {
-  width: 100%; font: inherit; padding: calc(var(--step) * 1.1);
-  background: var(--navy-deep); color: var(--ink);
-  border: 1px solid var(--structure); border-radius: 3px;
-}
-.field { margin-bottom: calc(var(--step) * 1.75); }
-.hint { color: var(--ink-dim); font-size: 0.78rem; margin-top: 4px; }
-
-fieldset { border: 1px solid var(--structure); border-radius: 3px; padding: var(--step); margin: 0 0 calc(var(--step)*1.75); }
-legend { color: var(--label); font-size: 0.85rem; padding: 0 6px; }
-.conf { display: flex; gap: 6px; flex-wrap: wrap; }
-.conf label {
-  flex: 1 1 90px; text-align: center; margin: 0; cursor: pointer;
-  border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) 4px;
-  color: var(--ink); font-size: 0.8rem; background: var(--navy-deep);
-}
-.conf input { position: absolute; opacity: 0; width: 0; height: 0; }
-.conf input:checked + span { display: block; font-weight: 700; }
-.conf label:has(input:checked) { border-color: var(--ink); background: var(--structure); }
-.conf label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
-.conf .pct { display: block; color: var(--ink-dim); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
-
-button.primary {
-  font: inherit; font-weight: 600; cursor: pointer;
-  background: var(--structure); color: #FFFFFF;
-  border: 1px solid var(--label); border-radius: 3px;
-  padding: calc(var(--step) * 1.2) calc(var(--step) * 2.5);
-}
-button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-button.ghost {
-  font: inherit; cursor: pointer; background: transparent; color: var(--ink);
-  border: 1px solid var(--structure); border-radius: 3px; padding: var(--step) calc(var(--step) * 1.5);
-}
-
-/* Verdict: shape glyph AND label AND colour, never colour alone. */
-.verdict { display: flex; align-items: center; gap: var(--step); font-weight: 600; }
-.verdict .glyph { font-size: 1.4rem; line-height: 1; }
-.verdict.hit { color: var(--nominal); }
-.verdict.miss { color: var(--alert); }
-
-/*
-  The pedagogical highlight: ink-bright outline plus a brief pulse, reserved to debrief signalling
-  and used nowhere else, so it never competes with the operational red and green. Open question 13
-  in the flight plan; this is the recommendation, implemented for judgement.
-*/
-.cue-highlight {
-  border: 2px solid var(--ink); border-radius: 3px;
-  padding: calc(var(--step) * 1.5); background: var(--navy-deep);
-  animation: cue-pulse 900ms ease-out 2;
-}
-@keyframes cue-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(232, 237, 245, 0.55); }
-  100% { box-shadow: 0 0 0 14px rgba(232, 237, 245, 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  /* Non-motion equivalent that still MARKS the moment, rather than removing the signal. */
-  .cue-highlight { animation: none; border-left-width: 8px; }
-  * { transition: none !important; }
-}
-
-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-th, td { text-align: left; padding: 6px var(--step); border-bottom: 1px solid var(--structure); }
-th { color: var(--label); font-weight: 600; font-size: 0.8rem; }
-td.num { font-variant-numeric: tabular-nums; text-align: right; }
-
-.bar-track { background: var(--navy-deep); border: 1px solid var(--structure); border-radius: 2px; height: 14px; position: relative; }
-.bar-fill { background: var(--structure); height: 100%; }
-.bar-ci { position: absolute; top: -3px; bottom: -3px; border-left: 2px solid var(--ink); border-right: 2px solid var(--ink); }
-
-ol.steps { padding-left: 1.4em; }
-ol.steps li { margin-bottom: var(--step); }
-.step-role { color: var(--label); font-size: 0.8rem; }
-.step-warning { color: var(--alert); font-size: 0.85rem; }
-.step-note { color: var(--ink-dim); font-size: 0.85rem; }
-
-.empty { color: var(--ink-dim); }
-footer.foot { padding: calc(var(--step) * 2); color: var(--ink-dim); font-size: 0.78rem; border-top: 1px solid var(--structure); }
+  :root {
+    --ground: #0B0B0F; --panel: #14141B; --inset: #101017;
+    --grid: #24242E; --grid2: #3C3C4A;
+    --ink: #F2F1F6; --ink2: #C8C6D2; --ink3: #8E8B99; --ink4: #5A5866;
+    --sig: #00E6FA;        /* signal, structure, the data you were given */
+    --you: #FFBB55;        /* the operator's own act */
+    --cue: #DBB5FF;        /* a cue, a thing to notice */
+    --ok: #6BE39A;
+    /* Recency ramp. Red lives HERE and nowhere else. */
+    --recent: #FF6B6B; --older: #5B7FCF; --oldest: #E8EDF5;
+    --display: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --data: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--display); font-size: 16px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .rail {
+    display: flex; align-items: center; gap: 22px; padding: 12px 24px;
+    border-bottom: 1px solid var(--grid); background: var(--panel);
+    font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink3); flex-wrap: wrap;
+  }
+  .rail .mark { color: var(--ink); font-weight: 700; letter-spacing: 0.3em; }
+  .rail .push { flex: 1 1 auto; }
+  .rail button {
+    background: none; border: 1px solid transparent; color: var(--ink3);
+    font: inherit; letter-spacing: inherit; text-transform: inherit;
+    padding: 4px 8px; cursor: pointer; border-radius: 2px;
+  }
+  .rail button[aria-current="page"] { color: var(--you); border-color: var(--you); }
+  .rail button:focus-visible, main :focus-visible { outline: 2px solid var(--sig); outline-offset: 2px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; }
+  h1 { font-size: 1.7rem; margin: 0 0 6px; line-height: 1.15; }
+  h2 { font-size: 1.15rem; margin: 28px 0 10px; }
+  .kicker {
+    font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--ink3); margin: 0;
+  }
+  .note { color: var(--ink3); font-size: 0.92rem; max-width: 70ch; }
+  .scope { border: 1px solid var(--grid); border-radius: 3px; background: var(--inset); margin: 16px 0; }
+  .scope-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+    padding: 10px 14px; border-bottom: 1px solid var(--grid);
+    font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink3);
+  }
+  .scope-head b { color: var(--ink2); font-weight: 600; }
+  .scope-head > span:last-child { margin-left: auto; }
+  .panels { display: grid; gap: 14px; padding: 14px; }
+  .panels.multi { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .panel-title {
+    font-family: var(--data); font-size: 0.64rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink3); margin: 0 0 4px;
+  }
+  .panel-note { font-size: 0.82rem; color: var(--ink4); margin: 4px 0 0; }
+  .legend, .keyrow {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 14px;
+    border-top: 1px solid var(--grid); font-family: var(--data); font-size: 0.68rem;
+    color: var(--ink3);
+  }
+  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle; }
+  .foot { padding: 8px 14px; border-top: 1px solid var(--grid); font-family: var(--data); font-size: 0.64rem; color: var(--ink4); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+  th { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); font-weight: 500; }
+  td.r, th.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums; }
+  td.em { color: var(--you); }
+  .tablewrap { overflow-x: auto; padding: 0 14px 14px; }
+  form { margin: 18px 0 0; }
+  label { display: block; font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink3); margin: 16px 0 6px; }
+  input[type=text] {
+    width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--grid2);
+    color: var(--you); font: inherit; padding: 6px 0;
+  }
+  input[type=text]:focus { border-bottom-color: var(--you); outline: none; }
+  .steps { display: flex; gap: 8px; flex-wrap: wrap; }
+  .steps button {
+    flex: 1 1 90px; background: transparent; border: 1px solid var(--grid2);
+    color: var(--ink2); font-family: var(--data); font-size: 0.68rem; padding: 8px 4px;
+    border-radius: 2px; cursor: pointer;
+  }
+  .steps button[aria-pressed=true] { border-color: var(--you); color: var(--you); }
+  .act {
+    margin-top: 22px; display: inline-flex; align-items: center; gap: 10px;
+    background: var(--you); color: #16130B; border: 0; border-radius: 2px;
+    font-family: var(--display); font-weight: 700; font-size: 0.98rem;
+    padding: 12px 22px; cursor: pointer;
+  }
+  .act.ghost { background: transparent; color: var(--ink2); border: 1px solid var(--grid2); }
+  .act[disabled] { opacity: 0.45; cursor: default; }
+  .verdict { border: 1px solid var(--grid2); border-left-width: 3px; border-radius: 2px; padding: 14px 16px; margin: 20px 0; }
+  .verdict.accept { border-left-color: var(--ok); }
+  .verdict.partial { border-left-color: var(--you); }
+  .verdict.reject, .verdict.none { border-left-color: var(--cue); }
+  .verdict .glyph { font-family: var(--data); font-size: 1.1rem; margin-right: 8px; }
+  .verdict h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .meter { display: flex; align-items: center; gap: 10px; font-family: var(--data); font-size: 0.72rem; }
+  .meter .t { flex: 1 1 auto; height: 4px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+  .meter .t i { display: block; height: 100%; background: currentColor; }
+  .banner {
+    border: 1px solid var(--cue); border-left-width: 3px; border-radius: 2px;
+    padding: 12px 16px; margin: 18px 0; color: var(--ink2); font-size: 0.9rem;
+  }
+  .hidden { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to main content</a>
+<div class="rail">
+  <span class="mark">Enlightenment</span>
+  <nav id="nav" aria-label="Surfaces">
+    <button type="button" data-view="drill" aria-current="page">Drill</button>
+    <button type="button" data-view="progress">Progress</button>
+    <button type="button" data-view="library">Library</button>
+  </nav>
+  <span class="push"></span>
+  <span id="rail-status">loading</span>
+</div>
 
-<header class="bar">
-  <h1>Enlightenment</h1>
-  <span class="sub">Protect and Defend procedure trainer</span>
-  <span class="spacer"></span>
-  <span class="build" id="build">build &hellip;</span>
-</header>
+<main>
+  <div id="banner" class="banner hidden" role="status"></div>
 
-<p class="notice" id="provenance">
-  <strong>Illustrative content.</strong> Loading provenance&hellip;
-</p>
+  <section id="view-drill">
+    <p class="kicker" id="drill-kicker">Drill</p>
+    <h1 id="drill-prompt">Loading a drill…</h1>
+    <p class="note" id="drill-meta"></p>
+    <div id="stimuli"></div>
 
-<nav class="tabs" role="tablist" aria-label="Sections">
-  <button role="tab" id="tab-drill" aria-controls="view-drill" aria-selected="true">Drill</button>
-  <button role="tab" id="tab-dashboard" aria-controls="view-dashboard" aria-selected="false">Dashboard</button>
-  <button role="tab" id="tab-library" aria-controls="view-library" aria-selected="false">Library</button>
-</nav>
+    <form id="answer-form" class="hidden">
+      <label for="response" id="response-label">Your call</label>
+      <input type="text" id="response" name="response" autocomplete="off" maxlength="300"
+             aria-describedby="response-help">
+      <p class="note" id="response-help">No list. You produce the answer, which is the only thing that builds recall.</p>
+      <label for="confidence-group">How sure are you</label>
+      <div class="steps" id="confidence-group" role="group" aria-label="Confidence"></div>
+      <p class="note">Scored by a proper rule. Overclaiming costs more than admitting doubt, so say what you actually believe.</p>
+      <button type="submit" class="act" id="submit">Call it</button>
+    </form>
 
-<main id="main">
-
-  <!-- ---------------------------------------------------------------- DRILL -->
-  <section id="view-drill" role="tabpanel" aria-labelledby="tab-drill">
-    <div class="grid two">
-      <div class="panel">
-        <h2 id="drill-title">Loading a drill&hellip;</h2>
-        <p class="meta-row">
-          <span>Procedure <b id="drill-procedure">&mdash;</b></span>
-          <span>Axis <b id="drill-axis">&mdash;</b></span>
-          <span>Item rating <b id="drill-difficulty">&mdash;</b></span>
-          <span>Your rating <b id="drill-rating">&mdash;</b></span>
-        </p>
-        <canvas id="plot" width="900" height="320" role="img" tabindex="0"
-                aria-describedby="plot-desc"></canvas>
-        <p class="plot-desc" id="plot-desc">&mdash;</p>
-        <p><button class="ghost" id="toggle-table" aria-expanded="false" aria-controls="plot-table">
-          Read the data as a table
-        </button></p>
-        <div id="plot-table" hidden></div>
-      </div>
-
-      <div class="panel">
-        <h2>Your call</h2>
-        <p class="plot-desc" id="drill-prompt">&mdash;</p>
-        <form id="answer-form" novalidate>
-          <div class="field">
-            <label for="classification">Name the event</label>
-            <input type="text" id="classification" name="classification" autocomplete="off"
-                   spellcheck="false" required maxlength="300">
-            <p class="hint">Type it. There is no list, and that is deliberate: recall, not recognition.</p>
-          </div>
-          <div class="field">
-            <label for="first-action">First action the governing procedure requires</label>
-            <input type="text" id="first-action" name="first_action" autocomplete="off"
-                   spellcheck="false" required maxlength="300">
-            <p class="hint">Unprompted. Looking it up in the Library is never penalised, but try first.</p>
-          </div>
-          <fieldset>
-            <legend>How confident are you?</legend>
-            <div class="conf" id="confidence"></div>
-            <p class="hint">Scored by a proper rule, so state what you actually believe. Hedging costs more.</p>
-          </fieldset>
-          <button class="primary" type="submit" id="submit-answer">Commit answer</button>
-        </form>
-
-        <div id="reveal" hidden>
-          <h3>Reveal</h3>
-          <p class="verdict" id="verdict"><span class="glyph"></span><span class="text"></span></p>
-          <p class="meta-row">
-            <span>Points <b id="reveal-points">&mdash;</b></span>
-            <span>Rating <b id="reveal-rating">&mdash;</b></span>
-            <span>Next due <b id="reveal-due">&mdash;</b></span>
-          </p>
-          <div class="cue-highlight" id="cue-highlight">
-            <strong>What the expert saw</strong>
-            <p id="reveal-cue" style="margin:6px 0 0"></p>
-          </div>
-          <h3>Why that score</h3>
-          <table>
-            <caption class="hint" style="text-align:left;caption-side:bottom">
-              Every point names the rule and the evidence. A score the debrief cannot explain is a
-              bug in this project, not a feature.
-            </caption>
-            <thead><tr><th>Rule</th><th>Axis</th><th class="num">Awarded</th><th>Evidence</th></tr></thead>
-            <tbody id="reveal-lines"></tbody>
-          </table>
-          <h3>Governing procedure</h3>
-          <p id="reveal-procedure" class="plot-desc"></p>
-          <p><button class="primary" id="next-drill">Next drill</button>
-             <button class="ghost" id="open-procedure">Read the full procedure</button></p>
-        </div>
-      </div>
-    </div>
+    <div id="reveal" class="hidden" aria-live="polite"></div>
   </section>
 
-  <!-- ------------------------------------------------------------ DASHBOARD -->
-  <section id="view-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" hidden>
-    <div class="panel">
-      <h2>Where you stand</h2>
-      <p class="meta-row">
-        <span>Rating <b id="dash-rating">&mdash;</b></span>
-        <span>Answers recorded <b id="dash-runs">&mdash;</b></span>
-        <span>Due now <b id="dash-due">&mdash;</b></span>
-        <span>Items in the set <b id="dash-items">&mdash;</b></span>
-      </p>
-      <h3>Competency axes</h3>
-      <p class="hint">
-        Every axis reports an interval, never a bare number. An axis with no attempts reports
-        "not measured", which is a different fact from "measured at zero".
-      </p>
-      <table>
-        <thead><tr><th>Axis</th><th class="num">Attempts</th><th class="num">Accuracy</th><th>Interval</th><th class="num">Brier</th></tr></thead>
-        <tbody id="dash-axes"></tbody>
-      </table>
-      <h3>Procedure coverage</h3>
-      <table>
-        <thead><tr><th>Procedure</th><th class="num">Items</th><th class="num">Attempted</th><th class="num">Demonstrated</th></tr></thead>
-        <tbody id="dash-coverage"></tbody>
-      </table>
-      <h3>Recent answers</h3>
-      <table>
-        <thead><tr><th>When</th><th>Item</th><th>Outcome</th><th class="num">Confidence</th><th class="num">Points</th></tr></thead>
-        <tbody id="dash-recent"></tbody>
-      </table>
-    </div>
+  <section id="view-progress" class="hidden">
+    <p class="kicker">Progress</p>
+    <h1>Where you stand</h1>
+    <p class="note" id="progress-identity"></p>
+    <div id="progress-body"></div>
   </section>
 
-  <!-- -------------------------------------------------------------- LIBRARY -->
-  <section id="view-library" role="tabpanel" aria-labelledby="tab-library" hidden>
-    <div class="grid two">
-      <div class="panel">
-        <h2>Procedure library</h2>
-        <p class="hint">
-          Reading a procedure is never scored. The flight plan's tone rule is that errors are
-          learning events, and locking the reference away would make looking it up feel like
-          cheating rather than like learning.
-        </p>
-        <table>
-          <thead><tr><th>Procedure</th><th class="num">Steps</th><th>Status</th></tr></thead>
-          <tbody id="library-list"></tbody>
-        </table>
-        <p class="empty" id="library-gap"></p>
-      </div>
-      <div class="panel" id="procedure-detail">
-        <h2>Select a procedure</h2>
-        <p class="empty">Its purpose, entry conditions, ordered steps, thresholds and reporting requirements appear here.</p>
-      </div>
-    </div>
+  <section id="view-library" class="hidden">
+    <p class="kicker">Library</p>
+    <h1>Procedures</h1>
+    <p class="note">Read freely. The library is never gated and never scored.</p>
+    <div id="library-body"></div>
   </section>
-
 </main>
 
-<footer class="foot">
-  <span id="foot-identity">Identity&hellip;</span>
-</footer>
-
-<div id="live" role="status" aria-live="polite" style="position:absolute;left:-9999px"></div>
-
-<script src="/ui/app.js"></script>
+<script src="/ui/app.js" defer></script>
 </body>
 </html>

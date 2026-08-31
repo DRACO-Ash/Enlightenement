@@ -1,0 +1,571 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "2.1.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "scenarios.json v1.0.0",
+      "drills.json v1.0.0",
+      "competencies.json v1.0.0",
+      "Live Fly 25-2 and 26-1 after action reports, latency calibration",
+      "Red team of v1.8.1, finding 6",
+      "synthesis-ladder.json argument scoring",
+      "JCO Timing Standards, authoritative. Supersedes earlier inferred 30-minute standard"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Scoring logic only."
+  },
+  "_design_note": "Rules are declarative and evaluated against the run event log. Every rule carries an operator-facing explain string used verbatim in the debrief, so no score can appear without naming the rule and the evidence that fired it. This is what makes the scoring challengeable, and a scorer that cannot be challenged will not be trusted by this audience. Note the deliberate asymmetries: verifying data before acting is rewarded even when the data turns out fine, escalating a distractor is penalised less than missing a real event, and reporting late is penalised more than reporting incomplete.",
+  "rubrics": [
+    {
+      "id": "RUB-SCENARIO-GENERAL",
+      "applies_to": [
+        "SCN-MNV-BASELINE",
+        "SCN-RPO-APPROACH",
+        "SCN-SEP-OR-BREAK",
+        "SCN-BRK-ANOMALY",
+        "SCN-PS-DAILY",
+        "SCN-DAASAT-GEO-CLOCK",
+        "SCN-SURGE-CONCURRENT",
+        "SCN-OUT-OF-ORDER",
+        "SCN-HANDOVER-GAP",
+        "SCN-PHOT-CHANGE",
+        "SCN-LAUNCH-WINDOW"
+      ],
+      "rules": [
+        {
+          "id": "R-VERIFY-FIRST",
+          "when": "operator checked epoch age or observation density before making any classification",
+          "award": 1.0,
+          "competency_id": "CMP-01",
+          "explain": "You verified the data before characterising the event. This is rewarded whether or not the data turned out to be a problem, because it is the habit that prevents the most common failure in this procedure."
+        },
+        {
+          "id": "R-SKIPPED-VERIFY",
+          "when": "operator classified the event before any data verification step",
+          "award": -1.5,
+          "competency_id": "CMP-01",
+          "explain": "You classified before checking epoch age and observation density. Two of the three ways this event goes wrong are data problems, and both are caught in the first two minutes."
+        },
+        {
+          "id": "R-CORRECT-PROCEDURE",
+          "when": "operator entered the procedure the trigger set requires",
+          "award": 2.0,
+          "competency_id": "CMP-03",
+          "explain": "You entered the correct procedure."
+        },
+        {
+          "id": "R-CORRECT-PROCEDURE-FAST",
+          "when": "operator entered the correct procedure within the first trigger window",
+          "award": 1.0,
+          "competency_id": "CMP-03",
+          "explain": "You reached the right procedure without deliberating. That speed is the point of the drill layer.",
+          "cap": 1.0
+        },
+        {
+          "id": "R-WRONG-BRANCH",
+          "when": "operator entered a procedure other than the one the evidence supports",
+          "award": -2.0,
+          "competency_id": "CMP-03",
+          "explain": "The evidence pointed to a different procedure. The branch decides your reporting obligation as well as your actions, so a wrong branch is more costly than it first appears."
+        },
+        {
+          "id": "R-CLASSIFY-CORRECT",
+          "when": "operator classification matches the seeded event class",
+          "award": 2.0,
+          "competency_id": "CMP-02",
+          "explain": "Correct classification."
+        },
+        {
+          "id": "R-CLASSIFY-WITH-ALTERNATIVE",
+          "when": "operator named at least one competing classification and the evidence that discriminates it",
+          "award": 1.5,
+          "competency_id": "CMP-02",
+          "explain": "You generated a competing hypothesis and named what separates it. This is the single clearest marker of analytical maturity in this domain."
+        },
+        {
+          "id": "R-ARTEFACT-CAUGHT",
+          "when": "operator identified a distractor trigger event as an artefact or benign explanation",
+          "award": 2.5,
+          "competency_id": "CMP-05",
+          "explain": "You caught the artefact. Ranking data problems as peer hypotheses rather than footnotes is what stops a sensor story becoming a satellite story."
+        },
+        {
+          "id": "R-ARTEFACT-ESCALATED",
+          "when": "operator escalated or reported a distractor trigger event as a real signal",
+          "award": -1.0,
+          "competency_id": "CMP-05",
+          "explain": "This was an artefact. Escalating it spends credibility you will need on a real event. The penalty here is deliberately smaller than for missing a real event, because over-caution is the safer failure."
+        },
+        {
+          "id": "R-REAL-EVENT-MISSED",
+          "when": "operator failed to respond to a non-distractor trigger event",
+          "award": -2.5,
+          "competency_id": "CMP-01",
+          "explain": "You missed a real trigger. Under-reporting is the more costly failure in this domain, which is why it is penalised harder than over-reporting."
+        },
+        {
+          "id": "R-PHYSICS-SANITY",
+          "when": "operator rejected a physically impossible value or sanity-checked a reported figure against the regime",
+          "award": 2.0,
+          "competency_id": "CMP-04",
+          "explain": "You checked the number against what is physically possible. Carrying approximate relationships is the filter that catches an artefact before it becomes a report."
+        },
+        {
+          "id": "R-PRODUCT-REQUEST-CORRECT",
+          "when": "operator requested the product that discriminates the outstanding hypothesis",
+          "award": 1.5,
+          "competency_id": "CMP-05",
+          "explain": "You asked for the product that would settle it, rather than more of the product you already had."
+        },
+        {
+          "id": "R-FILTER-CHALLENGED",
+          "when": "operator asked what filter produced a delivered product",
+          "award": 1.5,
+          "competency_id": "CMP-05",
+          "explain": "You asked what the filter was. An absence in a filtered product is not an absence in reality."
+        },
+        {
+          "id": "R-REPORT-ON-TIME",
+          "when": "operator published within the time standard for the procedure",
+          "award": 2.0,
+          "competency_id": "CMP-06",
+          "explain": "Published within the standard. Warning value is spent by waiting."
+        },
+        {
+          "id": "R-REPORT-LATE",
+          "when": "operator published after the time standard",
+          "award": -2.0,
+          "competency_id": "CMP-06",
+          "explain": "Published late. A complete late report is worth less than an incomplete timely one, because the recipient needs planning time more than they need your certainty."
+        },
+        {
+          "id": "R-REPORT-INCOMPLETE-BUT-TIMELY",
+          "when": "operator published within the standard with an incomplete picture and said so",
+          "award": 1.0,
+          "competency_id": "CMP-06",
+          "explain": "You published on time and stated what was still unresolved. That is the correct trade and multiple reports across an event are expected."
+        },
+        {
+          "id": "R-CONFIDENCE-STATED",
+          "when": "operator stated possible or verified with an explicit confidence level",
+          "award": 1.5,
+          "competency_id": "CMP-05",
+          "explain": "You distinguished possible from verified. Collapsing the two is a reporting failure even when the assessment is right."
+        },
+        {
+          "id": "R-LIMITATIONS-STATED",
+          "when": "operator stated collection limitations such as exclusion, eclipse, gaps or cross-tagging risk",
+          "award": 1.5,
+          "competency_id": "CMP-06",
+          "explain": "You stated the limitations. A gap you have named is a finding; a gap you have missed is an error."
+        },
+        {
+          "id": "R-ESCALATION-CORRECT",
+          "when": "operator escalated where the procedure requires prompt notification",
+          "award": 2.0,
+          "competency_id": "CMP-03",
+          "explain": "You escalated where the procedure requires it, without deliberating about whether to."
+        },
+        {
+          "id": "R-HOLDING-FAST",
+          "when": "a holding alert was released within five minutes of a time-critical indication appearing",
+          "award": 3.0,
+          "competency_id": "CMP-07",
+          "explain": "You released the alert inside five minutes. This is the highest-weighted behaviour in the whole rubric, because latency rather than error is the dominant recorded failure on time-critical events."
+        },
+        {
+          "id": "R-FIRST-REPORT-GREEN",
+          "when": "first report published within the governing leg of the timing standard: 60 minutes from initial indications, or 30 minutes from the last provider product, whichever is earlier",
+          "award": 2.5,
+          "competency_id": "CMP-07",
+          "explain": "Qualified against the published timing standard. Note the standard is two-legged and the governing leg depends on how fast providers delivered, which you do not control."
+        },
+        {
+          "id": "R-FIRST-REPORT-AMBER",
+          "when": "first report published within the partial band: 90 minutes from initial indications, or 60 from the last provider product, whichever is earlier",
+          "award": 1.0,
+          "competency_id": "CMP-07",
+          "explain": "Partial against the published standard. Inside the outer band, outside Qualified."
+        },
+        {
+          "id": "R-FIRST-REPORT-RED",
+          "when": "first report published beyond the partial band of 90/60, or beyond 60 minutes for a geosynchronous direct ascent initial warning",
+          "award": -3.0,
+          "competency_id": "CMP-07",
+          "explain": "Unqualified against the published timing standard."
+        },
+        {
+          "id": "R-COMPLETENESS-OVER-SPEED",
+          "when": "operator withheld a releasable alert while assembling a fuller assessment",
+          "award": -2.5,
+          "competency_id": "CMP-07",
+          "explain": "Holding for completeness spends the recipient's planning time on your certainty. A one-sentence alert now, assessment later."
+        },
+        {
+          "id": "R-TRIGGER-TRANSITION",
+          "when": "operator transitioned the procedure on the trigger product without intervening deliberation",
+          "award": 2.5,
+          "competency_id": "CMP-03",
+          "explain": "You transitioned on the trigger. Late transition on exactly this cue is the most repeated procedural delay in the exercise record."
+        },
+        {
+          "id": "R-LATE-TRANSITION",
+          "when": "operator deliberated before transitioning on a clear trigger product",
+          "award": -2.0,
+          "competency_id": "CMP-03",
+          "explain": "The product was the trigger. Backing out of a procedure entered early costs minutes; entering it late has cost hours."
+        },
+        {
+          "id": "R-MANDATORY-STEP-MISSED",
+          "when": "a mandatory notification step was not completed",
+          "award": -3.0,
+          "competency_id": "CMP-03",
+          "explain": "A mandatory step was skipped. This is scored separately rather than absorbed into an overall mark, because it recurs across exercise periods and no amount of good analysis substitutes for it."
+        },
+        {
+          "id": "R-TRIAGE-EXPLICIT",
+          "when": "operator triaged threads explicitly and stated what was not being worked",
+          "award": 2.5,
+          "competency_id": "CMP-08",
+          "explain": "You chose what to drop rather than letting it choose itself. Under overload that is the whole competency."
+        },
+        {
+          "id": "R-AGEING-THREAD-MISSED",
+          "when": "a ripe thread was left untouched beyond the ageing window",
+          "award": -2.0,
+          "competency_id": "CMP-08",
+          "explain": "A ripe thread aged out untouched. One proximity event was recorded as un-actioned for at least an hour under comparable load."
+        },
+        {
+          "id": "R-CLOSURE-DISCIPLINE",
+          "when": "operator closed a resolved thread without being prompted",
+          "award": 1.5,
+          "competency_id": "CMP-08",
+          "explain": "Closed deliberately. Resolved threads left open consume the attention that emerging events need."
+        },
+        {
+          "id": "R-LATENCY-FROM-INDICATION",
+          "when": "operator acted on an unactioned indication and recognised the clock ran from its posting",
+          "award": 2.0,
+          "competency_id": "CMP-08",
+          "explain": "You measured from the indication rather than from noticing it. Once cued this cell performs well, so the gap is entirely in the noticing."
+        },
+        {
+          "id": "R-IDENTIFIER-EXPLICIT",
+          "when": "report or verbal call stated identifier and role for each related object",
+          "award": 1.5,
+          "competency_id": "CMP-06",
+          "explain": "Parent and child named explicitly by identifier. Ambiguity on a concurrent event was recorded as introducing confusion in a time-sensitive window."
+        },
+        {
+          "id": "R-DRAFT-CHECKED",
+          "when": "operator identified a placeholder or dangling reference before release",
+          "award": 1.5,
+          "competency_id": "CMP-06",
+          "explain": "Caught before publication. A report retaining unfilled template text has previously reached recipients."
+        },
+        {
+          "id": "R-NONSTANDARD-PROCEEDED",
+          "when": "operator proceeded with stated judgement on a non-standard event shape rather than stalling",
+          "award": 2.0,
+          "competency_id": "CMP-07",
+          "explain": "You decided and moved, and said why. Under surge conditions stalling is the failure; deviating with stated judgement is not."
+        },
+        {
+          "id": "R-HANDOVER-RECONCILED",
+          "when": "operator reconciled the handover brief against the open thread list",
+          "award": 2.0,
+          "competency_id": "CMP-08",
+          "explain": "You checked what you were given against what exists. You cannot control handover quality; you can always reconcile it."
+        },
+        {
+          "id": "R-MECHANISM-STATED",
+          "when": "operator described the physical mechanism rather than only naming the event type",
+          "award": 2.0,
+          "competency_id": "CMP-04",
+          "explain": "You said what physically happened, not just what to call it. Naming an event type without demonstrating you know what occurred shows immediately to anyone who does."
+        },
+        {
+          "id": "R-COST-INFERRED",
+          "when": "operator inferred deliberateness from the delta-v expended",
+          "award": 2.0,
+          "competency_id": "CMP-04",
+          "explain": "You read cost as intent. Expensive actions are considered ones, and this is the best proxy for deliberateness available from orbital data alone."
+        },
+        {
+          "id": "R-PLATFORM-CLASS-USED",
+          "when": "operator reasoned from the platform class to what the behaviour means, or used a class limitation to eliminate a hypothesis",
+          "award": 2.5,
+          "competency_id": "CMP-02",
+          "explain": "You used what the object is to interpret what it did. The cannot list eliminates hypotheses outright, which is faster and safer than weighing them."
+        },
+        {
+          "id": "R-SANITY-AGAINST-REGIME",
+          "when": "operator checked a reported quantity against what is physically plausible for the regime",
+          "award": 1.5,
+          "competency_id": "CMP-04",
+          "explain": "You checked the number against the physics. This is the filter that catches an artefact before it becomes a report."
+        },
+        {
+          "id": "R-ENABLEMENT-STATED",
+          "when": "operator stated what the event enables next and at what cost",
+          "award": 3.0,
+          "competency_id": "CMP-02",
+          "explain": "You said what the object can now do that it could not before. This is the weakest question in both the training and four years of real reporting, and it is what makes a report actionable rather than informative."
+        },
+        {
+          "id": "R-ENABLEMENT-MISSED",
+          "when": "operator produced a complete account of the event with no statement of what it enables",
+          "award": -2.0,
+          "competency_id": "CMP-02",
+          "explain": "Complete on the observation, incomplete on the assessment. An event matters because of the options it creates, and the report stopped one step short."
+        },
+        {
+          "id": "R-CONSEQUENCE-STATED",
+          "when": "operator named who is affected and how, including an explicit statement where nobody is",
+          "award": 2.5,
+          "competency_id": "CMP-06",
+          "explain": "You answered the question the recipient opened the message for. An explicit no-impact statement scores fully, because it shows the question was asked."
+        },
+        {
+          "id": "R-CROSS-PRODUCT-RECONCILED",
+          "when": "operator resolved a disagreement between two products by preferring the one closer to the observations",
+          "award": 2.5,
+          "competency_id": "CMP-05",
+          "explain": "You reconciled across products rather than trusting one. A solve is an interpretation; geometry and observations sit further upstream."
+        },
+        {
+          "id": "R-CORRECTLY-DID-NOT-REPORT",
+          "when": "operator correctly assessed an event as not warranting a report and recorded the assessment",
+          "award": 2.0,
+          "competency_id": "CMP-05",
+          "explain": "Knowing when not to report is a competency. You made the assessment and recorded it, which is different from not noticing."
+        },
+        {
+          "id": "R-OVER-REPORTED",
+          "when": "operator escalated or reported an event that did not meet criteria and was within pattern of life",
+          "award": -1.5,
+          "competency_id": "CMP-05",
+          "explain": "Over-reporting erodes the alerting channel the cell exists to serve. The penalty stays smaller than for missing a real event, because over-caution remains the safer failure."
+        },
+        {
+          "id": "R-GOVERNING-LEG-TRACKED",
+          "when": "operator identified which leg of the timing standard governs and worked to it",
+          "award": 2.0,
+          "competency_id": "CMP-07",
+          "explain": "You tracked the governing leg. Fast provider delivery tightens your window rather than relaxing it, and an operator watching only the 60 minute leg misses the standard whenever providers are quick."
+        },
+        {
+          "id": "R-WRONG-LEG",
+          "when": "operator worked to the 60 minute leg when the provider drop time made the 30 minute leg governing",
+          "award": -2.0,
+          "competency_id": "CMP-07",
+          "explain": "The 30 minute leg governed here because products arrived early. Both legs must be tracked; the crew does not choose which applies."
+        },
+        {
+          "id": "R-DAASAT-INITIAL-WARNING",
+          "when": "geosynchronous direct ascent initial warning published within 30 minutes",
+          "award": 3.0,
+          "competency_id": "CMP-07",
+          "explain": "The tightest standard in the framework, and correctly met. This is the event where warning time is the entire product."
+        }
+      ],
+      "aggregation": {
+        "method": "competency_mean",
+        "speed_factor": {
+          "enabled": true,
+          "max_bonus": 0.15,
+          "note": "Speed is bounded and applies only to responses that are already correct. It can never convert a wrong answer into a better score, because rewarding fast wrong answers trains recklessness, which is the opposite of the goal."
+        },
+        "calibration": {
+          "enabled": true,
+          "rule": "brier",
+          "weight": 0.2
+        }
+      }
+    },
+    {
+      "id": "RUB-DRILL",
+      "applies_to": [
+        "drill_layer"
+      ],
+      "rules": [
+        {
+          "id": "D-CORRECT",
+          "when": "response matches an accept value",
+          "award": 1.0,
+          "competency_id": "CMP-02",
+          "explain": "Correct."
+        },
+        {
+          "id": "D-PARTIAL",
+          "when": "response matches a partial value",
+          "award": 0.5,
+          "competency_id": "CMP-02",
+          "explain": "Partly there. The note explains what was missing."
+        },
+        {
+          "id": "D-WITHIN-TOLERANCE",
+          "when": "numeric response falls within the stated tolerance",
+          "award": 1.0,
+          "competency_id": "CMP-04",
+          "explain": "Within tolerance. Estimation is the skill here, not precision."
+        },
+        {
+          "id": "D-CALIBRATION",
+          "when": "confidence stated alongside the response",
+          "award": 0.0,
+          "competency_id": "CMP-05",
+          "explain": "Confidence recorded and scored by proper scoring rule. Being uncertain when you should be is worth as much as being confident when you should be.",
+          "cap": 0.0
+        },
+        {
+          "id": "D-FAST-AND-CORRECT",
+          "when": "response correct and inside the time target",
+          "award": 0.25,
+          "competency_id": "CMP-03",
+          "explain": "Fast and correct. This is what instant recall looks like.",
+          "cap": 0.25
+        },
+        {
+          "id": "D-MISS",
+          "when": "response matches a reject value",
+          "award": 0.0,
+          "competency_id": "CMP-02",
+          "explain": "Not this one. A miss carries no penalty; it schedules this cue to return sooner, which is the mechanism by which the drill layer works."
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_sum",
+        "speed_factor": {
+          "enabled": true,
+          "max_bonus": 0.25,
+          "note": "Applied only to correct responses."
+        },
+        "calibration": {
+          "enabled": true,
+          "rule": "brier",
+          "weight": 0.3
+        }
+      }
+    },
+    {
+      "id": "RUB-ARGUMENT",
+      "applies_to": [
+        "synthesis_tier_3",
+        "synthesis_tier_4",
+        "synthesis_tier_5",
+        "SCN-CONTESTED-BOARD"
+      ],
+      "rules": [
+        {
+          "id": "A-CONCLUSION",
+          "when": "a conclusion is stated plainly and is not hedged into meaninglessness",
+          "award": 1.5,
+          "competency_id": "CMP-06",
+          "explain": "You committed to a conclusion. A ranked judgement can be acted on; a list of possibilities cannot."
+        },
+        {
+          "id": "A-EVIDENCE-CHAIN",
+          "when": "each part of the conclusion is attributed to the product that supports it",
+          "award": 2.5,
+          "competency_id": "CMP-05",
+          "explain": "You said which product carries which part of the claim. That is what makes an argument challengeable, and therefore what makes it worth something."
+        },
+        {
+          "id": "A-ALTERNATIVE-ELIMINATED",
+          "when": "at least one alternative is named with the specific evidence that eliminated it",
+          "award": 2.0,
+          "competency_id": "CMP-02",
+          "explain": "You showed your working on what it is not. Novices rarely generate alternatives at all."
+        },
+        {
+          "id": "A-CONFIDENCE-WEAKEST-LINK",
+          "when": "stated confidence matches the weakest link in the chain",
+          "award": 2.0,
+          "competency_id": "CMP-05",
+          "explain": "Confidence pegged to the weakest evidence, not the strongest. This is the most common and most consequential argument failure and you avoided it."
+        },
+        {
+          "id": "A-CONFIDENCE-STRONGEST-LINK",
+          "when": "stated confidence reflects the strongest evidence while a weak link is present",
+          "award": -2.5,
+          "competency_id": "CMP-05",
+          "explain": "Confidence was set by the best part of the evidence rather than the worst. A chain is as strong as its weakest link and so is an assessment."
+        },
+        {
+          "id": "A-FALSIFIER",
+          "when": "a specific observation is named that would overturn the assessment",
+          "award": 2.0,
+          "competency_id": "CMP-05",
+          "explain": "You said what would prove you wrong. It tests your own reasoning, tells the recipient what to watch for, and protects you when the picture changes."
+        },
+        {
+          "id": "A-GAPS-STATED",
+          "when": "what was unavailable is stated along with what it would have changed",
+          "award": 1.5,
+          "competency_id": "CMP-06",
+          "explain": "You named what you did not have. A gap you have stated is a limitation; a gap you have not is an error waiting to be found."
+        },
+        {
+          "id": "A-ECONOMY",
+          "when": "every product opened contributed to the argument",
+          "award": 1.0,
+          "competency_id": "CMP-08",
+          "explain": "Clean board. Opening everything is not the same as using everything, and economy is what experienced analysts have that novices do not.",
+          "cap": 1.0
+        },
+        {
+          "id": "A-SHARED-FAILURE-MODE",
+          "when": "operator recognised that agreeing products share a failure mode and are not independent corroboration",
+          "award": 3.0,
+          "competency_id": "CMP-05",
+          "explain": "You spotted that agreement between products with a common limitation is one indicator rather than three. This is the sharpest synthesis judgement in the package."
+        },
+        {
+          "id": "A-CONTRADICTION-NAMED",
+          "when": "an unresolved contradiction is stated rather than hidden",
+          "award": 2.0,
+          "competency_id": "CMP-05",
+          "explain": "You named what you could not resolve. A contradiction the recipient finds later takes the whole assessment down with it."
+        },
+        {
+          "id": "A-REVISED-UNDER-CHALLENGE",
+          "when": "operator revised the assessment where the challenge presented better evidence",
+          "award": 2.5,
+          "competency_id": "CMP-05",
+          "explain": "You changed your mind on good evidence. This scores higher than defending a weak position, deliberately: an analyst who cannot revise is a liability regardless of how often they are right."
+        },
+        {
+          "id": "A-DEFENDED-UNDER-CHALLENGE",
+          "when": "operator held the assessment and answered the challenge with evidence",
+          "award": 2.5,
+          "competency_id": "CMP-07",
+          "explain": "You held a good position under pressure and showed why. Equally valuable as revising, and the discrimination between the two is the skill."
+        },
+        {
+          "id": "A-DEFERRED",
+          "when": "operator declined to make an assessment where one was reachable",
+          "award": -2.0,
+          "competency_id": "CMP-07",
+          "explain": "Degraded and contradictory data is the normal condition, not a reason to withhold. Assess, state what you could not resolve, and name the falsifier."
+        }
+      ],
+      "aggregation": {
+        "method": "weighted_sum",
+        "speed_factor": {
+          "enabled": false,
+          "max_bonus": 0,
+          "note": "No speed bonus on arguments. Rushing an argument is the failure mode being trained out, not in."
+        },
+        "calibration": {
+          "enabled": true,
+          "rule": "brier",
+          "weight": 0.25
+        }
+      }
+    }
+  ]
+}

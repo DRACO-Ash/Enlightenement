@@ -1,0 +1,662 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.3.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "Fusion provider neighbourhood results screen, observed 28 Aug 2026",
+      "Fusion provider waterfall screen, observed 28 Aug 2026",
+      "Fusion provider TRIC results screen, observed 28 Aug 2026",
+      "Fusion provider residuals screen, observed 28 Aug 2026",
+      "Fusion provider vis mag light curve screen, observed 28 Aug 2026",
+      "DRAFT: JCO vendor product standardization (DOK amends)",
+      "JCO vendor product standardisation, full document with embedded worked examples",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Layout, axes, columns, controls and reading rules only. Deliberately excludes every object name, catalogue number, longitude, threshold value and provider attribution visible in the source screens. The generators must render this structure populated with synthetic objects. The worked examples in the full source show live object names, catalogue numbers, longitudes, sensor site identifiers and provider threshold values. Field names, column structure, taxonomy and reading rules only."
+  },
+  "_why_this_file_exists": "The product standard says what a compliant product must contain. This file says what the operator actually looks at: which columns exist, which axes are used, where the controls are, and which visual features carry the meaning. A stimulus that is correct against the written standard but does not look like the screen will not train recognition, because recognition is of the screen.",
+  "layouts": [
+    {
+      "product_id": "PRD-NEIGHBORHOOD",
+      "screen": "Neighbourhood results, tabular",
+      "header_line": [
+        "Primary object with rank badge and state of behaviour",
+        "Country",
+        "Regime",
+        "Drift in degrees per day",
+        "Current longitude",
+        "Threshold block stating the longitude, inclination and drift rate constraints applied"
+      ],
+      "columns": [
+        {
+          "name": "Satellite",
+          "note": "Carries a numeric HRR rank badge and a state of behaviour colour. Sortable and filterable."
+        },
+        {
+          "name": "SOB",
+          "note": "Red, Blue or Grey. Grey is a full third category and is heavily populated, not an edge case."
+        },
+        {
+          "name": "Epoch",
+          "note": "Full timestamp per object. This is the column read first."
+        },
+        {
+          "name": "Long (deg)",
+          "note": "Default ascending sort for the belt."
+        },
+        {
+          "name": "Inc (deg)",
+          "note": "Shows the absolute value with the delta to the primary in brackets alongside."
+        },
+        {
+          "name": "RAAN (deg)",
+          "note": "Absolute value with the delta to the primary in brackets alongside."
+        },
+        {
+          "name": "Drift (deg/day)",
+          "note": "Sign carries direction."
+        },
+        {
+          "name": "Days to Longitude Crossing",
+          "note": "The belt analogue of days to RAAN closure. A countdown to the crossing."
+        },
+        {
+          "name": "Abs. Min. Dist. and time",
+          "note": "Absolute minimum distance across the projection and when it occurs."
+        },
+        {
+          "name": "Next Min. Dist. and time",
+          "note": "The next minimum, which may differ from the absolute."
+        },
+        {
+          "name": "Dist. (km)",
+          "note": "Current separation."
+        },
+        {
+          "name": "Delta-V (m/s)",
+          "note": "Cost to reach the primary from this object's current geometry. Present on the product itself."
+        },
+        {
+          "name": "Score",
+          "note": "A provider-computed ranking of concern. Not a substitute for the operator's own assessment."
+        },
+        {
+          "name": "Source",
+          "note": "Which catalogue or provider supplied the state."
+        }
+      ],
+      "controls": [
+        {
+          "name": "Show Manoeuvres",
+          "type": "toggle"
+        },
+        {
+          "name": "0-360 longitude",
+          "type": "toggle"
+        },
+        {
+          "name": "Only HRR",
+          "type": "toggle",
+          "risk": "This is the filter that hides unranked objects. It is one click and its state is easy to miss."
+        },
+        {
+          "name": "Only UCTs",
+          "type": "toggle"
+        },
+        {
+          "name": "Waterfall",
+          "type": "link to the waterfall for the same object set"
+        },
+        {
+          "name": "GP mode",
+          "type": "selector"
+        }
+      ],
+      "visual_encoding": {
+        "note": "Coloured status dots sit beside several numeric values, indicating how close each is to a threshold. Colour alone carries meaning here, which is an accessibility problem the trainer must not reproduce.",
+        "trainer_rule": "Reproduce the dot but always pair it with a shape or text label, per the accessibility floor."
+      },
+      "reading_order": [
+        "Read the threshold block in the header so you know what was filtered before you read a single row",
+        "Check the Only HRR toggle state",
+        "Read the Epoch column and discard or flag any row whose state is too old to assess",
+        "Read the inclination and RAAN deltas in brackets, because plane relationship is the intent signal",
+        "Read Days to Longitude Crossing as a countdown",
+        "Read Delta-V last, as the cost of opportunity for each object"
+      ],
+      "corrections_to_earlier_assumptions": [
+        "Delta-V is a column on the product, not a separate calculation the operator performs. The competency is interpreting it, not deriving it.",
+        "A provider Score column exists. Operators must be trained to treat it as an input rather than an answer.",
+        "Grey is a first-class state of behaviour alongside Red and Blue and appears more often than either."
+      ]
+    },
+    {
+      "product_id": "PRD-WATERFALL",
+      "screen": "Waterfall, dense observation scatter",
+      "axes": {
+        "x": "Longitude in degrees, spanning roughly minus 120 to plus 120",
+        "y": "Observation time, running downward, newest at the bottom",
+        "note": "Time labels are dated and repeat at twelve hour intervals."
+      },
+      "visual_encoding": {
+        "marks": "Individual observations plotted as small coloured crosses, one colour per object, at very high density. The latest observation count runs into the tens of thousands.",
+        "note": "This is not a plot of clean traces. It is a dense scatter, and the operator's task is to pick structure out of noise."
+      },
+      "features_to_read": [
+        "Vertical columns of observations mean an object is holding a longitude",
+        "Diagonal streaks mean an object is drifting, and the gradient is the drift rate",
+        "A streak that changes gradient is a manoeuvre",
+        "A streak that becomes vertical is a drift stop",
+        "Broad empty bands are collection gaps, not empty sky",
+        "Dense clusters are populated longitude regions and carry no meaning by themselves"
+      ],
+      "footer": "Latest execution timestamp and latest observation count. Read the execution time before trusting the currency of the picture.",
+      "corrections_to_earlier_assumptions": [
+        "I described the waterfall as showing traces. It does not. It shows raw observation scatter at very high density, and extracting a drifting object from among thousands of observations is itself the trained skill. The generator must produce realistic density, not a handful of clean lines, or the drill will be far easier than the real product.",
+        "Collection gaps are visually prominent as empty horizontal bands. An operator must learn to read those as gaps rather than as absence of objects."
+      ]
+    },
+    {
+      "product_id": "PRD-TRIC",
+      "screen": "TRIC results, six panel",
+      "panels": [
+        {
+          "name": "Cross-Track over In-Track",
+          "note": "The plan view of the relative geometry."
+        },
+        {
+          "name": "Distance",
+          "note": "Total separation against time. The fastest read for a point of closest approach."
+        },
+        {
+          "name": "Solar Aspect Angle",
+          "note": "Against time. Tells you when optical collection will be favourable or impossible."
+        },
+        {
+          "name": "Radial over Cross-Track",
+          "note": "The end-on view."
+        },
+        {
+          "name": "Radial over In-Track",
+          "note": "The side view, and where circumnavigation geometry is most legible."
+        },
+        {
+          "name": "Right Ascension delta",
+          "note": "A step function against time. Each step is a state update rather than a manoeuvre, which is a discrimination operators must be taught explicitly."
+        }
+      ],
+      "visual_encoding": {
+        "time_gradient": "Track colour runs as a gradient across the plotted period, so direction of travel is read from the colour progression rather than from arrows.",
+        "markers": [
+          {
+            "name": "Minimum distance",
+            "note": "Marked distinctly on every panel."
+          },
+          {
+            "name": "Reference state change",
+            "note": "Marked where the reference object's state was updated."
+          },
+          {
+            "name": "Non-reference state change",
+            "note": "Marked where the secondary object's state was updated."
+          }
+        ],
+        "trainer_rule": "State change markers are the most misread feature on this product. A state change is a solution update, not necessarily a manoeuvre. Reproduce them and train the discrimination directly."
+      },
+      "scales_observed": {
+        "note": "In-track extent can run to a thousand kilometres while radial runs to a couple of hundred and cross-track to a few tens. Axis scales differ per panel by an order of magnitude.",
+        "trainer_rule": "Never render these panels on a shared scale. An operator who learns the geometry from equal axes will misjudge every real plot."
+      },
+      "controls": [
+        {
+          "name": "Show table",
+          "type": "toggle"
+        },
+        {
+          "name": "Reference versus secondary selector",
+          "type": "selector",
+          "note": "Which object is the reference changes the entire interpretation."
+        }
+      ],
+      "corrections_to_earlier_assumptions": [
+        "The clean two to one in-track to radial ratio is the idealised natural motion circumnavigation. Real relative geometry frequently shows in-track extents several times larger, and axis scales are not equal. Training only on the idealised ratio would produce operators who do not recognise the real thing.",
+        "Solar aspect angle is a full panel rather than an annotation, and it is the panel that predicts collection quality.",
+        "A right ascension delta panel exists and shows discrete steps from state updates. This is a distinct artefact class and is now added to the artefact library."
+      ]
+    },
+    {
+      "product_id": "PRD-RESIDUAL",
+      "screen": "Residuals, with tabbed analysis views",
+      "axes": {
+        "x": "Observation time across roughly a week",
+        "y": "Residual, on a very tight scale of a few hundredths",
+        "note": "The vertical scale is small. Departures are not visually dramatic and an operator scanning for a large excursion will miss them."
+      },
+      "residual_types": [
+        {
+          "name": "Time association",
+          "note": "In-plane. Points to a period or in-track change."
+        },
+        {
+          "name": "Beta association",
+          "note": "Out-of-plane. Points to a cross-track change affecting inclination or RAAN."
+        },
+        {
+          "name": "ASTAT association"
+        },
+        {
+          "name": "Visual magnitude association",
+          "note": "Ties photometric behaviour into the same view."
+        }
+      ],
+      "markers": {
+        "manoeuvre_candidate": "A vertical marker at a candidate manoeuvre time, with a tooltip giving the period change and inclination change at that instant.",
+        "trainer_rule": "This tooltip is the single highest-value interaction on the product. It hands the operator the period and inclination deltas directly, which means the burn direction can be named in seconds. Reproduce it and drill it."
+      },
+      "modes": [
+        {
+          "name": "Residual mode",
+          "values": [
+            "Processed",
+            "other"
+          ],
+          "note": "Mode changes what is plotted. Read it before reading the plot."
+        },
+        {
+          "name": "Display mode",
+          "values": [
+            "Residuals",
+            "other"
+          ]
+        }
+      ],
+      "tabs": [
+        "Residuals",
+        "Heatmap",
+        "RF",
+        "Lat/Lon",
+        "RCS and vis mag",
+        "Vis mag light curves",
+        "Results"
+      ],
+      "corrections_to_earlier_assumptions": [
+        "The residual types are named associations, and time versus beta is the in-plane versus out-of-plane discrimination made concrete. The cue library should use these names, because they are what the operator sees.",
+        "The vertical scale is tight and departures are subtle. My earlier description implied a visually obvious excursion. The generator must render realistic small-amplitude departures or the drill will be trivially easy compared with the real product.",
+        "The product annotates candidate manoeuvre times with period and inclination deltas in a tooltip. This changes the manoeuvre characterisation workflow and is now a cue in its own right.",
+        "Photometry and residuals live behind tabs on the same screen for the same object, so moving between them is one click. Scenarios should reflect that adjacency rather than treating them as separately requested products."
+      ]
+    },
+    {
+      "product_id": "PRD-PHOTOMETRY",
+      "screen": "Vis mag light curve",
+      "axes": {
+        "x": "Solar equatorial phase angle in degrees, spanning roughly minus 90 to plus 90",
+        "y": "Visual magnitude, inverted so brighter is higher on the plot",
+        "note": "This is the correction that matters most. The default view is magnitude against phase angle, not against time."
+      },
+      "visual_encoding": {
+        "series": "Observations grouped and coloured by interval, with several intervals overlaid so change across intervals is visible on one plot.",
+        "shape": "The expected shape is a brightness curve peaking near a small phase angle and falling away toward both extremes. Departure from the expected shape at a given phase angle is the anomaly.",
+        "asymmetry": "The two sides of zero phase angle need not be symmetric, and the asymmetry is itself diagnostic of the object's geometry."
+      },
+      "features_to_read": [
+        "The overall shape of magnitude against phase angle, compared with the object's own established curve",
+        "Whether a later interval departs from earlier intervals at the same phase angle",
+        "Discontinuity across zero phase angle and whether it is expected for this object",
+        "Scatter width at a given phase angle, which widens on fragmentation"
+      ],
+      "corrections_to_earlier_assumptions": [
+        "I described the light curve as magnitude against time. The operational default is magnitude against solar equatorial phase angle. This matters enormously: plotting against phase angle is how the phase angle effect is controlled for, so the artefact I described as a trap is in fact designed out by the product's own axis choice. The remaining trap is comparing observations at different phase angles by eye, or missing that a later interval sits off the earlier curve.",
+        "Interval colouring is the mechanism for comparing across time. Change is read as one interval departing from the others at matched phase angle, not as a step in a time series.",
+        "The magnitude axis is inverted. Any generated plot that puts brighter downward will train the wrong reflex."
+      ]
+    },
+    {
+      "product_id": "PRD-COCO",
+      "screen": "Co-orbital coplanar, setup and results",
+      "setup_screen": {
+        "note": "The tool computes primary element sets against secondary element sets to identify coplanar orbits, and assigns an association status expressing the degree of coplanarity.",
+        "association_status_taxonomy": [
+          "SAME",
+          "CLOSE",
+          "NEARBY",
+          "NONE"
+        ],
+        "criteria_per_band": [
+          "Inclination in degrees",
+          "RAAN in degrees",
+          "Perigee in kilometres",
+          "Period in minutes"
+        ],
+        "reading": "Each band is defined by four thresholds and the bands tighten from NEARBY through CLOSE to SAME. The operator must know which band definition was in force, because the same pair can be CLOSE under one configuration and NONE under another. The threshold values are configuration and are externalised.",
+        "comparison_set": "A compare-to selector governing the secondary set. The standard requires comparison against all payloads in the regime, and this selector is where that requirement is either met or quietly missed."
+      },
+      "results_columns": [
+        {
+          "name": "Primary and Secondary satellite",
+          "note": "Each with rank badge and state of behaviour."
+        },
+        {
+          "name": "ASTAT",
+          "note": "The association status band. The single fastest read on the product."
+        },
+        {
+          "name": "Inclination delta"
+        },
+        {
+          "name": "RAAN delta"
+        },
+        {
+          "name": "Coplanar angle delta",
+          "note": "Collapses inclination and RAAN difference into one cross-track angle."
+        },
+        {
+          "name": "RA Dot delta",
+          "note": "Rate of right ascension change relative to the primary. Negative values close the planes over time."
+        },
+        {
+          "name": "Perigee delta"
+        },
+        {
+          "name": "Period delta"
+        },
+        {
+          "name": "Nodal crossing delta in minutes"
+        },
+        {
+          "name": "Drift rate delta"
+        },
+        {
+          "name": "Days to RA Zero",
+          "note": "Days until right ascension difference reaches zero. The countdown to natural plane alignment."
+        },
+        {
+          "name": "Sustained Close Approach Possible",
+          "note": "A true or false judgement. The most operationally direct field on any product in the package: it answers whether this object could linger near the primary rather than merely pass it."
+        }
+      ],
+      "reading_order": [
+        "Read the criteria bands in the header so you know what SAME and CLOSE meant here",
+        "Confirm the comparison set is all payloads in regime and not a narrower selection",
+        "Scan the Sustained Close Approach Possible column first, because it is a direct answer rather than an input",
+        "Then read ASTAT, then Days to RA Zero as a countdown, then RA Dot for direction of travel"
+      ],
+      "corrections_to_earlier_assumptions": [
+        "A Sustained Close Approach Possible boolean exists and I did not model it. It is the most directly actionable field on the product and should be the first thing an operator reads.",
+        "The association status taxonomy SAME, CLOSE, NEARBY, NONE is a graded band system with four thresholds each, not a single coplanarity flag. Which band definition was in force changes the answer.",
+        "The column is Days to RA Zero rather than days to RAAN closure. Use the product's own name.",
+        "A row comparing the primary against itself appears with SAME and zero deltas. It is a useful sanity anchor and an operator should expect it rather than treat it as a duplicate.",
+        "ASTAT and Sustained Close Approach Possible are independent. An object can be NEARBY with sustained approach false, and that combination is a discrimination worth training."
+      ]
+    },
+    {
+      "product_id": "PRD-PASS-SCHEDULE",
+      "screen": "Sensor passes, timeline",
+      "structure": {
+        "rows": "One row per sensor or per provider, labelled by provider and site with a country identifier.",
+        "bars": "Coloured bars spanning the window a sensor can collect. Gaps between bars are the absence of coverage.",
+        "x_axis": "Time across the window, crossing into following days.",
+        "group_mode": "A selector switching between grouping by source and grouping by phenomenology, which is what the standard requires two views of."
+      },
+      "annotation_markers": [
+        {
+          "name": "Now",
+          "note": "Where the present sits in the window. Read this before anything else or the schedule is just a list."
+        },
+        {
+          "name": "Ascending node"
+        },
+        {
+          "name": "Perigee"
+        },
+        {
+          "name": "Descending node"
+        },
+        {
+          "name": "Apogee"
+        }
+      ],
+      "tabs": [
+        "Pass schedule",
+        "Crossings"
+      ],
+      "controls": [
+        {
+          "name": "Annotations",
+          "type": "toggle"
+        },
+        {
+          "name": "Group mode",
+          "type": "selector"
+        },
+        {
+          "name": "All grouped",
+          "type": "toggle"
+        }
+      ],
+      "cross_product_link": {
+        "note": "The most valuable thing this product does that is not obvious from its name.",
+        "detail": "Sensor rows carry site country identifiers, so the pass schedule is where geographic and hemispheric diversity of collection is assessed. That makes it the product that answers two of the three photometric scepticism checks: whether more than one sensor saw the change, and whether the observing hemisphere differed from the rest of the data. An operator assessing a photometric change should reach for the pass schedule, and the package previously gave them no reason to."
+      },
+      "corrections_to_earlier_assumptions": [
+        "This is a timeline rather than a table, and it is read as a coverage picture rather than as a list of times.",
+        "Node, apogee and perigee crossings are markers on the timeline rather than separate values, so they are read against pass windows and the relationship between them is the point.",
+        "Sensor site country identifiers make this the hemispheric diversity product, linking it directly to the photometry procedure's scepticism checks.",
+        "A Now marker exists. Reading the schedule without locating the present is a common way to plan against a pass that has already gone."
+      ]
+    },
+    {
+      "product_id": "PRD-PHOTOMETRY",
+      "screen": "Light curve, display modes",
+      "display_modes": [
+        {
+          "name": "Interval",
+          "note": "Observations grouped and coloured by collection interval, for comparing across time at matched phase angle."
+        },
+        {
+          "name": "Sensor hemisphere",
+          "note": "Observations coloured north against south. This is the hemispheric bias check made concrete."
+        },
+        {
+          "name": "Sensor",
+          "note": "Observations coloured by contributing sensor, which is the single-sensor abnormality check."
+        }
+      ],
+      "reading": "The three photometric scepticism checks in the procedure map onto display modes on this one screen. Switching display mode is the check, and it takes seconds. There is no reason for an operator to assess a change as real without having done it.",
+      "corrections_to_earlier_assumptions": [
+        "The scepticism checks are not separate products to request. They are display modes on the light curve already in front of the operator, which makes failing to run them harder to excuse and easier to train.",
+        "The legend also lists contributing sources by name, so the number of independent sources is visible without switching mode at all."
+      ]
+    },
+    {
+      "product_id": "PRD-NEIGHBORHOOD",
+      "screen": "Neighbourhood, source provenance",
+      "addendum": {
+        "note": "An addition to the layout already recorded, from the annotated worked example.",
+        "source_column": "Source carries two parts where applicable: the pathway the state arrived by and the originating provider, shown together. A state sourced from the catalogue shows the catalogue alone.",
+        "reading": "Pathway and originator are different facts. Two rows can show the same originator by different pathways with different currency, and reconciling a discrepancy starts with reading both parts rather than the provider name alone."
+      }
+    },
+    {
+      "product_id": "PRD-DC-TABLE",
+      "screen": "Verified manoeuvre determination result",
+      "header": "Event type and object identifier on one line, for example a verified manoeuvre and its catalogue identifier.",
+      "column_order": [
+        "Initial",
+        "Final",
+        "Delta"
+      ],
+      "column_order_note": "Observed order. An earlier package note had Initial, Delta, Final and was wrong. The delta column sits last, which is not where an operator scanning left to right expects the answer.",
+      "rows_in_order": [
+        {
+          "name": "UTC Time",
+          "note": "Start and end of the fit interval. Populated for Initial and Final only, with no delta."
+        },
+        {
+          "name": "Period",
+          "unit": "min",
+          "note": "Delta is expressed in seconds while the values are in minutes. Unit change within the row."
+        },
+        {
+          "name": "Longitude",
+          "unit": "deg"
+        },
+        {
+          "name": "Longitude drift rate",
+          "unit": "deg/day",
+          "note": "Populated for every regime. In low orbit it returns a value of several thousand degrees per day, which is arithmetically the longitude rate and operationally meaningless. Render it populated."
+        },
+        {
+          "name": "Semi-major axis",
+          "unit": "km"
+        },
+        {
+          "name": "Perigee",
+          "unit": "km"
+        },
+        {
+          "name": "Apogee",
+          "unit": "km"
+        },
+        {
+          "name": "Inclination",
+          "unit": "deg"
+        },
+        {
+          "name": "Eccentricity"
+        },
+        {
+          "name": "RAAN",
+          "unit": "deg"
+        },
+        {
+          "name": "Argument of perigee",
+          "unit": "deg"
+        }
+      ],
+      "fields_below_table": [
+        {
+          "name": "Delta-V",
+          "unit": "m/s",
+          "control": "text input",
+          "note": "Rendered as an editable field rather than a computed column."
+        },
+        {
+          "name": "Estimated manoeuvre time",
+          "control": "text input",
+          "note": "Also editable. A timestamp inside the fit interval."
+        }
+      ],
+      "reading_order": [
+        "Read the fit interval first. Every delta on the product is a change across that span, not at an instant",
+        "Read the in-plane elements, which is where a manoeuvre shows: period, semi-major axis, apogee, perigee",
+        "Treat RAAN and argument of perigee deltas as suspect until the natural drift across the interval has been accounted for",
+        "Read the delta-v field as a separate assertion rather than as a computed consequence of the table"
+      ],
+      "corrections_to_earlier_assumptions": [
+        "The column order is Initial, Final, Delta. The package previously stated Initial, Delta, Final.",
+        "The delta column is not the manoeuvre. In the observed example the RAAN delta of about minus seven degrees across a fit interval of roughly a day and a half matches J2 nodal regression for that orbit to within about one part in two thousand. It is natural precession and nothing to do with the burn. This is the single most misreadable feature on the product and it must be reproduced deliberately.",
+        "Argument of perigee behaves the same way but is poorly conditioned at near-circular eccentricity, so it is noisy rather than cleanly predictable. Do not train a crisp rule on it.",
+        "In the observed example the stated delta-v did not reconcile with the element changes. The in-plane change implied roughly a twentieth of a metre per second and the inclination change roughly three tenths, against a stated three quarters. Whether the field is operator entered or computed by another route is UNKNOWN and sits with the owner. Do not build a generator that derives the field from the table.",
+        "The longitude drift rate row is populated in low orbit with a value that has no operational meaning. A product that only ever shows applicable fields does not look like the real one."
+      ],
+      "source_note": "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026"
+    },
+    {
+      "product_id": "PRD-EPHEMERIS",
+      "screen": "Ephemeris file, delivered as a file rather than a rendered screen",
+      "format": "STK .e, plain text",
+      "header_fields_in_order": [
+        {
+          "name": "Format version line"
+        },
+        {
+          "name": "Generating tool comment"
+        },
+        {
+          "name": "BEGIN Ephemeris"
+        },
+        {
+          "name": "NumberOfEphemerisPoints"
+        },
+        {
+          "name": "ScenarioEpoch",
+          "note": "Absolute epoch. Every time in the data block is an offset from this."
+        },
+        {
+          "name": "Epoch restated as Julian date and as year plus day of year",
+          "note": "Comment lines, not fields."
+        },
+        {
+          "name": "InterpolationMethod",
+          "note": "Lagrange in the observed file."
+        },
+        {
+          "name": "InterpolationSamplesM1"
+        },
+        {
+          "name": "CentralBody"
+        },
+        {
+          "name": "CoordinateSystem",
+          "note": "J2000 in the observed file. Read it. Do not assume."
+        },
+        {
+          "name": "Time of first point",
+          "note": "Comment line restating the first point in UTC, Julian date and year plus day of year."
+        },
+        {
+          "name": "EphemerisTimePosVel",
+          "note": "Opens the data block."
+        }
+      ],
+      "data_columns": [
+        "Seconds from scenario epoch",
+        "Position x, metres",
+        "Position y, metres",
+        "Position z, metres",
+        "Velocity x, metres per second",
+        "Velocity y, metres per second",
+        "Velocity z, metres per second"
+      ],
+      "reading_rules": [
+        "The frame is stated in the header and must be read. Defaulting to the wrong frame produces a systematic angular error that looks like a real signature.",
+        "The time column is an offset from the scenario epoch, not an absolute time, and the scenario epoch can sit weeks before the first point.",
+        "No orbital elements are given. Anything the operator wants about apogee, perigee, inclination or period has to be computed from the state vectors.",
+        "An osculating perigee radius below the Earth's surface is the discriminator between a ballistic ascent and an orbit. It is the fastest single read on a direct ascent profile.",
+        "The file can end well before the event it matters for. Where it does, the crew has to propagate."
+      ],
+      "observed_example": {
+        "provenance": "Exercise data, assessed by the owner as fitted rather than propagated.",
+        "points": 23,
+        "span_minutes": 96,
+        "geometry": "Radius climbing from about 13,338 km to about 38,846 km, inclination near 98 degrees, osculating eccentricity about 0.97, osculating perigee radius about 1,425 km, which is inside the Earth.",
+        "computed": "Propagated two-body from the final state, the trajectory reaches geostationary radius about 17.7 minutes later and crosses the equatorial plane at about 42,201 km, within roughly 40 km of the belt, at about 3.1 km per second.",
+        "why_it_matters": "Apogee sits far above the belt, so the assessment point is the ascending penetration and not the apogee longitude. That is exactly the decision branch and the recorded common error in the geosynchronous direct ascent procedure."
+      },
+      "corrections_to_earlier_assumptions": [
+        "A delivered ephemeris need not be Keplerian-consistent. Across the observed file the specific orbital energy drifted by about six per cent in 96 minutes, which two-body propagation would not do at those altitudes. The file is a fitted product. A generator that emits a clean two-body propagation will not look like the real thing.",
+        "The ephemeris is a file, not a plot. The operator experience is opening it, reading a header and computing. Rendering it as a trajectory picture would teach the wrong workflow."
+      ],
+      "source_note": "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    }
+  ],
+  "generator_contract": {
+    "note": "What each generator must produce for a stimulus to be recognisable as the real product. These are requirements on the physics core and the rendering layer, derived from the observed screens.",
+    "requirements": [
+      "Waterfall generators must produce observation-level scatter at realistic density with realistic collection gaps, not idealised traces",
+      "TRIC generators must use independent per-panel axis scales and must render state change markers distinctly from manoeuvres",
+      "Residual generators must use a tight vertical scale, must label series as time and beta associations, and must support the candidate manoeuvre marker with period and inclination deltas",
+      "Photometry generators must plot magnitude against solar equatorial phase angle with an inverted magnitude axis and interval colouring",
+      "Neighbourhood generators must populate every observed column including delta-v, score and days to longitude crossing, must render the threshold block in the header, and must expose the filter toggles in their real state",
+      "Every generator must draw its imperfection parameters from the noise model produced by the offline characterisation pass, not from uniform noise"
+    ]
+  }
+}

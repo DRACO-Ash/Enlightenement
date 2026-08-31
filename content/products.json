@@ -1,0 +1,278 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.3.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "DRAFT: JCO vendor product standardization (DOK amends)",
+      "JCO CT Orbital Elements, Maneuvers and Orbit Determination (22 DEC 25)",
+      "JCO CT-RPO (15 APR 25)",
+      "JCO CT Predictive Surveillance (28 APR 26)",
+      "JCO CT Launch and xGEO (20 JAN 26)",
+      "JCO vendor product standardisation, full document with embedded worked examples",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "Product definitions only. No provider-specific credentials, endpoints or internal tool click-paths."
+  },
+  "products": [
+    {
+      "id": "PRD-WATERFALL",
+      "name": "Waterfall plot",
+      "purpose": "Show GEO longitude over time so parked, drifting and converging objects are visible at a glance. The primary situational product for the GEO belt.",
+      "regime": [
+        "GEO"
+      ],
+      "must_contain": [
+        "Most recent observations at the bottom",
+        "Payloads annotated; rocket bodies and debris removed or greyed unless relevant",
+        "Minimum of five days of data",
+        "Plus or minus three degrees either side of the primary object of interest",
+        "HRR 0, 1 and 2 payloads, Known Objects and UCTs highlighted and annotated",
+        "Annotations at the top of the waterfall where able"
+      ],
+      "reads_as": "Time runs down the page with the newest data at the bottom. A vertical trace is an object holding a longitude. A sloped trace is an object drifting, and the steeper the slope the faster the drift. Two traces converging to a point is a longitudinal crossing. A trace that changes slope has manoeuvred. A trace that stops sloping and goes vertical has stopped drift and parked.",
+      "common_misreads": [
+        "Reading the plot upside down because a provider put newest at the top, inverting every drift direction",
+        "Interpreting a converging pair as a close approach when only longitude has converged and the objects remain separated in inclination",
+        "Missing a slope change because the plot window is too short; five days is the minimum for a reason",
+        "Treating an annotated debris trace as a payload of interest"
+      ],
+      "request_phrasing": "Request a waterfall covering the primary object, plus or minus three degrees, minimum five days, payloads annotated."
+    },
+    {
+      "id": "PRD-TRIC",
+      "name": "TRIC plot",
+      "purpose": "Visualise relative motion between two or more objects in the Radial, In-track and Cross-track frame, so an RPO geometry can be read and characterised quickly.",
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO",
+        "HEO"
+      ],
+      "must_contain": [
+        "Clear depiction of relative motion and separation as a function of time",
+        "Relative distances in kilometres, or metres where appropriate",
+        "Individual RIC component separations and the total relative distance",
+        "Start and end points of the plotted period identified",
+        "Point of Closest Approach clearly indicated with relative distance and contributing RIC components at POCA time",
+        "Primary object clearly distinguished from secondary objects",
+        "Notations for important events such as start, end and TCA",
+        "Solar Aspect Angle information and Earth eclipse periods",
+        "Consistent colour system across pre and post manoeuvre TRICs"
+      ],
+      "reads_as": "The origin is the primary object; you are riding on it. Radial is up and down from Earth centre, In-track is along the direction of motion, Cross-track is out of plane. A closed ellipse traced once per orbit with a roughly two-to-one in-track to radial ratio is a natural motion circumnavigation. An ellipse that walks along the in-track axis is a drifting NMC. A shape that changes at discrete points is forced motion and each change is a manoeuvre. A side-to-side wobble once per orbit is a cross-track offset.",
+      "common_misreads": [
+        "Reading a drifting NMC as a stable NMC because the drift is slow across the plotted window",
+        "Assuming a small total separation implies intent when the geometry is natural and unforced",
+        "Ignoring the eclipse and solar aspect angle bands, then being surprised when optical data gaps appear",
+        "Confusing forced motion with a poor orbit solve when the colour changes are not labelled as manoeuvres"
+      ],
+      "request_phrasing": "Request a TRIC for the primary against the secondary, with POCA annotated and RIC components at POCA."
+    },
+    {
+      "id": "PRD-RESIDUAL",
+      "name": "Residual plot",
+      "purpose": "Verify that an object is still on its element set, or reveal that it is not. The primary manoeuvre-detection product.",
+      "regime": [
+        "ANY"
+      ],
+      "must_contain": [
+        "At least seven days of observations at event opening",
+        "Observations preceding and during the manoeuvre for any closer view",
+        "Human readable residuals allowing in-plane or out-of-plane discrimination, either normalised time and beta, or right ascension and declination",
+        "No residual ratios"
+      ],
+      "reads_as": "Observations sitting on the zero line mean the current observations agree with the current orbital state. A departure from zero means the object is no longer where the state says it should be, which means it manoeuvred. Which residual type departs tells you the direction: an in-plane departure suggests a period or in-track change, an out-of-plane departure suggests a cross-track change affecting inclination or RAAN. Once a new solve is fitted the observations return to the zero line.",
+      "common_misreads": [
+        "Calling a manoeuvre on a single outlying observation rather than a sustained departure",
+        "Missing that the state itself is stale, so the departure is epoch age rather than a manoeuvre",
+        "Reading a departure as verified when the provider has labelled it possible",
+        "Failing to notice observation density collapsed before the departure, so the fit is weak rather than the object moved"
+      ],
+      "request_phrasing": "Request a residual plot, seven days minimum, human readable residuals, with verbiage on whether it suggests a plane or period change and a bracketed manoeuvre time."
+    },
+    {
+      "id": "PRD-PHOTOMETRY",
+      "name": "Photometric plot",
+      "purpose": "Display light curves for a satellite and highlight anomalies suggesting attitude change, instability, deployment or breakup.",
+      "regime": [
+        "GEO",
+        "HEO",
+        "MEO"
+      ],
+      "must_contain": [
+        "Minimum of seven days of overlaid photometry",
+        "An additional view supporting validity: sensor view, extended view of fourteen to thirty days, or hemisphere view to remove hemispheric bias",
+        "Verbiage confirming the solar equatorial phase angles where the change was observed",
+        "Verbiage confirming the magnitude of the change",
+        "Neighbourhood at the time of change"
+      ],
+      "reads_as": "Visual magnitude plotted against time or phase angle. Remember that lower magnitude means brighter. A stable object produces a repeatable curve at a given phase angle. A periodic variation that was not there before indicates tumbling or attitude loss. A discrete step change indicates a configuration change such as a deployment or separation. A large sudden brightening can indicate a breakup, because many new surfaces are now reflecting.",
+      "common_misreads": [
+        "Attributing a brightness change to the object when it is a phase angle effect, which is why the phase angles of the change must be stated",
+        "Attributing a change to the object when only one sensor saw it, which is why the sensor view exists",
+        "Attributing a change to the object when it is hemispheric bias, which is why the hemisphere view exists",
+        "Reading a gap in the curve as a change, when it is a collection gap or solar exclusion"
+      ],
+      "request_phrasing": "Request photometry, seven days overlaid, plus a sensor or hemisphere view, with the phase angles and magnitude of the change stated."
+    },
+    {
+      "id": "PRD-NEIGHBORHOOD",
+      "name": "Neighbourhood",
+      "purpose": "List the objects around an object of interest with the orbital and tasking context needed to assess who is at risk and who is behaving oddly.",
+      "regime": [
+        "ANY"
+      ],
+      "must_contain": [
+        "NORAD IDs, SOB and HRR rank where applicable",
+        "Latest state epoch time for each object",
+        "Source of the state, provider or Space-Track",
+        "Times and distances of close approaches",
+        "Inclination and delta to the object of interest",
+        "RAAN and delta to the object of interest",
+        "Longitude, drift rate and direction as appropriate",
+        "Constraints used stated on the product or in verbiage",
+        "No distance to closest approach filter applied; constrain by inclination and RAAN instead"
+      ],
+      "reads_as": "A table of who is nearby and how nearby. Read the epoch column first: a stale state makes every distance in that row questionable. Then read inclination and RAAN deltas, because small deltas mean plane matched, which is the expensive and therefore deliberate condition. Longitude and drift rate tell you whether the geometry is closing or opening.",
+      "common_misreads": [
+        "Trusting a close approach distance computed from a state that is days old",
+        "Working only from an HRR-filtered neighbourhood and therefore missing an unranked object that mattered",
+        "Reading a small distance as significant when the planes are widely separated, so the objects pass quickly and never linger",
+        "Missing that a distance filter was applied by the provider, hiding the objects outside it",
+        "Reading only the originating provider in the source column and missing the pathway the state arrived by, when reconciling a discrepancy between two rows"
+      ],
+      "request_phrasing": "Request a neighbourhood constrained by inclination and RAAN, not by distance, with epoch ages and state sources, in both HRR-plus-UCT and HRR-only views."
+    },
+    {
+      "id": "PRD-COCO",
+      "name": "COCO table",
+      "purpose": "Identify co-orbital and co-planar relationships for LEO objects, indicating how readily one object could plane match with another.",
+      "regime": [
+        "LEO"
+      ],
+      "must_contain": [
+        "Primary compared against all payloads within the orbit regime",
+        "No distance filter, so constraints are plane related only",
+        "raDot and days to RAAN closure based on a nodal crossing normalisation",
+        "Constraints used highlighted at the top of the table",
+        "Inclination delta to primary",
+        "RAAN delta to primary, normalised or propagated",
+        "Coplanar angle or delta plane between the two objects",
+        "Age of state used for each object",
+        "Association status band per pairing, from same, close, nearby or none",
+        "Band threshold definitions stated in the header, four thresholds per band",
+        "Sustained close approach possible, as a true or false judgement per pairing",
+        "Nodal crossing delta",
+        "Days to right ascension zero"
+      ],
+      "reads_as": "A ranking of who could reach whom cheaply, and who could then stay. Read the band definitions in the header first, because association status is a banding against configurable thresholds rather than a physical property. Then read the sustained close approach possible column, which answers directly whether a pairing could linger rather than merely pass. Then use days to right ascension zero as a countdown and the right ascension rate to confirm the planes are closing rather than opening.",
+      "common_misreads": [
+        "Ignoring days to RAAN closure and therefore missing a slow, deliberate, low-fuel plane match in progress",
+        "Reading a large current RAAN delta as safety when raDot is closing it rapidly",
+        "Assuming a distance filter is present, so treating an empty table as an all-clear",
+        "Reading an association status without knowing what the bands were set to on that run",
+        "Treating association status and sustained close approach possible as the same judgement; they are independent",
+        "Reading zero in the days to right ascension zero column as alignment, when it can equally mean no convergence is occurring",
+        "Treating the primary's self-comparison row as a duplicate rather than as a sanity anchor"
+      ],
+      "request_phrasing": "Request a COCO for the primary against all payloads in regime, no distance filter, with raDot and days to RAAN closure."
+    },
+    {
+      "id": "PRD-PASS-SCHEDULE",
+      "name": "Pass schedule",
+      "purpose": "Show when sensors can see the object, so collection can be planned and gaps anticipated.",
+      "regime": [
+        "ANY"
+      ],
+      "must_contain": [
+        "LEO covering an eight hour period; GEO covering a twenty four hour period",
+        "Two views: grouped by source or provider, and grouped by phenomenology",
+        "Time of next pass and provider",
+        "Time of next apogee and perigee",
+        "Time of next ascending and descending node",
+        "A present-time marker on the timeline",
+        "Node, apogee and perigee crossings marked against the timeline rather than listed separately",
+        "Sensor site identification sufficient to judge geographic and hemispheric spread"
+      ],
+      "reads_as": "A timeline of collection opportunity, one row per sensor or provider. Locate the present marker first or the schedule is only a list. Bars are pass windows and the gaps between them are the absence of coverage. Because sensor rows identify their sites, this is also the product that shows how much genuinely independent geography is covering a period, which is what decides whether a photometric change can be corroborated at all.",
+      "common_misreads": [
+        "Planning against sensors that are not currently providing observations to the UDL",
+        "Reading a dense schedule as good coverage when it is all one phenomenology and therefore one failure mode",
+        "Missing that solar exclusion or eclipse will suppress optical passes that appear on the schedule",
+        "Reading density as diversity, when many passes from one hemisphere is a single failure mode",
+        "Planning against a pass that has already gone, by not locating the present marker"
+      ],
+      "request_phrasing": "Request a pass schedule grouped by provider and by phenomenology, with next pass, apogee, perigee and node crossings."
+    },
+    {
+      "id": "PRD-DC-TABLE",
+      "name": "Post manoeuvre DC table",
+      "purpose": "State the before, delta and after of a verified manoeuvre in a consistent format so crews read it the same way every time.",
+      "regime": [
+        "ANY"
+      ],
+      "must_contain": [
+        "Initial, Final and Delta columns, in that order",
+        "Time, Period, Longitude, Longitude drift rate, SMA, Perigee, Apogee, Inclination, Eccentricity, RAAN and Argument of Perigee rows",
+        "Accompanying standard verbiage with time of manoeuvre, delta-v, period change, perigee change, apogee change, inclination change and current drift rate",
+        "Clear labelling as possible rather than verified where the manoeuvre is not confirmed, with a stated confidence level"
+      ],
+      "reads_as": "Read the Delta column first, then ask which burn direction produces that signature. A change in period, eccentricity and possibly argument of perigee points to in-track. A change in eccentricity and argument of perigee alone points to radial. A change in inclination or RAAN points to cross-track. The drift rate row tells you where the object is going next.",
+      "common_misreads": [
+        "Treating a possible manoeuvre DC table as verified because the format looks identical",
+        "Reading a small inclination delta as a cross-track burn when it is solve noise",
+        "Reporting the delta-v without stating the confidence or the supporting phenomenology"
+      ],
+      "request_phrasing": "Request the DC table in standard format with the standard verbiage block, and state whether possible or verified with confidence."
+    },
+    {
+      "id": "PRD-EPHEMERIS",
+      "name": "Ephemeris file",
+      "purpose": "Provide a series of state vectors where an element set cannot represent the trajectory, notably for xGEO and hyperbolic transfers.",
+      "regime": [
+        "XGEO",
+        "HEO"
+      ],
+      "must_contain": [
+        "Reference frame stated",
+        "Series of state vectors: epoch, X, Y and Z position, X, Y and Z velocity"
+      ],
+      "reads_as": "A table of where the object is and how fast, at a sequence of times, in a named frame. Used where a two-line element set cannot work because a trans-lunar injection has eccentricity greater than one and is therefore not an orbit at all.",
+      "common_misreads": [
+        "Assuming the frame without reading it, which silently introduces a frame error of kilometres or worse",
+        "Attempting to fit an element set to a hyperbolic trajectory",
+        "Treating a sparse ephemeris as precise between its points"
+      ],
+      "request_phrasing": "Request an ephemeris file with the reference frame stated explicitly."
+    },
+    {
+      "id": "PRD-GABBARD",
+      "name": "Gabbard diagram",
+      "purpose": "Characterise a debris cloud by plotting apogee and perigee altitude against orbital period, revealing the breakup and its epoch.",
+      "regime": [
+        "LEO",
+        "MEO",
+        "GEO"
+      ],
+      "must_contain": [
+        "Apogee and perigee altitude for each fragment against orbital period",
+        "Parent object marked",
+        "Epoch of the data stated"
+      ],
+      "reads_as": "Each fragment appears twice, once as an apogee point and once as a perigee point. The characteristic crossing X pattern centres on the parent orbit, and the spread of the arms indicates the energy of the event. A tight cluster is a low energy shedding; a wide spread is an energetic fragmentation.",
+      "common_misreads": [
+        "Reading early sparse fragment data as the full cloud, and therefore underestimating the event",
+        "Confusing a genuine debris cloud with a cluster of poorly correlated tracks",
+        "Assuming symmetry means a collision when a low energy anomaly can look similar early on"
+      ],
+      "request_phrasing": "Request a Gabbard diagram for the fragment set with the parent orbit marked."
+    }
+  ]
+}

@@ -1,0 +1,221 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "2.0.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "competencies.json v1.0.0",
+      "scenarios.json v1.0.0",
+      "ENLIGHTENMENT flight plan v1.0",
+      "Exercise ASTRAL VORTEX, Pacific cell after action report",
+      "Exercise ASTRAL VORTEX, Meridian advanced operator observations",
+      "synthesis-ladder.json; owner direction on advanced operator path"
+    ],
+    "review_status": "draft"
+  },
+  "_design_note": "Progression is mastery-gated, never time-served and never points-accrued. Scaffolds fade as stages advance, because support that helps a novice actively harms an expert. Every gate can be tested out of directly: an experienced analyst who has never used the app should be able to reach the top stage in an afternoon, and being forced through foundation content they already own is the fastest way to lose them.",
+  "progression": [
+    {
+      "id": "STG-01",
+      "name": "Orientation",
+      "order": 1,
+      "unlocks": [
+        "Drill layer at foundation difficulty",
+        "SCN-PS-DAILY",
+        "Product reference library"
+      ],
+      "gate": {
+        "criteria": [
+          "Complete the first-run worked example",
+          "Make one correct unaided classification"
+        ],
+        "override_allowed": false
+      },
+      "rationale": "Assume the operator has never seen an element set. This stage exists to get someone from nothing to one correct call in under fifteen minutes, because the first success is what makes the second session happen.",
+      "scaffolds": [
+        "Worked examples shown before any problem is posed",
+        "Product reading guidance available inline on every plot",
+        "No time pressure",
+        "Cue names shown alongside the data"
+      ]
+    },
+    {
+      "id": "STG-02",
+      "name": "Reading the products",
+      "order": 2,
+      "unlocks": [
+        "Full drill layer",
+        "SCN-MNV-BASELINE",
+        "Artefact library"
+      ],
+      "gate": {
+        "criteria": [
+          "Cue detection at or above the accuracy floor across at least three product types",
+          "Correctly read a waterfall, a residual plot and a TRIC without inline guidance"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "Everything downstream depends on being able to read the products. An operator who cannot read a residual plot cannot assess a manoeuvre, and no amount of procedure knowledge compensates.",
+      "scaffolds": [
+        "Inline product guidance available on request rather than by default",
+        "Generous time targets",
+        "Artefacts flagged after the answer is committed"
+      ]
+    },
+    {
+      "id": "STG-03",
+      "name": "Procedure recall",
+      "order": 3,
+      "unlocks": [
+        "SCN-SEP-OR-BREAK",
+        "Timed drill mode",
+        "Interleaved drill sessions"
+      ],
+      "gate": {
+        "criteria": [
+          "Procedure recall at or above the accuracy floor",
+          "Correct branch selection on the headcount decision across repeated instances",
+          "Entering the correct procedure inside the first trigger window in the majority of attempts"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "This is the stage where the application's whole purpose is met. Instant recall of which procedure governs and what step one is. Timed mode unlocks here because speed is only meaningful once accuracy is established.",
+      "scaffolds": [
+        "Procedure step list available after the branch is chosen, not before",
+        "Time targets active but generous",
+        "Interleaving begins: event types are mixed rather than blocked"
+      ]
+    },
+    {
+      "id": "STG-04",
+      "name": "Judgement under uncertainty",
+      "order": 4,
+      "unlocks": [
+        "SCN-RPO-APPROACH",
+        "SCN-BRK-ANOMALY",
+        "Degraded data seeds",
+        "Calibration scoring made visible"
+      ],
+      "gate": {
+        "criteria": [
+          "Artefact rejection at or above the accuracy floor",
+          "Brier score below the calibration ceiling across a sustained window",
+          "Consistently naming a competing hypothesis when classifying"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "Reading products and recalling procedures makes a competent operator. Handling ambiguity, degraded data and competing hypotheses makes a good one. Degraded seeds unlock here because clean data has stopped being useful practice.",
+      "scaffolds": [
+        "Confidence prompts on every judgement",
+        "Debrief highlights the artefacts that were present whether or not they were caught",
+        "Competing hypotheses suggested in the debrief where none were generated"
+      ]
+    },
+    {
+      "id": "STG-05",
+      "name": "Reporting and tempo",
+      "order": 5,
+      "unlocks": [
+        "SCN-DAASAT-GEO-CLOCK",
+        "Full time standards",
+        "Multi-event sessions"
+      ],
+      "gate": {
+        "criteria": [
+          "Reporting content complete against the must-state list across repeated scenarios",
+          "Publishing inside the time standard consistently",
+          "Correct escalation on every event requiring prompt notification"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "The final stage is doing all of it against the clock, because that is the condition the skill has to survive. Time standards go from advisory to enforced and events start arriving before the previous one has closed.",
+      "scaffolds": [
+        "None. Scaffolds are fully faded by this stage.",
+        "Report template available but not pre-filled",
+        "Time standards enforced"
+      ]
+    },
+    {
+      "id": "STG-06",
+      "name": "Fusion",
+      "order": 6,
+      "unlocks": [
+        "Synthesis tier three, the board",
+        "Synthesis tier four, the full board",
+        "SCN-LAUNCH-WINDOW",
+        "Reasoned argument response format",
+        "Chain length tracking"
+      ],
+      "gate": {
+        "criteria": [
+          "Synthesis tiers one and two at or above the accuracy floor",
+          "Consistently reaching the anatomy questions on enablement and consequence without prompting",
+          "Cross-product reconciliation demonstrated on conflicting products"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "The transition from assembling a correct answer to building an argument. This is where an operator stops answering and starts assessing, and it is the stage that most changes what they produce.",
+      "scaffolds": [
+        "Product panels presented rather than chosen at tier three",
+        "Argument components prompted at first, faded by tier four",
+        "No time pressure until the argument structure is established"
+      ]
+    },
+    {
+      "id": "STG-07",
+      "name": "Advanced operator",
+      "order": 7,
+      "unlocks": [
+        "Synthesis tier five, the contested board",
+        "The challenge mechanic",
+        "Crew mode for group assessment",
+        "Instructor view of anonymised argument patterns"
+      ],
+      "gate": {
+        "criteria": [
+          "Full board assessments answering all eight anatomy questions from evidence",
+          "Confidence consistently pegged to the weakest link rather than the strongest",
+          "Falsifier named without prompting",
+          "Economy demonstrated: products opened contributed to the argument"
+        ],
+        "override_allowed": true
+      },
+      "rationale": "Not simply harder. Tiers four and five train producing a defensible argument where a single correct answer may not exist, which is the actual work of a senior analyst and is not reachable by making earlier drills harder. Natural material for site leads and mission area leads, who spend most of their time assessing other people's arguments rather than building their own.",
+      "scaffolds": [
+        "None. The board is contested, the data is degraded, and the argument is challenged."
+      ]
+    }
+  ],
+  "spacing_policy": {
+    "scheduler": "FSRS",
+    "target_retrievability": 0.9,
+    "note": "Cues are scheduled individually, not by procedure or by scenario. A miss on a cue schedules that cue to reappear sooner, and it reappears inside a full scenario rather than as an isolated drill wherever a scenario carrying it is available. This is what keeps the spacing invisible to the operator.",
+    "decay_display": "The dashboard shows competence per axis with a decay indicator per procedure, so an operator can see what has gone stale without being nagged. Decay is presented as information, never as a streak or an obligation."
+  },
+  "adaptive_policy": {
+    "method": "elo",
+    "operator_rating_start": 1200,
+    "note": "Item difficulty and operator rating both update. The next item is selected to sit slightly above current rating, which is the challenge-skill balance flow requires. Operators may override upward at any time, because autonomy is a motivational requirement rather than a concession, and being held back is more demotivating than being stretched.",
+    "fusion_rating": {
+      "note": "A second Elo rating tracked separately from the single-product drill rating.",
+      "rationale": "An operator can be excellent at reading a residual plot and poor at assembling an argument. Averaging the two hides exactly the thing that matters most, so they are shown separately and gated separately.",
+      "start": 1400,
+      "band": "1400 to 2300 across the five tiers",
+      "chain_length": "Number of products held in one coherent argument, tracked as a personal best and shown as the simplest honest measure of composite capability."
+    }
+  },
+  "procedure_change_policy": {
+    "note": "Added in response to a direct observation that two procedures entered service days before an exercise with no difference, continuation or gap training, so the exercise tested initial understanding rather than application. Because a procedure is content in this package rather than code, the application can close that gap.",
+    "behaviour": [
+      "On a procedure version increment, the loader diffs the new version against the previous one and identifies which steps, thresholds, decision points and reporting requirements changed",
+      "Cues attached to changed steps are re-prioritised in the drill queue for every operator who had previously demonstrated competence on the superseded version, regardless of their spacing schedule",
+      "Competence recorded against the superseded version is flagged as stale for the changed steps only, not for the whole procedure, so an operator is not made to re-earn what has not changed",
+      "A draft-status procedure can be loaded and drilled without being scored, so a proposed process can be rehearsed before anyone decides whether to adopt it",
+      "The dashboard shows, per operator and per cell, who has and has not rehearsed the changed steps, which is the evidence a training lead needs before an exercise rather than after it",
+      "Currency after absence is handled by the same mechanism. An operator returning after a period away is surfaced every procedure and controlling-instruction change that occurred while they were gone, prioritised by how much changed, so they arrive current rather than spending their first shift catching up. This was added after an experienced lead returned following several months away and began an exercise already behind on instructions and procedure changes, which affected their participation for the day."
+    ],
+    "capability_claim": "Difference training on demand, in the days before a procedure enters service rather than during the exercise that discovers the gap. This is the clearest operational justification for the application in the whole evidence base. It also covers return-to-shift currency, which is the same problem seen from the operator's side rather than the procedure's.",
+    "open_question": "Requires a procedure-diff implementation and a decision on who authors the change summary. Recorded as a build item, not as a solved problem."
+  }
+}

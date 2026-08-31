@@ -1,0 +1,212 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.1.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-31",
+    "source_refs": [
+      "Operational NOTSO thread supplied 29 Aug 2026, seven reports across three JDays",
+      "DA ASAT Theory and Procedure (2 FEB 26) example NOTSO structure",
+      "DRAFT: JCO vendor product standardization, standard manoeuvre verbiage block",
+      "JCO Docked Object procedure",
+      "JCO Force Package procedure (DRAFT)",
+      "JCO HRR Object Tasking and HRR Maintenance procedures",
+      "Fusion provider verified manoeuvre DC result screen, observed 31 Aug 2026",
+      "Exercise ephemeris file, STK .e format, observed 31 Aug 2026"
+    ],
+    "review_status": "draft",
+    "redaction_note": "REDACTION CRITICAL. Derived from an operational thread containing live object names, catalogue numbers, element sets and assessments. Every one of those has been stripped. What remains is sentence structure, field order and phrasing conventions. No content in this file identifies any real object, and the validator's catalogue-number tripwire runs over it."
+  },
+  "_why_this_file_exists": "Competency six is reporting, and until now it was scored against a list of things that must be stated. That is necessary but not sufficient: operators write reports in a house voice with a fixed field order and specific verb choices that carry assessment weight. This file captures that voice so the trainer can score the writing, not merely the checklist.",
+  "structural_observations": {
+    "note": "What the real reports do, observed across a seven-report thread covering one developing event.",
+    "findings": [
+      "Every report opens with a Julian day and Zulu time header before any content",
+      "The first sentence follows a fixed frame: basis, then who assessed, then what, then the object, then the time of the event with its Julian day",
+      "The verb in that first sentence is the assessment. Detected a possible carries a different meaning from have verified, and the pair is the primary confidence signal in the whole report",
+      "A products link line appears as a standard interjection rather than as part of the prose",
+      "Publicly available information is attributed with a consistent hedging verb and kept in its own paragraph, separate from the observational assessment",
+      "A specifics block follows, as a fixed-order list with a double-dash prefix per line",
+      "Element sets are appended verbatim with the time they were current and the provider named",
+      "Where confidence in an appended state is low, that is annotated inline next to the state rather than buried in prose",
+      "A holding report is a legitimate product: one that says what has been detected and that analysis will follow",
+      "Reports do not repeat the whole picture each time. Later reports restate only the standing context needed to make the new content intelligible"
+    ]
+  },
+  "templates": [
+    {
+      "id": "TPL-HOLDING",
+      "name": "Holding report",
+      "use_when": "Something has been detected, the assessment is not yet made, and the recipient needs to know now rather than completely.",
+      "structure": [
+        "Julian day and time header",
+        "Basis clause, then detection verb in the possible register, then the event class, then the object",
+        "Standing context, one clause only, where it is needed to make the detection intelligible",
+        "An explicit statement that further analysis will follow in a follow-up report"
+      ],
+      "length_guide": "Two to three sentences. Brevity is the point.",
+      "trainer_note": "Operators under-use this. The scored behaviour is issuing it fast rather than writing it well, so the rubric weights latency heavily and content lightly.",
+      "worked_example_shape": "JDay [nnn] at [hhmm]z: Based on current SDA observations, [assessing body] have detected a possible [event class] on [OBJECT] ([SCN]), which is currently [standing context]. Further analysis will follow shortly in a follow-up report."
+    },
+    {
+      "id": "TPL-POSSIBLE",
+      "name": "Possible event report",
+      "use_when": "An event is assessed as likely but not confirmed. Products may have been generated from a pre-event state.",
+      "structure": [
+        "Julian day and time header",
+        "Basis clause naming the observation sources, then the possible-register verb, then the event, object and time with Julian day",
+        "Initial characterisation, explicitly framed as initial indications",
+        "Standing context on co-located, docked or co-planar objects with current offsets",
+        "A caveat where products were generated from a pre-event state and may differ from the post-event state",
+        "Products link line",
+        "Analysis is ongoing statement",
+        "Publicly available information paragraph, hedged and separated",
+        "Pre-event and post-event states appended with times and providers"
+      ],
+      "length_guide": "Roughly one hundred and fifty to two hundred and fifty words plus appended states.",
+      "trainer_note": "The scored discriminator is that possible-register language is sustained throughout. Operators commonly open in the possible register and then write the body as though the event were confirmed."
+    },
+    {
+      "id": "TPL-VERIFIED-MANOEUVRE",
+      "name": "Verified manoeuvre report",
+      "use_when": "A manoeuvre is confirmed and characterised.",
+      "structure": [
+        "Julian day and time header",
+        "Basis clause, verified-register verb, object, time of manoeuvre with Julian day",
+        "Delta-v and the resulting element consequences in prose",
+        "Pattern of life assessment, stated explicitly as within or not within the historical pattern for the object",
+        "Neighbourhood highlights covering docked, co-located and co-planar objects with current offsets",
+        "Products link line",
+        "Publicly available information paragraph",
+        "The specifics block, fixed order",
+        "Post-manoeuvre element set with the time it was current and the provider named"
+      ],
+      "specifics_block_fields": [
+        "Time of Manoeuvre",
+        "Delta V",
+        "Period Change",
+        "Apogee Change",
+        "Perigee Change",
+        "Inclination Change",
+        "Current Drift Rate"
+      ],
+      "trainer_note": "The specifics block order is fixed and the field set is complete. A missing field is a scored omission because crews read this block positionally under time pressure. A not-applicable entry is correct where a field does not apply, and is not the same as omitting the line. CORRECTED 31 Aug 2026: the block previously listed Perigee before Apogee. The procedure prints Apogee first, consistently, in three places. Note the trap this sets: the determination product lists perigee above apogee and the report block inverts it.",
+      "length_guide": "Roughly two hundred to three hundred words plus the specifics block and appended states."
+    },
+    {
+      "id": "TPL-SEPARATION",
+      "name": "Separation or new object report",
+      "use_when": "A new object has been observed in the vicinity of a parent.",
+      "structure": [
+        "Julian day and time header",
+        "Basis clause, detection verb in the appropriate register, the separation, the parent, and the new object with its temporary identifier and the time it was first observed",
+        "Standing context on any object already docked or co-located with the parent, including since when",
+        "Current geometry: regime elements of the parent and the current offset between parent and new object",
+        "The specific element evidence supporting the separation assessment",
+        "An explicit statement of what cannot be confirmed, where the identity of the separated object is ambiguous",
+        "Products link line",
+        "Publicly available information paragraph covering deployment and docking history",
+        "States for both parent and new object, with times, providers and confidence annotation where low"
+      ],
+      "trainer_note": "The scored behaviour that operators most often miss is the explicit statement of what cannot be confirmed. Where a parent has a previously docked object, the new object may or may not be that object, and saying so plainly is better analysis than choosing.",
+      "length_guide": "Roughly two hundred to three hundred words plus appended states."
+    }
+  ],
+  "phrasing_bank": {
+    "note": "Register conventions extracted from the thread. The trainer scores register, not wording, but these are the conventions an operator should absorb.",
+    "conventions": [
+      {
+        "function": "Basis of assessment",
+        "convention": "Open by naming the evidence base before the finding. Observational sources and publicly available information are named separately."
+      },
+      {
+        "function": "Possible register",
+        "convention": "A detection verb paired with the word possible, sustained throughout the body of the report."
+      },
+      {
+        "function": "Verified register",
+        "convention": "A verification verb without hedging. Used only once the assessment is confirmed, and it changes what the recipient is expected to do."
+      },
+      {
+        "function": "Publicly available information",
+        "convention": "Always hedged with a suggestion verb, always in its own paragraph, never merged with the observational assessment."
+      },
+      {
+        "function": "Pattern of life",
+        "convention": "Stated as an explicit finding in the affirmative or the negative, not left implied."
+      },
+      {
+        "function": "Uncertainty",
+        "convention": "Named as a specific thing that cannot be confirmed, rather than as a general caveat."
+      },
+      {
+        "function": "State confidence",
+        "convention": "Annotated inline beside the state it applies to."
+      },
+      {
+        "function": "Ongoing work",
+        "convention": "A short standing sentence signalling that the assessment is live."
+      },
+      {
+        "function": "Product caveat",
+        "convention": "Where a product was generated from a superseded state, say so and say that it may differ."
+      }
+    ]
+  },
+  "scoring_hooks": {
+    "note": "How the rubric engine scores report content against these templates. Each maps to a rule in rubrics.json.",
+    "hooks": [
+      {
+        "check": "register_consistent",
+        "detail": "Possible-register opening is matched by possible-register body. Mixed register is a scored error.",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "specifics_block_complete",
+        "detail": "All seven fields present in the fixed order. A not-applicable value is acceptable; an absent line is not.",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "pol_stated",
+        "detail": "Pattern of life assessment present as an explicit finding.",
+        "competency_id": "CMP-02"
+      },
+      {
+        "check": "unconfirmed_named",
+        "detail": "Where the scenario seeds an ambiguity, the report names it rather than resolving it silently.",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "pai_separated",
+        "detail": "Publicly available information is hedged and kept apart from the observational assessment.",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "state_provenance",
+        "detail": "Appended states carry the time they were current and the provider, with a confidence annotation where the scenario seeds a weak state.",
+        "competency_id": "CMP-06"
+      },
+      {
+        "check": "product_caveat",
+        "detail": "Where products were generated from a superseded state, the report says so.",
+        "competency_id": "CMP-05"
+      },
+      {
+        "check": "holding_latency",
+        "detail": "For a holding report, latency from detection dominates the score and content is weighted lightly.",
+        "competency_id": "CMP-06"
+      }
+    ]
+  },
+  "cadence_observations": {
+    "note": "Reporting cadence across the observed thread, which informs the tempo scenarios.",
+    "findings": [
+      "Seven reports across three Julian days on a single developing event, so multiple reports per day on an active event is normal rather than exceptional",
+      "A terse holding report was issued within minutes of detection and a fuller assessment followed roughly forty minutes later",
+      "The gap from possible to verified on a manoeuvre ran to several hours",
+      "Later reports in the thread carried forward only the standing context needed, rather than restating the full picture each time",
+      "A single report can carry both a verified manoeuvre and an unresolved question, and doing so is better than splitting them"
+    ],
+    "trainer_use": "The tempo scenario should require a holding report inside minutes, a possible-register report inside the first window, and a verified report only once the evidence supports it. Publishing the verified report early is a scored error even when the assessment turns out correct."
+  }
+}

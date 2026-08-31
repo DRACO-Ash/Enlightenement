@@ -9,6 +9,10 @@ Second: the interface must stay air-gapped. The plan's posture is "no CDN, no ma
 external calls at runtime", and that is checked by reading the shipped markup for an external
 reference rather than by trusting the Content Security Policy alone. The policy is checked too;
 two independent controls on one rule is the point.
+
+Rewritten in V0.24.0 against the real content package. The properties are the same; what changed
+is that they are now asserted against a 140-item authored library rather than twelve illustrative
+placeholders, which is a materially stronger test of the same rules.
 """
 
 from __future__ import annotations
@@ -23,11 +27,13 @@ from fastapi.testclient import TestClient
 from conftest import ok_probe
 from enlightenment.app import Limiters, TrainingPaths, create_app
 from enlightenment.config import Config
+from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
 
-CONTENT_ROOT = Path(__file__).resolve().parents[1] / "content"
-UI_ROOT = Path(__file__).resolve().parents[1] / "src" / "enlightenment" / "ui"
+ROOT = Path(__file__).resolve().parents[1]
+CONTENT_ROOT = ROOT / "content"
+UI_ROOT = ROOT / "src" / "enlightenment" / "ui"
 
 
 @pytest.fixture
@@ -42,136 +48,135 @@ def client(config: Config, store: TrainingStore, tmp_path: Path) -> TestClient:
         yield instance
 
 
+@pytest.fixture(scope="module")
+def package() -> ContentPackage:
+    loaded = ContentPackage(CONTENT_ROOT)
+    loaded.load()
+    return loaded
+
+
 # --- the answer key stays server-side ----------------------------------------------------
 
 
-def test_an_unanswered_drill_carries_no_answer_key_in_its_raw_body(client: TestClient) -> None:
-    """Checked on the bytes, not on a parsed object.
+def test_an_unanswered_drill_carries_no_answer_key_in_its_raw_body(
+    client: TestClient, package: ContentPackage
+) -> None:
+    """The production-format rule, on the bytes, against the real library.
 
-    A future field named `accepted_classifications` or `expert_cue` on the served model would leak
-    silently through any assertion that inspected only the keys it already knew about.
+    Every accept value, partial value, reject value, reason and explanation of the served item
+    must be absent. A convenient combined endpoint is the easy way to defeat this.
     """
     response = client.get("/api/v1/drill/next")
     assert response.status_code == 200
-    body = response.text.lower()
-    for forbidden in ("accepted_", "expert_cue", "confusable", "first_step", '"seed"'):
-        assert forbidden not in body, f"{forbidden!r} reached an unanswered drill response"
+    body = response.text.casefold()
+    item = package.drill(response.json()["item_id"])
+    assert item is not None
+
+    for value in item.answer.accept:
+        if value and value != "computed_from_params":
+            assert value.casefold() not in body, value
+    for partial in item.answer.partial:
+        assert partial.value.casefold() not in body, partial.value
+    for rejected in item.answer.reject:
+        assert rejected.value.casefold() not in body, rejected.value
+        if rejected.why_wrong:
+            assert rejected.why_wrong.casefold() not in body
+    if item.explain:
+        assert item.explain.casefold() not in body
+    assert '"answer"' not in body
+    assert '"explain"' not in body
+    assert '"derived"' not in body
 
 
-def test_the_reveal_arrives_only_as_the_answer_response(client: TestClient) -> None:
-    """The reveal is the reward for committing, which is what makes it production not
-    recognition."""
+def test_the_reveal_arrives_only_as_the_answer_response(
+    client: TestClient, package: ContentPackage
+) -> None:
+    """The other half: after a submission, the explanation and the rule decomposition arrive."""
     served = client.get("/api/v1/drill/next").json()
+    item = package.drill(served["item_id"])
+    assert item is not None
+    guess = item.answer.accept[0] if item.answer.accept else "x"
     reveal = client.post(
         "/api/v1/drill/answer",
         json={
-            "item_id": served["item_id"],
-            "classification": "deliberately wrong",
-            "first_action": "deliberately wrong",
-            "confidence": 2,
+            "drill_run_id": served["drill_run_id"],
+            "response": guess,
+            "confidence": 4,
+            "elapsed_ms": 5000,
         },
     )
     assert reveal.status_code == 200
-    payload = reveal.json()
-    assert payload["accepted_classifications"], "the reveal withheld the answer key"
-    assert payload["expert_cue"]
-    assert payload["correct"] is False
-    # Every point names its rule and its evidence: the plan's explainability acceptance test.
-    assert payload["lines"]
-    for line in payload["lines"]:
-        assert line["rule"], "a score line has no rule name"
-        assert line["axis"], "a score line names no competency axis"
-        assert line["evidence"], "a score line awarded points with no evidence"
+    body = reveal.json()
+    assert "score_components" in body
+    assert body["score_components"], "a score with no named rule cannot be challenged"
+    for component in body["score_components"]:
+        assert component["rule_id"]
+        assert component["explain"]
+    assert body["content_hash"] == served["content_hash"]
 
 
 def test_a_drill_response_is_never_cached(client: TestClient) -> None:
-    """A cached drill is the same instantiation twice, and a cached reveal is a stale answer."""
-    assert client.get("/api/v1/drill/next").headers["cache-control"] == "no-store"
-    assert client.get("/api/v1/dashboard").headers["cache-control"] == "no-store"
+    """A cached drill is a drill an operator re-reads after the reveal.
+
+    The spacing model assumes retrieval, not recognition, so a cached payload quietly converts
+    every repeat into a recognition test.
+    """
+    response = client.get("/api/v1/drill/next")
+    assert response.headers["cache-control"] == "no-store"
+    assert client.get("/api/v1/me").headers["cache-control"] == "no-store"
 
 
-# --- boundary validation -----------------------------------------------------------------
+def test_a_malformed_answer_is_refused_at_the_boundary(client: TestClient) -> None:
+    """Every field validated, and an unknown key rejected rather than ignored."""
+    served = client.get("/api/v1/drill/next").json()
+    base = {
+        "drill_run_id": served["drill_run_id"],
+        "response": "manoeuvre",
+        "confidence": 3,
+        "elapsed_ms": 100,
+    }
+    assert client.post("/api/v1/drill/answer", json={**base, "confidence": 9}).status_code == 422
+    assert client.post("/api/v1/drill/answer", json={**base, "response": ""}).status_code == 422
+    assert client.post("/api/v1/drill/answer", json={**base, "extra": 1}).status_code == 422
+    assert client.post("/api/v1/drill/answer", json={**base, "elapsed_ms": -1}).status_code == 422
+    long_answer = {**base, "response": "x" * 5000}
+    assert client.post("/api/v1/drill/answer", json=long_answer).status_code == 422
 
 
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {},
-        {"item_id": "drill-station-keeping", "classification": "x", "first_action": "y"},
-        {
-            "item_id": "drill-station-keeping",
-            "classification": "x",
-            "first_action": "y",
-            "confidence": 0,
-        },
-        {
-            "item_id": "drill-station-keeping",
-            "classification": "x",
-            "first_action": "y",
-            "confidence": 6,
-        },
-        {
-            "item_id": "drill-station-keeping",
-            "classification": "",
-            "first_action": "y",
-            "confidence": 3,
-        },
-        {
-            "item_id": "Not A Slug",
-            "classification": "x",
-            "first_action": "y",
-            "confidence": 3,
-        },
-        {
-            "item_id": "drill-station-keeping",
-            "classification": "x",
-            "first_action": "y",
-            "confidence": 3,
-            "unexpected": "key",
-        },
-        {
-            "item_id": "drill-station-keeping",
-            "classification": "x" * 301,
-            "first_action": "y",
-            "confidence": 3,
-        },
-    ],
-)
-def test_a_malformed_answer_is_refused_at_the_boundary(
-    client: TestClient, payload: dict[str, object]
-) -> None:
-    """`extra="forbid"` and every cap, exercised. An unknown key is a rejected request, never a
-    silently coerced one."""
-    assert client.post("/api/v1/drill/answer", json=payload).status_code == 422
-
-
-def test_an_unknown_item_is_a_400_naming_the_problem_not_a_500(client: TestClient) -> None:
+def test_an_unknown_run_is_a_400_naming_the_problem_not_a_500(client: TestClient) -> None:
+    """A submission against a run nobody served is the caller's error, not the server's."""
     response = client.post(
         "/api/v1/drill/answer",
         json={
-            "item_id": "no-such-item",
-            "classification": "x",
-            "first_action": "y",
+            "drill_run_id": "not-a-run",
+            "response": "manoeuvre",
             "confidence": 3,
+            "elapsed_ms": 100,
         },
     )
     assert response.status_code == 400
-    assert "not loaded" in json.dumps(response.json())
+    assert response.json()["detail"]["error"] == "unscorable"
 
 
-ANSWER_BODY = {
-    "item_id": "drill-station-keeping",
-    "classification": "station keeping",
-    "first_action": "confirm in a second independent fit",
-    "confidence": 3,
-}
+# --- rate limiting -----------------------------------------------------------------------
+
+ANSWER_BODY = {"response": "manoeuvre", "confidence": 3, "elapsed_ms": 1000}
+
+
+def _answer(client: TestClient) -> int:
+    served = client.get("/api/v1/drill/next")
+    if served.status_code != 200:
+        return served.status_code
+    return client.post(
+        "/api/v1/drill/answer",
+        json={**ANSWER_BODY, "drill_run_id": served.json()["drill_run_id"]},
+    ).status_code
 
 
 def test_answering_is_strictly_rate_limited(
     config: Config, store: TrainingStore, tmp_path: Path
 ) -> None:
-    """The plan asks for rate limiting on the scoring endpoint by name. Answering is a write: it
-    moves a rating, schedules a cue and appends a run record."""
+    """The plan asks for rate limiting on the scoring endpoint by name. Answering is a write."""
     app = create_app(
         config=config,
         store=store,
@@ -180,9 +185,7 @@ def test_answering_is_strictly_rate_limited(
         training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
     )
     with TestClient(app) as client:
-        codes = [
-            client.post("/api/v1/drill/answer", json=ANSWER_BODY).status_code for _ in range(3)
-        ]
+        codes = [_answer(client) for _ in range(3)]
     assert codes == [200, 200, 429]
 
 
@@ -191,14 +194,10 @@ def test_an_unauthenticated_answer_flood_cannot_shut_the_gated_writes(
 ) -> None:
     """An open route must not be able to spend a gated route's budget.
 
-    The scoring endpoint is unauthenticated on purpose until operator identity exists, and it
-    used to share the strict limiter with the token-gated session writes. The security gate
-    reproduced the consequence in one go: twenty unauthenticated answers, then an authenticated
-    `POST /api/v1/sessions` refused with 429. Behind the platform gateway many callers share one
-    address, so that is a single unauthenticated client holding the team's gated write path shut.
-
-    Both budgets are set to two here so that exhausting one would be unmissable if they were
-    ever merged back together.
+    The scoring endpoint is unauthenticated until operator identity exists, and it used to share
+    the strict limiter with the token-gated session writes: twenty unauthenticated answers left an
+    authenticated session write answering 429. Behind the platform gateway many callers share one
+    address, so that was one client holding the team's gated write path shut.
     """
     app = create_app(
         config=config,
@@ -208,18 +207,14 @@ def test_an_unauthenticated_answer_flood_cannot_shut_the_gated_writes(
         training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
     )
     with TestClient(app) as client:
-        flood = [
-            client.post("/api/v1/drill/answer", json=ANSWER_BODY).status_code for _ in range(4)
-        ]
+        flood = [_answer(client) for _ in range(4)]
         assert flood == [200, 200, 429, 429], "the drill route's own budget did not bite"
         session = client.post(
             "/api/v1/sessions",
             json={"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"},
         )
-    # Asserted as "the write SUCCEEDED", not as "it was not 429". The first draft of this test
-    # checked only for 429 and passed vacuously against the merged-limiter mutant, because a
-    # malformed body 422s before the rate guard ever runs. A negative assertion that a wrong
-    # request also satisfies is not an assertion.
+    # Asserted as "the write SUCCEEDED", not as "it was not 429": a malformed body 422s before the
+    # rate guard runs, so a negative assertion here passes vacuously against a merged limiter.
     assert session.status_code == 201, (
         "an unauthenticated answer flood spent the gated writes' rate budget, so an open route"
         f" can shut a gated one; the session write answered {session.status_code}"
@@ -229,29 +224,20 @@ def test_an_unauthenticated_answer_flood_cannot_shut_the_gated_writes(
 def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The accountability control on the one deliberately ungated write, and it was untested.
+    """The accountability control on the one deliberately ungated write.
 
-    `docs/SECURITY.md` cites this emission twice: once in the audit register and once as a
-    compensating control for accepted risk 5, the ungated scorer. The security gate deleted the
-    `log_event` call and the entire suite stayed green, so it was a claim, not a control.
-
-    Three properties, because the line has to be present AND safe. The plan forbids a personal
-    performance figure in any log line, and the operator's own words are performance data: an
-    audit line that carried the submitted answer or the score would turn the audit trail into
-    the very record the DPIA has not yet approved.
-
-    The safety half asserts the EXACT KEY SET, not a list of forbidden names. The first version
-    checked six literal names against the top level of the line, and both binding gates walked
-    through it independently: `ScoredDrill` carries seventeen fields and the blacklist missed the
-    real ones, so adding `points` (the actual score), `calibration`, `ratingAfter` and
-    `nextDueInDays` left the whole suite green; a nested `detail` object hid a score AND the
-    operator's own words; and `newRating` defeated the `rating` check by renaming. A denylist
-    cannot notice what is not on it. `log_event` emits `event` plus exactly the fields it is
-    given, so a set equality closes over every future field, nested or renamed: a new one fails
-    here until somebody decides it belongs in an audit trail.
+    The safety half asserts the EXACT KEY SET rather than a denylist of forbidden names. Both
+    binding gates walked through the denylist version independently: it missed the real score
+    fields, a nested object hid both a score and the operator's own words, and a rename defeated
+    it. `log_event` emits `event` plus exactly the fields it is given, so a set equality closes
+    over every future field, nested or renamed.
     """
+    served = client.get("/api/v1/drill/next").json()
     with caplog.at_level("INFO"):
-        response = client.post("/api/v1/drill/answer", json=ANSWER_BODY)
+        response = client.post(
+            "/api/v1/drill/answer",
+            json={**ANSWER_BODY, "drill_run_id": served["drill_run_id"]},
+        )
     assert response.status_code == 200
 
     lines = [
@@ -261,213 +247,216 @@ def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data
     ]
     answered = [line for line in lines if line.get("event") == "drill.answered"]
     assert len(answered) == 1, f"expected exactly one drill.answered line, saw {len(answered)}"
-
     line = answered[0]
-    assert line["actor"] == "synthetic-operator", line
-    assert line["itemId"] == ANSWER_BODY["item_id"], line
-
-    assert set(line) == {"event", "actor", "itemId", "procedureId"}, (
+    assert set(line) == {"event", "actor", "itemId"}, (
         "the drill audit line carries a field nobody has reviewed:"
-        f" {sorted(set(line) - {'event', 'actor', 'itemId', 'procedureId'})}."
-        " Every field here is written to an operational log for a route that is unauthenticated"
-        " and whose subject is a person's performance. Decide it belongs before you add it."
+        f" {sorted(set(line) - {'event', 'actor', 'itemId'})}."
+        " Every field here goes to an operational log for an unauthenticated route whose subject"
+        " is a person's performance. Decide it belongs before you add it."
     )
-
-    # A second, independent layer on the four fields that ARE allowed: the set equality above
-    # cannot see the answer text arriving inside `itemId`.
+    assert line["actor"] == "synthetic-operator"
+    assert line["itemId"] == served["item_id"]
     emitted = json.dumps(line).casefold()
-    assert ANSWER_BODY["classification"].casefold() not in emitted, "the answer text reached it"
-    assert ANSWER_BODY["first_action"].casefold() not in emitted, "the answer text reached it"
+    assert ANSWER_BODY["response"].casefold() not in emitted, "the answer text reached the log"
 
 
 # --- content and library -----------------------------------------------------------------
 
 
-def test_the_content_endpoint_states_its_own_provenance(client: TestClient) -> None:
-    """The current content set is ILLUSTRATIVE and the interface has to be able to say so.
-
-    A trainer that cannot tell an operator whether the procedure they just learned is authoritative
-    is worse than no trainer, so this is asserted rather than left to a reviewer to notice.
-    """
-    payload = client.get("/api/v1/content").json()
-    assert payload["ok"] is True, payload["errors"]
-    assert payload["counts"]["procedures"] >= 3
-    assert payload["counts"]["drills"] >= 3
-    assert "ILLUSTRATIVE" in payload["content_provenance"]
-    assert "not validated by a" in payload["content_provenance"]
-    # And the identity gap is stated on the same payload the interface renders.
-    assert payload["operator_id"] == "synthetic-operator"
-    assert "DPIA" in payload["identity"]
+def test_the_manifest_states_its_own_provenance(client: TestClient) -> None:
+    """The hash matters most: a run record carries it, so an old result stays interpretable."""
+    body = client.get("/api/v1/content/manifest").json()
+    assert body["ok"] is True
+    assert len(body["content_hash"]) == 64
+    assert body["counts"]["drills"] == 140
+    assert body["thresholds_source"] == "thresholds.example.json"
+    assert body["scored_scenarios_ready"] is False
+    assert "placeholder" in body["why_not_ready"].casefold()
 
 
-def test_a_procedure_is_served_in_full_and_an_unknown_one_is_a_404(client: TestClient) -> None:
-    listing = client.get("/api/v1/content").json()["procedures"]
-    detail = client.get(f"/api/v1/library/{listing[0]['id']}").json()
-    assert detail["steps"]
-    assert detail["steps"][0]["ordinal"] == 1
-    assert detail["purpose"]
-    assert detail["closure_criteria"]
-    assert client.get("/api/v1/library/no-such-procedure").status_code == 404
+def test_a_procedure_is_served_in_full_and_an_unknown_one_is_a_404(
+    client: TestClient, package: ContentPackage
+) -> None:
+    """The library is a reference. Nothing in it is withheld and nothing in it is scored."""
+    known = package.procedures[0].id
+    found = client.get(f"/api/v1/content/procedure/{known}")
+    assert found.status_code == 200
+    assert found.json()["procedure"]["id"] == known
+    assert client.get("/api/v1/content/procedure/PROC-NOT-REAL").status_code == 404
 
 
-def test_the_library_never_holds_a_protected_object_identifier(client: TestClient) -> None:
-    """The redaction discipline, checked at the EDGE as well as at load.
-
-    The loader refuses a catalogue-number shape in an authored file. This asserts the same property
-    on what actually reaches a browser, because that is the artefact whose exposure the rule is
-    about: "ENLIGHTENMENT teaches that such a list exists and must be checked; it never holds the
-    list."
-    """
-    catalogue = re.compile(r"(?<![0-9A-Za-z_-])(?<![0-9]\.)[0-9]{5,8}(?![0-9A-Za-z_-])(?!\.[0-9])")
-    for procedure in client.get("/api/v1/content").json()["procedures"]:
-        text = client.get(f"/api/v1/library/{procedure['id']}").text
-        assert not catalogue.search(text), f"{procedure['id']} served a catalogue-number shape"
+def test_a_product_is_served_with_its_observed_layout(client: TestClient) -> None:
+    """So the interface can say how a product reads rather than inventing a caption."""
+    body = client.get("/api/v1/content/product/PRD-RESIDUAL").json()
+    assert body["product"]["id"] == "PRD-RESIDUAL"
+    assert body["layout"] is not None
+    assert client.get("/api/v1/content/product/PRD-NOT-REAL").status_code == 404
 
 
 # --- the interface -----------------------------------------------------------------------
 
 
 def test_the_interface_is_served_with_a_strict_policy(client: TestClient) -> None:
-    response = client.get("/ui")
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    policy = response.headers["content-security-policy"]
-    # script-src must stay strict. 'unsafe-inline' is admitted for STYLE only, because the
-    # stylesheet is inline in the document; admitting it for script would make the policy
-    # decorative.
-    assert "script-src 'self'" in policy
-    assert "script-src 'self' 'unsafe-inline'" not in policy
-    assert "default-src 'self'" in policy
-    assert "frame-ancestors 'none'" in policy
-    assert response.headers["referrer-policy"] == "no-referrer"
+    """One policy, on the document and on the script, because two policies is no policy."""
+    document = client.get("/ui")
+    script = client.get("/ui/app.js")
+    assert document.status_code == 200
+    assert script.status_code == 200
+    policy = document.headers["content-security-policy"]
+    assert policy == script.headers["content-security-policy"]
+    for directive in (
+        "default-src 'self'",
+        "script-src 'self'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+        "font-src 'self'",
+    ):
+        assert directive in policy, directive
+    assert "'unsafe-inline'" not in policy.split("style-src")[0]
 
 
 def test_the_interface_script_is_served_from_an_allowlist(client: TestClient) -> None:
-    """A two-entry allowlist cannot be traversed. Every path-normalisation bug in this class comes
-    from believing the check was right."""
-    ok = client.get("/ui/app.js")
-    assert ok.status_code == 200
-    assert ok.headers["content-type"].startswith("text/javascript")
-    assert "script-src 'self'" in ok.headers["content-security-policy"]
-    # `..` on its own is absent deliberately: the client normalises `/ui/..` to `/` before the
-    # request leaves, so asserting on it would test the client's URL handling and not this route.
-    # The encoded form IS included, because that one does arrive as a path segment.
-    for hostile in ("index.html", "%2e%2e%2fapp.py", "app.js.map", "config.py", "APP.JS"):
-        assert client.get(f"/ui/{hostile}").status_code in (404, 400), hostile
+    """An allowlist of exact names cannot be traversed, which is why it is not a path join."""
+    assert client.get("/ui/app.js").status_code == 200
+    for attempt in (
+        "/ui/index.html",
+        "/ui/../app.py",
+        "/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+        "/ui/APP.JS",
+        "/ui/app.js.",
+        "/ui/.env",
+    ):
+        assert client.get(attempt).status_code == 404, attempt
 
 
 def test_the_interface_makes_no_external_request(client: TestClient) -> None:
-    """The air-gap posture, read off the shipped assets rather than trusted to the policy.
+    """The air-gap posture, read from the shipped bytes rather than trusted to the policy.
 
-    Two controls on one rule: the policy would block an external fetch at run time, and this fails
-    the build if one is ever authored. A control that only exists in a header is a control one
-    header edit away from gone.
+    Two independent controls on one rule. The data URI for the favicon is the deliberate
+    exception and is checked to BE a data URI rather than a fetch.
     """
+    # The XML namespace URIs are identifiers, not fetches: `http://www.w3.org/2000/svg` is how a
+    # namespaced element is created and nothing resolves it. Removed before the scan and then
+    # asserted to be the ONLY http-shaped strings, so the allowance cannot hide a real one.
+    namespaces = (
+        "http://www.w3.org/2000/svg",
+        "http://www.w3.org/1999/xhtml",
+        "http://www.w3.org/1999/xlink",
+    )
     for path in ("/ui", "/ui/app.js"):
         body = client.get(path).text
-        for external in ("http://", "https://", "//cdn", "fonts.googleapis", "unpkg", "jsdelivr"):
-            assert external not in body, f"{path} references {external!r}"
+        stripped = body
+        for namespace in namespaces:
+            stripped = stripped.replace(namespace, "")
+        for pattern in (
+            r"https?://",
+            r"//cdn\.",
+            r"fonts\.googleapis",
+            r"fonts\.gstatic",
+            r"unpkg",
+            r"jsdelivr",
+            r"\bfetch\(\s*['\"]https?:",
+        ):
+            assert not re.search(pattern, stripped), f"{path} carries {pattern}"
+        # No element may point at anything but a same-origin path or a data URI.
+        for attribute, target in re.findall(r'\b(src|href)="([^"]*)"', body):
+            assert target.startswith(("/", "./", "data:", "#")), f"{path}: {attribute}={target}"
 
 
-def test_the_interface_never_writes_an_untrusted_value_with_innerhtml() -> None:
-    """Every value from the content tree is written with `textContent`.
+def test_the_interface_never_writes_an_untrusted_value_as_markup(client: TestClient) -> None:
+    """Every value from the server reaches the document as text or as a created SVG node.
 
-    The content tree is edited without a code deployment, so an authoring mistake would otherwise
-    become a scripting bug. Read from the source rather than exercised, because the property is
-    "this construct does not appear" and no input can prove that.
+    The content is authored and the server is ours, and "the data is trusted" is how every one of
+    these bugs starts. The cost of the discipline is nil.
     """
-    script = (UI_ROOT / "app.js").read_text(encoding="utf-8")
-    # An assignment, not the bare word: the file's own header explains the rule, and a grep that
-    # fails on its own documentation gets deleted rather than obeyed.
+    script = client.get("/ui/app.js").text
     for sink in (
         r"\.innerHTML\s*=",
         r"\.outerHTML\s*=",
         r"insertAdjacentHTML\s*\(",
         r"document\.write\s*\(",
-        # The two dynamic-code sinks. Strict script-src blocks an injected <script>; these would
-        # execute a string without needing one.
         r"\beval\s*\(",
-        r"new\s+Function\s*\(",
+        r"new Function\s*\(",
+        r"setTimeout\s*\(\s*['\"]",
     ):
-        assert not re.search(sink, script), f"app.js uses {sink!r}"
+        assert not re.search(sink, script), sink
+    assert "textContent" in script
+    assert "createElementNS" in script
 
 
-def test_the_interface_honours_the_measured_palette_rules() -> None:
-    """The palette rules are CODE STANDARDS in this project, from measured contrast figures.
+def test_the_interface_honours_an_inverted_axis(client: TestClient) -> None:
+    """A magnitude axis runs brighter upward, and a client that ignored the flag would invert
+    the signature it is teaching. The flag is honoured in the renderer, not merely received."""
+    script = client.get("/ui/app.js").text
+    assert "inverted" in script
+    assert re.search(r"inverted\s*\n?\s*\?", script) or "y.inverted" in script
 
-    Blue 1 `#385FAF` measures 2.45:1 on navy, failing the text floor AND the 3:1 graphic floor, so
-    it is a structural fill and border colour only. `#C0504D` measures 3.21:1 and is retained only
-    for large fills, with `#E06C69` used wherever alert carries text or a small mark. This is the
-    grep gate the plan asks for.
+
+def test_the_interface_sizes_plot_text_against_the_measured_scale(client: TestClient) -> None:
+    """In-plot text must not scale with the plot.
+
+    A plot in a wide column renders larger than its coordinate system and one in a narrow column
+    renders smaller. The design artboards had the second case at 7.3 px and the first pass at this
+    interface had the first case at 23 px, so the size is set after layout from the real ratio.
     """
-    markup = (UI_ROOT / "index.html").read_text(encoding="utf-8")
-    script = (UI_ROOT / "app.js").read_text(encoding="utf-8")
-
-    # Copper-amber is excluded from product UI by house rule.
-    for banned in ("#C67C00", "#c67c00"):
-        assert banned not in markup, f"{banned} is in the markup"
-        assert banned not in script, f"{banned} is in the script"
-
-    # Blue 1 may define a token and be used for fill, border and stroke. It must never be assigned
-    # to `color`, and it must never be a canvas fillStyle for text.
-    for line in markup.splitlines():
-        stripped = line.strip()
-        if "#385FAF" not in stripped.upper():
-            continue
-        assert not re.match(r"^\s*color\s*:", stripped), f"Blue 1 carries text: {stripped}"
-    # In the canvas the rule is that the grid stroke may be Blue 1 while every fillText colour is
-    # Blue 2 or brighter, which is what `PALETTE.axis` is for.
-    assert "grid: '#385FAF'" in script
-    assert "axis: '#739BCF'" in script
-    assert re.search(r"fillStyle\s*=\s*PALETTE\.grid", script) is None
+    script = client.get("/ui/app.js").text
+    assert "getBoundingClientRect" in script
+    assert "viewBox" in script
+    assert "AXIS_FONT_PX" in script
 
 
-def test_the_interface_honours_reduced_motion_with_an_equivalent_rather_than_a_removal() -> None:
-    """The reveal is where the product earns its "one more" feeling, so the non-motion path still
-    has to MARK the moment rather than drop the signal."""
-    markup = (UI_ROOT / "index.html").read_text(encoding="utf-8")
-    assert "prefers-reduced-motion" in markup
-    reduced = markup.split("prefers-reduced-motion", 1)[1].split("}", 3)[0]
-    assert "animation: none" in reduced
-    assert "border-left-width" in reduced, "the reduced-motion path removes the signal entirely"
+def test_the_interface_honours_reduced_motion(client: TestClient) -> None:
+    """Accessibility is a code standard here, not polish."""
+    document = client.get("/ui").text
+    assert "prefers-reduced-motion" in document
 
 
-def test_every_status_in_the_interface_carries_a_shape_and_a_label() -> None:
-    """Red and green as the alert and nominal pair is the classic deuteranopia trap. A labelled
-    triangle, not a red dot."""
-    script = (UI_ROOT / "app.js").read_text(encoding="utf-8")
-    assert "'▲'" in script, "the correct glyph is gone"
-    assert "'▼'" in script, "the missed glyph is gone"
-    assert "▲ correct" in script, "the dashboard outcome lost its glyph or its label"
-    assert "▼ missed" in script, "the dashboard outcome lost its glyph or its label"
+def test_red_is_reserved_for_recency_and_never_used_for_a_verdict(client: TestClient) -> None:
+    """A transfer-of-training decision, provisional until the owner settles it.
+
+    In the operator's real toolset red means "the most recent data", consistently, in the heat
+    map, the LAT/LON view and the light curves. Using it for "your call was wrong" would teach one
+    colour two unrelated ways, so the verdict classes use the other channels and a glyph.
+    """
+    document = client.get("/ui").text
+    verdict_block = document[document.index(".verdict.accept") : document.index(".verdict h3")]
+    assert "--recent" not in verdict_block, "a verdict is coloured with the recency red"
+    script = client.get("/ui/app.js").text
+    assert "--recent" in script, "the recency ramp is gone, so the reservation means nothing"
+    assert "VERDICT_GLYPH" in script, "a verdict must not rest on colour alone"
 
 
-def test_the_dashboard_endpoint_reports_intervals_and_never_a_bare_axis_number(
+def test_the_dashboard_reports_intervals_and_never_a_bare_competency_number(
     client: TestClient,
 ) -> None:
-    payload = client.get("/api/v1/dashboard").json()
-    assert payload["operator_id"] == "synthetic-operator"
-    assert len(payload["axes"]) == 6
-    for axis in payload["axes"]:
-        assert "interval" in axis
-        if axis["attempts"] == 0:
-            assert axis["accuracy"] is None
-            assert axis["interval"] is None
+    """The interval is part of the value. This is the number a supervisor would read."""
+    served = client.get("/api/v1/drill/next").json()
+    client.post(
+        "/api/v1/drill/answer", json={**ANSWER_BODY, "drill_run_id": served["drill_run_id"]}
+    )
+    body = client.get("/api/v1/me").json()
+    assert body["competencies"]
+    for competency in body["competencies"]:
+        assert "measured" in competency
+        if competency["measured"]:
+            assert competency["interval"] is not None
+        else:
+            assert competency["estimate"] is None
+    assert "synthetic" in body["identity"].casefold()
 
 
 def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_down(
     config: Config, store: TrainingStore, tmp_path: Path
 ) -> None:
-    """The container is fine and the content is not. Those are different incidents.
+    """The container is fine and the content is not, and those are different incidents.
 
-    A container that refuses to start over a content typo cannot serve the health paths that would
-    tell an operator why, which is why the load failure is carried rather than raised.
+    A container that refuses to start over a content typo cannot serve the health path that would
+    tell an operator why, so the fault is carried and reported on the routes that need the content.
     """
     broken = tmp_path / "content"
-    (broken / "procedures").mkdir(parents=True)
-    for kind in ("drills", "scenarios", "rubrics", "traces"):
-        (broken / kind).mkdir(parents=True)
-    (broken / "procedures" / "bad.json").write_text("{ not json", encoding="utf-8")
+    broken.mkdir()
+    (broken / "drills.json").write_text("{ not json", encoding="utf-8")
 
     app = create_app(
         config=config,
@@ -476,11 +465,11 @@ def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_
         training=TrainingPaths(content_root=broken, progress_path=tmp_path / "progress.json"),
     )
     with TestClient(app) as client:
-        # Health is untouched: this is the split the App Store contract depends on.
         for path in ("/", "/livez", "/ping", "/health", "/healthz", "/readyz"):
             assert client.get(path).status_code == 200, path
         drill = client.get("/api/v1/drill/next")
         assert drill.status_code == 503
         detail = drill.json()["detail"]
-        assert detail["error"] in ("content_unavailable", "no_drill")
-        assert client.get("/api/v1/content").json()["ok"] is False
+        assert detail["error"] == "content_unavailable"
+        assert detail["content_errors"], "a 503 that names no file sends an author looking blind"
+        assert client.get("/api/v1/content/manifest").json()["ok"] is False

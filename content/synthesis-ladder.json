@@ -1,0 +1,141 @@
+{
+  "_version": {
+    "schema_version": "1.0.0",
+    "content_version": "1.0.0",
+    "author": "Ash Higgins",
+    "updated": "2026-08-29",
+    "source_refs": [
+      "Owner direction 29 August 2026: scale multi-product complexity with skill, up to all products, as the advanced operator path",
+      "Red team of v1.8.1, finding 2",
+      "event-anatomy.json",
+      "notso-quality-model.json quality ladder"
+    ],
+    "review_status": "draft"
+  },
+
+  "_why_this_file_exists": "Reading a product is a component skill. Producing a defensible assessment is a composite one, built by putting several products against each other and resolving where they disagree. The red team found the package trained every component and never assembled them. This is the assembly, and it is deliberately a progression rather than a drill type: the number of products an operator can hold in one assessment is the clearest single measure of how far they have come, and it is the thing that should visibly grow.",
+
+  "the_end_state": {
+    "statement": "An advanced operator looks at everything available at the time and produces an informed decision with a reasoned, defensible argument for why.",
+    "what_defensible_means": [
+      "A conclusion stated plainly, not hedged into meaninglessness",
+      "An evidence chain naming which product supports which part of it",
+      "Alternatives that were considered and the specific evidence that eliminated each",
+      "Confidence proportionate to the weakest link in the chain, not to the strongest",
+      "A falsifier: the observation that would overturn this, named in advance",
+      "The gaps stated: what was not available and what it would have changed"
+    ],
+    "why_falsifiers_matter": "An assessment that cannot be wrong is not an assessment. Naming in advance what would overturn it does three things: it forces the analyst to test their own reasoning, it tells the recipient what to watch for, and it protects the analyst when the picture changes, because a revised assessment that was flagged as provisional is analysis working correctly rather than an error."
+  },
+
+  "tiers": [
+    {
+      "tier": 1,
+      "name": "Pair",
+      "products": 2,
+      "elo_band": [1400, 1600],
+      "asks_for": "Resolve a disagreement between two products, or use a second product to settle a question the first cannot answer alone.",
+      "unlock_stage": "STG-04",
+      "board_metaphor": "Two panels open.",
+      "skills": ["Recognising that one product is insufficient", "Knowing which second product answers the outstanding question", "Preferring the product closer to the observations when they conflict"],
+      "typical_shape": "The first product suggests something; the second confirms, refutes or explains it."
+    },
+    {
+      "tier": 2,
+      "name": "Triangulate",
+      "products": 3,
+      "elo_band": [1550, 1750],
+      "asks_for": "Build a short evidence chain across three products, where no two of them settle it.",
+      "unlock_stage": "STG-05",
+      "board_metaphor": "Three panels, and the answer sits between them.",
+      "skills": ["Sequencing the reads so each narrows the next", "Holding a hypothesis across products rather than restarting at each", "Noticing when the third product changes what the first two meant"],
+      "typical_shape": "Product A raises a question, B narrows it to two possibilities, C discriminates between them."
+    },
+    {
+      "tier": 3,
+      "name": "Board",
+      "products": [4, 5],
+      "elo_band": [1700, 1900],
+      "asks_for": "Assemble an assessment from most of the available picture, deciding what to look at and in what order.",
+      "unlock_stage": "STG-06",
+      "board_metaphor": "The board is filling. You now choose what to open, and choosing badly costs you time.",
+      "skills": ["Prioritising which products to read under time pressure", "Recognising which products are uninformative for this event and not opening them", "Building an argument rather than accumulating observations"],
+      "typical_shape": "More products than are needed. Part of the skill is knowing which ones are not worth the time."
+    },
+    {
+      "tier": 4,
+      "name": "Full board",
+      "products": "all available",
+      "elo_band": [1850, 2050],
+      "asks_for": "Everything on the table. Produce a complete assessment answering all eight anatomy questions with an explicit evidence chain.",
+      "unlock_stage": "STG-06",
+      "board_metaphor": "The whole wall. This is what a shift actually looks like when an event matters.",
+      "skills": ["Holding a full picture without losing the thread", "Answering all eight anatomy questions from evidence rather than assumption", "Producing an argument a colleague could challenge and you could defend"],
+      "typical_shape": "No product is decisive alone. The assessment is the argument built across them."
+    },
+    {
+      "tier": 5,
+      "name": "Contested board",
+      "products": "all available, some degraded, some conflicting",
+      "elo_band": [2000, 2300],
+      "asks_for": "The full picture with real-world imperfection in it. Products that disagree, sources missing, states stale, one provider degraded. Produce an assessment anyway, state what you cannot resolve, and defend it.",
+      "unlock_stage": "STG-07",
+      "board_metaphor": "The full wall, and some of it is lying to you.",
+      "skills": ["Assessing with unresolved contradictions rather than waiting for them to resolve", "Distinguishing a contradiction that matters from one that does not", "Stating a conclusion and a falsifier under genuine uncertainty", "Defending the argument against a challenge"],
+      "typical_shape": "This is the advanced operator capstone. It is also what a real high-tempo event is like, which is the point.",
+      "challenge_mechanic": "After the assessment is submitted, the debrief poses a specific challenge to it, drawn from the strongest available counter-argument. The operator either defends the assessment with evidence or revises it. Both score; refusing to engage does not. Revising in the face of good evidence scores higher than defending a weak position, which is the calibration lesson."
+    }
+  ],
+
+  "gamification": {
+    "principle": "The progression is legible and earned. An operator can see the board growing, and the growth means something because each tier demands a skill the previous one did not.",
+    "mechanics": [
+      {
+        "name": "The board",
+        "detail": "Product panels are the visible progression. Early tiers present a curated pair; later tiers hand over the full wall and the choice of what to open. This is scaffolding rather than withholding, and the interface says so: the products exist, the training is presenting them progressively so the skill of choosing can be built rather than assumed."
+      },
+      {
+        "name": "Fusion rating",
+        "detail": "A separate Elo rating for synthesis, tracked apart from the single-product drill rating. An operator can be excellent at reading a residual plot and poor at assembling an argument, and the two ratings make that visible instead of averaging it away."
+      },
+      {
+        "name": "Chain length",
+        "detail": "The number of products an operator can hold in one coherent argument, shown as a personal best. It is the simplest honest measure of composite capability and it grows visibly."
+      },
+      {
+        "name": "The challenge",
+        "detail": "At tier five, surviving a challenge to your argument. Revising correctly under challenge scores higher than defending a weak position, so the mechanic rewards calibration rather than stubbornness."
+      },
+      {
+        "name": "Clean board",
+        "detail": "Completing a full-board assessment where every anatomy question is answered from evidence and no product was opened that did not contribute. Rewards economy as well as completeness, which is the thing corpora show experienced analysts have and novices do not."
+      }
+    ],
+    "what_is_deliberately_not_gamified": [
+      "No streaks on synthesis. These are long-form and a missed day is normal.",
+      "No leaderboard on fusion rating. It is the measure most likely to be read as a judgement of someone's worth as an analyst.",
+      "No time pressure below tier three. Rushing an argument is the failure mode being trained out, not in."
+    ]
+  },
+
+  "advanced_operator_path": {
+    "note": "Tiers four and five are the advanced operator training the owner identified. They are not simply harder; they train a different thing.",
+    "difference": "Tiers one to three train assembling a correct answer. Tiers four and five train producing a defensible argument under conditions where a single correct answer may not exist. That is the actual job of a senior analyst, and it is not reachable by making the earlier drills harder.",
+    "who_it_is_for": "Operators who have demonstrated competence across the procedure set and now need to develop judgement rather than knowledge. Also the natural material for site leads and mission area leads, who spend most of their time assessing other people's arguments rather than building their own.",
+    "secondary_use": "A tier five item makes a strong crew discussion piece: run it collectively, have the crew build the argument together, then reveal the challenge. That is closer to how the skill actually transfers than solo practice, and the serious games evidence favours group play."
+  },
+
+  "argument_scoring": {
+    "note": "How a reasoned argument is scored at tiers three and above, using the deterministic layer plus expert comparison.",
+    "components": [
+      {"element": "Conclusion stated plainly", "weight": 0.15, "check": "A conclusion is present and is not hedged into meaninglessness"},
+      {"element": "Evidence chain", "weight": 0.25, "check": "Each part of the conclusion is attributed to a product that supports it"},
+      {"element": "Alternatives eliminated", "weight": 0.2, "check": "At least one alternative named with the evidence that eliminated it"},
+      {"element": "Confidence proportionate", "weight": 0.15, "check": "Confidence matches the weakest link, not the strongest"},
+      {"element": "Falsifier named", "weight": 0.15, "check": "A specific observation stated that would overturn the assessment"},
+      {"element": "Gaps stated", "weight": 0.1, "check": "What was unavailable, and what it would have changed"}
+    ],
+    "economy_bonus": "A small bonus where every product opened contributed to the argument. Opening everything is not the same as using everything, and the corpus shows length is not quality.",
+    "penalty": "Confidence pegged to the strongest evidence rather than the weakest is the most common and most consequential argument failure. It is penalised specifically."
+  }
+}
