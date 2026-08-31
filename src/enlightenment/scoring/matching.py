@@ -16,13 +16,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from enlightenment.content import Answer, ResponseFormat, Tolerance
 
 #: An operator types a sentence, not a token. Longer than this is not an answer, it is an essay,
 #: and the formats that want prose have their own path.
 MAX_ANSWER_LENGTH = 300
+
+#: The outcome of an item that could NOT be marked, as distinct from one marked wrong. Named
+#: because the two are opposite facts and the caller must be able to tell them apart without
+#: matching a string literal: a wrong answer moves a rating and an unscorable item must not.
+UNSCORABLE: Final = "unscorable"
 
 #: Stripped from the front of a response, once, then again. Two bounded passes rather than a loop,
 #: because an unbounded strip on attacker-controlled input is a denial of service in a regex.
@@ -113,7 +118,7 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
                 expected = numeric_candidate
                 break
     if expected is None:
-        return Match("unscorable", 0.0, note="This item's expected value could not be resolved.")
+        return Match(UNSCORABLE, 0.0, note="This item's expected value could not be resolved.")
     if given is None:
         return Match("none", 0.0, note="No number found in the response.", expected=expected)
     inside = _within(given, expected, answer.tolerance)
@@ -158,9 +163,11 @@ def match(
 ) -> Match:
     """Dispatch to the matcher the response format needs.
 
-    `no_action_correct` is its own case and a deliberate one: the correct answer is to do nothing,
-    and an operator who takes an action has failed the item. Treating it as ordinary text would
-    let "no action" be typed by an operator who had not understood why.
+    Two cases: a numeric estimate goes to the tolerance matcher, everything else to the text
+    matcher. `no_action_correct` is deliberately NOT a third case, and this docstring used to
+    claim it was. The four items using that format author full-sentence accept values, so the
+    text matcher is the right one; a separate branch that only recognised "no action" would mark
+    an operator correct for typing two words without the reasoning the accept values require.
     """
     if len(response) > MAX_ANSWER_LENGTH:
         return Match("none", 0.0, note=f"Answers are capped at {MAX_ANSWER_LENGTH} characters.")

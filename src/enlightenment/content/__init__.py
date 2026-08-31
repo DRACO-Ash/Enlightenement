@@ -15,6 +15,7 @@ content author does their job. Ten product generators does not. 140 drills does.
 from __future__ import annotations
 
 from enlightenment.content.loader import (
+    CONTENT_DIR_VARIABLE,
     EXAMPLE_THRESHOLDS,
     LOCAL_THRESHOLDS,
     REQUIRED_FILES,
@@ -48,6 +49,7 @@ from enlightenment.content.models import (
 __all__ = [
     "CANONICAL_GENERATORS",
     "COMPOSITION_MODES",
+    "CONTENT_DIR_VARIABLE",
     "EXAMPLE_THRESHOLDS",
     "LOCAL_THRESHOLDS",
     "MAX_ELO",

@@ -9,9 +9,18 @@ that will otherwise be omitted, because none of them is something an engineer wo
   An operator seeing a placeholder value in the interface is a bug, so `scored_scenarios_ready`
   is false until `thresholds.local.json` is populated and its `_meta.all_placeholders_replaced`
   flag is set.
-● **Reject a seed that fails its solvability check.** A stimulus whose signature is not actually
-  present is not a hard item, it is an unanswerable one, and it teaches an operator that the
-  procedure does not work.
+● **Report a content fault rather than raising it.** A malformed or misshapen file is carried in
+  `LoadResult.errors`, so the container starts and the health paths answer while the drill routes
+  return 503 naming the files at fault.
+
+**A NAMED GAP, not a behaviour: there is no solvability check.** This docstring claimed one -
+"reject a seed that fails its solvability check" - and no such check has ever existed here. The
+claim was not harmless: the item it describes is exactly the fault that shipped in V0.24.0, where
+renderers ignored the authored scene and drew a stimulus whose signature was not present, and
+DRL-0034 drew the OPPOSITE of its own answer key. What exists instead, and is honest about its
+scope, is `GeneratorRegistry.unread` plus the agreement table in `tests/test_generators.py`: the
+first counts authored parameters no renderer honours, the second fails the loop when a rendered
+surface contradicts its own key. Neither is a general solvability proof.
 ● **Record the content version hash on every run.** Otherwise a result from last week cannot be
   interpreted against content that has since changed.
 
@@ -60,13 +69,24 @@ REQUIRED_FILES: Final = (
 #: The shipped placeholder file, and the local one that replaces it. The local file is
 #: gitignored: the redaction discipline lives here, and a threshold in source is a threshold
 #: published.
+#: The ONE environment variable naming the content tree. Read here and in the route module, set
+#: nowhere in the Dockerfile: platform injection wins, the same rule this project holds for
+#: `PORT` and `DATA_DIR`.
+CONTENT_DIR_VARIABLE: Final = "CONTENT_DIR"
+
 EXAMPLE_THRESHOLDS: Final = "thresholds.example.json"
 LOCAL_THRESHOLDS: Final = "thresholds.local.json"
 
 
 def resolve_content_root() -> Path:
-    """The content directory: the environment override, else the package's own repository copy."""
-    override = os.environ.get("ENLIGHTENMENT_CONTENT_DIR")
+    """The content directory: the `CONTENT_DIR` override, else the package's own repository copy.
+
+    ONE environment name. This read `ENLIGHTENMENT_CONTENT_DIR` while the server read
+    `CONTENT_DIR`, so an operator who set the former got the baked-in tree served over HTTP while
+    the validator checked a different one: loop leg 2 could pass green against content the server
+    never loads. Two names for one knob is a name too many.
+    """
+    override = os.environ.get(CONTENT_DIR_VARIABLE, "").strip()
     if override:
         return Path(override)
     return Path(__file__).resolve().parents[3] / "content"
@@ -100,8 +120,33 @@ class Thresholds:
     all_placeholders_replaced: bool
 
 
-def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+class ContentShapeError(ValueError):
+    """A content file whose TOP LEVEL is not a JSON object.
+
+    Its own class because it must be caught with the other content faults and reported, never
+    escape as an `AttributeError` from a `.get` three call sites away. That is what happened: a
+    `procedures-core.json` or a `thresholds.local.json` shaped as an array raised
+    `'list' object has no attribute 'get'` out of `_read`, past a handler that did not name
+    `AttributeError`, and out of `create_app` itself - so the container never started and NO
+    health path answered. The realistic trigger is not hostile content but a typo in
+    `thresholds.local.json`, the one file an operator writes by hand, and the outcome was a crash
+    loop instead of the 503 with a resolved directory and an errno that this project's health
+    contract exists to produce.
+    """
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    """Read one content file, asserting the shape every caller then assumes.
+
+    Every call site subscripts or calls `.get` on the result. Checking here means one check
+    rather than six, and a fault that is reported through `LoadResult` like every other.
+    """
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ContentShapeError(
+            f"{path.name}: expected a JSON object at the top level, found {type(document).__name__}"
+        )
+    return document
 
 
 def _parse_all[Model](
@@ -123,8 +168,11 @@ def _parse_all[Model](
 class ContentPackage:
     """The loaded package. Immutable once built, and it knows what it may not serve."""
 
-    def __init__(self, root: Path | None = None) -> None:
-        self._root = root if root is not None else resolve_content_root()
+    def __init__(self, root: Path | str | None = None) -> None:
+        #: Coerced, not assumed. A string root raised `TypeError` from the `/` operator three
+        #: methods later, which is neither the module's stated contract ("never raises on
+        #: content") nor a fault the caller could read.
+        self._root = Path(root) if root is not None else resolve_content_root()
         self.drills: tuple[Drill, ...] = ()
         self.cues: tuple[Cue, ...] = ()
         self.procedures: tuple[Procedure, ...] = ()
@@ -162,7 +210,8 @@ class ContentPackage:
         return next((p for p in self.products if p.id == product_id), None)
 
     def layout(self, product_id: str) -> dict[str, Any] | None:
-        for entry in self.layouts.get("layouts", []):
+        layouts = self.layouts.get("layouts", []) if isinstance(self.layouts, dict) else []
+        for entry in layouts if isinstance(layouts, list) else []:
             if isinstance(entry, dict) and entry.get("product_id") == product_id:
                 return entry
         return None
@@ -176,7 +225,14 @@ class ContentPackage:
             return self.result
         try:
             self._read(errors)
-        except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        except (
+            OSError,
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            ContentShapeError,
+        ) as exc:
             self.result = LoadResult(ok=False, errors=(f"{type(exc).__name__}: {exc}",))
             return self.result
         self._by_id = {d.id: d for d in self.drills}
@@ -243,7 +299,12 @@ class ContentPackage:
             return Thresholds({}, "none", False)
         values = _read_json(path)
         meta = values.get("_meta", {})
-        replaced = bool(meta.get("all_placeholders_replaced", False))
+        #: `_meta` as a scalar took the container down the same way the file shape did. A
+        #: malformed marker means the placeholders are NOT known to be replaced, which is the
+        #: fail-closed reading: it withholds scored scenarios rather than serving placeholders.
+        replaced = (
+            bool(meta.get("all_placeholders_replaced", False)) if isinstance(meta, dict) else False
+        )
         return Thresholds(values, source, replaced)
 
     def _hash(self) -> str:

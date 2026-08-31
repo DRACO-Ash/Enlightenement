@@ -342,6 +342,71 @@ def _walk_routes(routes: Any, prefix: str, found: list[tuple[str, str]]) -> None
         )
 
 
+#: Every READ route the application serves, and what each is allowed to disclose. A read route is
+#: the shape that leaks an answer key, and the state-change closure below cannot see one: it
+#: `continue`s past every idempotent method by design. So this is the second closure, and the
+#: column that matters is the last one: a route that can reach `Drill.answer` must say so.
+#:
+#: path -> (audience, may it reach an answer key)
+REVIEWED_READ_ROUTES: dict[str, tuple[str, bool]] = {
+    "/": ("unauthenticated", False),
+    "/healthz": ("unauthenticated", False),
+    "/readyz": ("unauthenticated", False),
+    "/livez": ("unauthenticated", False),
+    "/ping": ("unauthenticated", False),
+    "/health": ("unauthenticated", False),
+    "/version": ("unauthenticated", False),
+    "/api/v1/diagnostics": ("unauthenticated", False),
+    "/ui": ("unauthenticated", False),
+    "/ui/": ("unauthenticated", False),
+    "/ui/{filename}": ("unauthenticated", False),
+    "/api/v1/content/manifest": ("unauthenticated", False),
+    "/api/v1/content/procedure/{procedure_id}": ("unauthenticated", False),
+    "/api/v1/content/product/{product_id}": ("unauthenticated", False),
+    "/api/v1/drill/next": ("unauthenticated", False),
+    "/api/v1/me": ("unauthenticated", False),
+    "/api/v1/sessions/{session_id}": ("team token", False),
+    "/api/v1/sessions": ("team token", False),
+    "/openapi.json": ("unauthenticated", False),
+    "/docs": ("unauthenticated", False),
+    "/docs/oauth2-redirect": ("unauthenticated", False),
+    "/redoc": ("unauthenticated", False),
+}
+
+
+def _read_routes(app: Any) -> list[str]:
+    """Every path the application serves with an idempotent method."""
+    paths: set[str] = set()
+    for route in app.routes:
+        methods = getattr(route, "methods", None) or set()
+        if {m.upper() for m in methods} & IDEMPOTENT_METHODS:
+            paths.add(str(getattr(route, "path", "")))
+    return sorted(paths)
+
+
+def test_every_read_route_is_reviewed_and_none_may_reach_an_answer_key() -> None:
+    """The closure the answer-key rule actually needs.
+
+    The state-change closure skips every GET, so a future `GET /api/v1/drill/{id}` returning a
+    whole `Drill` - answer key included - would have shipped with the suite green. Today's read
+    routes are individually asserted elsewhere; this is the gate that makes the NEXT one
+    deliberate. Adding a read route means adding a row here and stating its audience.
+    """
+    application = create_app()
+    served = _read_routes(application)
+    unreviewed = [path for path in served if path not in REVIEWED_READ_ROUTES]
+    assert not unreviewed, (
+        "these read routes are not in REVIEWED_READ_ROUTES, so nobody has said what they"
+        f" disclose: {unreviewed}. Add a row naming the audience, and state whether the route can"
+        " reach Drill.answer."
+    )
+    leaky = [path for path, (_, answers) in REVIEWED_READ_ROUTES.items() if answers]
+    assert not leaky, (
+        f"these read routes are recorded as able to reach an answer key: {leaky}. The production"
+        " format forbids it: the key crosses the wire only after the operator has committed."
+    )
+
+
 def _state_changing_routes(app: Any) -> list[tuple[str, str]]:
     """Every non-idempotent route the application actually serves, however it was registered.
 

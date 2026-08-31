@@ -12,6 +12,7 @@ from enlightenment.scoring.evaluator import (
 )
 from enlightenment.scoring.matching import (
     MAX_ANSWER_LENGTH,
+    UNSCORABLE,
     Match,
     match,
     match_numeric,
@@ -22,6 +23,7 @@ from enlightenment.scoring.matching import (
 __all__ = [
     "DRILL_PREDICATES",
     "MAX_ANSWER_LENGTH",
+    "UNSCORABLE",
     "Award",
     "Evaluation",
     "Facts",

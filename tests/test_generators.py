@@ -12,7 +12,10 @@ of failure because nobody notices it.
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import sys
 from itertools import pairwise
 from pathlib import Path
 
@@ -23,6 +26,11 @@ from enlightenment.generators import build_registry, compose
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT = ROOT / "content"
+
+#: How many of the 140 drills carry no authored parameter the renderers ignore. A RATCHET: it may
+#: rise as renderers learn the content's vocabulary and must never fall. Raised on 31 August from
+#: 0, when the renderers read a vocabulary they had invented for themselves.
+FULLY_EXPRESSED_BASELINE = 11
 SEED = 0x4F1A
 
 
@@ -93,12 +101,53 @@ def test_the_same_params_and_seed_draw_the_same_surface_every_time() -> None:
 
     Determinism is not a convenience here: without it a debrief on another machine shows a
     different picture and the comparison it exists for is meaningless.
+
+    In-process only, and that is why the test below exists: this one CANNOT fail on the fault
+    that actually shipped, because a single interpreter always agrees with itself.
     """
     registry = build_registry()
     for name in sorted(PRODUCT_RENDERERS):
         first = compose(registry, name, {}, SEED)[0]
         second = compose(registry, name, {}, SEED)[0]
         assert first.for_client() == second.for_client(), name
+
+
+_FINGERPRINT_SCRIPT = """
+import hashlib, json, sys
+from enlightenment.generators import build_registry, compose
+registry = build_registry()
+surfaces = []
+for name in sorted(registry.names):
+    surfaces.append(compose(registry, name, {}, 20260831)[0].for_client())
+print(hashlib.sha256(json.dumps(surfaces, sort_keys=True).encode()).hexdigest())
+"""
+
+
+def test_the_same_seed_draws_the_same_surface_in_a_separate_process() -> None:
+    """The test the shipped fault needed, and the one an in-process comparison cannot be.
+
+    `rng()` salted the seed with the builtin `hash()` of the product name. Python randomises str
+    hashing per process, so every process drew a different surface from the same seed while every
+    in-process test passed. Two subprocesses under DIFFERENT `PYTHONHASHSEED` values is the only
+    arrangement that sees it, so the assertion is made there: the fingerprint of every renderer's
+    surface must be identical across both.
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    fingerprints = []
+    for hash_seed in ("0", "1", "4242"):
+        env["PYTHONHASHSEED"] = hash_seed
+        finished = subprocess.run(  # noqa: S603 - fixed argv, this interpreter
+            [sys.executable, "-c", _FINGERPRINT_SCRIPT],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+            timeout=180,
+        )
+        fingerprints.append(finished.stdout.strip())
+    assert len(set(fingerprints)) == 1, f"surface depends on PYTHONHASHSEED: {fingerprints}"
+    assert len(fingerprints[0]) == 64
 
 
 def test_a_different_seed_draws_a_different_surface() -> None:
@@ -224,10 +273,14 @@ def test_the_bounded_relative_track_closes_and_the_unbounded_one_does_not() -> N
     The track comes from the real Clohessy-Wiltshire solution, so this asserts the physics rather
     than a drawn shape: with the no-drift along-track rate the loop returns near its start, and
     without it the object walks away.
+
+    Driven by the CONTENT's vocabulary. This test used to pass `bounded`, which no drill in the
+    library authors: it was a name this module invented for itself, so the test proved a property
+    of a parameter nothing could set. `nmc_stable` and `fmc` are what the items actually say.
     """
     registry = build_registry()
-    closed = compose(registry, "tric", {"bounded": True}, SEED)[0].panels[0].marks[0]
-    open_track = compose(registry, "tric", {"bounded": False}, SEED)[0].panels[0].marks[0]
+    closed = compose(registry, "tric", {"geometry": "nmc_stable"}, SEED)[0].panels[0].marks[0]
+    open_track = compose(registry, "tric", {"geometry": "fmc"}, SEED)[0].panels[0].marks[0]
     closed_walk = abs(closed.x[-1] - closed.x[0])
     open_walk = abs(open_track.x[-1] - open_track.x[0])
     assert closed_walk < open_walk / 5, (closed_walk, open_walk)
@@ -356,3 +409,102 @@ def test_an_unresolvable_generator_fails_closed() -> None:
         compose(registry, "residual_series", {}, SEED)
     with pytest.raises(LookupError, match="no renderer"):
         compose(registry, "probe", {}, SEED, "PRD-NOT-A-PRODUCT")
+
+
+#: What a rendered surface must AGREE with when the content authors it. Each entry names an
+#: authored parameter, the derived fact it governs, and the value the fact must take. This table
+#: is the contract that DRL-0034 broke: it authored `beta_departs` with `time_stable`, the
+#: renderer ignored both and drew an in-plane departure, and the plot then said the opposite of
+#: the answer key it was serving. An operator reading it correctly was marked wrong.
+AGREEMENTS: tuple[tuple[str, object, str, object], ...] = (
+    ("beta_departs", True, "departure_component", "out_of_plane"),
+    ("time_stable", True, "departure_component", "out_of_plane"),
+    ("departure_component", "out_of_plane", "departure_component", "out_of_plane"),
+    ("departure_component", "in_plane", "departure_component", "in_plane"),
+    ("geometry", "fmc", "bounded", False),
+    ("geometry", "nmc_stable", "bounded", True),
+    ("actual_manoeuvres", 0, "manoeuvres", 0),
+)
+
+
+def test_no_rendered_stimulus_contradicts_its_own_authored_scene(
+    package: ContentPackage,
+) -> None:
+    """Every drill in the library, checked against the table above.
+
+    Not a sample and not a fixture: the whole bank, because the fault that shipped was invisible
+    exactly where nobody was looking. A renderer that ignores a parameter draws a plausible
+    picture, so there is no crash, no warning and no failing test - only an item that teaches the
+    wrong lesson.
+    """
+    registry = build_registry()
+    contradictions: list[str] = []
+    for drill in package.drills:
+        params = drill.stimulus.params
+        rendered = compose(
+            registry,
+            drill.stimulus.generator,
+            params,
+            SEED,
+            drill.stimulus.product_id,
+        )
+        derived: dict[str, object] = {}
+        for stimulus in rendered:
+            derived.update(stimulus.derived)
+        for key, authored, fact, required in AGREEMENTS:
+            if params.get(key) != authored or fact not in derived:
+                continue
+            if derived[fact] != required:
+                contradictions.append(
+                    f"{drill.id}: authored {key}={authored!r} but rendered {fact}={derived[fact]!r}"
+                )
+    assert not contradictions, contradictions
+
+
+def test_a_numeric_item_resolves_the_value_it_will_be_scored_against(
+    package: ContentPackage,
+) -> None:
+    """`computed_from_params` is answered by the generator or the item cannot be marked.
+
+    The matcher reads `derived["expected_value"]` and NO generator set it, so both numeric items
+    in the library resolved to `unscorable` every time. The resolution branch had never once
+    executed against real content, which is a control that exists only on paper.
+    """
+    registry = build_registry()
+    numeric = [d for d in package.drills if "computed_from_params" in d.answer.accept]
+    assert numeric, "no computed item in the library, so this test asserts nothing"
+    resolved = 0
+    for drill in numeric:
+        rendered = compose(
+            registry,
+            drill.stimulus.generator,
+            drill.stimulus.params,
+            SEED,
+            drill.stimulus.product_id,
+        )
+        derived: dict[str, object] = {}
+        for stimulus in rendered:
+            derived.update(stimulus.derived)
+        if "expected_value" in derived:
+            resolved += 1
+    assert resolved, "no computed item resolves a value, so every one of them is unscorable"
+
+
+def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -> None:
+    """A ratchet on the content-and-code agreement, not a pass mark.
+
+    129 of 140 drills carry authored parameters no renderer reads, and the honest treatment is to
+    count them rather than to claim otherwise. This test fails if that number GROWS - a new
+    renderer that quietly stops reading a parameter, or content authored against a vocabulary
+    nobody implemented - and the baseline is lowered by hand as renderers learn the vocabulary.
+    """
+    registry = build_registry()
+    expressed = sum(
+        1
+        for drill in package.drills
+        if not registry.unread(drill.stimulus.generator, drill.stimulus.params)
+    )
+    assert expressed >= FULLY_EXPRESSED_BASELINE, (
+        f"{expressed} drills fully express their authored scene, down from"
+        f" {FULLY_EXPRESSED_BASELINE}. A renderer stopped reading a parameter."
+    )

@@ -9,10 +9,17 @@ solvability check, and record the content version hash on every run.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+from http import HTTPStatus
 from pathlib import Path
+from unittest import mock
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from enlightenment.app import create_app
 from enlightenment.content import (
     CANONICAL_GENERATORS,
     MAX_ELO,
@@ -217,3 +224,62 @@ def test_the_drill_rubric_is_present_and_its_rules_carry_operator_facing_reasons
     for rule in rubric.rules:
         assert rule.explain.strip(), rule.id
         assert rule.competency_id.strip(), rule.id
+
+
+def test_a_loaded_record_cannot_be_mutated_by_a_caller(package: ContentPackage) -> None:
+    """The register claims frozen models are "stronger than the previous control". Prove it.
+
+    `docs/SECURITY.md` cited a test asserting only that an unmodelled field is CARRIED, which
+    says nothing about mutability: setting `frozen=False` on the model base left the whole suite
+    green while the register went on claiming a control. A row naming a test that does not assert
+    the property is worse than no row, because it reads as evidence.
+
+    One shared library serves every operator in the process. A caller that could write to a drill
+    would change the answer key under everyone else.
+    """
+    drill = package.drills[0]
+    with pytest.raises(ValidationError):
+        drill.prompt = "rewritten"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        drill.elo = 9999  # type: ignore[misc]
+    assert package.drills[0].prompt == drill.prompt
+
+
+def test_a_content_file_of_the_wrong_top_level_shape_is_reported_rather_than_raised(
+    tmp_path: Path,
+) -> None:
+    """A JSON array where an object belongs took the whole container down.
+
+    `.get` on a list raises `AttributeError`, which the load handler did not name, so the
+    exception escaped `create_app` itself: no health path answered and there was nothing to
+    screenshot. The realistic trigger is a typo in `thresholds.local.json`, the one file an
+    operator writes by hand, and the correct outcome is the 503 this project's health contract
+    promises rather than a crash loop.
+    """
+    for name in ("procedures/procedures-core.json", "thresholds.example.json", "drills.json"):
+        root = tmp_path / name.replace("/", "_")
+        shutil.copytree(CONTENT, root)
+        (root / name).write_text("[]", encoding="utf-8")
+        result = ContentPackage(root).load()
+        assert result.ok is False, name
+        assert any("expected a JSON object" in e or "drill" in e for e in result.errors), name
+
+
+def test_a_damaged_package_still_lets_the_service_start_and_answer_its_health_paths(
+    tmp_path: Path,
+) -> None:
+    """The invariant the shape check exists to protect, asserted end to end.
+
+    A load failure is CARRIED rather than thrown, so the container starts, `/healthz` answers,
+    and the fault is legible on `/api/v1/content/manifest` instead of in a restart loop.
+    """
+    root = tmp_path / "damaged"
+    shutil.copytree(CONTENT, root)
+    (root / "thresholds.example.json").write_text("[]", encoding="utf-8")
+    with mock.patch.dict(os.environ, {"CONTENT_DIR": str(root)}):
+        client = TestClient(create_app())
+    assert client.get("/healthz").status_code == HTTPStatus.OK
+    assert client.get("/livez").status_code == HTTPStatus.OK
+    manifest = client.get("/api/v1/content/manifest").json()
+    assert manifest["ok"] is False
+    assert manifest["errors"]

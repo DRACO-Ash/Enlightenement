@@ -279,3 +279,130 @@ def test_the_manifest_reports_what_is_loaded_and_what_is_not_wired(loop: DrillLo
     assert manifest["scored_scenarios_ready"] is False
     assert len(manifest["generators"]) == 10
     assert "D-CORRECT" in manifest["rubric_rules_implemented"]
+
+
+def test_an_unscorable_item_does_not_move_a_rating_or_the_schedule(
+    package: ContentPackage, loop: DrillLoop, tmp_path: Path
+) -> None:
+    """**Nobody is marked against a question the service could not mark.**
+
+    `computed_from_params` is the content's sentinel for a numeric answer the generator must
+    compute. The matcher refuses when no value was supplied, which is right; the loop then scored
+    the refusal as WRONG - rating down six, cue schedule reset as a miss, a run row appended.
+    Marking an operator against nothing is worse than not serving the item, and it was invisible:
+    they saw a note and a rating move with no way to tell which caused which.
+    """
+    numeric = [d for d in package.drills if "computed_from_params" in d.answer.accept]
+    assert numeric, "no computed item in the library, so this test asserts nothing"
+
+    store = ProgressStore(tmp_path / "progress.json")
+    before = store.load("operator-unscorable")
+    before.rating = 1400
+    store.save(before)
+
+    #: Drive the item directly, because selection is due-and-rating driven and may not reach it.
+    served = loop.serve(operator_id="operator-unscorable", item_id=numeric[0].id)
+    result = loop.score(
+        run_id=served.run_id,
+        response="7",
+        confidence=4,
+        elapsed_ms=3000,
+        operator_id="operator-unscorable",
+    )
+    payload = result.as_dict()
+    if payload["matched"] != "unscorable":
+        pytest.skip("this item resolved a value, so there is no refusal to assert on")
+
+    assert payload["rating_delta"] is None
+    assert payload["rating_before"] is None
+    after = store.load("operator-unscorable")
+    assert after.rating == 1400, "an unscorable item moved the rating"
+    assert after.runs == [], "an unscorable item wrote a history row"
+    assert after.cue(numeric[0].id).streak == 0
+
+
+def test_the_speed_bonus_is_decided_by_the_server_clock_not_the_client_s(
+    package: ContentPackage, loop: DrillLoop
+) -> None:
+    """A score derived from a value the client asserts is a client-side control.
+
+    `elapsed_ms` arrives in the submission body, and a client posting zero collected
+    `D-FAST-AND-CORRECT` on every item however long it had actually been sitting there.
+    `served_at` was recorded server-side at service and then read nowhere.
+
+    Driven honestly: the run is aged past its own time target using the server's timestamp, and
+    the submission then LIES about it. The bonus must not be awarded.
+    """
+    from datetime import timedelta
+
+    item = next(d for d in package.drills if "manoeuvre" in d.answer.accept)
+    fast = loop.serve(operator_id="operator-fast", item_id=item.id)
+    quick = loop.score(
+        run_id=fast.run_id,
+        response="manoeuvre",
+        confidence=4,
+        elapsed_ms=800,
+        operator_id="operator-fast",
+    )
+    assert quick.correct, "the fixture answer no longer matches, so this test asserts nothing"
+    assert "D-FAST-AND-CORRECT" in {c["rule_id"] for c in quick.as_dict()["score_components"]}
+
+    slow = loop.serve(operator_id="operator-slow", item_id=item.id)
+    held = loop.pending[slow.run_id]
+    held.served_at = held.served_at - timedelta(seconds=item.time_target_s + 120)
+    lied = loop.score(
+        run_id=slow.run_id,
+        response="manoeuvre",
+        confidence=4,
+        elapsed_ms=0,
+        operator_id="operator-slow",
+    )
+    assert lied.correct
+    fired = {c["rule_id"] for c in lied.as_dict()["score_components"]}
+    assert "D-FAST-AND-CORRECT" not in fired, "the client's own timer decided the bonus"
+
+
+def test_the_served_drill_map_is_bounded_by_count(loop: DrillLoop) -> None:
+    """An unauthenticated route that inserts an entry per call and never removes one is a memory
+    exhaustion surface. 4000 serves retained 4000 entries; nothing evicted, nothing expired, and
+    the error message advertised an expiry that did not exist."""
+    from enlightenment.training.drill import MAX_PENDING
+
+    for _ in range(MAX_PENDING + 40):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR)
+    assert len(loop.pending) <= MAX_PENDING
+
+
+def test_an_expired_run_is_refused_with_the_message_that_promises_it(loop: DrillLoop) -> None:
+    """The message said "unknown or has expired" while nothing ever expired. Now it is true."""
+    from datetime import timedelta
+
+    from enlightenment.training.drill import PENDING_TTL_SECONDS
+
+    served = loop.serve(operator_id=DEMONSTRATION_OPERATOR)
+    aged = loop.pending[served.run_id]
+    aged.served_at = aged.served_at - timedelta(seconds=PENDING_TTL_SECONDS + 60)
+    loop.serve(operator_id="operator-b")  # any serve runs the eviction pass
+    with pytest.raises(DrillError, match="unknown or has expired"):
+        loop.score(
+            run_id=served.run_id,
+            response="manoeuvre",
+            confidence=3,
+            elapsed_ms=1000,
+            operator_id=DEMONSTRATION_OPERATOR,
+        )
+
+
+def test_the_manifest_discloses_what_is_not_wired(loop: DrillLoop) -> None:
+    """Two counts that were honest everywhere except the product.
+
+    61 of 67 rubric rules have no predicate, and 129 of 140 stimuli carry authored parameters no
+    renderer reads. Both were stated in the commit, the changelog and three docstrings, and
+    neither reached a surface a supervisor could look at.
+    """
+    manifest = loop.manifest()
+    assert manifest["rubric_rules_unwired"] > 0
+    unread = manifest["stimulus_params_unread"]
+    assert unread["drills_total"] == 140
+    assert 0 < unread["drills_fully_expressed"] <= unread["drills_total"]
+    assert unread["params"], "the unread census names nothing, so it proves nothing"

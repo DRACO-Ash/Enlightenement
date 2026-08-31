@@ -2,6 +2,81 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.24.1 (2026-08-31)
+
+**What.** Both binding gates returned FAIL on V0.24 with three blockers and eleven majors between
+them. This is the remediation. Nothing here is new capability; all of it is a claim made true.
+
+**The blocker that voided the determinism gate.** `rng()` salted each product's stream with the
+builtin `hash()` of the product name. Python randomises string hashing per process, so the same
+seed drew a DIFFERENT surface in every process: three runs of one forty-drill render produced
+three different fingerprints. Every in-process test passed, because a single interpreter always
+agrees with itself. The salt is now a SHA-256 digest, and the test that could have caught it now
+exists: three subprocesses under different `PYTHONHASHSEED` values must produce one fingerprint.
+`scenario/determinism.py` already recorded this hazard class for set iteration; this was the same
+fault reintroduced one module later, which is the argument for the cross-process assertion rather
+than a note.
+
+**The blocker underneath it: two vocabularies.** The renderers read parameters they had invented
+for themselves - `centre_longitude`, `glint_phase_deg`, `state_changes`, `bounded` - while the
+content authored `beta_departs`, `separation_km`, `headcount`, `geometry`. Disjoint sets, so the
+authored scene was silently discarded and every drill of a given generator drew nearly the same
+picture. On DRL-0034 it was worse than bland: the item states `beta_departs` with `time_stable`,
+the renderer fell to its in-plane default, and the plot showed TIME departing with BETA flat -
+the opposite of its own answer key, so an operator reading it correctly was marked wrong. Beta
+reveals a change of orbit plane and time a change of orbit size; drawing the wrong one is not a
+cosmetic fault.
+
+Residual, TRIC and waterfall are now driven by the content's vocabulary, and every renderer
+declares a `reads` set. What is not read is COUNTED rather than ignored: 11 of 140 drills fully
+express their authored scene today, the number is on `/api/v1/content/manifest`, and a ratchet
+test fails if it falls. A second test renders all 140 and fails if any surface contradicts its
+own key. Two related repairs fell out of it: a manoeuvre is now a visible discontinuity in the
+propagated track rather than a number the server picked, and `derived["expected_value"]` is
+finally set, so the `computed_from_params` items are scorable at last.
+
+**Scoring faults, all of one family: a claim the code did not keep.**
+● An unscorable item scored as WRONG. The matcher refused, correctly; the loop then dropped the
+  rating six points, reset the cue schedule as a miss and wrote a run row. Marking an operator
+  against a question nobody could answer is worse than not serving it.
+● The speed bonus was decided by the client's own `elapsed_ms`. A client posting zero collected
+  it every time, while the server's `served_at` was recorded and read nowhere.
+● `D-PARTIAL` scaled its award by a hardcoded `0.5` that silently equalled today's rule award.
+  The composition is engine policy, so it is now a named constant that says so.
+● The rubric's `aggregation` block - `weighted_sum`, a capped speed factor, a Brier weighting -
+  was ignored in full. The method and the cap are applied; the calibration weight is REPORTED as
+  unimplemented, because the content states a weight and no formula and inventing one would put
+  a number in front of an operator that no author chose.
+
+**Availability.** `_pending` grew by one entry per unauthenticated `GET /api/v1/drill/next` and
+never shrank: 4000 serves retained 4000 entries, and the error message advertised an expiry no
+code implemented. Now bounded by age and by count, and the message is true. A content file shaped
+as a JSON array raised `AttributeError` out of `create_app` itself, so no health path answered -
+a crash loop where the contract promises a 503 naming the fault. The realistic trigger is a typo
+in `thresholds.local.json`, the one file an operator writes by hand.
+
+**Controls that existed only on paper.** `training/scoring.py` survived the V0.24 rewrite and its
+tests did not: 87% coverage, zero tests naming any of its symbols. Three mutants proved it - the
+rating band removed, the Brier reduced to an absolute difference, the off-scale confidence guard
+disabled - and the full suite passed with each. Ten assertions restored in
+`tests/test_training_scoring.py`, all three mutants now fail. The register's claim that frozen
+content models are "stronger than the previous control" cited a test that asserted no such thing;
+setting `frozen=False` left the suite green. That test now exists. And the loader docstring
+claimed a solvability check that has never existed, which is the exact fault that shipped: it is
+recorded as a named gap.
+
+**Also.** A read-route closure, because the state-change closure skips every GET and a read route
+is the shape that leaks an answer key. One environment name for the content directory instead of
+two. `item_version` length-capped before it reaches the progress file. Three comments that
+overstated what their code does, corrected rather than deleted.
+
+**How verified.** Verification loop green, seven legs: 923 passed, 2 skipped, coverage 96.40%.
+Every fix above mutation-proved: the
+mutation is applied, the named test is shown failing, the tree is restored and confirmed clean.
+Both gates re-run at this commit, sequentially rather than in parallel - running two
+mutation-testing reviewers against one worktree let each see the other's mutants, which is how
+V0.24 came to be reviewed against code neither reviewer wrote.
+
 ## V0.24 (2026-08-31)
 
 **What.** The application, built on Ash's real content package. A minor bump rather than a patch,
@@ -85,7 +160,7 @@ caught here, and the strictness moved upstream to the schema and the validator. 
 gap rather than a removal: rubric version pinning is not implemented, and closing it needs a
 decision from the content author about where the pin lives.
 
-**How verified.** Verification loop green, seven legs: 899 passed, 2 skipped, coverage 96.67%.
+**How verified.** Verification loop green, seven legs: 900 passed, 2 skipped, coverage 96.67%.
 Content validator 0 errors. Four new suites, 76 tests. All 140 drills load, all 140 render
 deterministically, and the application was driven in a real browser rather than only tested: the
 drill surface, the reveal with its rule decomposition, and the progress surface all render, with

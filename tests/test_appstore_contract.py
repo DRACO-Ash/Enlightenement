@@ -798,6 +798,7 @@ MAX_ELIDED_RESOLUTION = 3
 #: failure instead of a silent truncation, and the two sibling regexes stop drifting.
 CITATION_TOKEN = r"\btest_[A-Za-z0-9_]+(?![A-Za-z0-9_])(?!\.py\b)"
 
+
 #: Every suite holding a security property the register carries. `test_http.py`, `test_storage.py`
 #: and `test_audit.py` were missing while the sweep read only four: the register cites the
 #: 500-header test, the middleware-order test, the symlink refusals, the atomic write, the
@@ -834,6 +835,11 @@ SWEPT_SECURITY_SUITES: tuple[str, ...] = (
     # the raw response BODY of a real 140-item library rather than on a placeholder one.
     "test_scoring.py",
     "test_training_api.py",
+    # Elo, calibration and spacing. Restored in V0.24.1 after both gates found the module live,
+    # at 87% coverage, and named by NO test: three mutants passed the full suite. Swept because
+    # the register now carries the rating band, the proper scoring rule and the off-scale
+    # confidence refusal, and an uncited control here would be exactly as invisible as those were.
+    "test_training_scoring.py",
 )
 
 #: Suites holding no security property, so nothing in them needs a register row. Recorded rather
@@ -889,6 +895,21 @@ UNSWEPT_CITED_SUITES: frozenset[str] = frozenset({"test_appstore_contract.py"})
 #: surface and the backup symlink refusal - and those four are now cited rather than exempted.
 UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
     {
+        # --- test_training_scoring.py. TRAINING CORRECTNESS, the first kind described below.
+        # Restored in V0.24.1 after both gates found `training/scoring.py` live and named by no
+        # test at all. Three of its assertions DO carry register rows - the rating band, the
+        # proper scoring rule, the off-scale confidence refusal - because each is a bound on a
+        # value that reaches a person. These five are the measurement itself: an Elo exchange that
+        # neither creates nor destroys rating, a draw at parity, the direction of a wrong answer,
+        # the spacing ladder's monotonicity, and the wording of the calibration verdict. Real
+        # properties, and the reason the product works, but "the Elo exchange is symmetric" in a
+        # document that promises controls would dilute the document.
+        "test_two_equally_rated_players_expect_a_draw",
+        "test_the_exchange_is_symmetric_so_ratings_are_not_created_or_destroyed",
+        "test_a_wrong_answer_lowers_the_operator_and_raises_the_item",
+        "test_a_miss_returns_the_cue_to_the_front_of_the_spacing_ladder",
+        "test_the_spacing_ladder_only_ever_grows_and_is_bounded",
+        "test_the_calibration_verdict_names_the_costly_case_in_words",
         # --- test_training.py and test_training_api.py. Both suites ARE swept: the answer-key
         # boundary, the interface policy, the markup sinks, the scoring limiter, the progress
         # file's mode and the edge redaction check all carry register rows. The names below are
@@ -1270,7 +1291,10 @@ def test_every_security_test_is_cited_by_the_policy() -> None:
 
     # The claim beside CITATION_TOKEN - that widening to include capitals changes nothing on the
     # register as it stands - checked rather than asserted in prose. If a capitalised citation is
-    # ever added this fails, which is the loud failure the widening exists to produce.
+    # ever added this fails, which is the loud failure the widening exists to produce. Two were
+    # briefly added in V0.24.1 and renamed instead: the project lints test names lowercase
+    # (N802), and an exemption plus a second allowlist to keep two shouted words was more
+    # machinery than the emphasis was worth.
     lowercase_only = set(re.findall(r"\btest_[a-z0-9_]+(?![a-z0-9_])(?!\.py\b)", rows))
     assert lowercase_only == cited_names, (
         "a citation in the control table contains a capital letter. That is now handled rather"

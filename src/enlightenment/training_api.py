@@ -40,7 +40,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from enlightenment.audit import log_event
-from enlightenment.content import ContentPackage
+from enlightenment.content import CONTENT_DIR_VARIABLE, ContentPackage
 from enlightenment.scoring import MAX_ANSWER_LENGTH
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
@@ -60,7 +60,14 @@ _PACKAGE_ROOT: Final = Path(__file__).resolve().parents[2]
 
 
 def resolve_content_root() -> Path:
-    override = os.environ.get("CONTENT_DIR", "").strip()
+    """One environment name for the content tree, and the loader owns it.
+
+    This read `CONTENT_DIR` while `ContentPackage`'s own resolver read
+    `ENLIGHTENMENT_CONTENT_DIR`. An operator who set the second got the baked-in tree served over
+    HTTP while the validator checked a different one, so verification leg 2 could pass green
+    against content the server never loads.
+    """
+    override = os.environ.get(CONTENT_DIR_VARIABLE, "").strip()
     return Path(override) if override else _PACKAGE_ROOT / "content"
 
 
@@ -128,7 +135,7 @@ def register_training_routes(
     three different failure modes.
     """
     _register_interface(app)
-    _register_library(app, content=content)
+    _register_library(app, content=content, loop=loop)
     _register_drill(app, loop=loop, content=content, guard_write=guard_write)
 
 
@@ -197,7 +204,7 @@ def _register_interface(app: FastAPI) -> None:
         return HTMLResponse(content=markup, headers=_UI_HEADERS)
 
 
-def _register_library(app: FastAPI, *, content: ContentPackage) -> None:
+def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop) -> None:
     """What is loaded, and the procedures an operator may read. Never gated, never scored."""
 
     @app.get("/api/v1/content/manifest")
@@ -208,6 +215,7 @@ def _register_library(app: FastAPI, *, content: ContentPackage) -> None:
         stays interpretable against content that has since changed.
         """
         result = content.result
+        served = loop.manifest()
         return {
             "ok": result.ok,
             "content_hash": result.content_hash,
@@ -215,6 +223,12 @@ def _register_library(app: FastAPI, *, content: ContentPackage) -> None:
             "errors": list(result.errors[:20]),
             "thresholds_source": content.thresholds.source,
             "scored_scenarios_ready": content.scored_scenarios_ready,
+            #: What is NOT wired, disclosed on a surface an operator can actually reach. These
+            #: counts were honest in the commit message, the changelog and three docstrings, and
+            #: absent from the product, which is the one place a supervisor would look.
+            "rubric_rules_implemented": served["rubric_rules_implemented"],
+            "rubric_rules_unwired": served["rubric_rules_unwired"],
+            "stimulus_params_unread": served["stimulus_params_unread"],
             "why_not_ready": (
                 ""
                 if content.scored_scenarios_ready

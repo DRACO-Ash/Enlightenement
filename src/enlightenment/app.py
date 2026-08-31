@@ -847,7 +847,10 @@ def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths)
     registry = build_registry()
     # The registry check runs HERE, at load, because content pointing at a product nobody built
     # is a content-and-code disagreement and the cheapest place to catch one is the moment both
-    # sides are present. At request time it would be a 503 an operator has to report.
+    # sides are present. This LOGS the disagreement; the binding check is
+    # `tests/test_generators.py::test_every_product_the_content_references_has_a_renderer`
+    # in the verification loop, and a request for an unbuilt product still 503s. Saying
+    # "caught at load" of a log line overstated what this does.
     unbuilt = registry.unbuilt({d.stimulus.product_id for d in package.drills})
     if unbuilt:
         log_event("content.unbuilt_products", products=list(unbuilt))

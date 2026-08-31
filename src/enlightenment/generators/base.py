@@ -16,8 +16,9 @@ corrected layout fails the test and names the renderer to fix.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 from enlightenment.scenario import SeededRandom
 
@@ -168,22 +169,48 @@ def _panel_dict(panel: Panel) -> dict[str, Any]:
 
 
 class Generator(Protocol):
-    """A product renderer. One class per product, registered against its product id."""
+    """A product renderer. One class per product, registered against its product id.
+
+    `reads` is the load-bearing addition. It names the authored parameters this renderer
+    actually honours, and it exists because the first version of this module invented its own
+    vocabulary: the renderers read `centre_longitude`, `glint_phase_deg` and `state_changes`
+    while the content authored `beta_departs`, `separation_km` and `headcount`. Two disjoint
+    vocabularies, so every drill of a given generator drew very nearly the same picture and the
+    authored scene was silently discarded. On DRL-0034 that produced a stimulus showing the
+    OPPOSITE of its own answer key: the item states `beta_departs` with `time_stable`, the
+    renderer defaulted to an in-plane departure, and an operator reading the plot correctly was
+    marked wrong.
+
+    Declaring the vocabulary makes the gap countable instead of invisible. A parameter outside
+    `reads` is reported, and a drill carrying one is served for study rather than scored, because
+    a stimulus that cannot express the discrimination the key rewards must not move a rating.
+    """
 
     product_id: str
     name: str
+    reads: frozenset[str]
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         """Produce the surface. Same params and same seed give the same surface, always."""
         ...
 
 
+#: What the two composition modes read, resolved in `compose()` rather than in a renderer.
+#: `composite` selects the board from `products` and `probe` selects one renderer; `tier` is the
+#: authored difficulty band, which the selector reads and the surface does not.
+COMPOSITION_READS: Final[dict[str, frozenset[str]]] = {
+    "composite": frozenset({"products", "tier"}),
+    "probe": frozenset({"product_id", "product", "question", "tier"}),
+}
+
+
 class GeneratorRegistry:
     """Which products have a renderer, and the load-time check that content agrees.
 
-    The check runs at load rather than at request time on purpose. Content referencing a product
-    nobody built is a content-and-code disagreement, and the cheapest place to catch a
-    disagreement is the moment both sides are present.
+    `unbuilt` is CALLED at load and its result is logged; the binding check is in the test suite,
+    where a product the content references and no renderer claims fails the verification loop. A
+    request for one still answers 503. Stating that the check "runs at load" implied a refusal to
+    start that this does not perform, which is the kind of overstatement that gets believed.
     """
 
     def __init__(self) -> None:
@@ -212,6 +239,27 @@ class GeneratorRegistry:
         """Product ids the content references and no renderer claims. Empty is the healthy case."""
         return tuple(sorted(referenced - self.product_ids))
 
+    def unread(self, generator_name: str, params: dict[str, Any]) -> tuple[str, ...]:
+        """Authored parameters this renderer does not honour. Empty means the scene is expressed.
+
+        Keys beginning with an underscore are excluded by design: `_legacy_generator` is the
+        traceability marker the content package carries for the 58 retired generator names, and
+        it is deliberately not implemented.
+
+        An unknown generator name returns every key rather than none. A censor that reports
+        nothing when it cannot see is worse than no censor, because it reads as a clean result.
+        """
+        authored = {key for key in params if not key.startswith("_")}
+        if generator_name in COMPOSITION_READS:
+            #: The two composition modes are not renderers, so they have no class to declare a
+            #: vocabulary on. What they read is resolved in `compose()` and named here, and the
+            #: renderers underneath are then censused by the caller for the rest.
+            return tuple(sorted(authored - COMPOSITION_READS[generator_name]))
+        generator = self._by_name.get(generator_name)
+        if generator is None:
+            return tuple(sorted(authored))
+        return tuple(sorted(authored - generator.reads))
+
 
 def rng(seed: int, salt: str) -> SeededRandom:
     """One deterministic stream per surface, salted by product so two panels never correlate.
@@ -219,5 +267,16 @@ def rng(seed: int, salt: str) -> SeededRandom:
     Determinism is not a convenience here. The debrief redraws exactly what the operator was
     looking at from the run log alone, which needs the same seed to produce the same surface on a
     machine that has never seen the original.
+
+    **The salt is digested with SHA-256, never with the builtin `hash`.** Python randomises the
+    hash of a `str` per process unless `PYTHONHASHSEED` is fixed, so the first version of this
+    function drew a DIFFERENT surface in every process from the same seed: three runs of one
+    forty-drill render produced three different fingerprints. That voids the whole determinism
+    gate and the replay claim with it, silently, because a single process always agrees with
+    itself and so does a test that renders twice in one interpreter. `determinism.py` already
+    records this hazard class for set iteration; this is the same fault reintroduced one module
+    later. A digest is stable across processes, releases and machines, which is the actual
+    requirement.
     """
-    return SeededRandom(seed ^ (hash(salt) & 0xFFFFFFFF))
+    digest = hashlib.sha256(salt.encode("utf-8")).digest()[:4]
+    return SeededRandom(seed ^ int.from_bytes(digest, "big"))

@@ -36,6 +36,7 @@ from enlightenment.physics import (
     no_drift_alongtrack_rate_km_s,
     propagate_relative,
 )
+from enlightenment.scenario import SeededRandom
 
 #: PROVISIONAL, every one of them. Replaced by the characterisation pass output as versioned
 #: content; until then a single figure each, deliberately modest, because too much invented
@@ -65,6 +66,127 @@ EVEN_ODDS: Final = 0.5
 
 #: How often a co-orbital row reports a sustained close approach as possible. PROVISIONAL.
 PROVISIONAL_SUSTAINED_RATE: Final = 0.6
+
+#: Residual departure sizes, in the plot's own units. PROVISIONAL like every other imperfection
+#: figure here, and named separately because the two axes answer different questions: beta a
+#: change of orbit PLANE, time a change of orbit SIZE.
+BETA_DEPARTURE_DEG: Final = 0.031
+TIME_DEPARTURE_S: Final = 0.028
+
+#: Vertical half-range. `tight_y_scale` is authored on the items whose whole point is that the
+#: departure is small against the noise, so the scale is part of the discrimination.
+TIGHT_RESIDUAL_LIMIT: Final = 0.05
+WIDE_RESIDUAL_LIMIT: Final = 0.08
+
+#: Marker tooltip conversions. The residual axis is dimensionless in the product; the marker
+#: quotes a period change in seconds and an inclination change in degrees, so the tooltip needs a
+#: stated scale rather than an implied one. PROVISIONAL: the real product's scaling is not
+#: documented in the material supplied, so these carry the same status as the noise figures.
+PERIOD_SECONDS_PER_UNIT: Final = 200.0
+INCLINATION_DEG_PER_UNIT: Final = 0.02
+
+#: Orbital periods, seconds. GEO is the sidereal day, which is the figure a geostationary
+#: relative-motion plot is drawn against; the low-orbit figure is a representative 92-minute
+#: revolution, matching the pass cadence used above.
+GEO_PERIOD_S: Final = 86164.0905
+LEO_PERIOD_S: Final = 92.0 * 60.0
+
+#: Samples per revolution of relative motion. Enough that a loop reads as a curve rather than a
+#: polygon, and the count scales with the authored revolutions so a six-revolution item is not
+#: drawn at lower resolution than a two-revolution one.
+TRIC_SAMPLES_PER_REVOLUTION: Final = 70
+
+#: Residual along-track rates added to the no-drift condition, kilometres per second. PROVISIONAL.
+#: `seeded_slow` is the authored case where the drift is only visible over several revolutions.
+SLOW_DRIFT_RATE_KM_S: Final = 3.0e-6
+FORCED_DRIFT_RATE_KM_S: Final = 1.4e-5
+#: A small cross-track rate, so the three projections are genuinely three views and not two.
+CROSS_TRACK_RATE_KM_S: Final = 1.1e-5
+
+#: Size of an authored step change in brightness, magnitudes. PROVISIONAL: large enough to be
+#: unambiguous against the scatter, because the item asking about it is about whether a change
+#: happened at all, not about reading a marginal one.
+STEP_CHANGE_MAGNITUDES: Final = 0.9
+
+#: Waterfall defaults, used only where the content states nothing.
+DEFAULT_DRIFTERS: Final = 3
+DEFAULT_LONGITUDE_HALF_WIDTH_DEG: Final = 3.0
+DEFAULT_GAP_START_FRACTION: Final = 0.45
+DEFAULT_GAP_DAYS: Final = 1.4
+#: Geostationary electro-optical passes in a day, used to turn a missed-pass count into a span.
+GEO_PASSES_PER_DAY: Final = 12.0
+
+#: Along-track velocity change applied at a manoeuvre, kilometres per second. PROVISIONAL, and
+#: sized so the cusp is legible at the plot's scale rather than so it is realistic: the real
+#: figure is a characterisation-pass output.
+BURN_ALONGTRACK_KM_S: Final = 4.0e-6
+
+#: Default separation where the content states none, kilometres.
+DEFAULT_SEPARATION_KM: Final = 8.0
+#: The authored words for a separation. `just_outside_threshold` is relative to the reporting
+#: threshold in the content's own threshold block, so it is read from there, not fixed here.
+CLOSE_SEPARATION_KM: Final = 1.2
+
+#: Observation thinning by authored density. `starved` is the case an operator has to reason
+#: about: a departure after a starved run may be a manoeuvre or a fit that simply decayed.
+OBS_DENSITY_KEEP: Final[dict[str, float]] = {"dense": 1.0, "nominal": 0.55, "starved": 0.18}
+
+
+def _departure_component(params: dict[str, Any]) -> str:
+    """Which association departs, resolved from the content's OWN vocabulary.
+
+    Three authored spellings reach this, and they must agree: an explicit
+    `departure_component`, or the pair `beta_departs`/`time_stable`. The pair wins where both
+    appear, because it is the more specific statement. Nothing is guessed: an item that names
+    neither gets the in-plane case, which is the commonest departure and is stated in the
+    derived facts so a debrief can see what was drawn.
+    """
+    if params.get("beta_departs"):
+        return "out_of_plane"
+    if params.get("time_stable"):
+        return "out_of_plane"
+    component = str(params.get("departure_component", "in_plane"))
+    if component in ("cross_track", "out_of_plane", "plane"):
+        return "out_of_plane"
+    return "in_plane"
+
+
+def _magnitude(authored: Any, default: float, stream: SeededRandom) -> float:
+    """A departure size from the content, which may be a number, a word, or absent.
+
+    `near_zero` and `seeded` both appear in the library. `near_zero` is not zero: the item that
+    uses it asks an operator to read an inclination change that is present but small against a
+    period change that is not, and rendering it as exactly zero would remove the judgement.
+    """
+    if isinstance(authored, int | float) and not isinstance(authored, bool):
+        return float(authored)
+    if authored == "near_zero":
+        return default * 0.12
+    if authored == "seeded":
+        return default * stream.uniform(0.8, 1.4)
+    return default
+
+
+def _collection_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
+    """The authored observation gap, in days. Equal bounds mean no gap.
+
+    A gap is not decoration. `departure_after_gap` is the item where the correct answer is that
+    the departure is NOT assessable as a manoeuvre, because a long unobserved stretch degrades
+    the fit on its own. Drawing the gap is what makes that answer available to the operator.
+    """
+    if not params.get("departure_after_gap"):
+        return (0.0, 0.0)
+    start = float(params.get("gap_start_frac", 0.55)) * days
+    length = float(params.get("gap_len_hours", 40)) / HOURS_PER_DAY
+    return (start, min(start + length, days))
+
+
+def _thinned(times: list[float], density: Any, stream: SeededRandom) -> list[float]:
+    """Keep a fraction of the pass observations according to the authored density."""
+    keep = OBS_DENSITY_KEEP.get(str(density), 1.0)
+    if keep >= 1.0:
+        return times
+    return [t for t in times if stream.uniform(0.0, 1.0) < keep]
 
 
 def _leo_pass_times(days: float, stream: Any) -> list[float]:
@@ -102,62 +224,236 @@ def _geo_pass_times(days: float, stream: Any) -> list[float]:
     return sorted(times)
 
 
+def _separation_km(params: dict[str, Any], stream: SeededRandom) -> float:
+    """Separation in kilometres, from whichever of the three authored spellings is present.
+
+    `separation_km` and `distance_km` may be a number or one of the content's words. The words
+    are not decoration: `seeded_close` and `just_outside_threshold` are the cases where the whole
+    item turns on how near the pair is, and rendering them all at the same distance removed the
+    judgement the item exists to train.
+    """
+    for key in ("separation_km", "distance_km", "separation"):
+        authored = params.get(key)
+        if isinstance(authored, int | float) and not isinstance(authored, bool):
+            return float(authored)
+        if authored == "seeded_close":
+            return CLOSE_SEPARATION_KM * stream.uniform(0.7, 1.3)
+        if authored == "just_outside_threshold":
+            return CLOSE_SEPARATION_KM
+    return DEFAULT_SEPARATION_KM
+
+
+def _drifter_count(params: dict[str, Any], neighbours: int) -> int:
+    """How many of the neighbourhood are drifting, from the content's two authored spellings."""
+    for key in ("drifting", "drifting_object"):
+        authored = params.get(key)
+        if isinstance(authored, bool):
+            return 1 if authored else 0
+        if isinstance(authored, int):
+            return min(authored, neighbours)
+    return min(DEFAULT_DRIFTERS, neighbours)
+
+
+def _longitude_bounds(params: dict[str, Any]) -> tuple[float, float]:
+    """The station-keeping box, degrees either side of the primary.
+
+    Authored as a pair, a single half-width, or absent. A held object sits inside it and a
+    drifter leaves it, which is the shape the product reads by.
+    """
+    authored = params.get("longitudinal_bounds")
+    if isinstance(authored, list | tuple) and len(authored) == 2:  # noqa: PLR2004 - a pair
+        return (float(authored[0]), float(authored[1]))
+    if isinstance(authored, int | float) and not isinstance(authored, bool):
+        return (-float(authored), float(authored))
+    return (-DEFAULT_LONGITUDE_HALF_WIDTH_DEG, DEFAULT_LONGITUDE_HALF_WIDTH_DEG)
+
+
+def _drift_rate(authored: Any, stream: SeededRandom) -> float:
+    """Degrees per day. Authored where the item asks the operator to derive it from the plot."""
+    if isinstance(authored, int | float) and not isinstance(authored, bool):
+        return float(authored)
+    return stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
+
+
+def _waterfall_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
+    """An authored collection gap, in days. Equal bounds mean continuous collection.
+
+    `collection_gaps` and `missed_passes` are the two authored spellings. The gap is the reason
+    an operator cannot say whether something changed, so it is drawn as absence rather than
+    smoothed over.
+    """
+    for key in ("collection_gaps", "missed_passes"):
+        authored = params.get(key)
+        if isinstance(authored, bool) and authored:
+            start = days * DEFAULT_GAP_START_FRACTION
+            return (start, min(start + DEFAULT_GAP_DAYS, days))
+        if isinstance(authored, int | float) and not isinstance(authored, bool) and authored > 0:
+            start = days * DEFAULT_GAP_START_FRACTION
+            return (start, min(start + float(authored) / GEO_PASSES_PER_DAY, days))
+    return (0.0, 0.0)
+
+
+def _burned_track(
+    start: RelativeState, mean_motion: float, step_s: float, samples: int, burns: int
+) -> list[RelativeState]:
+    """The relative track, propagated in segments with a velocity change at each junction.
+
+    A manoeuvre has to be VISIBLE for "how many manoeuvres are in this relative motion" to be a
+    question about the plot rather than about a number the server picked. Each burn is an
+    along-track velocity change at a segment boundary, which is what a burn does to relative
+    motion and what an analyst reads as a cusp: the loop changes shape at a point rather than
+    curving smoothly through it. Zero burns is the continuous case, unchanged.
+    """
+    if burns <= 0:
+        return [propagate_relative(start, mean_motion, i * step_s) for i in range(samples)]
+
+    track: list[RelativeState] = []
+    state = start
+    segment = samples // (burns + 1)
+    for index in range(samples):
+        if index and index % segment == 0 and track and index // segment <= burns:
+            #: Restart the propagation from the current state with the along-track rate changed.
+            #: The size is PROVISIONAL like every other imperfection figure in this module.
+            here = track[-1]
+            state = RelativeState(
+                position_km=here.position_km,
+                velocity_km_s=(
+                    here.velocity_km_s[0],
+                    here.velocity_km_s[1] + BURN_ALONGTRACK_KM_S,
+                    here.velocity_km_s[2],
+                ),
+            )
+            track.append(state)
+            continue
+        track.append(propagate_relative(state, mean_motion, (index % segment) * step_s))
+    return track
+
+
+def _tric_derived(facts: dict[str, Any], *, asks_for_count: bool) -> dict[str, Any]:
+    """Server-side facts about the rendered track, including the answer when the item asks for it.
+
+    `expected_value` is the fix for a control that had never executed: `computed_from_params` is
+    the content's sentinel for a numeric answer the renderer must compute, the matcher reads it
+    from `derived["expected_value"]`, and NO generator ever set it. Both numeric items in the
+    library therefore resolved to `unscorable` every time. It is set here and only here for the
+    item that asks how many manoeuvres are visible, and `Stimulus.for_client` strips the whole
+    `derived` map, because in the browser this number IS the answer.
+    """
+    if asks_for_count:
+        facts["expected_value"] = float(facts["manoeuvres"])
+    return facts
+
+
 class ResidualGenerator:
     """PRD-RESIDUAL. Tight vertical scale, time and beta series, a candidate manoeuvre marker.
 
-    The teaching content is which series departs. Beta reveals a plane change and time reveals a
-    size change, so a departure in one and not the other is the discrimination, and a renderer
-    that moved both together would destroy the item.
+    The teaching content is which series departs. **Beta reveals a change of orbit PLANE and time
+    reveals a change of orbit SIZE**, so a departure in one and not the other is the whole
+    discrimination, and a renderer that moved both together would destroy the item.
+
+    Which is what the first version did, in the worst possible direction. It read only `days`,
+    `departure_at_frac` and `departure_component`, so DRL-0034 - authored `beta_departs: true`
+    with `time_stable: true` - fell to the in-plane default and drew TIME departing while beta
+    stayed flat. The plot said the opposite of the key, and the operator who read it correctly
+    was marked wrong. The vocabulary below is the content's, not this module's.
     """
 
     product_id = "PRD-RESIDUAL"
     name = "residual"
+    reads = frozenset(
+        {
+            "days",
+            "departure_at_frac",
+            "departure_component",
+            "beta_departs",
+            "time_stable",
+            "delta_inc_deg",
+            "delta_period_s",
+            "departure_after_gap",
+            "gap_start_frac",
+            "gap_len_hours",
+            "obs_density",
+            "noise_profile",
+            "tight_y_scale",
+            "manoeuvre_marker",
+        }
+    )
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
         days = float(params.get("days", 7))
         fraction = float(params.get("departure_at_frac", 0.72))
-        component = str(params.get("departure_component", "in_plane"))
-        times = _leo_pass_times(days, stream)
-        break_at = days * fraction
+        component = _departure_component(params)
+        beta_departs = component == "out_of_plane"
+        time_departs = component == "in_plane"
 
-        beta_departs = component in ("cross_track", "out_of_plane", "plane")
-        time_departs = component in ("in_plane", "in_track", "radial", "size")
+        times = _thinned(_leo_pass_times(days, stream), params.get("obs_density"), stream)
+        gap_start, gap_end = _collection_gap(params, days)
+        if gap_end > gap_start:
+            times = [t for t in times if not gap_start <= t <= gap_end]
+        break_at = max(days * fraction, gap_end)
+
+        #: An item that names the sizes wants them legible against each other; one that does not
+        #: gets the same provisional step. Either way the figure is stated, never implied.
+        beta_step = _magnitude(params.get("delta_inc_deg"), BETA_DEPARTURE_DEG, stream)
+        time_step = _magnitude(params.get("delta_period_s"), TIME_DEPARTURE_S, stream)
+
         marks: list[Marks] = []
-        for label, role, departs in (
-            ("Time association", "series-a", time_departs),
-            ("Beta association", "series-b", beta_departs),
+        for label, role, departs, step in (
+            ("Time association", "series-a", time_departs, time_step),
+            ("Beta association", "series-b", beta_departs, beta_step),
         ):
             values = tuple(
                 stream.uniform(-PROVISIONAL_RESIDUAL_SIGMA, PROVISIONAL_RESIDUAL_SIGMA)
-                + (0.031 if departs and t >= break_at else 0.0)
+                + (step if departs and t >= break_at else 0.0)
                 for t in times
             )
             marks.append(Marks(label=label, role=role, x=tuple(times), y=values))
 
+        limit = TIGHT_RESIDUAL_LIMIT if params.get("tight_y_scale") else WIDE_RESIDUAL_LIMIT
+        notes = ["Departure sustained across multiple passes, not a single point."]
+        if gap_end > gap_start:
+            notes.append(
+                f"No observations between {gap_start:.2f} and {gap_end:.2f} days"
+                f" ({(gap_end - gap_start) * HOURS_PER_DAY:.0f} hour gap)."
+            )
+        if params.get("manoeuvre_marker"):
+            notes.append(f"Provider marker at {break_at:.2f} days.")
+
         panel = Panel(
             title="Residual against observation time",
             x=Axis("Observation time", "days"),
-            y=Axis("Residual", "", minimum=-0.08, maximum=0.08),
+            y=Axis("Residual", "", minimum=-limit, maximum=limit),
             marks=tuple(marks),
-            notes=(
-                "Departure sustained across multiple passes, not a single point.",
-                f"Candidate manoeuvre at {break_at:.2f} days.",
-            ),
+            notes=tuple(notes),
         )
+        header = [("Fit span", f"{days:.0f} days"), ("Association", "time and beta")]
+        if params.get("manoeuvre_marker"):
+            header.append(
+                (
+                    "Marker",
+                    f"period {time_step * PERIOD_SECONDS_PER_UNIT:+.1f} s,"
+                    f" inclination {beta_step * INCLINATION_DEG_PER_UNIT:+.4f} deg",
+                )
+            )
         return Stimulus(
             product_id=self.product_id,
             generator=self.name,
             title="Residual against observation time",
             panels=(panel,),
-            header=(("Fit span", f"{days:.0f} days"), ("Association", "time and beta")),
+            header=tuple(header),
             legend=(("Time association", "series-a"), ("Beta association", "series-b")),
             footer=f"seed {seed:#x} · replayable exactly · noise PROVISIONAL",
             reads_as=(
                 "On the zero line the observations agree with the current state. A"
                 " sustained departure means they no longer do."
             ),
-            derived={"departure_component": component, "break_at_days": break_at},
+            derived={
+                "departure_component": component,
+                "break_at_days": break_at,
+                "gap_hours": (gap_end - gap_start) * HOURS_PER_DAY,
+                "observations": len(times),
+            },
         )
 
 
@@ -172,26 +468,65 @@ class WaterfallGenerator:
 
     product_id = "PRD-WATERFALL"
     name = "waterfall"
+    reads = frozenset(
+        {
+            "days",
+            "cycles_shown",
+            "headcount",
+            "drifting",
+            "drifting_object",
+            "longitudinal_bounds",
+            "degrees_from_bound",
+            "drift_begins",
+            "derived_rate_deg_day",
+            "newest_at",
+            "collection_gaps",
+            "missed_passes",
+            "obs_count",
+            "populated_regions",
+            "regime",
+        }
+    )
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        days = float(params.get("days", 5))
-        centre = float(params.get("centre_longitude", 0.0))
-        neighbours = int(params.get("neighbours", 14))
-        drifters = int(params.get("drifters", 3))
+        #: `cycles_shown` is the content's other spelling for the span. One product, two authored
+        #: names, and reading only the first left every item drawn over the same window.
+        days = float(params.get("days", params.get("cycles_shown", 5)))
+        centre = 0.0
+
+        #: How many objects are in the neighbourhood. The content authors `headcount` because on
+        #: three items it IS the answer: the operator counts the distinct tracks. Defaulting it
+        #: made every neighbourhood the same size regardless of what the item asked.
+        neighbours = int(params.get("headcount", params.get("obs_count", 14)))
+        drifters = _drifter_count(params, neighbours)
+
+        #: The bounds a station-kept object is held between. Drawn as lines rather than implied,
+        #: because `degrees_from_bound` asks the operator to judge how close a drifter is to one.
+        bounds = _longitude_bounds(params)
+        rate_authored = params.get("derived_rate_deg_day")
+        drift_start = float(params.get("drift_begins", 0.0)) * days
+
+        #: Newest at the bottom is the convention of the real product, and one item authors the
+        #: other direction on purpose: reading a plot whose axis has been flipped is the skill.
+        newest_at = str(params.get("newest_at", "bottom"))
 
         marks: list[Marks] = []
         times = _geo_pass_times(days, stream)
+        gap_start, gap_end = _waterfall_gap(params, days)
         for index in range(neighbours):
-            held = centre + stream.uniform(-3.0, 3.0)
+            held = centre + stream.uniform(bounds[0], bounds[1])
             drifting = index < drifters
-            rate = stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
+            rate = _drift_rate(rate_authored, stream)
             xs: list[float] = []
             ys: list[float] = []
             for when in times:
+                if gap_start <= when <= gap_end:
+                    continue
                 if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
                     continue
-                longitude = held + (rate * when if drifting else 0.0)
+                elapsed = max(when - drift_start, 0.0)
+                longitude = held + (rate * elapsed if drifting else 0.0)
                 xs.append(
                     longitude
                     + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
@@ -209,9 +544,17 @@ class WaterfallGenerator:
         panel = Panel(
             title="Longitude over time",
             x=Axis("Longitude", "degrees"),
-            y=Axis("Observation time", "days", inverted=True),
+            y=Axis("Observation time", "days", inverted=newest_at == "bottom"),
             marks=tuple(marks),
-            notes=("Newest observations at the bottom.", "Objects within 50 km of the primary."),
+            notes=(
+                f"Newest observations at the {newest_at}.",
+                "Objects within 50 km of the primary.",
+            )
+            + (
+                (f"No collection between {gap_start:.2f} and {gap_end:.2f} days.",)
+                if gap_end > gap_start
+                else ()
+            ),
         )
         total = sum(len(m.x) for m in marks)
         return Stimulus(
@@ -219,14 +562,23 @@ class WaterfallGenerator:
             generator=self.name,
             title="Waterfall: the neighbourhood",
             panels=(panel,),
-            header=(("Span", f"{days:.0f} days"), ("Window", "±3° of the primary")),
+            header=(
+                ("Span", f"{days:.0f} days"),
+                ("Window", f"{bounds[0]:+.1f}° to {bounds[1]:+.1f}° of the primary"),
+            ),
             legend=(("Held longitude", "object-held"), ("Drifting object", "object-drift")),
             footer=f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL",
             reads_as=(
                 "Time runs down the page with the newest data at the bottom. A vertical line is"
                 " holding station; a diagonal is drifting."
             ),
-            derived={"drifter_count": drifters, "observation_count": total},
+            derived={
+                "drifter_count": drifters,
+                "observation_count": total,
+                "headcount": neighbours,
+                "newest_at": newest_at,
+                "gap_days": max(gap_end - gap_start, 0.0),
+            },
         )
 
 
@@ -240,10 +592,17 @@ class LightCurveGenerator:
 
     product_id = "PRD-PHOTOMETRY"
     name = "light_curve"
+    reads = frozenset(
+        {"intervals", "days", "inverted_mag", "x_axis", "step_change", "phase_angle_shift"}
+    )
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
         intervals = int(params.get("intervals", 6))
+        #: A step change in brightness is a change of the object, not of the geometry. The item
+        #: that authors it asks the operator to separate the two, so it has to be drawn.
+        step_change = bool(params.get("step_change", False))
+        phase_shift = float(params.get("phase_angle_shift", 0.0))
         glint_at = float(params.get("glint_phase_deg", 5.0))
         glint_depth = float(params.get("glint_magnitudes", 3.6))
         base = float(params.get("base_magnitude", 12.4))
@@ -256,7 +615,13 @@ class LightCurveGenerator:
             for _ in range(120):
                 phase = low + stream.uniform(0.0, 176.0 / intervals)
                 trend = base - 0.028 * abs(phase) * -1.0
-                glint = glint_depth * math.exp(-(((phase - glint_at) / 4.5) ** 2))
+                #: A step change is a real change of the object: the later intervals sit at a
+                #: different brightness from the earlier ones, at the SAME phase angle, which is
+                #: what separates it from a geometry effect.
+                if step_change and interval < intervals / 2:
+                    trend -= STEP_CHANGE_MAGNITUDES
+                centre = glint_at + phase_shift * (interval / max(intervals - 1, 1))
+                glint = glint_depth * math.exp(-(((phase - centre) / 4.5) ** 2))
                 ys.append(
                     trend - glint + stream.uniform(-PROVISIONAL_MAG_SIGMA, PROVISIONAL_MAG_SIGMA)
                 )
@@ -289,7 +654,12 @@ class LightCurveGenerator:
                 "Magnitude runs brighter upward. A narrow brightening near zero phase angle is a"
                 " specular return."
             ),
-            derived={"glint_phase_deg": glint_at, "glint_magnitudes": glint_depth},
+            derived={
+                "glint_phase_deg": glint_at,
+                "glint_magnitudes": glint_depth,
+                "step_change": step_change,
+                "phase_angle_shift": phase_shift,
+            },
         )
 
 
@@ -304,30 +674,94 @@ class TricGenerator:
 
     product_id = "PRD-TRIC"
     name = "tric"
+    reads = frozenset(
+        {
+            "geometry",
+            "revolutions",
+            "ratio",
+            "regime",
+            "drift_rate",
+            "manoeuvre_count",
+            "actual_manoeuvres",
+            "state_change_markers",
+            "independent_panel_scales",
+            "separation_km",
+            "distance_km",
+            "noise_profile",
+        }
+    )
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
-        # No random stream: the track comes from the Clohessy-Wiltshire solution, and a drawn
-        # loop would teach a picture rather than a signature the dynamics produce.
-        bounded = bool(params.get("bounded", True))
-        state_changes = int(params.get("state_changes", 4))
-        manoeuvres = int(params.get("manoeuvres", 0))
-        mean_motion = 2.0 * math.pi / 86164.0905
-        radial_km = float(params.get("radial_km", 0.9))
+        # A stream is drawn only for the authored quantities that say "seeded". The track itself
+        # comes from the Clohessy-Wiltshire solution, because a drawn loop would teach a picture
+        # rather than a signature the dynamics produce.
+        stream = rng(seed, self.product_id)
+        geometry = str(params.get("geometry", "nmc_stable"))
+
+        #: The content's four geometries. `nmc_stable` and `nmc_entry` are bounded natural motion,
+        #: `nmc_drifting` is natural motion with a residual along-track rate, and `fmc` is forced
+        #: motion, which is the case that costs fuel. Bounded against unbounded IS the
+        #: discrimination, so it is read from the authored geometry and never defaulted silently.
+        bounded = geometry in ("nmc_stable", "nmc_entry")
+        drifting = geometry == "nmc_drifting"
+
+        # GEO is the regime in every tric item in the library, and it is stated rather than
+        # assumed: a low-orbit mean motion draws a visibly different loop over the same window.
+        regime = str(params.get("regime", "GEO"))
+        period_s = GEO_PERIOD_S if regime.upper() == "GEO" else LEO_PERIOD_S
+        mean_motion = 2.0 * math.pi / period_s
+
+        #: How many manoeuvres the track actually contains. `actual_manoeuvres` is explicit;
+        #: `manoeuvre_count: "seeded"` asks this renderer to choose, and the number it chooses is
+        #: the answer to the item, so it reaches `derived["expected_value"]` and nowhere else.
+        if "actual_manoeuvres" in params:
+            manoeuvres = int(params["actual_manoeuvres"])
+        elif params.get("manoeuvre_count") == "seeded":
+            manoeuvres = stream.integer(1, 3)
+        else:
+            #: Natural motion is natural motion. Every `nmc_` geometry contains no burn by
+            #: definition, INCLUDING the drifting one: a drifting circumnavigation is what an
+            #: unmaintained relative orbit does, and calling it a manoeuvre teaches the operator
+            #: to read decay as intent, which is the misconception the item exists to correct.
+            manoeuvres = 1 if geometry == "fmc" else 0
+
+        #: Marks along the track. **A reference state change is not a manoeuvre.** DRL-0026
+        #: authors six markers with zero manoeuvres precisely so an operator learns to separate a
+        #: new element set from a burn, so the two counts are independent by construction.
+        state_changes = int(params.get("state_change_markers", 4))
+
+        #: Separation sets the scale of the loop. Three authored spellings, all in kilometres or
+        #: a word, and none of them invented here.
+        separation_km = _separation_km(params, stream)
+        radial_km = separation_km / max(float(params.get("ratio", 2.0)), 0.5)
 
         # Hill frame, ordered radial, along-track, cross-track, and the order is carried in the
         # type for the same reason the propagator carries TEME: read the wrong way round it is
         # silently wrong rather than obviously wrong.
+        no_drift = no_drift_alongtrack_rate_km_s(radial_km, mean_motion)
+        along_rate = no_drift
+        if drifting:
+            #: A drifting natural-motion circumnavigation is the no-drift rate plus a residual.
+            #: `drift_rate: "seeded_slow"` is the authored case: slow enough that the drift is
+            #: only visible over several revolutions, which is what makes the item a judgement.
+            along_rate = no_drift + (
+                SLOW_DRIFT_RATE_KM_S
+                if params.get("drift_rate") == "seeded_slow"
+                else FORCED_DRIFT_RATE_KM_S
+            )
+        elif not bounded:
+            along_rate = no_drift + FORCED_DRIFT_RATE_KM_S
+
         start = RelativeState(
-            position_km=(radial_km, -8.0, 0.0),
-            velocity_km_s=(
-                0.0,
-                no_drift_alongtrack_rate_km_s(radial_km, mean_motion) if bounded else 1.4e-5,
-                1.1e-5,
-            ),
+            position_km=(radial_km, -separation_km, 0.0),
+            velocity_km_s=(0.0, along_rate, CROSS_TRACK_RATE_KM_S),
         )
-        samples = 140
-        step_s = 86164.0905 * 2.0 / samples
-        track = [propagate_relative(start, mean_motion, i * step_s) for i in range(samples)]
+        #: Authored revolutions, so a six-revolution item shows six and a four-revolution item
+        #: does not show six. The window was fixed at two before, which erased the parameter.
+        revolutions = float(params.get("revolutions", 2))
+        samples = int(TRIC_SAMPLES_PER_REVOLUTION * revolutions)
+        step_s = period_s * revolutions / samples
+        track = _burned_track(start, mean_motion, step_s, samples, manoeuvres)
         radial = tuple(state.position_km[0] for state in track)
         along = tuple(state.position_km[1] for state in track)
         cross = tuple(state.position_km[2] for state in track)
@@ -442,16 +876,22 @@ class TricGenerator:
                 ("Reference state change", "state-change"),
                 ("Minimum distance", "minimum"),
             ),
-            footer=f"seed {seed:#x} · {samples} samples · 2 revolutions",
+            footer=f"seed {seed:#x} · {samples} samples · {revolutions:g} revolutions",
             reads_as=(
                 "A closed repeating loop is bounded relative motion. An open track is a drift-by."
             ),
-            derived={
-                "bounded": bounded,
-                "manoeuvres": manoeuvres,
-                "state_changes": state_changes,
-                "minimum_distance_km": distance[minimum_at],
-            },
+            derived=_tric_derived(
+                {
+                    "bounded": bounded,
+                    "geometry": geometry,
+                    "manoeuvres": manoeuvres,
+                    "state_changes": state_changes,
+                    "separation_km": separation_km,
+                    "revolutions": revolutions,
+                    "minimum_distance_km": distance[minimum_at],
+                },
+                asks_for_count=params.get("manoeuvre_count") == "seeded",
+            ),
         )
 
 
@@ -472,11 +912,32 @@ class DcTableGenerator:
 
     product_id = "PRD-DC-TABLE"
     name = "dc_table"
+    reads = frozenset(
+        {
+            "period_change_s",
+            "period_delta_s",
+            "plane_change_deg",
+            "inclination_delta_deg",
+            "include_natural_secular_drift",
+            "nodal_regression_deg",
+            "show_delta_only",
+            "regime",
+        }
+    )
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
+        #: The content's spellings first, this module's older names second. `period_change_s` and
+        #: `plane_change_deg` are what the items author; reading only the internal names meant a
+        #: table authored with a 12-second period change rendered the default 5.51.
         nodal_deg = float(params.get("nodal_regression_deg", 7.02))
-        period_delta_s = float(params.get("period_delta_s", -5.51))
-        inclination_delta = float(params.get("inclination_delta_deg", -0.0002))
+        if not params.get("include_natural_secular_drift", True):
+            #: One item states the natural nodal regression is excluded, which changes which
+            #: column an operator should attribute to the burn.
+            nodal_deg = 0.0
+        period_delta_s = float(params.get("period_change_s", params.get("period_delta_s", -5.51)))
+        inclination_delta = float(
+            params.get("plane_change_deg", params.get("inclination_delta_deg", -0.0002))
+        )
 
         elements = (
             ("Semi-major axis", "km", 42164.11, -0.0251),
@@ -541,6 +1002,7 @@ class NeighbourhoodGenerator:
 
     product_id = "PRD-NEIGHBORHOOD"
     name = "neighbourhood"
+    reads = frozenset({"rows", "close_approach_km", "forecast_ca_km", "days_lead", "regime"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -601,6 +1063,7 @@ class CocoGenerator:
 
     product_id = "PRD-COCO"
     name = "coco"
+    reads = frozenset({"rows", "raan_delta_deg", "days_to_closure", "days_to_ra_zero", "regime"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -648,11 +1111,12 @@ class PassScheduleGenerator:
 
     product_id = "PRD-PASS-SCHEDULE"
     name = "pass_schedule"
+    reads = frozenset({"hours", "sites", "sensors", "regime", "duration_days"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
         hours = float(params.get("hours", 12))
-        sensors = int(params.get("sensors", 6))
+        sensors = int(params.get("sites", params.get("sensors", 6)))
         phenomenology = ["Optical", "Radar", "Phased array", "Passive RF", "On orbit"]
         marks: list[Marks] = []
         for index in range(sensors):
@@ -717,10 +1181,11 @@ class EphemerisGenerator:
 
     product_id = "PRD-EPHEMERIS"
     name = "ephemeris"
+    reads = frozenset({"minutes", "elapsed_min", "ballistic", "max_altitude_km"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        minutes = float(params.get("minutes", 96))
+        minutes = float(params.get("elapsed_min", params.get("minutes", 96)))
         ballistic = bool(params.get("ballistic", False))
         samples = 96
         earth_radius = 6378.137
@@ -792,6 +1257,7 @@ class GabbardGenerator:
 
     product_id = "PRD-GABBARD"
     name = "gabbard"
+    reads = frozenset({"fragments", "parent_period_min", "parent_altitude_km", "spread", "step"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
