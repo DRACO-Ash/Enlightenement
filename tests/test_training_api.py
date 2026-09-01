@@ -527,8 +527,21 @@ def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gut
     #: become unreachable together does not follow from this source - it rests on whether the
     #: engine makes that edge weak. A drill fetch builds a fresh observer per panel, so a long
     #: session accumulates them over detached subtrees on that reading.
-    assert "releasePlotRefits" in script, "a redraw discards the frame and keeps its observer"
-    assert ".disconnect()" in script, "the observers are tracked and never released"
+    #: THE SHAPE, NOT THE IDENTIFIERS. The first version of these three asserted that the strings
+    #: `releasePlotRefits` and `.disconnect()` appear and that the call precedes `clear(`. Neither
+    #: could see whether anything is ever TRACKED, nor whether the release DRAINS: deleting the
+    #: push left the release iterating a permanently empty array, and `while` to `if` released one
+    #: observer per redraw and let the list grow without bound - two leaks, both with 967 green.
+    #: That is the same fault as the two majors this release fixes, introduced by the fix for the
+    #: second of them. Bound to the shape now, and the shape is all a grep can hold: whether a
+    #: browser then collects the observer is not asserted anywhere and is not meant to be, because
+    #: the point of the release is that the code no longer depends on the answer.
+    assert re.search(r"refit\.observe\(frame\);\s*\n\s*plotRefits\.push\(refit\);", script), (
+        "the observer is created and never tracked, so releasePlotRefits has nothing to release"
+    )
+    assert re.search(
+        r"while \(plotRefits\.length\)\s*plotRefits\.pop\(\)\.disconnect\(\);", script
+    ), "the release does not drain the list, so a multi-panel composite leaks all but one observer"
     assert re.search(r"releasePlotRefits\(\);\s*\n\s*clear\(", script), (
         "the release does not run before the redraw clears the frames it observes"
     )

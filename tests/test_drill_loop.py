@@ -826,9 +826,19 @@ def test_a_refusing_pool_raises_the_budget_error_after_exactly_the_allowed_attem
     loop._serve_one = refuses_at_length  # type: ignore[method-assign]
     with pytest.raises(DrillError) as oversize:
         loop.serve(operator_id=DEMONSTRATION_OPERATOR)
-    assert len(str(oversize.value)) <= MAX_WITHHOLD_REASON + 128, (
-        f"the budget message is content-sized: {len(str(oversize.value))} characters"
+    #: DERIVED, not slack. The first version allowed `MAX_WITHHOLD_REASON + 128`, and the 128 was
+    #: not derived from anything - a 384-character allowance against a real 317-character message.
+    #: The fixed prefix is measured here instead, so the assertion is the bound plus exactly what
+    #: the sentence around it costs. The register records "asserted against a literal" as the rule
+    #: for the sibling control on this same message.
+    prefix = f"no drill could be rendered within the selection budget of {MAX_SELECTION_ATTEMPTS}: "
+    assert len(str(oversize.value)) <= len(prefix) + MAX_WITHHOLD_REASON, (
+        f"the budget message is content-sized: {len(str(oversize.value))} characters against"
+        f" {len(prefix) + MAX_WITHHOLD_REASON}"
     )
+    #: And this exit MARKS its cut, like the other one. A bound that silently shortens a diagnosis
+    #: sends an author looking in the wrong place, which is the whole reason the mark exists.
+    assert TRUNCATION_MARK in str(oversize.value), str(oversize.value)[-80:]
     #: And it carries the last reason. A bare "budget spent" tells an author nothing about WHY
     #: every candidate refused, which is the only actionable half of the message.
     assert attempts[-1] in str(refusal.value), str(refusal.value)

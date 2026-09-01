@@ -538,6 +538,11 @@ async function loadDrill() {
   document.getElementById('reveal').classList.add('hidden');
   document.getElementById('answer-form').classList.add('hidden');
   document.getElementById('drill-prompt').textContent = 'Loading a drill…';
+  /* Outside the try below, deliberately. The array only ever holds ResizeObserver instances
+   * created under the `typeof ResizeObserver === 'function'` guard, and `disconnect()` does not
+   * throw, so there is nothing here for the handler to catch. If a future entry could throw, this
+   * call belongs inside the try: a rejection here would land before `banner(error.message)` exists
+   * and the operator would see the loading text and no error. */
   releasePlotRefits();
   clear(document.getElementById('stimuli'));
   try {

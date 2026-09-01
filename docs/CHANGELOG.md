@@ -2,6 +2,54 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.5 (2026-09-01)
+
+**What.** The engineering gate failed V0.26.4 with one major, and it is the same pattern a THIRD
+time - this instance introduced by the fix for the second. Three minors alongside it, all taken.
+
+**The observer release was held by nothing that mattered.** The three assertions V0.26.4 added
+checked that the strings `releasePlotRefits` and `.disconnect()` appear in the served source.
+Neither could see whether anything is ever TRACKED, nor whether the release DRAINS. Deleting
+`plotRefits.push(refit)` left the release iterating a permanently empty array, and `while` to `if`
+released one observer per redraw while the list itself grew without bound - two leaks, both with 967
+tests green. Bound to the shape now, and the comment beside the assertions says they hold the shape
+and not the behaviour, because that is all a grep can do. Three mutations kill them.
+
+**A bound with slack is not a bound against a literal.** The budget-message assertion allowed
+`MAX_WITHHOLD_REASON + 128`, where the 128 came from nothing: a 384-character allowance against a
+real 317-character message. The fixed prefix is measured now, so the limit is the bound plus exactly
+what the sentence costs, and this exit is held to MARKING its cut as well as bounding it - the
+sibling control on the same message already carried that rule.
+
+**A count is not evidence.** V0.26.4 said "six mutations this round, each killed by its own test",
+in the entry that records "mutate every guard the range ADDS" as its own lesson. A count cannot be
+checked by a reader, and it was not even true: that range added a guard whose inversion survived the
+whole suite. Replaced with a table of every guard the two releases add, the mutation applied to each
+and how it fails.
+
+**Placement recorded rather than left to be guessed.** `releasePlotRefits()` sits outside
+`loadDrill`'s `try`, deliberately, and now says so: the array only ever holds ResizeObserver
+instances created under the `typeof` guard and `disconnect()` does not throw, but a future entry
+that could throw would reject before `banner(error.message)` exists, leaving the operator with the
+loading text and no error.
+
+**How it was verified, enumerated rather than counted.**
+
+| Guard | Mutation | Result |
+| --- | --- | --- |
+| `matching.py` fold guard `joined in COMPASS_DIRECTIONS` | deleted | fails on `"east west east"` |
+| `drill.py` `_withhold` dedupe | deleted | fails on the overwritten reason |
+| `drill.py` dedupe, reason half only | log on every call | fails on the log-line count |
+| `drill.py` dedupe, log half only | reason overwritten | fails on the kept reason |
+| `drill.py` `_bounded_reason(str(last))` | reverted to `{last}` | fails at 3,061 characters |
+| `app.js` `releasePlotRefits()` call | deleted | fails on the call ordering |
+| `app.js` `releasePlotRefits()` call | moved after `clear()` | fails on the call ordering |
+| `app.js` `plotRefits.push(refit)` | deleted | fails: nothing is tracked |
+| `app.js` `while` in the release | narrowed to `if` | fails: the list is not drained |
+| `app.js` `.disconnect()` | dropped from the pop | fails: the list is not drained |
+
+Loop green on all seven legs: 967 passed, 2 skipped, coverage 97.19%.
+
 ## V0.26.4 (2026-09-01)
 
 **What.** The engineering gate's sixth round failed V0.26.3 with two majors, and both were controls
@@ -56,10 +104,14 @@ twelve mutations and not a claim about the changed region. Two controls in that 
 inversion. The lesson recorded for the next round: mutate every guard the range ADDS, not only the
 ones a finding named.
 
-**How it was verified.** Loop green on all seven legs: 967 passed, 2 skipped, coverage 97.19%. Six
-mutations this round, each killed by its own test. One more register row, and two rows extended,
-because the citation sweep failed the loop until they existed - the second round running in which
-that check has caught me before a reviewer did.
+**How it was verified.** Loop green on all seven legs: 967 passed, 2 skipped, coverage 97.19%. One
+more register row, and two rows extended, because the citation sweep failed the loop until they
+existed - the second round running in which that check has caught me before a reviewer did.
+
+**Corrected at V0.26.5:** this row originally read "six mutations this round, each killed by its own
+test". That was a count rather than a checkable claim, and it was wrong: this release added an
+observer-release guard whose inversion survived the whole suite. The enumerated ledger is in the
+V0.26.5 entry above.
 
 ## V0.26.3 (2026-09-01)
 
