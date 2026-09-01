@@ -45,10 +45,34 @@ DIRECTION_SUFFIXES: Final = r"(?:ward|wards|erly|ern)?"
 #: The same suffixes as plain words, for reducing a token to its stem.
 DIRECTION_SUFFIX_WORDS: Final = ("wards", "ward", "erly", "ern")
 
-#: How many words may sit between a negation and the direction it denies. Small on purpose: the
-#: unscoped version searched the whole response and refused correct answers whose negation was
-#: about something else entirely.
-NEGATION_WINDOW_WORDS: Final = 2
+#: What may sit between a denial and the direction it denies, and nothing else may. THIS IS THE
+#: THIRD SHAPE OF THIS CHECK, and the reason for the change is measured: "up to two words" is wide
+#: enough to jump a clause, so "not station-keeping, drifting east at 0.279 deg/day" scored partial
+#: and "no doubt drifting east", "not stationary, east", "rather than holding, east", "instead of
+#: holding, east" and "no manoeuvre, east drift" scored nothing at all. Every one of those denies
+#: something that is not the direction, and every one names the direction correctly.
+#:
+#: A closed vocabulary of motion words instead of a word COUNT. None of these can carry a clause
+#: of its own, so "not <motion words> east" is a denial of east and nothing else can reach the
+#: direction through the gap.
+NEGATION_CONNECTIVES: Final = (
+    "drifting",
+    "drifted",
+    "drift",
+    "drifts",
+    "moving",
+    "moved",
+    "heading",
+    "headed",
+    "going",
+    "towards",
+    "toward",
+    "to",
+    "the",
+)
+#: How many connectives may stack, so "not drifting to the east" is caught and an unbounded
+#: repetition on operator-controlled input is not evaluated.
+NEGATION_CONNECTIVE_LIMIT: Final = 3
 
 #: The compass vocabulary a drift direction is stated in. Domain fact, not content: used to notice
 #: that a response names a direction which was NOT drawn.
@@ -257,13 +281,45 @@ def _compass_stem(word: str) -> str:
     return closed
 
 
-def _closed(typed: str) -> str:
-    """The response with hyphens closed up, so "north-east" reads as the compound it is.
+#: A pair of adjacent compass words, for folding "north east" into the compound it is. Rejoined
+#: only when the concatenation is itself a direction, so "north west" stays two directions.
+_SPACED_COMPOUND: Final = re.compile(
+    rf"\b({'|'.join(COMPASS_DIRECTIONS)})\s+({'|'.join(COMPASS_DIRECTIONS)})({DIRECTION_SUFFIXES})\b"
+)
 
-    Hyphens only. Removing spaces as well would destroy the word boundaries every pattern here
-    relies on, and "drifting east" would stop matching "east".
+#: A contraction split by `normalise`, which turns punctuation into a space: "isn't" arrives as
+#: "isn t". Rejoined for the two stems that are in NEGATIONS, and only those - the entries were
+#: unreachable for any operator who typed the apostrophe, which is most of them, while the
+#: docstring below claimed "isn't drifting east" was caught. Widening NEGATIONS is a separate
+#: decision and is not taken here.
+_SPLIT_CONTRACTION: Final = re.compile(r"\b(isn|aren)\s+t\b")
+
+
+def _closed(typed: str) -> str:
+    """The response with hyphens closed, spaced compounds folded and split contractions rejoined.
+
+    Hyphens are removed wholesale. Spaces are NOT: removing them would destroy the word
+    boundaries every pattern here relies on, and "drifting east" would stop matching "east". So
+    the two space-joining rules are surgical, and each rejoins only a string it has recognised.
+
+    ● A SPACED COMPOUND is the compound. "north-east" was accepted and "north east" refused from
+      the same operator reading the same plot, because closing hyphens was the whole of the
+      compound handling and the space is the commoner spelling.
+    ● A SPLIT CONTRACTION is the contraction. `normalise` renders "isn't" as "isn t", so the
+      "isnt" entry in NEGATIONS only ever fired for an operator who omitted the apostrophe.
+
+    **A named limit.** Folding is leftmost and non-overlapping, so a sixteen-point bearing like
+    "east north east" folds nothing and still reads as two directions. COMPASS_DIRECTIONS holds
+    eight words; sixteen-point bearings were never supported and this does not change that.
     """
-    return typed.replace("-", "")
+    closed = typed.replace("-", "")
+    closed = _SPLIT_CONTRACTION.sub(r"\1t", closed)
+
+    def _fold(match: re.Match[str]) -> str:
+        joined = match.group(1) + match.group(2)
+        return joined + match.group(3) if joined in COMPASS_DIRECTIONS else match.group(0)
+
+    return _SPACED_COMPOUND.sub(_fold, closed)
 
 
 def _directions_named(typed: str) -> set[str]:
@@ -291,26 +347,41 @@ def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
     ● NAMES ANOTHER DIRECTION. Sound and exact: the compass vocabulary is domain fact, there are
       eight words, and an answer naming one that was not drawn has not read the plot. Compared on
       STEMS so "eastward" and "north-east" behave.
-    ● DENIES THE DRAWN ONE. Scoped to a short window BEFORE the direction, because the first
-      version searched the whole response for any "no", "not", "never" or "neither" and so
-      refused "drifting east, no doubt about it", "east, definitely not stationary" and
-      "0.279 deg/day west, no reversal in the trend" - correct answers, penalised, which is the
-      harm this module documents at the magnitude-and-direction branch.
+    ● DENIES THE DRAWN ONE. The denial must be ADJACENT to the direction, across a closed
+      vocabulary of motion words and nothing else. Third shape, and the two it replaces both
+      failed the same way in opposite directions. Searching the whole response for any "no",
+      "not", "never" or "neither" refused "drifting east, no doubt about it" and "0.279 deg/day
+      west, no reversal in the trend". Narrowing that to a window of up to two words still jumped
+      a clause, so "not station-keeping, drifting east at 0.279 deg/day" scored partial and
+      "no doubt drifting east", "not stationary, east", "rather than holding, east", "instead of
+      holding, east" and "no manoeuvre, east drift" scored nothing. Correct answers, penalised,
+      which is the harm this module documents at the magnitude-and-direction branch. A word COUNT
+      cannot tell what the denial is about; requiring the direction to follow the denial can.
 
-    **NAMED GAP, recorded rather than papered over.** The scoped rule catches "not east" and
-    "isn't drifting east". It does NOT catch open-ended denial: "it doesn't drift east", "cannot
-    be east", "east is wrong", "anything but east", "hardly east" all still score. Those are a
-    semantics problem, not a regex problem, and two attempts at widening this check have each
-    created a worse fault than the one they closed. Over-refusing a correct reading is the more
-    expensive error, so the check stays narrow and this paragraph is the disclosure.
+    **NAMED GAPS, recorded rather than papered over.** Three, and each is an under-catch, which is
+    the cheaper direction of error:
+
+    ● Open-ended denial still scores: "it doesn't drift east", "cannot be east", "east is wrong",
+      "anything but east", "hardly east". A semantics problem, not a regex problem. The vocabulary
+      in NEGATIONS is deliberately not widened here: three attempts at widening this check have
+      each created a worse fault than the one they closed.
+    ● A denial reaching the direction through a word outside NEGATION_CONNECTIVES is not caught:
+      "not obviously east" scores. Adding "obviously" and its neighbours is how the word-count
+      window was arrived at the first time.
+    ● Rule one refuses an answer that names a direction in order to EXCLUDE it: "not drifting
+      west, drifting east" is a correct reading of an eastward drift and is refused, because
+      "west" appears. Left alone on purpose - rule one is the exact one, and every attempt so far
+      to make it cleverer has cost more than it bought.
     """
     wanted = {_compass_stem(token) for token in tokens}
     if _directions_named(typed) - wanted:
         return True
     closed = _closed(typed)
+    connectives = "|".join(NEGATION_CONNECTIVES)
     return any(
         re.search(
-            rf"\b{negation}\b(?:\W+\w+){{0,{NEGATION_WINDOW_WORDS}}}\W+{re.escape(stem)}",
+            rf"\b{negation}\b(?:\W+(?:{connectives})\b){{0,{NEGATION_CONNECTIVE_LIMIT}}}"
+            rf"\W+{re.escape(stem)}{DIRECTION_SUFFIXES}\b",
             closed,
         )
         for negation in NEGATIONS

@@ -442,6 +442,12 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
         "not east",
         "definitely not east",
         "isnt drifting east",
+        #: The apostrophe form. `normalise` strips punctuation to a space, so this arrived as
+        #: "isn t drifting east" and matched no negation at all - while the docstring claimed it
+        #: was caught, and the entry in NEGATIONS it relied on was reachable only if the operator
+        #: happened to omit the apostrophe.
+        "isn't drifting east",
+        "aren't drifting east",
         "no east",
         "east or west",
         "it is drifting west, not east",
@@ -466,6 +472,34 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
             f"{uncaught!r} is now refused, which is an improvement - move it into group B and"
             " delete it from this list"
         )
+
+    # E. OVER-REFUSALS, the fault group D's narrowness was supposed to prevent and did not.
+    #    A window of "up to two words" is wide enough to jump a clause: in "not station-keeping,
+    #    drifting east" the denial is about station-keeping and the direction is the answer, and
+    #    all six of these were refused. The window is now ADJACENCY across a closed vocabulary of
+    #    motion words, so a denial has to be a denial OF THE DIRECTION to count as one.
+    for right in (
+        "not station-keeping, drifting east at 0.279 deg/day",
+        "no doubt drifting east",
+        "not stationary, east",
+        "rather than holding, east",
+        "instead of holding, east",
+        "no manoeuvre, east drift",
+        "not in the box any more, east",
+        "the rate is not what was reported, drifting east",
+    ):
+        assert match_derived_text(right, drawn).matched == "accept", right
+
+    # F. A SPACED compound is the compound. "north-east" was accepted and "north east" refused,
+    #    from the same operator reading the same plot, because closing hyphens was the whole of
+    #    the compound handling and a space is the commoner spelling of the two.
+    compound = {"expected_text": ("northeast",)}
+    for right in ("north east", "drifting north east", "north eastwards", "northeast"):
+        assert match_derived_text(right, compound).matched == "accept", right
+    #: Folding must not invent a compound that was not typed: two directions that do not form one
+    #: are still two directions.
+    for wrong in ("north west", "south east"):
+        assert match_derived_text(wrong, compound).matched != "accept", wrong
 
 
 def test_an_unrelated_negation_does_not_cost_a_correct_numeric_answer(
