@@ -2,6 +2,62 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.8 (2026-09-01)
+
+**What.** Fourth consecutive release in which this project recorded the unbounded-anonymous-string
+class as closed while a surface was live. The gate found a FIFTH and SIXTH, both on `/api/v1/me`,
+and disproved a claim V0.26.7 made about a guard. The fix this time is not another bounded field: it
+is a control that enumerates ROUTES, because a per-field assertion can only ever hold the fields
+somebody thought of, and that is precisely what kept getting through.
+
+**Surfaces five and six.** `due_items` was a bare `[:20]` over raw drill ids and the competency `id`
+and `name` had neither a length bound nor a count cap. Measured on the shipped library with ids
+stretched to 3,010 characters and names to 20,000: **221,589 bytes from a route that needs no token
+even when one is configured.** All four are bounded now, with `MAX_SERVED_DUE_ITEMS` and
+`MAX_SERVED_COMPETENCIES` named rather than left as literals.
+
+**The control that should have been written three releases ago.** A new test walks the app's own
+route table, calls every anonymous API GET that is not the drill payload, and asserts a body ceiling
+on a hostile tree. A new route, or a new raw content string on an existing route, now fails there
+without anyone having to spot it. `/api/v1/drill/next` is excluded by name: it serves the product
+payload under the explicit `MAX_PAYLOAD_BYTES` budget, and folding a 4 MB allowance into this
+ceiling would make the ceiling meaningless.
+
+**Why the ceiling alone is not enough, measured rather than assumed.** The first version of that
+test caught one of the four faults. Twenty raw 3,010-character ids are 60,200 bytes, which fits
+under any ceiling loose enough for honest content, and the competency cap was unfalsifiable because
+the shipped library has eight competencies against a cap of thirty-two - a cap nothing can reach is
+not a control. So explicit count and length assertions sit beside the ceiling, and the hostile tree
+now carries more competencies than the cap admits and poisons every field the route serves. An
+earlier version poisoned names and not ids, and certified the fields it happened to poison.
+
+**A claim of mine the gate disproved by running it.** V0.26.7 labelled the denial-path `re.escape`
+"defensive only... the escape cannot change an OUTCOME here", arguing that rule one returns early
+whenever the response names a direction outside the wanted set. The counter-example is a response
+that names no direction at all: token `east(`, response "not moving". Rule one does not fire, the
+raw stem is interpolated, and unescaped it raises `re.error: missing )` out of `_contradicted`, out
+of `DrillLoop.score`, into a 500 - `training_api` catches `DrillError` and not this. **The label was
+wrong.** Both escape sites are outcome-bearing, the comment says so, and case C holds it.
+
+**And the case that was supposed to fix a wrong narrative had a wrong narrative.** V0.26.7's group A
+claims `east[a-z` reaches the denial pattern as the stem `east[az`. It does not: both its responses
+name the real word "east", so rule one returns first, and with BOTH escapes deleted those two
+assertions still passed. The same "described mechanism the assertion cannot reach" fault, reproduced
+inside its own fix. Group A is kept for the positive-match escape and the narrative is corrected
+rather than the assertions left looking like more than they are.
+
+**The register row, rewritten and SCOPED.** It asserted universally that every content-supplied
+string on an unauthenticated route is bounded. That was false three releases running. It now records
+all six surfaces, names the enumerating control, and states plainly what it does not prove: it holds
+the anonymous API GET routes the app declares, on the fields the hostile tree poisons, and it is not
+a proof that no unbounded string exists.
+
+**How it was verified.** Loop green on all seven legs: 973 passed, 2 skipped, coverage 97.40%. Ten
+mutations, each killed by its own test: five on `/api/v1/me` (two length bounds, two count caps, the
+competency id), the denial-path escape, and the four from V0.26.7 re-run. Two of my own mutation
+runs initially reported a false pass and were re-run with `__pycache__` purged, which is the same
+harness fault the gate reported against itself last round.
+
 ## V0.26.7 (2026-09-01)
 
 **What.** The engineering gate failed V0.26.6 with one major and five minors, and the major is the

@@ -91,6 +91,16 @@ MAX_WITHHOLD_REASON: Final = 256
 #: because the count cap is half of the bound: per-entry length and entry count are different
 #: limits, and a test cannot assert a limit it cannot name.
 MAX_SERVED_PARAMS: Final = 25
+
+#: How many due item ids and competency rows `/api/v1/me` serves. Both were UNBOUNDED in count or
+#: length until V0.26.8: `due_items` had a bare `[:20]` over raw ids, and the competency id and name
+#: had neither cap. Measured on the shipped library with ids stretched to 3,010 characters and
+#: names to 20,000: a 221,589-byte response on a route that needs no token even when one is
+#: configured. FOURTH round in which this class was recorded closed while a surface was live, which
+#: is why the test that holds it now enumerates ROUTES and asserts a body ceiling rather than
+#: naming fields - a field nobody thought of is exactly what kept getting through.
+MAX_SERVED_DUE_ITEMS: Final = 20
+MAX_SERVED_COMPETENCIES: Final = 32
 TRUNCATION_MARK: Final = " [truncated]"
 
 #: How many candidate drills one request may try before giving up. Bounded so pathological content
@@ -742,13 +752,13 @@ class DrillLoop:
         """
         progress = self._progress.load(operator_id)
         competencies = []
-        for competency in self._content.competencies:
+        for competency in self._content.competencies[:MAX_SERVED_COMPETENCIES]:
             axis = progress.axes.get(competency.id)
             interval = axis.interval if axis is not None else None
             competencies.append(
                 {
-                    "competency_id": competency.id,
-                    "name": competency.name,
+                    "competency_id": _bounded(competency.id),
+                    "name": _bounded(competency.name),
                     "attempts": axis.attempts if axis is not None else 0,
                     "measured": axis is not None and axis.attempts > 0,
                     "estimate": None if axis is None else axis.accuracy,
@@ -766,7 +776,7 @@ class DrillLoop:
             "runs_total": len(progress.runs),
             "competencies": competencies,
             "due_now": len(due),
-            "due_items": due[:20],
+            "due_items": [_bounded(item_id) for item_id in due[:MAX_SERVED_DUE_ITEMS]],
             "content_hash": self._content.content_hash,
             "identity": (
                 "Operator identity does not exist yet (flight plan step 10). Every run is"

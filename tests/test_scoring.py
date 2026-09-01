@@ -511,10 +511,12 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
 def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
     """`re.escape` on the drawn token, held before a generator ever derives it from content.
 
-    **The POSITIVE match is what this holds.** There are two escape sites; only the one in
-    `match_derived_text` can change an outcome, because `_contradicted`'s rule one returns early
-    whenever the response names a direction outside the wanted set, and a hostile stem is never a
-    real compass word. The denial-path escape is defensive only and says so where it sits.
+    **BOTH escape sites are outcome-bearing, and one of them was labelled otherwise.** V0.26.7
+    argued the denial-path escape could not change a verdict, because rule one returns early
+    whenever the response names a direction outside the wanted set. The counter-example is a
+    response that names no direction at all: token `east(`, response "not moving". Rule one does
+    not fire, the raw stem is interpolated, and unescaped it raises out of scoring into a 500,
+    because `training_api` catches `DrillError` and not `re.error`. Case C below.
 
     The contradiction check interpolates the drawn direction into a regex. Today `expected_text` is
     only ever one of the four literals at `products.py:886` and `:1310`, so nothing content-shaped
@@ -533,9 +535,12 @@ def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
     #: TWO hostile tokens, because the escape has two distinct failure modes and an earlier version
     #: of this test described the second while only ever exercising the first.
     #:
-    #: A. RAISES. `east[a-z` reaches the pattern as the stem `east[az` - `_compass_stem` closes the
-    #:    hyphen - and unescaped it is an unterminated character set, so `re.error` escapes scoring
-    #:    and fails an operator's submission on content they cannot see.
+    #: A. RAISES ON THE POSITIVE MATCH. Both responses here name the real word "east", so rule one
+    #:    fires and the denial pattern is never built - with BOTH escapes deleted these two still
+    #:    passed, which is the same "described mechanism the assertion cannot reach" fault this
+    #:    test was written to fix, reproduced inside the fix. They are kept for the positive-match
+    #:    escape, which case B mutates, and the narrative is corrected rather than the assertions
+    #:    quietly left to look like more than they are.
     raises = {"expected_text": ("east[a-z",)}
     assert match_derived_text("east", raises).matched != "accept"
     assert match_derived_text("not east[a-z", raises).matched != "accept"
@@ -546,6 +551,13 @@ def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
     over = {"expected_text": ("east.",)}
     assert match_derived_text("eastx", over).matched != "accept"
     assert match_derived_text("not eastx", over).matched != "accept"
+
+    #: C. THE DENIAL PATH, which V0.26.7 called unreachable. "not moving" names no compass word, so
+    #:    rule one does not return early and the raw stem reaches the negation pattern. Unescaped,
+    #:    `east(` raises `re.error: missing )` out of scoring and into a 500, because the route
+    #:    catches `DrillError` and not this. Escaped, it is a clean refusal.
+    denial = {"expected_text": ("east(",)}
+    assert match_derived_text("not moving", denial).matched != "accept"
 
 
 def test_an_unrelated_negation_does_not_cost_a_correct_numeric_answer(

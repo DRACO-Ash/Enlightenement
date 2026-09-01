@@ -31,7 +31,13 @@ from enlightenment.config import Config
 from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
-from enlightenment.training.drill import MAX_CONTENT_STRING, MAX_SERVED_PARAMS, MAX_WITHHOLD_REASON
+from enlightenment.training.drill import (
+    MAX_CONTENT_STRING,
+    MAX_SERVED_COMPETENCIES,
+    MAX_SERVED_DUE_ITEMS,
+    MAX_SERVED_PARAMS,
+    MAX_WITHHOLD_REASON,
+)
 from enlightenment.training_api import MAX_SERVED_ERRORS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -476,6 +482,103 @@ def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_
         assert detail["error"] == "content_unavailable"
         assert detail["content_errors"], "a 503 that names no file sends an author looking blind"
         assert client.get("/api/v1/content/manifest").json()["ok"] is False
+
+
+#: The largest body any anonymous JSON route may return on a HOSTILE content tree. Generous against
+#: the honest worst case - the drill payload has its own 4 MB budget and is excluded by name below -
+#: and far below the 221,589 bytes `/api/v1/me` served before V0.26.8.
+MAX_ANONYMOUS_DIAGNOSTIC_BYTES = 64 * 1024
+
+
+def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
+    config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """Enumerates ROUTES, not fields, because naming fields is what kept failing.
+
+    FOUR consecutive releases recorded this class as closed while a surface was live. Each time the
+    fix was correct and the sweep was not: V0.26.3 bounded the withhold reason, V0.26.6 found three
+    more surfaces and missed a fourth in the file it edited, V0.26.7 fixed that and missed two on
+    `/api/v1/me`. Measured on the tree below, `/api/v1/me` returned 221,589 bytes with a team token
+    configured and no `Authorization` header.
+
+    The pattern is not carelessness about any one field, it is that a per-field assertion can only
+    ever hold the fields somebody thought of. So this walks the app's own route table, calls every
+    anonymous GET that returns JSON, and asserts a body ceiling. A new route, or a new raw content
+    string on an existing one, fails HERE without anyone having to notice it first.
+
+    `/api/v1/drill/next` is excluded by name: it serves the product payload under the explicit
+    `MAX_PAYLOAD_BYTES` budget, which is a different control with its own tests, and folding a 4 MB
+    allowance into this ceiling would make the ceiling meaningless.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for index, row in enumerate(rows):
+        row["id"] = f"DRL-{index}-" + "9" * 3000
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    competencies = json.loads((root / "competencies.json").read_text(encoding="utf-8"))
+    entries = competencies["competencies"] if isinstance(competencies, dict) else competencies
+    for index, entry in enumerate(entries):
+        entry["name"] = "X" * 20000
+        #: The ID as well as the name. Stretching only the name left the id's bound unheld: a
+        #: hostile tree has to be hostile in every field the route serves, or the sweep certifies
+        #: the fields it happened to poison.
+        entry["id"] = f"CMP-{index}-" + "Z" * 3000
+    #: MORE competencies than the cap admits. The shipped library has eight against a cap of
+    #: thirty-two, so with the real library that cap is unfalsifiable and deleting it changes
+    #: nothing - a cap nothing can reach is not a control.
+    template = dict(entries[0])
+    while len(entries) <= MAX_SERVED_COMPETENCIES:
+        clone = dict(template)
+        clone["id"] = f"CMP-EXTRA-{len(entries)}"
+        entries.append(clone)
+    (root / "competencies.json").write_text(json.dumps(competencies), encoding="utf-8")
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    #: Taken from the app, not from a list in this file. A route added without a bound is the case
+    #: this exists for, and a hand-maintained list would not contain it.
+    paths = sorted(
+        route.path
+        for route in app.routes
+        if getattr(route, "path", "").startswith("/api/")
+        and "GET" in getattr(route, "methods", set())
+        and "{" not in getattr(route, "path", "")
+        and route.path != "/api/v1/drill/next"
+    )
+    assert paths, "no anonymous API GET routes were discovered, so this asserts nothing"
+
+    with TestClient(app) as client:
+        oversized = {}
+        for path in paths:
+            response = client.get(path)
+            if len(response.content) > MAX_ANONYMOUS_DIAGNOSTIC_BYTES:
+                oversized[path] = len(response.content)
+        assert not oversized, (
+            f"content set the size of an anonymous response: {oversized}, against a ceiling of"
+            f" {MAX_ANONYMOUS_DIAGNOSTIC_BYTES}"
+        )
+
+        #: AND the collections themselves, because a body ceiling alone cannot see a count cap that
+        #: never bites: removing `[:MAX_SERVED_DUE_ITEMS]` on this tree still fitted under any
+        #: ceiling loose enough for honest content. The generic sweep is the safety net for the
+        #: field nobody thought of; these hold the caps that exist.
+        me = client.get("/api/v1/me").json()
+        assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
+        assert len(me["competencies"]) <= MAX_SERVED_COMPETENCIES, len(me["competencies"])
+        for item_id in me["due_items"]:
+            assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters as a due id"
+        for row in me["competencies"]:
+            assert len(row["name"]) <= MAX_CONTENT_STRING, (
+                f"{len(row['name'])} characters as a name"
+            )
+            assert len(row["competency_id"]) <= MAX_CONTENT_STRING, row["competency_id"][:40]
 
 
 def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(

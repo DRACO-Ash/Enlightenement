@@ -391,12 +391,14 @@ def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
     return any(
         re.search(
             rf"\b{negation}\b(?:\W+(?:{connectives})\b){{0,{NEGATION_CONNECTIVE_LIMIT}}}"
-            #: Escaped, and DEFENSIVE ONLY - no test holds this one and none can today. Rule one
-            #: above returns early whenever the response names a direction outside the wanted set,
-            #: and a hostile stem is never a real compass word, so any response that reaches this
-            #: pattern with one also fails the positive match below: the escape cannot change an
-            #: OUTCOME here. Kept because that reasoning is a property of rule one's ordering
-            #: rather than of this line, and stated rather than left to look tested.
+            #: Escaped, and OUTCOME-BEARING. V0.26.7 labelled this defensive-only on the argument
+            #: that rule one returns early whenever the response names a direction outside the
+            #: wanted set. The argument is wrong, and the gate produced the counter-example rather
+            #: than arguing it: token `east(`, response "not moving". That response names NO
+            #: compass word, so rule one does not return, the raw stem is interpolated, and
+            #: unescaped it raises `re.error: missing )` out of `_contradicted`, out of
+            #: `DrillLoop.score`, into a 500 - `training_api` catches `DrillError` and not this.
+            #: The escape present returns a clean refusal. A test holds it now.
             rf"\W+{re.escape(stem)}{DIRECTION_SUFFIXES}\b",
             closed,
         )
