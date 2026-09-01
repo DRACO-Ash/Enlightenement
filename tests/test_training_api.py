@@ -30,6 +30,7 @@ from enlightenment.config import Config
 from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
+from enlightenment.training.drill import MAX_WITHHOLD_REASON
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_ROOT = ROOT / "content"
@@ -518,3 +519,15 @@ def test_the_withheld_items_are_named_on_the_served_manifest(client: TestClient)
     assert "items_without_a_resolvable_answer" in served, sorted(served)
     #: One today: DRL-0008, whose manoeuvre count is not readable off a relative-motion track.
     assert served["items_without_a_resolvable_answer"] == ["DRL-0008"]
+    #: And the REASONS, which the route serialised while nothing asserted them: deleting the
+    #: field from the route left the whole suite green, so "disclosed on the manifest" was again
+    #: held by a docstring rather than a test. The same fault as the list above, one field along.
+    assert "withheld_reasons" in served, sorted(served)
+    reasons = served["withheld_reasons"]
+    assert isinstance(reasons, dict), reasons
+    assert set(reasons) == {"DRL-0008"}, reasons
+    assert reasons["DRL-0008"], "an item is withheld with no reason given"
+    #: Asserted on the SERVED body, not on the loop, because the exposure is the anonymous route.
+    #: A content author sets these strings and cannot set their length.
+    for item, reason in reasons.items():
+        assert len(reason) <= MAX_WITHHOLD_REASON, f"{item}: {len(reason)} characters served"
