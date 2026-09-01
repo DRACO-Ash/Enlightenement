@@ -56,6 +56,12 @@ MAX_PENDING: Final = 512
 #: Longest content-supplied item version stored on a run row. See `_bounded`.
 MAX_ITEM_VERSION: Final = 64
 
+#: Largest serialised drill payload, bytes. A budget rather than a limit on any one field: the
+#: 159 MB waterfall that prompted it came from a plausible-looking parameter read as a count, and
+#: the next one will come from somewhere else. Generous against the largest legitimate stimulus
+#: in the library, which is a dense waterfall at a few hundred kilobytes.
+MAX_PAYLOAD_BYTES: Final = 4 * 1024 * 1024
+
 
 class DrillError(RuntimeError):
     """Raised when a drill cannot be served or scored. Carries an operator-facing reason."""
@@ -118,6 +124,7 @@ class ScoredDrill:
     score_components: tuple[dict[str, Any], ...]
     total: float
     unimplemented_rules: tuple[str, ...]
+    unimplemented_aggregation: tuple[str, ...]
     content_hash: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -143,6 +150,10 @@ class ScoredDrill:
             "score_components": list(self.score_components),
             "total": round(self.total, 4),
             "unimplemented_rules": list(self.unimplemented_rules),
+            #: What the rubric ASKED FOR and this evaluator does not apply. Computed since
+            #: V0.24.1 and, until now, serialised only by a method nothing called: a disclosure
+            #: that reaches no surface is the silence it was written to replace.
+            "unimplemented_aggregation": list(self.unimplemented_aggregation),
             "content_hash": self.content_hash,
         }
 
@@ -406,6 +417,7 @@ class DrillLoop:
             score_components=evaluation.components(),
             total=evaluation.total,
             unimplemented_rules=evaluation.unimplemented,
+            unimplemented_aggregation=evaluation.unimplemented_aggregation,
             content_hash=self._content.content_hash,
         )
 
@@ -432,6 +444,7 @@ class DrillLoop:
             score_components=(),
             total=0.0,
             unimplemented_rules=(),
+            unimplemented_aggregation=(),
             content_hash=self._content.content_hash,
         )
 

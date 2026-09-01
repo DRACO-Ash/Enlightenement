@@ -904,6 +904,10 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         # the spacing ladder's monotonicity, and the wording of the calibration verdict. Real
         # properties, and the reason the product works, but "the Elo exchange is symmetric" in a
         # document that promises controls would dilute the document.
+        # `serve(item_id=...)` bypasses selection for a debrief and for tests. Its refusal of an
+        # unknown id is a correctness guard - it must not substitute a different drill - and not
+        # an access control: the route does not expose the parameter.
+        "test_an_unknown_item_id_is_refused_rather_than_substituted",
         "test_two_equally_rated_players_expect_a_draw",
         "test_the_exchange_is_symmetric_so_ratings_are_not_created_or_destroyed",
         "test_a_wrong_answer_lowers_the_operator_and_raises_the_item",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enlightenment.scoring.evaluator import (
     DRILL_PREDICATES,
+    FULL_CREDIT,
     Award,
     Evaluation,
     Facts,
@@ -22,6 +23,7 @@ from enlightenment.scoring.matching import (
 
 __all__ = [
     "DRILL_PREDICATES",
+    "FULL_CREDIT",
     "MAX_ANSWER_LENGTH",
     "UNSCORABLE",
     "Award",

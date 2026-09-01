@@ -16,6 +16,7 @@ import pytest
 from enlightenment.content import Answer, ContentPackage, ResponseFormat, Rubric
 from enlightenment.scoring import (
     DRILL_PREDICATES,
+    FULL_CREDIT,
     MAX_ANSWER_LENGTH,
     Facts,
     RubricEvaluator,
@@ -225,3 +226,64 @@ def test_a_rule_cap_is_honoured_from_the_content(package: ContentPackage) -> Non
     single = Rubric(id="RUB-CAP", rules=(capped[0],))
     evaluation = evaluator.evaluate(single, Facts())
     assert abs(evaluation.total) <= abs(capped[0].cap or 0.0) + 1e-9
+
+
+def test_partial_credit_scales_the_rule_award_by_the_item_s_own_fraction(
+    package: ContentPackage,
+) -> None:
+    """The composition is engine policy, and an untested constant is a constant nobody owns.
+
+    `FULL_CREDIT` was introduced to replace a hardcoded `0.5` that silently equalled the rule's
+    own award, which was the finding. Naming it was half the repair: its VALUE was asserted
+    nowhere, so changing 1.0 to 0.25 left the entire suite green and quadrupled every partial
+    award. A named constant with no test is a magic number with a better name.
+    """
+    rubric = package.rubric("RUB-DRILL")
+    assert rubric is not None
+    rule = next(r for r in rubric.rules if r.id == "D-PARTIAL")
+    evaluation = RubricEvaluator().evaluate(
+        rubric, Facts(matched="partial", correct=False, partial_credit=0.4)
+    )
+    award = next(a for a in evaluation.awards if a.rule_id == "D-PARTIAL")
+    assert award.award == pytest.approx(rule.award * 0.4 / FULL_CREDIT)
+    assert award.award == pytest.approx(0.2), "a half-credit answer no longer earns half the award"
+
+
+def test_the_speed_cap_in_the_content_actually_caps(package: ContentPackage) -> None:
+    """Asserted against a rubric whose cap BITES, because the shipped one cannot.
+
+    `RUB-DRILL` sets `speed_factor.max_bonus` to 0.25 and gives `D-FAST-AND-CORRECT` an award and
+    a `cap` of 0.25 as well, so reading the content's cap changes nothing there: the branch was
+    written, and proved nothing on the real library. A test that only exercises the no-op case
+    reports the feature works when it has never once been the binding constraint.
+    """
+    generous = Rubric(
+        id="RUB-SPEED",
+        rules=(
+            {
+                "id": "D-FAST-AND-CORRECT",
+                "when": "prose",
+                "award": 2.0,
+                "competency_id": "CMP-02",
+            },
+        ),
+        aggregation={"method": "weighted_sum", "speed_factor": {"enabled": True, "max_bonus": 0.5}},
+    )
+    fast = Facts(matched="accept", correct=True, elapsed_ms=500, time_target_s=30)
+    evaluation = RubricEvaluator().evaluate(generous, fast)
+    assert evaluation.total == pytest.approx(0.5), (
+        "the content's max_bonus did not cap a rule award above it, so the aggregation block is"
+        " still being ignored"
+    )
+
+
+def test_a_declared_aggregation_this_evaluator_does_not_apply_is_named(
+    package: ContentPackage,
+) -> None:
+    """The other half of failing closed: silently ignoring a content instruction reads exactly
+    like honouring it. `RUB-DRILL` weights a Brier score at 0.3 and states no formula for folding
+    it into a points total, so the weight is reported rather than invented."""
+    rubric = package.rubric("RUB-DRILL")
+    assert rubric is not None
+    evaluation = RubricEvaluator().evaluate(rubric, Facts(matched="accept", correct=True))
+    assert "calibration_weight" in evaluation.unimplemented_aggregation

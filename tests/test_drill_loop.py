@@ -302,6 +302,14 @@ def test_an_unscorable_item_does_not_move_a_rating_or_the_schedule(
 
     #: Drive the item directly, because selection is due-and-rating driven and may not reach it.
     served = loop.serve(operator_id="operator-unscorable", item_id=numeric[0].id)
+
+    #: Every computed item in the library now resolves a value, which is the OTHER half of this
+    #: repair and means the end-to-end path no longer reaches the refusal on its own. The branch
+    #: still has to be exercised, so the derived facts are emptied here: that is exactly the
+    #: state a generator which supplied nothing would leave, and it is how the item behaved on
+    #: every attempt before the values were wired.
+    loop.pending[served.run_id].derived.clear()
+
     result = loop.score(
         run_id=served.run_id,
         response="7",
@@ -310,9 +318,7 @@ def test_an_unscorable_item_does_not_move_a_rating_or_the_schedule(
         operator_id="operator-unscorable",
     )
     payload = result.as_dict()
-    if payload["matched"] != "unscorable":
-        pytest.skip("this item resolved a value, so there is no refusal to assert on")
-
+    assert payload["matched"] == "unscorable"
     assert payload["rating_delta"] is None
     assert payload["rating_before"] is None
     after = store.load("operator-unscorable")
@@ -406,3 +412,72 @@ def test_the_manifest_discloses_what_is_not_wired(loop: DrillLoop) -> None:
     assert unread["drills_total"] == 140
     assert 0 < unread["drills_fully_expressed"] <= unread["drills_total"]
     assert unread["params"], "the unread census names nothing, so it proves nothing"
+
+
+def test_a_content_supplied_version_is_length_capped_before_it_is_stored(
+    package: ContentPackage, loop: DrillLoop, tmp_path: Path
+) -> None:
+    """The register claimed this and cited a test about ROW COUNT, which is a different bound.
+
+    `extra="allow"` is the deliberate reversal that lets the package load unedited, and its
+    residual is length: a 5,000-character `version` was stored verbatim on every run row, in a
+    file read whole on every request. Deleting the cap left the whole suite green, so the row
+    named a control nothing checked - the same fault corrected on the frozen-model row.
+    """
+    from enlightenment.training.drill import MAX_ITEM_VERSION, _bounded
+
+    assert len(_bounded("v" * 5000)) == MAX_ITEM_VERSION
+    assert _bounded("2.10.0") == "2.10.0"
+    assert _bounded(None) == ""
+
+    served = loop.serve(operator_id="operator-version")
+    loop.score(
+        run_id=served.run_id,
+        response="manoeuvre",
+        confidence=3,
+        elapsed_ms=2000,
+        operator_id="operator-version",
+    )
+    stored = ProgressStore(tmp_path / "progress.json").load("operator-version")
+    assert stored.runs
+    assert len(stored.runs[-1].item_version) <= MAX_ITEM_VERSION
+
+
+def test_an_unknown_item_id_is_refused_rather_than_substituted(loop: DrillLoop) -> None:
+    """`serve(item_id=...)` bypasses selection, so it must not quietly serve something else."""
+    with pytest.raises(DrillError, match="no drill"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-9999")
+
+
+def test_the_reveal_names_the_aggregation_the_evaluator_does_not_apply(loop: DrillLoop) -> None:
+    """Disclosure that reaches an actual response body, not a method nothing calls."""
+    served = loop.serve(operator_id="operator-aggregation")
+    result = loop.score(
+        run_id=served.run_id,
+        response="manoeuvre",
+        confidence=4,
+        elapsed_ms=2000,
+        operator_id="operator-aggregation",
+    )
+    assert "calibration_weight" in result.as_dict()["unimplemented_aggregation"]
+
+
+def test_every_served_stimulus_stays_inside_a_stated_payload_budget(
+    package: ContentPackage, loop: DrillLoop
+) -> None:
+    """A content-supplied count reaching an unauthenticated route needs a bound, and had none.
+
+    `obs_count: 18000` was briefly read as a headcount: 18,000 tracks, 2.6 million points and
+    159 MB of JSON from one anonymous GET, which is a larger availability surface than the
+    unbounded pending map closed in the same commit. Asserted over the WHOLE library rather than
+    a sample, because the fault was in one item nobody had rendered.
+    """
+    from enlightenment.training.drill import MAX_PAYLOAD_BYTES
+
+    oversized: list[str] = []
+    for drill in package.drills:
+        served = loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=drill.id)
+        size = len(json.dumps(served.as_dict()))
+        if size > MAX_PAYLOAD_BYTES:
+            oversized.append(f"{drill.id}: {size:,} bytes")
+    assert not oversized, oversized

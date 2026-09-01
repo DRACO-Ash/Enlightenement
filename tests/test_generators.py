@@ -12,6 +12,7 @@ of failure because nobody notices it.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -28,9 +29,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTENT = ROOT / "content"
 
 #: How many of the 140 drills carry no authored parameter the renderers ignore. A RATCHET: it may
-#: rise as renderers learn the content's vocabulary and must never fall. Raised on 31 August from
-#: 0, when the renderers read a vocabulary they had invented for themselves.
-FULLY_EXPRESSED_BASELINE = 11
+#: rise as renderers learn the content's vocabulary and must never fall.
+#:
+#: Briefly recorded as 11, which was not true: 25 of the declared `reads` names were never
+#: consumed by the renderer declaring them, so six drills counted as fully expressed on the
+#: strength of a false declaration. `test_every_declared_read_actually_changes_the_surface` is
+#: what stops that recurring, and 5 is the figure that survives it.
+FULLY_EXPRESSED_BASELINE = 5
 SEED = 0x4F1A
 
 
@@ -485,9 +490,15 @@ def test_a_numeric_item_resolves_the_value_it_will_be_scored_against(
         derived: dict[str, object] = {}
         for stimulus in rendered:
             derived.update(stimulus.derived)
-        if "expected_value" in derived:
+        #: Either kind of resolution. Two of the three ask for a number and the third asks for a
+        #: DIRECTION, which is just as much a fact about the surface the renderer drew.
+        if "expected_value" in derived or "expected_text" in derived:
             resolved += 1
-    assert resolved, "no computed item resolves a value, so every one of them is unscorable"
+    assert resolved == len(numeric), (
+        f"{resolved} of {len(numeric)} computed items resolve a value the item can be scored"
+        " against. Asserting that ANY of them resolves is not the claim: an item whose sentinel"
+        " resolves to nothing is refused on every attempt, which is safe but never teaches."
+    )
 
 
 def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -> None:
@@ -507,4 +518,171 @@ def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -
     assert expressed >= FULLY_EXPRESSED_BASELINE, (
         f"{expressed} drills fully express their authored scene, down from"
         f" {FULLY_EXPRESSED_BASELINE}. A renderer stopped reading a parameter."
+    )
+
+
+#: Least divergence a manoeuvre must produce, as a fraction of the unmanoeuvred track's own
+#: extent. The item asks how many manoeuvres are VISIBLE, so an invisible one is not a hard item,
+#: it is an unanswerable one - and it is scored, which makes it worse than not serving it.
+MIN_BURN_DIVERGENCE = 0.5
+
+
+def _separation(first: object, second: object, index: int) -> float:
+    """Distance between two tracks at one sample."""
+    return math.hypot(
+        first.x[index] - second.x[index],  # type: ignore[attr-defined]
+        first.y[index] - second.y[index],  # type: ignore[attr-defined]
+    )
+
+
+def test_a_manoeuvre_is_visible_in_the_track_it_is_counted_from() -> None:
+    """The number the item is scored against must be readable off the plot.
+
+    The first version of the burn added a fixed 4.0e-6 km/s to an along-track rate of order
+    5.8e-4 - seven tenths of one percent - and the measured turn angle at every burn was 0.00
+    degrees. Its only trace was a duplicated vertex, which draws as nothing. The item was then
+    marked against a count no operator could read, taking rating points from someone reading the
+    plot correctly. That is worse than the `unscorable` refusal it replaced.
+
+    Asserted as divergence from the SAME track with no burns, because that is the question an
+    analyst answers: has this object done something, and how many times. Before the first burn
+    the two must be identical; after it they must part by a legible fraction of the track.
+    """
+    registry = build_registry()
+    unburned = compose(registry, "tric", {"geometry": "fmc", "actual_manoeuvres": 0}, SEED)[0]
+    reference = unburned.panels[0].marks[0]
+    scale = max(reference.x) - min(reference.x)
+    assert scale > 0
+
+    for burns in (1, 2, 3):
+        rendered = compose(registry, "tric", {"geometry": "fmc", "actual_manoeuvres": burns}, SEED)[
+            0
+        ]
+        track = rendered.panels[0].marks[0]
+        assert rendered.derived["manoeuvres"] == burns
+        samples = min(len(track.x), len(reference.x))
+        first_burn = max(samples // (burns + 1), 8)
+
+        before = max(_separation(track, reference, i) for i in range(first_burn))
+        assert before == pytest.approx(0.0, abs=1e-9), (
+            f"{burns} burns: the track differs BEFORE the first burn, so the difference is not"
+            " the burn"
+        )
+        after = max(_separation(track, reference, i) for i in range(first_burn, samples))
+        assert after > scale * MIN_BURN_DIVERGENCE, (
+            f"{burns} burns: the manoeuvred track diverges by {after:.3f} km against a track"
+            f" scale of {scale:.3f} km, which is not something an operator can count"
+        )
+
+
+def test_a_burned_track_carries_no_duplicate_vertex() -> None:
+    """A repeated point is not a cusp. It is invisible, and it looks like data.
+
+    The burn used to be applied by appending the previous position again with a new velocity, so
+    the artefact was two identical samples: nothing to see, and a shape in the data that reads
+    like something happened there.
+    """
+    stimulus = compose(build_registry(), "tric", {"geometry": "fmc", "actual_manoeuvres": 3}, SEED)[
+        0
+    ]
+    track = stimulus.panels[0].marks[0]
+    duplicates = [
+        index for index, (x, y) in enumerate(pairwise(zip(track.x, track.y, strict=True))) if x == y
+    ]
+    assert not duplicates, f"duplicate vertices at {duplicates}"
+
+
+#: A distinctive value for every parameter a renderer declares it reads, and where one parameter
+#: only bites in the presence of another, that context. `delta_inc_deg` does nothing unless the
+#: beta series is the one departing; a gap length does nothing unless there is a gap.
+PROBE_VALUES: dict[str, tuple[object, dict[str, object]]] = {
+    "days": (11, {}),
+    "cycles_shown": (9, {}),
+    "departure_at_frac": (0.3, {}),
+    "departure_component": ("out_of_plane", {}),
+    "beta_departs": (True, {}),
+    "time_stable": (True, {}),
+    "delta_inc_deg": (0.09, {"beta_departs": True}),
+    "delta_period_s": (0.07, {}),
+    "departure_after_gap": (True, {}),
+    "gap_start_frac": (0.2, {"departure_after_gap": True}),
+    "gap_len_hours": (90, {"departure_after_gap": True}),
+    "obs_density": ("starved", {}),
+    "tight_y_scale": (True, {}),
+    "manoeuvre_marker": (True, {}),
+    "headcount": (5, {}),
+    "drifting": (True, {}),
+    "drifting_object": (2, {}),
+    "longitudinal_bounds": (1.0, {}),
+    "drift_begins": (True, {}),
+    "ceased_at_cycle": (2, {"cycles_shown": 9}),
+    "derived_rate_deg_day": (0.66, {"drifting": True}),
+    "newest_at": ("top", {}),
+    "collection_gaps": (True, {}),
+    "missed_passes": (6, {}),
+    "intervals": (9, {}),
+    "step_change": (True, {}),
+    "phase_angle_shift": (12.0, {}),
+    "geometry": ("fmc", {}),
+    "revolutions": (5, {}),
+    "ratio": (3.5, {}),
+    "regime": ("LEO", {}),
+    "drift_rate": ("seeded_slow", {"geometry": "nmc_drifting"}),
+    "manoeuvre_count": ("seeded", {}),
+    "actual_manoeuvres": (2, {}),
+    "state_change_markers": (7, {}),
+    "separation_km": (2.0, {}),
+    "distance_km": (3.0, {}),
+    "separation": ("seeded_close", {}),
+    "period_change_s": (33.0, {}),
+    "period_delta_s": (21.0, {}),
+    "plane_change_deg": (0.9, {}),
+    "inclination_delta_deg": (0.4, {}),
+    "include_natural_secular_drift": (False, {}),
+    "nodal_regression_deg": (3.0, {}),
+    "altitude_delta_km": (18.0, {}),
+    "rows": (4, {}),
+    "hours": (30, {}),
+    "sites": (3, {}),
+    "sensors": (4, {}),
+    "minutes": (44, {}),
+    "elapsed_min": (55, {}),
+    "ballistic": (True, {}),
+    "fragments": (12, {}),
+    "parent_period_min": (120.0, {}),
+    "parent_altitude_km": (900.0, {}),
+    "spread": (2.5, {}),
+}
+
+
+def test_every_declared_read_actually_changes_the_surface() -> None:
+    """`reads` is a claim about behaviour, so it is checked by behaviour.
+
+    The census that reports the content-and-code gap is only worth having if `reads` is true, and
+    the first version of it was not: 25 of the declared names were never consumed at all, so the
+    census reported 11 of 140 drills fully expressed when the honest figure was 5. A count that
+    over-reports its own coverage is worse than no count, because it retires the question.
+
+    A STATIC check is not enough and was tried first: reading the class source matches the `reads`
+    declaration itself, so every name trivially "appears" and the check passes vacuously. This
+    renders with the parameter and without it and requires the surface to differ.
+    """
+    registry = build_registry()
+    inert: list[str] = []
+    for generator in sorted(registry.names):
+        for parameter in sorted(registry.by_name(generator).reads):  # type: ignore[union-attr]
+            assert parameter in PROBE_VALUES, (
+                f"{generator} declares it reads {parameter!r} and there is no probe value for it."
+                " Add one: a declaration nothing exercises is a claim nothing checks."
+            )
+            value, context = PROBE_VALUES[parameter]
+            without = json.dumps(compose(registry, generator, dict(context), SEED)[0].for_client())
+            with_it = json.dumps(
+                compose(registry, generator, {**context, parameter: value}, SEED)[0].for_client()
+            )
+            if without == with_it:
+                inert.append(f"{generator}.{parameter}")
+    assert not inert, (
+        "these parameters are declared as read and change nothing in the rendered surface, so the"
+        f" unread census over-reports its own coverage: {inert}"
     )

@@ -2,6 +2,72 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.24.2 (2026-09-01)
+
+**What.** The engineering gate re-ran on V0.24.1, confirmed nine of the twelve original findings
+fixed with mutation-killed evidence, and found three new blockers plus six majors - five of them
+regressions in the code V0.24.1 added. This closes those. The pattern is worth naming: each
+repair reached for a plausible parameter or a plausible constant, and the ones that were wrong
+were wrong in ways only measurement could show.
+
+**A content parameter became an unauthenticated 159 MB response.** `obs_count` was read as a
+fallback for `headcount`, and DRL-0030 authors `obs_count: 18000`: 18,000 tracks, 2.6 million
+points, 3.2 seconds and 159 MB of JSON from one anonymous `GET /api/v1/drill/next`. A larger
+availability surface than the unbounded pending map V0.24.1 closed, introduced by the same
+commit. `obs_count` is gone from the fallback, the track count is capped, and every one of the
+140 drills is now served and measured against a stated byte budget.
+
+**The manoeuvre nobody could see, scored anyway.** The burn added a fixed 4.0e-6 km/s to an
+along-track rate of order 5.8e-4 - seven tenths of one percent - and the measured turn angle at
+every burn was 0.00 degrees. Its only artefact was a duplicated vertex, which draws as nothing.
+Meanwhile `expected_value` was set from that count, so DRL-0008 changed from refusing to score
+into marking an operator wrong for reading the plot correctly: worse than the fault it replaced,
+and the changelog claimed the discontinuity was visible. The burn is now sized as a fraction of
+the motion, the duplicate vertex is gone, and the test measures the manoeuvred track against the
+same track with no burns.
+
+**The census that over-reported itself.** 25 of the declared `reads` names were never consumed by
+the renderer declaring them, so six drills counted as fully expressed on a false declaration and
+the honest figure was 5 of 140, not 11. A count that overstates its own coverage is worse than no
+count, because it retires the question. Every declaration is now proved BEHAVIOURALLY: render with
+the parameter, render without it, and require the surface to differ. A static check was tried
+first and was vacuous - reading the class source matches the `reads` declaration itself.
+
+**Three more contradictions between a stimulus and its key.** `drift_begins: true` was multiplied
+by the window, putting the drift onset at its END, so DRL-0019 drew a perfectly held longitude
+while its key says the object has stopped station-keeping. `derived_rate_deg_day: -22900000` - the
+real ASTRA 1M artefact - was drawn literally across 114 million degrees, collapsing every object
+into one pixel column: it is now reported verbatim in the header and drawn to a scale the panel
+can express, with the clamp stated. And DRL-0030 carried the `computed_from_params` sentinel on a
+free-classification item, where the sentinel check did not reach: the text matcher compared the
+operator's prose against the literal string, so every real answer was marked wrong.
+
+**All three computed items now resolve.** DRL-0004 asks for the longitude drift rate from an
+altitude change, which is first-order physics the renderer can compute and now does. DRL-0008 gets
+its count from the burns actually drawn. DRL-0030 gets its direction from the drift the renderer
+chose. The refusal branch remains for the case where a generator supplies nothing, and is
+exercised directly rather than depending on an item staying broken.
+
+**Two register rows that named the wrong evidence.** The `item_version` cap cited a test asserting
+a ROW COUNT; deleting the cap left the suite green. The contradiction row claimed a stimulus
+"never" contradicts its key, which the seven-agreement table cannot prove and two counter-examples
+disproved within a day. Both corrected: one with the test it needed, one narrowed to what is
+actually proved. This is the third time in three releases that a register row has cited a test
+that did not assert its property, which is a pattern rather than an accident.
+
+**Also.** `FULL_CREDIT` was named in V0.24.1 and asserted nowhere, so changing it quadrupled every
+partial award silently. The content's speed cap was applied against a rubric where it could never
+bind, so the branch proved nothing. `unimplemented_aggregation` was computed and serialised only
+by a method nothing called. The read-route closure's docstring now says which half is a proof and
+which is a declared review. `CONTENT_DIR` is recorded in the deployment parameters as the only
+name.
+
+**How verified.** Loop green, seven legs: 933 passed, 2 skipped, coverage 96.4%. Every fix
+mutation-proved. Process note, because it cost
+real work twice: `git checkout <file>` was used to revert a mutation and took the surrounding
+session's uncommitted work with it. Mutations are now backed up to a scratch copy and restored
+from there, never from git.
+
 ## V0.24.1 (2026-08-31)
 
 **What.** Both binding gates returned FAIL on V0.24 with three blockers and eleven majors between

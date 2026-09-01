@@ -29,6 +29,11 @@ MAX_ANSWER_LENGTH = 300
 #: matching a string literal: a wrong answer moves a rating and an unscorable item must not.
 UNSCORABLE: Final = "unscorable"
 
+#: The content's marker for a numeric answer the RENDERER must compute. Never matched as a
+#: literal string: an operator typing it must not be marked correct.
+COMPUTED_SENTINEL: Final = "computed_from_params"
+UNSCORABLE_NOTE: Final = "This item's expected value could not be resolved."
+
 #: Stripped from the front of a response, once, then again. Two bounded passes rather than a loop,
 #: because an unbounded strip on attacker-controlled input is a denial of service in a regex.
 _FILLERS = (
@@ -109,7 +114,7 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
     expected: float | None = answer.value
     if expected is None:
         for candidate in answer.accept:
-            if candidate == "computed_from_params":
+            if candidate == COMPUTED_SENTINEL:
                 supplied = derived.get("expected_value")
                 expected = None if supplied is None else float(supplied)
                 break
@@ -118,7 +123,7 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
                 expected = numeric_candidate
                 break
     if expected is None:
-        return Match(UNSCORABLE, 0.0, note="This item's expected value could not be resolved.")
+        return Match(UNSCORABLE, 0.0, note=UNSCORABLE_NOTE)
     if given is None:
         return Match("none", 0.0, note="No number found in the response.", expected=expected)
     inside = _within(given, expected, answer.tolerance)
@@ -158,6 +163,29 @@ def match_text(response: str, answer: Answer) -> Match:
     return Match("none", 0.0)
 
 
+def match_derived_text(response: str, derived: dict[str, Any]) -> Match:
+    """A non-numeric answer the RENDERER computed, matched against what it actually drew.
+
+    DRL-0030 asks the operator to find the drifting object and state its direction, and its key
+    is the `computed_from_params` sentinel: the direction is a fact about the surface, not a
+    value anybody could write into content without fixing the stimulus. The generator records
+    what it drew in `derived["expected_text"]` and this matches against that.
+
+    Without it the item reached the ordinary text matcher and compared the operator's prose to
+    the literal string "computed_from_params": every real answer was marked WRONG, the rating
+    dropped and the cue reset. Refusing to score is the fail-closed case; scoring against a
+    sentinel is neither closed nor honest.
+    """
+    expected = derived.get("expected_text")
+    if not expected:
+        return Match(UNSCORABLE, 0.0, note=UNSCORABLE_NOTE)
+    typed = normalise(response)
+    tokens = tuple(str(value) for value in expected)
+    if any(re.search(rf"\b{re.escape(token)}\b", typed) for token in tokens):
+        return Match("accept", 1.0)
+    return Match("none", 0.0, note="Not the direction shown on the surface.")
+
+
 def match(
     response: str, answer: Answer, response_format: ResponseFormat, derived: dict[str, Any]
 ) -> Match:
@@ -171,6 +199,16 @@ def match(
     """
     if len(response) > MAX_ANSWER_LENGTH:
         return Match("none", 0.0, note=f"Answers are capped at {MAX_ANSWER_LENGTH} characters.")
+    #: The sentinel is refused whatever the response format says. It was checked only inside
+    #: `match_numeric`, and DRL-0030 carries `computed_from_params` on a `free_classification`
+    #: item: the text matcher then compared the operator's prose against the literal string, so
+    #: everything except typing the sentinel itself was marked WRONG, dropping the rating and
+    #: resetting the cue. That is the exact harm the unscorable branch exists to prevent, reached
+    #: by a route that branch could not see.
+    if COMPUTED_SENTINEL in answer.accept:
+        if response_format is ResponseFormat.NUMERIC_ESTIMATE:
+            return match_numeric(response, answer, derived)
+        return match_derived_text(response, derived)
     if response_format is ResponseFormat.NUMERIC_ESTIMATE:
         return match_numeric(response, answer, derived)
     return match_text(response, answer)

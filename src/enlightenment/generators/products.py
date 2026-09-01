@@ -85,6 +85,17 @@ WIDE_RESIDUAL_LIMIT: Final = 0.08
 PERIOD_SECONDS_PER_UNIT: Final = 200.0
 INCLINATION_DEG_PER_UNIT: Final = 0.02
 
+#: Geostationary semi-major axis, kilometres, and sidereal rotation in degrees per day. Standard
+#: figures, both needed to turn an authored altitude change into the drift rate an item asks the
+#: operator to estimate.
+GEO_SEMI_MAJOR_AXIS_KM: Final = 42164.11
+SIDEREAL_DEGREES_PER_DAY: Final = 360.9856
+
+#: Range for a seeded altitude change, kilometres: large enough that the drift is worth reporting,
+#: small enough to be an ordinary station-keeping error rather than a transfer.
+SEEDED_ALTITUDE_DELTA_KM: Final = (4.0, 24.0)
+DEFAULT_ALTITUDE_DELTA_KM: Final = -0.0251
+
 #: Orbital periods, seconds. GEO is the sidereal day, which is the figure a geostationary
 #: relative-motion plot is drawn against; the low-orbit figure is a representative 92-minute
 #: revolution, matching the pass cadence used above.
@@ -109,17 +120,36 @@ CROSS_TRACK_RATE_KM_S: Final = 1.1e-5
 STEP_CHANGE_MAGNITUDES: Final = 0.9
 
 #: Waterfall defaults, used only where the content states nothing.
+DEFAULT_NEIGHBOURS: Final = 14
 DEFAULT_DRIFTERS: Final = 3
+
+#: Hard ceiling on tracks in one neighbourhood panel. A bound on a CONTENT-supplied count that
+#: reaches an unauthenticated route, and a readability limit besides: `obs_count: 18000` was
+#: briefly read as a headcount and produced 159 MB of JSON from one anonymous request.
+MAX_NEIGHBOURHOOD_TRACKS: Final = 40
+
+#: How far outside the station-keeping box a drawn drifter may travel across the whole window.
+DRIFT_EXCURSION_FACTOR: Final = 2.5
+
+#: Where a drift starts when the content says only THAT it starts, as a fraction of the window.
+DEFAULT_DRIFT_ONSET_FRACTION: Final = 0.35
 DEFAULT_LONGITUDE_HALF_WIDTH_DEG: Final = 3.0
 DEFAULT_GAP_START_FRACTION: Final = 0.45
 DEFAULT_GAP_DAYS: Final = 1.4
 #: Geostationary electro-optical passes in a day, used to turn a missed-pass count into a span.
 GEO_PASSES_PER_DAY: Final = 12.0
 
-#: Along-track velocity change applied at a manoeuvre, kilometres per second. PROVISIONAL, and
-#: sized so the cusp is legible at the plot's scale rather than so it is realistic: the real
-#: figure is a characterisation-pass output.
-BURN_ALONGTRACK_KM_S: Final = 4.0e-6
+#: A manoeuvre's along-track velocity change, as a FRACTION of the no-drift rate the track is
+#: already flying. PROVISIONAL in size, but not in kind: expressed as a fraction because an
+#: absolute figure is legible at one geometry and invisible at another, which is exactly how a
+#: burn of 0.7% of the along-track rate came to be drawn as nothing while the item scored it.
+BURN_FRACTION: Final = 0.08
+
+#: Fewest samples in one segment between burns, so a large burn count cannot flatten the curve.
+MIN_SEGMENT_SAMPLES: Final = 8
+
+#: Fewest samples in a whole relative-motion track, whatever revolution count the content states.
+MIN_TRIC_SAMPLES: Final = 24
 
 #: Default separation where the content states none, kilometres.
 DEFAULT_SEPARATION_KM: Final = 8.0
@@ -268,11 +298,28 @@ def _longitude_bounds(params: dict[str, Any]) -> tuple[float, float]:
     return (-DEFAULT_LONGITUDE_HALF_WIDTH_DEG, DEFAULT_LONGITUDE_HALF_WIDTH_DEG)
 
 
-def _drift_rate(authored: Any, stream: SeededRandom) -> float:
-    """Degrees per day. Authored where the item asks the operator to derive it from the plot."""
+def _drift_rate(
+    authored: Any, bounds: tuple[float, float], days: float, stream: SeededRandom
+) -> tuple[float, float]:
+    """The rate to DRAW and the rate to REPORT, which are not always the same number.
+
+    DRL-0005 authors `derived_rate_deg_day: -22900000`, the real ASTRA 1M artefact from the
+    flight plan: a tooling output that is physically impossible and that the operator is being
+    trained to recognise as such. Drawn literally it spans 114 million degrees on an axis labelled
+    in degrees, every station-kept object collapses into one pixel column, and the plot conveys
+    nothing - so the item that teaches "distrust this figure" became the item that shows nothing.
+
+    The absurd figure is REPORTED verbatim, in the header where the tooling would put it, and the
+    drawn track is clamped to something the panel can express. The clamp is stated in the header
+    and in `derived`, because a silently clamped plot would be its own lie.
+    """
     if isinstance(authored, int | float) and not isinstance(authored, bool):
-        return float(authored)
-    return stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
+        reported = float(authored)
+        span = abs(bounds[1] - bounds[0]) or DEFAULT_LONGITUDE_HALF_WIDTH_DEG
+        limit = span * DRIFT_EXCURSION_FACTOR / max(days, 1.0)
+        return (max(-limit, min(limit, reported)), reported)
+    drawn = stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
+    return (drawn, drawn)
 
 
 def _waterfall_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
@@ -294,38 +341,53 @@ def _waterfall_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
 
 
 def _burned_track(
-    start: RelativeState, mean_motion: float, step_s: float, samples: int, burns: int
+    start: RelativeState,
+    mean_motion: float,
+    step_s: float,
+    samples: int,
+    burns: int,
+    burn_km_s: float,
 ) -> list[RelativeState]:
     """The relative track, propagated in segments with a velocity change at each junction.
 
     A manoeuvre has to be VISIBLE for "how many manoeuvres are in this relative motion" to be a
-    question about the plot rather than about a number the server picked. Each burn is an
-    along-track velocity change at a segment boundary, which is what a burn does to relative
-    motion and what an analyst reads as a cusp: the loop changes shape at a point rather than
-    curving smoothly through it. Zero burns is the continuous case, unchanged.
+    question about the plot rather than about a number the server picked. The first version was
+    not: a fixed 4.0e-6 km/s against an along-track rate of order 5.8e-4, seven tenths of one
+    percent, and the measured turn angle at every burn was 0.00 degrees. Its only artefact was a
+    DUPLICATED vertex, which draws as nothing. The item was then marked against a count no
+    operator could read, taking rating points from someone reading the plot correctly - worse
+    than the unscorable refusal it replaced.
+
+    So the burn is sized as a FRACTION OF THE MOTION rather than as an absolute figure, and the
+    duplicate vertex is gone. `tests/test_generators.py` measures the manoeuvred track against
+    the same track with no burns, so a burn that stops being legible fails the loop.
     """
     if burns <= 0:
         return [propagate_relative(start, mean_motion, i * step_s) for i in range(samples)]
 
     track: list[RelativeState] = []
     state = start
-    segment = samples // (burns + 1)
+    #: At least a few samples per segment, so a burn count larger than the sample budget cannot
+    #: divide by zero or leave a segment with no curve in it.
+    segment = max(samples // (burns + 1), MIN_SEGMENT_SAMPLES)
+    elapsed = 0
     for index in range(samples):
         if index and index % segment == 0 and track and index // segment <= burns:
-            #: Restart the propagation from the current state with the along-track rate changed.
-            #: The size is PROVISIONAL like every other imperfection figure in this module.
             here = track[-1]
             state = RelativeState(
                 position_km=here.position_km,
                 velocity_km_s=(
                     here.velocity_km_s[0],
-                    here.velocity_km_s[1] + BURN_ALONGTRACK_KM_S,
+                    here.velocity_km_s[1] + burn_km_s,
                     here.velocity_km_s[2],
                 ),
             )
-            track.append(state)
-            continue
-        track.append(propagate_relative(state, mean_motion, (index % segment) * step_s))
+            #: One step, not zero. Propagating by zero time reproduces the previous position
+            #: exactly, which is the duplicate vertex this rewrite exists to remove: invisible to
+            #: look at, and shaped in the data like a point where something happened.
+            elapsed = 1
+        track.append(propagate_relative(state, mean_motion, elapsed * step_s))
+        elapsed += 1
     return track
 
 
@@ -342,6 +404,53 @@ def _tric_derived(facts: dict[str, Any], *, asks_for_count: bool) -> dict[str, A
     if asks_for_count:
         facts["expected_value"] = float(facts["manoeuvres"])
     return facts
+
+
+def _altitude_delta(params: dict[str, Any], stream: SeededRandom) -> float:
+    """The semi-major axis change in kilometres, from the content or seeded on its instruction."""
+    authored = params.get("altitude_delta_km")
+    if isinstance(authored, int | float) and not isinstance(authored, bool):
+        return float(authored)
+    if authored == "seeded":
+        return stream.uniform(SEEDED_ALTITUDE_DELTA_KM[0], SEEDED_ALTITUDE_DELTA_KM[1])
+    return DEFAULT_ALTITUDE_DELTA_KM
+
+
+def _geo_drift_rate_deg_day(altitude_delta_km: float) -> float:
+    """Longitude drift rate in degrees per day for a semi-major axis change at geostationary.
+
+    A raised orbit has a longer period, so the object falls behind the Earth's rotation and
+    drifts WEST; the sign is negative on an eastward-positive longitude axis. To first order the
+    rate is `-1.5 * (delta_a / a) * 360.99` - the derivative of the sidereal rotation rate with
+    respect to semi-major axis, and the estimate an analyst makes at the desk. DRL-0004 asks for
+    exactly this, so without it the item was permanently unscorable.
+    """
+    return -1.5 * (altitude_delta_km / GEO_SEMI_MAJOR_AXIS_KM) * SIDEREAL_DEGREES_PER_DAY
+
+
+def _drift_onset(params: dict[str, Any], days: float) -> float:
+    """When a drift starts, in days. A BOOLEAN is not a fraction, and reading it as one erased it.
+
+    `drift_begins: true` multiplied by `days` put the onset at the END of the window, so not one
+    sample drifted and DRL-0019 drew a perfectly held longitude while its key says the object has
+    stopped station-keeping. The plot contradicted its own key - the fault this whole vocabulary
+    rewrite exists to remove, reintroduced by a type confusion.
+
+    `ceased_at_cycle` names the cycle station-keeping stopped, the same fact expressed the way
+    the waterfall's own axis counts.
+    """
+    ceased = params.get("ceased_at_cycle")
+    cycles = params.get("cycles_shown")
+    if isinstance(ceased, int | float) and not isinstance(ceased, bool):
+        if isinstance(cycles, int | float) and not isinstance(cycles, bool) and cycles:
+            return days * min(float(ceased) / float(cycles), 1.0)
+        return min(float(ceased), days)
+    authored = params.get("drift_begins")
+    if isinstance(authored, bool):
+        return days * DEFAULT_DRIFT_ONSET_FRACTION if authored else 0.0
+    if isinstance(authored, int | float):
+        return days * float(authored)
+    return 0.0
 
 
 class ResidualGenerator:
@@ -373,7 +482,6 @@ class ResidualGenerator:
             "gap_start_frac",
             "gap_len_hours",
             "obs_density",
-            "noise_profile",
             "tight_y_scale",
             "manoeuvre_marker",
         }
@@ -476,15 +584,12 @@ class WaterfallGenerator:
             "drifting",
             "drifting_object",
             "longitudinal_bounds",
-            "degrees_from_bound",
             "drift_begins",
+            "ceased_at_cycle",
             "derived_rate_deg_day",
             "newest_at",
             "collection_gaps",
             "missed_passes",
-            "obs_count",
-            "populated_regions",
-            "regime",
         }
     )
 
@@ -496,16 +601,17 @@ class WaterfallGenerator:
         centre = 0.0
 
         #: How many objects are in the neighbourhood. The content authors `headcount` because on
-        #: three items it IS the answer: the operator counts the distinct tracks. Defaulting it
-        #: made every neighbourhood the same size regardless of what the item asked.
-        neighbours = int(params.get("headcount", params.get("obs_count", 14)))
+        #: three items it IS the answer: the operator counts the distinct tracks.
+        #:
+        #: **`obs_count` is NOT a headcount and must never fall back to one.** It was briefly read
+        #: as one, and DRL-0030 authors `obs_count: 18000`: 18,000 tracks, 2.6 million points and
+        #: 159 MB of JSON from a single unauthenticated request. The cap is a second line, and it
+        #: costs nothing an operator would notice: a waterfall panel is unreadable well below it.
+        neighbours = min(int(params.get("headcount", DEFAULT_NEIGHBOURS)), MAX_NEIGHBOURHOOD_TRACKS)
         drifters = _drifter_count(params, neighbours)
 
-        #: The bounds a station-kept object is held between. Drawn as lines rather than implied,
-        #: because `degrees_from_bound` asks the operator to judge how close a drifter is to one.
         bounds = _longitude_bounds(params)
-        rate_authored = params.get("derived_rate_deg_day")
-        drift_start = float(params.get("drift_begins", 0.0)) * days
+        drift_start = _drift_onset(params, days)
 
         #: Newest at the bottom is the convention of the real product, and one item authors the
         #: other direction on purpose: reading a plot whose axis has been flipped is the skill.
@@ -514,10 +620,13 @@ class WaterfallGenerator:
         marks: list[Marks] = []
         times = _geo_pass_times(days, stream)
         gap_start, gap_end = _waterfall_gap(params, days)
+        drift_rate, reported_rate = _drift_rate(
+            params.get("derived_rate_deg_day"), bounds, days, stream
+        )
         for index in range(neighbours):
             held = centre + stream.uniform(bounds[0], bounds[1])
             drifting = index < drifters
-            rate = _drift_rate(rate_authored, stream)
+            rate = drift_rate
             xs: list[float] = []
             ys: list[float] = []
             for when in times:
@@ -565,6 +674,11 @@ class WaterfallGenerator:
             header=(
                 ("Span", f"{days:.0f} days"),
                 ("Window", f"{bounds[0]:+.1f}° to {bounds[1]:+.1f}° of the primary"),
+            )
+            + (
+                (("Reported rate", f"{reported_rate:,.0f}°/day, drawn to scale"),)
+                if drift_rate != reported_rate
+                else ()
             ),
             legend=(("Held longitude", "object-held"), ("Drifting object", "object-drift")),
             footer=f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL",
@@ -578,6 +692,19 @@ class WaterfallGenerator:
                 "headcount": neighbours,
                 "newest_at": newest_at,
                 "gap_days": max(gap_end - gap_start, 0.0),
+                "drift_onset_days": drift_start,
+                #: Whether a drift is actually DRAWN. `drift_begins: true` was multiplied by the
+                #: window and put the onset at its end, so nothing drifted while the item's key
+                #: said the object had stopped station-keeping. A fact nobody could assert on is
+                #: how that survived.
+                "drift_visible": bool(drifters) and drift_start < days and drift_rate != 0.0,
+                "drawn_rate_deg_day": drift_rate,
+                "reported_rate_deg_day": reported_rate,
+                "rate_clamped": drift_rate != reported_rate,
+                #: The direction the renderer actually drew. DRL-0030 asks the operator to find
+                #: the drifter and state its direction with `computed_from_params` as the key, so
+                #: the answer is a fact about the surface. Longitude increases eastward.
+                "expected_text": ("east",) if drift_rate > 0 else ("west",),
             },
         )
 
@@ -592,9 +719,7 @@ class LightCurveGenerator:
 
     product_id = "PRD-PHOTOMETRY"
     name = "light_curve"
-    reads = frozenset(
-        {"intervals", "days", "inverted_mag", "x_axis", "step_change", "phase_angle_shift"}
-    )
+    reads = frozenset({"intervals", "step_change", "phase_angle_shift"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -684,10 +809,9 @@ class TricGenerator:
             "manoeuvre_count",
             "actual_manoeuvres",
             "state_change_markers",
-            "independent_panel_scales",
             "separation_km",
             "distance_km",
-            "noise_profile",
+            "separation",
         }
     )
 
@@ -759,9 +883,17 @@ class TricGenerator:
         #: Authored revolutions, so a six-revolution item shows six and a four-revolution item
         #: does not show six. The window was fixed at two before, which erased the parameter.
         revolutions = float(params.get("revolutions", 2))
-        samples = int(TRIC_SAMPLES_PER_REVOLUTION * revolutions)
+        #: Floored. `samples` is content-driven arithmetic, and a revolution count below 1/70
+        #: rounds it to zero, which divides by zero in the segment length. Not reachable from
+        #: today's library - the authored values are 4 and 6 - but a bound on a content-supplied
+        #: number costs one call and does not depend on the library staying as it is.
+        samples = max(int(TRIC_SAMPLES_PER_REVOLUTION * revolutions), MIN_TRIC_SAMPLES)
         step_s = period_s * revolutions / samples
-        track = _burned_track(start, mean_motion, step_s, samples, manoeuvres)
+        #: The burn is a fraction of the motion the track already has, so it stays legible at
+        #: whatever scale the geometry is drawn at.
+        track = _burned_track(
+            start, mean_motion, step_s, samples, manoeuvres, abs(no_drift) * BURN_FRACTION
+        )
         radial = tuple(state.position_km[0] for state in track)
         along = tuple(state.position_km[1] for state in track)
         cross = tuple(state.position_km[2] for state in track)
@@ -920,8 +1052,7 @@ class DcTableGenerator:
             "inclination_delta_deg",
             "include_natural_secular_drift",
             "nodal_regression_deg",
-            "show_delta_only",
-            "regime",
+            "altitude_delta_km",
         }
     )
 
@@ -935,12 +1066,19 @@ class DcTableGenerator:
             #: column an operator should attribute to the burn.
             nodal_deg = 0.0
         period_delta_s = float(params.get("period_change_s", params.get("period_delta_s", -5.51)))
+
+        #: An altitude change at geostationary DETERMINES a longitude drift rate, and DRL-0004
+        #: asks the operator to derive it. So the renderer must both draw the altitude change and
+        #: know the answer it will be scored against; until this existed the sentinel resolved to
+        #: nothing on every attempt and the item was permanently unscorable.
+        altitude_delta_km = _altitude_delta(params, rng(seed, self.product_id))
+        drift_deg_day = _geo_drift_rate_deg_day(altitude_delta_km)
         inclination_delta = float(
             params.get("plane_change_deg", params.get("inclination_delta_deg", -0.0002))
         )
 
         elements = (
-            ("Semi-major axis", "km", 42164.11, -0.0251),
+            ("Semi-major axis", "km", GEO_SEMI_MAJOR_AXIS_KM, altitude_delta_km),
             ("Eccentricity", "", 0.000418, 0.000019),
             ("Inclination", "deg", 2.4471, inclination_delta),
             ("Right ascension", "deg", 40.02, nodal_deg),
@@ -988,6 +1126,9 @@ class DcTableGenerator:
                 "period_delta_s": period_delta_s,
                 "manoeuvre_in": "in-plane",
                 "natural_element": "Right ascension",
+                "altitude_delta_km": altitude_delta_km,
+                "expected_value": drift_deg_day,
+                "expected_text": ("west",) if drift_deg_day < 0 else ("east",),
             },
         )
 
@@ -1002,7 +1143,7 @@ class NeighbourhoodGenerator:
 
     product_id = "PRD-NEIGHBORHOOD"
     name = "neighbourhood"
-    reads = frozenset({"rows", "close_approach_km", "forecast_ca_km", "days_lead", "regime"})
+    reads = frozenset({"rows"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -1063,7 +1204,7 @@ class CocoGenerator:
 
     product_id = "PRD-COCO"
     name = "coco"
-    reads = frozenset({"rows", "raan_delta_deg", "days_to_closure", "days_to_ra_zero", "regime"})
+    reads = frozenset({"rows"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -1111,7 +1252,7 @@ class PassScheduleGenerator:
 
     product_id = "PRD-PASS-SCHEDULE"
     name = "pass_schedule"
-    reads = frozenset({"hours", "sites", "sensors", "regime", "duration_days"})
+    reads = frozenset({"hours", "sites", "sensors"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -1181,7 +1322,7 @@ class EphemerisGenerator:
 
     product_id = "PRD-EPHEMERIS"
     name = "ephemeris"
-    reads = frozenset({"minutes", "elapsed_min", "ballistic", "max_altitude_km"})
+    reads = frozenset({"minutes", "elapsed_min", "ballistic"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
@@ -1257,7 +1398,7 @@ class GabbardGenerator:
 
     product_id = "PRD-GABBARD"
     name = "gabbard"
-    reads = frozenset({"fragments", "parent_period_min", "parent_altitude_km", "spread", "step"})
+    reads = frozenset({"fragments", "parent_period_min", "parent_altitude_km", "spread"})
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
