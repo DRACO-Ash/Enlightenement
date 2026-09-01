@@ -46,8 +46,13 @@ from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
     DrillError,
     DrillLoop,
+    bounded_reason,
 )
-from enlightenment.training.drill import bounded_reason
+
+#: How many content errors either anonymous route serves. A NAMED constant across both, because
+#: the two literals drifted apart once already and the count cap is half of the bound: per-entry
+#: length and entry count are different limits and neither substitutes for the other.
+MAX_SERVED_ERRORS: Final = 20
 
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
     from fastapi import FastAPI
@@ -112,11 +117,11 @@ def _content_unavailable(errors: Sequence[str]) -> HTTPException:
                 "The training content tree did not load. No drill can be served until it does."
             ),
             #: Each error BOUNDED, not only the list. Measured on a hostile tree: twenty errors,
-            #: the longest 4,247 characters, an 85,151-byte anonymous response - because a content
+            #: the longest 4,253 characters, an 85,151-byte anonymous response - because a content
             #: error quotes the value that failed validation and `content/models.py` sets no
             #: maximum on any of them. Twenty entries of unbounded length is not a bound, which is
             #: the same fault the withhold reason carried on the manifest one route along.
-            "content_errors": [bounded_reason(str(error)) for error in errors[:20]],
+            "content_errors": [bounded_reason(str(error)) for error in errors[:MAX_SERVED_ERRORS]],
         },
     )
 
@@ -226,7 +231,12 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             "ok": result.ok,
             "content_hash": result.content_hash,
             "counts": dict(result.counts),
-            "errors": list(result.errors[:20]),
+            #: Bounded per entry AND capped in count, like the 503 below. Bounding only that exit
+            #: left this one at 86,317 bytes on the same hostile tree - LARGER than the response
+            #: V0.26.6 cites as the defect it closed, in this file, 110 lines away. There were four
+            #: surfaces carrying the class, not three, and this codebase's own sentence for it is
+            #: "a bound applied at one of two exits is a bound at neither".
+            "errors": [bounded_reason(str(error)) for error in result.errors[:MAX_SERVED_ERRORS]],
             "thresholds_source": content.thresholds.source,
             "scored_scenarios_ready": content.scored_scenarios_ready,
             #: What is NOT wired, disclosed on a surface an operator can actually reach. These

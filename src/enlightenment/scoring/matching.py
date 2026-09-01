@@ -391,6 +391,12 @@ def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
     return any(
         re.search(
             rf"\b{negation}\b(?:\W+(?:{connectives})\b){{0,{NEGATION_CONNECTIVE_LIMIT}}}"
+            #: Escaped, and DEFENSIVE ONLY - no test holds this one and none can today. Rule one
+            #: above returns early whenever the response names a direction outside the wanted set,
+            #: and a hostile stem is never a real compass word, so any response that reaches this
+            #: pattern with one also fails the positive match below: the escape cannot change an
+            #: OUTCOME here. Kept because that reasoning is a property of rule one's ordering
+            #: rather than of this line, and stated rather than left to look tested.
             rf"\W+{re.escape(stem)}{DIRECTION_SUFFIXES}\b",
             closed,
         )

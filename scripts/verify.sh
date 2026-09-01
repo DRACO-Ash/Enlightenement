@@ -59,6 +59,13 @@ green "2/7 content package validates"
 # package's own final review, as did `detection_patterns_compile`.
 #
 # Standard library only and owned by the content author, so it is run rather than reimplemented.
+#
+# THIS LEG IS REPOSITORY-ONLY. `tools/` is deliberately excluded from the upload artefact, because
+# `tools/udl_characterise.py` reads real UDL credentials and the flight plan says it never ships,
+# so this loop cannot be run from an unpacked zip and is not meant to be. The platform runs pytest
+# against the artefact, not this script. Recorded here after the engineering gate unpacked the
+# upload, hit the missing file, and proposed shipping `tools/` - which would have put the
+# credential-reading script into the artefact to fix a convenience.
 "$PY" tools/validate_content.py --content-dir content --self-test \
   | "$PY" -c 'import json,sys; r=json.load(sys.stdin); print("content", r["counts"], "errors", len(r["errors"]), "warnings", len(r["warnings"])); sys.exit(1 if r["errors"] else 0)'
 

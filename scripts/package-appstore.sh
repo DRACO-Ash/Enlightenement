@@ -70,6 +70,13 @@ done
 # container has no procedures to score against. Absence is NAMED rather than fatal, matching the
 # file loop above: an unconditional copy of a directory that a given checkout does not carry is
 # how this script was once killed inside the platform's own test job.
+# `tools` is NOT in this list and must not be. The engineering gate proposed adding it, because
+# `verify.sh` leg 2 invokes `tools/validate_content.py` and so the loop cannot run from the unpacked
+# artefact. Refused: `tools/udl_characterise.py` reads real UDL credentials and the flight plan is
+# explicit that it runs on the networked workstation and never ships, which
+# `test_the_workstation_tools_never_reach_the_upload_or_the_image` holds in both contracts. The
+# limitation is real and is documented at leg 2 of `verify.sh` instead; the platform runs pytest
+# against the zip, not this loop.
 for dir in src tests scripts docs content .github; do
   python3 -c '
 import pathlib, shutil, sys

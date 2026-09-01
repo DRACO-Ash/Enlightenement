@@ -31,7 +31,8 @@ from enlightenment.config import Config
 from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
-from enlightenment.training.drill import MAX_CONTENT_STRING, MAX_WITHHOLD_REASON
+from enlightenment.training.drill import MAX_CONTENT_STRING, MAX_SERVED_PARAMS, MAX_WITHHOLD_REASON
+from enlightenment.training_api import MAX_SERVED_ERRORS
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_ROOT = ROOT / "content"
@@ -484,7 +485,7 @@ def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(
 
     A content error quotes the value that failed validation and `content/models.py` sets no maximum
     on any of them, so the entry cap alone left the body content-sized. Measured by the security
-    gate on a hostile tree: twenty errors, the longest 4,247 characters, an 85,151-byte response on
+    gate on a hostile tree: twenty errors, the longest 4,253 characters, an 85,151-byte response on
     a route that needs no token. The same fault the withhold reason carried on the manifest one
     route along, and it predated that fix rather than arriving with it.
 
@@ -498,7 +499,12 @@ def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(
     shutil.copytree(CONTENT_ROOT, broken)
     document = json.loads((broken / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
-    for row in rows[:20]:
+    #: MORE rows than the cap, so the COUNT cap is load-bearing in this test too. An earlier
+    #: version poisoned exactly twenty, so deleting the cap changed nothing and the docstring's
+    #: claim that "both are needed" was held by neither assertion.
+    poisoned = MAX_SERVED_ERRORS * 2
+    assert poisoned < len(rows), "the library shrank below twice the served-error cap"
+    for row in rows[:poisoned]:
         row.setdefault("stimulus", {})["generator"] = "bogus_" + "Q" * 4000
     (broken / "drills.json").write_text(json.dumps(document), encoding="utf-8")
 
@@ -513,12 +519,32 @@ def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(
         assert response.status_code == 503
         errors = response.json()["detail"]["content_errors"]
         assert errors, "the hostile tree raised no error, so this asserts nothing"
+        assert len(errors) == MAX_SERVED_ERRORS, (
+            f"{len(errors)} errors served against a cap of {MAX_SERVED_ERRORS}, from"
+            f" {poisoned} poisoned rows"
+        )
         for error in errors:
             assert len(error) <= MAX_WITHHOLD_REASON, f"{len(error)} characters served anonymously"
         #: And the whole body stays small. The per-error bound and the count cap together, which is
         #: the claim: 20 x 256 plus the fixed message, not 85 kB.
         assert len(response.content) < 16 * 1024, (
             f"{len(response.content)} bytes served anonymously"
+        )
+
+        #: THE SAME ERRORS ON THE OTHER ANONYMOUS ROUTE. The manifest serves `result.errors` from
+        #: the same load, and bounding the 503 alone left this one at 86,317 bytes - LARGER than
+        #: the response this release cites as the defect it closed, in the same file, 110 lines
+        #: from the fix. "A bound applied at one of two exits is a bound at neither" is this
+        #: codebase's own sentence, and there were four exits rather than three.
+        manifest = client.get("/api/v1/content/manifest")
+        assert manifest.status_code == 200
+        assert len(manifest.json()["errors"]) == MAX_SERVED_ERRORS, manifest.json()["errors"]
+        for error in manifest.json()["errors"]:
+            assert len(error) <= MAX_WITHHOLD_REASON, (
+                f"{len(error)} characters served on the manifest"
+            )
+        assert len(manifest.content) < 32 * 1024, (
+            f"{len(manifest.content)} bytes served anonymously on the manifest"
         )
 
 
@@ -539,8 +565,12 @@ def test_an_authored_param_name_is_bounded_on_the_anonymous_manifest(
     document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
     long_key = "beta_" + "K" * 500
+    #: MORE distinct names than the census serves, so the count cap is load-bearing here too.
     for row in rows:
-        row.setdefault("stimulus", {}).setdefault("params", {})[long_key] = 1
+        params = row.setdefault("stimulus", {}).setdefault("params", {})
+        params[long_key] = 1
+        for extra in range(MAX_SERVED_PARAMS + 5):
+            params[f"beta_unread_{extra}"] = 1
     (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
 
     app = create_app(
@@ -553,6 +583,10 @@ def test_an_authored_param_name_is_bounded_on_the_anonymous_manifest(
         served = client.get("/api/v1/content/manifest").json()
         params = served["stimulus_params_unread"]["params"]
         assert params, "no unread parameter was reported, so this asserts nothing"
+        #: The COUNT cap as well as the length cap, held here because deleting it left the whole
+        #: suite green: the census caps the served names at twenty-five and the hostile tree
+        #: authors thirty distinct ones, so the cap has something to cut.
+        assert len(params) <= MAX_SERVED_PARAMS, f"{len(params)} names served"
         for name in params:
             assert len(name) <= MAX_CONTENT_STRING, f"{len(name)} characters served as a key"
 

@@ -2,6 +2,60 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.7 (2026-09-01)
+
+**What.** The engineering gate failed V0.26.6 with one major and five minors, and the major is the
+worst kind this project produces: **there were FOUR surfaces carrying the unbounded-string fault,
+not three, and the fourth was live in the file V0.26.6 edited, 110 lines from the fix, while
+`docs/SECURITY.md` recorded the class as closed.** Measured on the hostile tree that release's own
+new test already builds, `/api/v1/content/manifest` served 86,317 bytes - LARGER than the
+85,151-byte response cited as the defect being shut. The release's central sentence, "a bound
+applied at one of two exits is a bound at neither", was reproduced by the fix for it.
+
+Bounded per entry now, with the count cap named as `MAX_SERVED_ERRORS` and shared by both routes
+rather than repeated as a literal in each, since the two literals had already drifted apart once.
+
+**All four count caps were unheld, and the docstring claimed otherwise.** The gate deleted each of
+them - the 503's twenty, the manifest's twenty, the census's twenty-five - and the whole suite
+stayed green, while the test said "the count cap stays: both are needed, and either alone is not a
+bound". Every scenario poisoned exactly as many rows as its cap admits, so no cap ever had anything
+to cut. The hostile trees now author twice the cap, and each cap dies to its own mutation.
+
+**A guard that cannot change an outcome, said so rather than left to look tested.** `re.escape` has
+two sites. Only the positive match can decide a verdict: `_contradicted`'s rule one returns early
+whenever the response names a direction outside the wanted set, and a hostile stem is never a real
+compass word, so any response reaching the denial-path pattern also fails the positive match. The
+denial-path escape is kept and labelled defensive-only, because that reasoning is a property of rule
+one's ordering rather than of the line itself.
+
+**And its comment described a mechanism that cannot occur.** The test said an unescaped `east[a-z`
+would compile to "east followed by one letter" and accept "eastx". It does not compile at all -
+`re.error`, an unterminated character set - so the silent-over-match half was claimed and never
+tested. Two tokens now: `east[a-z` for the raise, `east.` for the silent over-match.
+
+**A refusal to take a gate's suggested fix.** The gate proposed adding `tools/` to the upload
+allowlist so the verification loop can run from an unpacked artefact. Refused:
+`tools/udl_characterise.py` reads real UDL credentials and the flight plan is explicit that it runs
+on the networked workstation and never ships, which
+`test_the_workstation_tools_never_reach_the_upload_or_the_image` holds in both contracts. Adding it
+would have put a credential-reading script into the artefact to buy a convenience. The limitation is
+real and is now documented at leg 2 of `verify.sh`, which is the gate's own alternative: the
+platform runs pytest against the zip, not this loop.
+
+**The rename was half-landed.** `bounded_reason` was public but absent from
+`training/__init__.py`, so `training_api` imported it from the submodule two lines below importing
+its siblings from the package - which is the divergence the rename existed to prevent. Re-exported.
+
+**One measurement, two figures.** The changelog said 4,253 characters and "reproduced exactly"; the
+code comment and the test said 4,247, and twenty errors six characters apart cannot both give
+85,151 bytes. My measurement is 4,253 and that figure is now in all four places, with the changelog
+saying two runs of one scenario rather than claiming they matched.
+
+**How it was verified.** Loop green on all seven legs: 972 passed, 2 skipped, coverage 97.40%. Seven
+mutations this round, each killed by its own test: the manifest per-entry bound, all four count
+caps, the outcome-bearing escape, and the census cap. One register row rewritten from three
+surfaces to four, and it now records that the count caps were unheld until this release.
+
 ## V0.26.6 (2026-09-01)
 
 **What.** Both gates passed V0.26.5 - the first commit in this project where engineering and
@@ -19,8 +73,10 @@ length-bounded on the way out.
 
 **A count cap and a length cap are different bounds.** Three surfaces carried the same fault, and
 the withhold reason bounded at V0.26.3 was the third of them rather than the only one. The anonymous
-content 503 capped the error LIST at twenty and not the errors: reproduced exactly, twenty errors,
-the longest 4,253 characters, 85 kB served without a token. The manifest capped
+content 503 capped the error LIST at twenty and not the errors: reproduced on the same hostile
+tree, twenty errors, the longest 4,253 characters, 85 kB served without a token. The gate's own run
+measured 4,247 on the longest, six characters apart - two runs of one scenario rather than one
+figure, and the earlier text said "reproduced exactly" of figures that were not identical. The manifest capped
 `stimulus_params_unread.params` at twenty-five entries and not the NAMES: a 500-character authored
 key served verbatim, and an unread parameter is by definition one no renderer honours, so any string
 becomes a key there just by being authored. And the withheld item ID was raw content at both write

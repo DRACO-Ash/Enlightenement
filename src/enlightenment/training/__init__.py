@@ -18,6 +18,7 @@ from enlightenment.training.drill import (
     DrillLoop,
     ScoredDrill,
     ServedDrill,
+    bounded_reason,
 )
 from enlightenment.training.progress import (
     AxisProgress,
@@ -57,6 +58,7 @@ __all__ = [
     "ScoreLine",
     "ScoredDrill",
     "ServedDrill",
+    "bounded_reason",
     "brier_score",
     "calibration_verdict",
     "confidence_probability",

@@ -511,6 +511,11 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
 def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
     """`re.escape` on the drawn token, held before a generator ever derives it from content.
 
+    **The POSITIVE match is what this holds.** There are two escape sites; only the one in
+    `match_derived_text` can change an outcome, because `_contradicted`'s rule one returns early
+    whenever the response names a direction outside the wanted set, and a hostile stem is never a
+    real compass word. The denial-path escape is defensive only and says so where it sits.
+
     The contradiction check interpolates the drawn direction into a regex. Today `expected_text` is
     only ever one of the four literals at `products.py:886` and `:1310`, so nothing content-shaped
     reaches the pattern and deleting the escape leaves the suite green - which the security gate
@@ -525,15 +530,22 @@ def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
     #: A token no generator produces today. That is the point: the guard exists for the day one
     #: does, and the sibling test at `test_a_derived_answer_token_is_matched_whole_and_never_as_a_
     #: pattern` holds the same property for the positive match.
-    hostile = {"expected_text": ("east[a-z",)}
-    #: No `re.error`. Refused, because the response does not name the literal token that was drawn.
-    assert match_derived_text("east", hostile).matched != "accept"
-    #: And the class is not honoured: with the escape removed, `east[a-z` compiles to "east"
-    #: followed by one letter, so "eastx" would read as a denial-free correct answer.
-    assert match_derived_text("eastx", hostile).matched != "accept"
-    #: The escape is on the DENIAL path, so drive that too: a denial of the hostile token must not
-    #: raise on its way to a verdict.
-    assert match_derived_text("not east[a-z", hostile).matched != "accept"
+    #: TWO hostile tokens, because the escape has two distinct failure modes and an earlier version
+    #: of this test described the second while only ever exercising the first.
+    #:
+    #: A. RAISES. `east[a-z` reaches the pattern as the stem `east[az` - `_compass_stem` closes the
+    #:    hyphen - and unescaped it is an unterminated character set, so `re.error` escapes scoring
+    #:    and fails an operator's submission on content they cannot see.
+    raises = {"expected_text": ("east[a-z",)}
+    assert match_derived_text("east", raises).matched != "accept"
+    assert match_derived_text("not east[a-z", raises).matched != "accept"
+
+    #: B. OVER-MATCHES, silently, which is the worse half and the one the old comment claimed
+    #:    without testing. `east.` compiles fine unescaped and the dot matches any character, so
+    #:    "eastx" would read as a correct answer to a plot that drew nothing of the kind.
+    over = {"expected_text": ("east.",)}
+    assert match_derived_text("eastx", over).matched != "accept"
+    assert match_derived_text("not eastx", over).matched != "accept"
 
 
 def test_an_unrelated_negation_does_not_cost_a_correct_numeric_answer(

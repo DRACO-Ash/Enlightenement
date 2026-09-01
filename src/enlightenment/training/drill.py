@@ -86,6 +86,11 @@ MAX_CONTENT_STRING: Final = 64
 #: is kept deliberately: a byte cap has to avoid splitting a code point, and buying 4x on a
 #: response that is already bounded is not worth a new way to emit invalid UTF-8.
 MAX_WITHHOLD_REASON: Final = 256
+
+#: How many unread parameter names the census serves. Named rather than a literal in the slice,
+#: because the count cap is half of the bound: per-entry length and entry count are different
+#: limits, and a test cannot assert a limit it cannot name.
+MAX_SERVED_PARAMS: Final = 25
 TRUNCATION_MARK: Final = " [truncated]"
 
 #: How many candidate drills one request may try before giving up. Bounded so pathological content
@@ -835,6 +840,8 @@ class DrillLoop:
             #: verbatim. Twenty-five entries of unbounded length is not a bound.
             "params": {
                 _bounded(key): count
-                for key, count in sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
+                for key, count in sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[
+                    :MAX_SERVED_PARAMS
+                ]
             },
         }
