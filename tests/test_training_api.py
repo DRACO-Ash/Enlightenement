@@ -473,3 +473,34 @@ def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_
         assert detail["error"] == "content_unavailable"
         assert detail["content_errors"], "a 503 that names no file sends an author looking blind"
         assert client.get("/api/v1/content/manifest").json()["ok"] is False
+
+
+def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gutter(
+    client: TestClient,
+) -> None:
+    """The guarantee against clipped axis labels is a MEASUREMENT, not arithmetic.
+
+    Text is sized in viewBox units so it renders at a constant CSS size, which means the size in
+    viewBox units GROWS as the plot narrows - while the gutter reserved at build time did not.
+    Below roughly 680 CSS px the timestamp labels sheared off the left edge: measured in a browser
+    at 620, 480 and 390 px viewports, leftmost label x of -14, -55 and -100 viewBox units. The
+    build-time reserve is a first guess; `sizePlotText` measures the real overflow with `getBBox`
+    and widens the viewBox on whichever side needs it.
+
+    **This test asserts the mechanism is present, not that it works.** There is no headless render
+    harness in this suite, so the behaviour was verified by driving a real browser at seven
+    viewport widths from 1400 down to 340 px and asserting every text node sits inside the
+    viewBox with a positive margin. That evidence is in the V0.26 changelog entry rather than
+    here, and this test exists so the mechanism cannot be silently removed between browser checks.
+    """
+    script = client.get("/ui/app.js").text
+    assert "getBBox" in script, "nothing measures the rendered text, so the fit is only arithmetic"
+    assert "TEXT_FIT_PASSES" in script, "the refit is unbounded or absent"
+    for side in ("minX", "minY", "maxX", "maxY"):
+        assert side in script, f"the refit does not consider the {side} edge"
+    #: The horizontal labels are positioned from the applied size, because fixed offsets collided
+    #: with the axis caption at large sizes - visible in a screenshot at 430 px while every
+    #: number was still inside the box.
+    assert "X_TICK_OFFSET_EM" in script
+    assert "X_CAPTION_OFFSET_EM" in script
+    assert "data-role" in script

@@ -2,6 +2,76 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26 (2026-09-01)
+
+**What.** The engineering gate's fourth round failed V0.25 with two blockers and five majors.
+Every finding was reproduced here before anything was changed, and one of the two blockers is a
+false statement in this changelog, which is worth putting at the top rather than in a footnote.
+
+**"Every fix mutation-proved" was not true.** V0.25 said it. Three of its controls could be
+deleted with the whole suite green, confirmed by running the mutations: the authored partial and
+reject entries in `match_derived_text`, the answer-key collision refusal, and the value of
+`DRIFT_EXCURSION_FACTOR`. The coverage report already named those lines as unexecuted. A
+fabricated verification claim in the audit record is worse than the gap it covers, because it is
+the line a future reader trusts instead of re-measuring. All three now have tests and all three
+mutants now fail; the claim in this entry was checked against the mutations before it was written.
+
+**Failing an item closed ended the operator's session.** Refusing to score DRL-0008 was right, and
+insufficient. `select` is a pure function of due-state and rating, and the unscored path records no
+run and advances no schedule, so the same item came back on every turn: measured on the real
+package at rating 1340, six consecutive serves of DRL-0008, six unscorable results, no rating
+movement. V0.24.3 cost that operator six rating points; V0.25 cost them the whole sitting, which is
+a worse harm than the one it fixed. An item that cannot resolve its own answer is now withheld from
+SELECTION as well as from scoring, and named on the manifest so the exclusion cannot hide the
+content gap. The test asserts PROGRESS across four turns, because "does not move the rating" is
+exactly the assertion that let this through.
+
+**The clipping fix reintroduced the clipping fault.** Text is sized in viewBox units so it renders
+at a constant CSS size, which means it GROWS in viewBox units as the plot narrows, while the gutter
+was reserved once at build time. Below roughly 680 CSS px the timestamps sheared off the left edge
+again. Measured in a real browser at seven viewport widths: leftmost label x of -14, -55 and -100
+viewBox units at 620, 480 and 390 px. The reserve is now a first guess only; `sizePlotText`
+measures the actual overflow with `getBBox` and widens the viewBox on whichever side needs it, in
+a bounded three-pass refit. Verified again in the browser from 1400 px down to 340: every text node
+inside the box with a positive margin.
+
+A screenshot at 430 px then showed the SAME fault on the other axis - the longitude labels
+colliding with the caption, because their offsets below the axis were fixed while the text grew.
+Both are now positioned from the size actually applied, landing on the original coordinates at the
+nominal size. The gate found the first by arithmetic and could not run a browser; the second was
+only visible in a picture.
+
+**Three statements that were not true, corrected.** Two comments said `newest_at: "top"` is
+"authored on one item deliberately"; no item authors it, both authoring items say "bottom", and
+the claim was invention about the content. A test docstring said 129 of 140 drills carry unread
+parameters; the measured figure is 135, and it sits in the docstring of the test whose job is to
+keep that figure honest. And the panel note asserted "newest at the top, nearest the longitude
+axis" for the top case, where the longitude axis is at the bottom.
+
+**One label, two instants.** The synthetic timestamps omit the year and the epoch span was a full
+365 days, so a window beginning in late December ran into January: 80 tick labels each denoted
+either 2026 or 2027, measured across 11,000 seeds. The span is now short of a year by the longest
+window a waterfall can draw, so every label denotes exactly one instant - cheaper than lengthening
+every label, which would widen the axis gutter for no analytical gain. The epoch is also marked in
+the header now, `From (synthetic)`, because a screenshot carries the header without the footer.
+
+**Also.** The census subtracted the vocabulary of EVERY renderer for a composite, forgiving
+parameters no product on the board reads; `generators.board_for` now resolves the board once and
+both `compose` and the census read it, so the render and the disclosure cannot disagree. The dead
+`MIN_BURN_DIVERGENCE` constant and its repudiated docstring are gone.
+
+**Judgements the gate upheld, recorded because they were challenged.** The synthetic epoch does not
+breach the hard rule on inventing dates: the rule governs assertions about the real world, and read
+strictly it would also forbid the observation count and every longitude on a generated stimulus.
+`MIN_DRIFT_LEGIBILITY = 5.0` is a loose discriminator with two orders of magnitude of headroom
+against the measured ratios, not a threshold tuned to pass. And refusing to score an unreadable
+manoeuvre count is the right call - the gate built two independent change-point detectors and
+neither could count the burns at any burn count, including zero.
+
+**How verified.** Loop green, seven legs: 950 passed, 2 skipped, coverage 96.97%. Four mutations
+run and all four now fail. The interface behaviour was verified by driving a real browser at seven
+widths; the suite asserts the mechanism only, and the test says so.
+
 ## V0.25 (2026-09-01)
 
 **What.** Ash read a rendered waterfall and named two faults in one sentence: the time axis ran

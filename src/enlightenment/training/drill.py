@@ -28,7 +28,7 @@ from types import MappingProxyType
 from typing import Any, Final
 
 from enlightenment.content import ContentPackage, Drill
-from enlightenment.generators import GeneratorRegistry, compose
+from enlightenment.generators import GeneratorRegistry, board_for, compose
 from enlightenment.scoring import (
     COMPUTED_SENTINEL,
     UNSCORABLE,
@@ -70,6 +70,10 @@ MAX_CONTENT_STRING: Final = 64
 #: The derived keys that ARE an answer. A composite merging two renderers must not resolve a
 #: clash on one of these by render order: the answer is not a matter of which product drew second.
 ANSWER_KEYS: Final = frozenset({"expected_value", "expected_text"})
+
+#: The seed used once at construction to ask whether a sentinel item can resolve an answer at all.
+#: Any seed does: resolution is a property of the content and the renderer, not of the draw.
+RESOLUTION_PROBE_SEED: Final = 20260901
 MAX_ITEM_VERSION: Final = MAX_CONTENT_STRING
 
 #: Largest serialised drill payload, bytes. A budget rather than a limit on any one field: the
@@ -218,6 +222,7 @@ class DrillLoop:
         self._progress = progress
         self._evaluator = evaluator if evaluator is not None else RubricEvaluator()
         self._pending: OrderedDict[str, _Pending] = OrderedDict()
+        self._unresolvable = self._items_without_a_resolvable_answer()
 
     @property
     def ready(self) -> bool:
@@ -232,11 +237,55 @@ class DrillLoop:
         material = f"{self._content.content_hash}:{operator_id}:{item_id}:{attempt}"
         return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
 
+    def _items_without_a_resolvable_answer(self) -> frozenset[str]:
+        """Drills whose `computed_from_params` answer no generator can supply.
+
+        Resolved ONCE, at construction, because it is a property of the content and the renderer
+        rather than of the seed: measured across five seeds spanning eight orders of magnitude,
+        each of the three sentinel items resolves or fails identically every time.
+        """
+        unresolvable: set[str] = set()
+        for drill in self._content.drills:
+            if COMPUTED_SENTINEL not in drill.answer.accept:
+                continue
+            try:
+                rendered = compose(
+                    self._registry,
+                    drill.stimulus.generator,
+                    drill.stimulus.params,
+                    RESOLUTION_PROBE_SEED,
+                    drill.stimulus.product_id,
+                )
+            except LookupError:
+                unresolvable.add(drill.id)
+                continue
+            facts: dict[str, Any] = {}
+            for stimulus in rendered:
+                facts.update(stimulus.derived)
+            if not (ANSWER_KEYS & facts.keys()):
+                unresolvable.add(drill.id)
+        return frozenset(unresolvable)
+
     def select(self, progress: OperatorProgress) -> Drill:
-        """Due first, then the item just above the operator's rating."""
+        """Due first, then the item just above the operator's rating.
+
+        **An item that cannot resolve its own answer is not selected.** Refusing to SCORE such an
+        item was right and was not enough: `select` is a pure function of due-state and rating, and
+        `_unscored` records no run and advances no schedule, so the same item was chosen again on
+        every turn. Measured on the real package at rating 1340: six consecutive serves returned
+        DRL-0008, six unscorable results, and no rating movement - an absorbing state that ends
+        the session. The penalty it replaced cost six rating points; this cost the whole sitting.
+        The gap is disclosed on the manifest rather than hidden by the exclusion.
+        """
         now = now_utc()
-        due = [d for d in self._content.drills if progress.cue(d.id).is_due(now)]
-        pool = due or list(self._content.drills)
+        scorable = [d for d in self._content.drills if d.id not in self._unresolvable]
+        if not scorable:
+            raise DrillError(
+                "no drill in the loaded package can resolve its own answer, so there is nothing"
+                " to serve for score"
+            )
+        due = [d for d in scorable if progress.cue(d.id).is_due(now)]
+        pool = due or scorable
         # Just above, not at: the item that teaches sits at the edge of what the operator can
         # already do. One they answer without thinking produces a correct response and no
         # learning.
@@ -594,6 +643,10 @@ class DrillLoop:
             "generators": sorted(self._registry.names),
             "rubric_rules_implemented": sorted(self._evaluator.implemented),
             "rubric_rules_unwired": self._unwired_rules(),
+            #: Named, not merely excluded. An item withheld from selection because its stimulus
+            #: cannot support its key is a content gap somebody has to decide about, and a silent
+            #: exclusion is how it would be forgotten.
+            "items_without_a_resolvable_answer": sorted(self._unresolvable),
             "stimulus_params_unread": self._unread_params(),
         }
 
@@ -619,7 +672,16 @@ class DrillLoop:
         names: dict[str, int] = {}
         expressed = 0
         for drill in self._content.drills:
-            unread = self._registry.unread(drill.stimulus.generator, drill.stimulus.params)
+            unread = self._registry.unread(
+                drill.stimulus.generator,
+                drill.stimulus.params,
+                board_for(
+                    self._registry,
+                    drill.stimulus.generator,
+                    drill.stimulus.params,
+                    drill.stimulus.product_id,
+                ),
+            )
             if not unread:
                 expressed += 1
             for key in unread:

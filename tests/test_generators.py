@@ -26,7 +26,6 @@ from enlightenment.content import PRODUCT_RENDERERS, ContentPackage
 from enlightenment.generators import build_registry, compose
 from enlightenment.generators.products import (
     DEFAULT_LONGITUDE_HALF_WIDTH_DEG,
-    DRIFT_EXCURSION_FACTOR,
     GEO_PERIOD_S,
     MAX_FRAGMENTS,
     MAX_INTERVALS,
@@ -64,6 +63,11 @@ ABSURD_RATE_DEG_DAY = -22900000
 #: the drift counts as drawn. The item's key says the object has STOPPED station-keeping, so the
 #: two must not look alike.
 MIN_DRIFT_LEGIBILITY = 5.0
+
+#: The widest longitude sweep a clamped drifter may be drawn across, in degrees. A LITERAL, not a
+#: multiple of the constant under test: the station-keeping box is 6° wide, and a drifter that
+#: leaves it by a little is readable while one that sweeps 150° flattens the box to a line.
+MAX_READABLE_EXCURSION_DEG = 20.0
 SEED = 0x4F1A
 
 
@@ -538,7 +542,7 @@ def test_a_numeric_item_resolves_the_value_it_will_be_scored_against(
 def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -> None:
     """A ratchet on the content-and-code agreement, not a pass mark.
 
-    129 of 140 drills carry authored parameters no renderer reads, and the honest treatment is to
+    135 of 140 drills carry authored parameters no renderer reads, and the honest treatment is to
     count them rather than to claim otherwise. This test fails if that number GROWS - a new
     renderer that quietly stops reading a parameter, or content authored against a vocabulary
     nobody implemented - and the baseline is lowered by hand as renderers learn the vocabulary.
@@ -553,12 +557,6 @@ def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -
         f"{expressed} drills fully express their authored scene, down from"
         f" {FULLY_EXPRESSED_BASELINE}. A renderer stopped reading a parameter."
     )
-
-
-#: Least divergence a manoeuvre must produce, as a fraction of the unmanoeuvred track's own
-#: extent. The item asks how many manoeuvres are VISIBLE, so an invisible one is not a hard item,
-#: it is an unanswerable one - and it is scored, which makes it worse than not serving it.
-MIN_BURN_DIVERGENCE = 0.5
 
 
 def _segment_rates(stimulus: object, burns: int) -> list[float]:
@@ -800,9 +798,11 @@ def test_the_waterfall_time_axis_is_labelled_with_timestamps_not_bare_numbers() 
     for _, label in axis.ticks:
         assert re.fullmatch(r"\d{2} \w{3} \d{2}:\d{2}Z", label), label
     header = dict(stimulus.header)
-    assert "From" in header
+    assert "From (synthetic)" in header
     assert "To" in header
-    assert header["From"] != header["To"]
+    assert header["From (synthetic)"] != header["To"]
+    #: The epoch is marked where a SCREENSHOT will carry it, not only in the footer.
+    assert "synthetic" in " ".join(header).casefold()
 
 
 def test_an_inverted_axis_states_its_own_reason_for_being_inverted() -> None:
@@ -867,11 +867,21 @@ def test_an_absurd_authored_rate_is_clamped_for_drawing_and_reported_verbatim() 
     assert derived["reported_rate_deg_day"] == ABSURD_RATE_DEG_DAY, "the authored figure was lost"
     assert derived["rate_clamped"] is True
 
+    #: Asserted against the BOX, with the readable limit as a literal. The first version read
+    #: `excursion <= bounds * DRIFT_EXCURSION_FACTOR`, where `excursion` is itself
+    #: `span * DRIFT_EXCURSION_FACTOR` - an identity in the constant it imported. Setting the
+    #: factor to 25.0 put a 150° sweep on a 6° box, worse than the 2.5 that was rejected as
+    #: illegible, and the suite stayed green. The clamp's existence was held; its VALUE, which is
+    #: the whole content of the change, was not.
     bounds = 2 * DEFAULT_LONGITUDE_HALF_WIDTH_DEG
     excursion = abs(derived["drawn_rate_deg_day"]) * 5
-    assert excursion <= bounds * DRIFT_EXCURSION_FACTOR + 1e-9, (
-        f"the drawn drifter travels {excursion:.1f}° across a {bounds:.1f}° box, so the held"
-        " objects an operator judges it against are squeezed off the panel"
+    assert excursion <= MAX_READABLE_EXCURSION_DEG, (
+        f"the drawn drifter travels {excursion:.1f}° across a {bounds:.1f}° station-keeping box,"
+        " so the held objects an operator judges it against are squeezed off the panel"
+    )
+    assert excursion > bounds, (
+        f"the drifter travels {excursion:.1f}° and never leaves the {bounds:.1f}° box, so nothing"
+        " distinguishes it from a station-kept object"
     )
 
     #: And the header must state BOTH figures. `for_client()` strips `derived`, so this string is

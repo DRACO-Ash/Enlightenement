@@ -120,12 +120,6 @@ CROSS_TRACK_RATE_KM_S: Final = 1.1e-5
 #: happened at all, not about reading a marginal one.
 STEP_CHANGE_MAGNITUDES: Final = 0.9
 
-#: The base of the SYNTHETIC epoch a waterfall's timeline is labelled from, and how far past it a
-#: seed may place a window. Fixed rather than taken from the clock, because the same seed must
-#: relabel the same surface identically on any machine and at any time.
-SYNTHETIC_EPOCH_BASE: Final = datetime(2026, 1, 1, tzinfo=UTC)
-SYNTHETIC_EPOCH_SPAN_HOURS: Final = 365 * 24
-
 #: Labelled instants on a timeline axis. Five, to match the interface's five gridlines.
 TIME_TICKS: Final = 5
 
@@ -146,6 +140,19 @@ MAX_SENSORS: Final = 24
 MAX_STATE_CHANGE_MARKS: Final = 40
 MAX_REVOLUTIONS: Final = 12.0
 MAX_SPAN_DAYS: Final = 60.0
+
+#: The base of the SYNTHETIC epoch a waterfall's timeline is labelled from, and how far past it a
+#: seed may place a window. Fixed rather than taken from the clock, because the same seed must
+#: relabel the same surface identically on any machine and at any time.
+SYNTHETIC_EPOCH_BASE: Final = datetime(2026, 1, 1, tzinfo=UTC)
+
+#: How far past the base a seed may place a window START. Deliberately short of a full year by the
+#: longest span a waterfall can cover, so no window crosses into a second calendar year: the tick
+#: labels omit the year, and with a full-year span a window beginning in late December ran into
+#: January, so "03 Jan 12:00Z" denoted either 2026 or 2027. Measured before the change: 80 labels
+#: each denoting two instants a year apart. Constraining the span is cheaper than lengthening
+#: every label, which would widen the axis gutter for no analytical gain.
+SYNTHETIC_EPOCH_SPAN_HOURS: Final = int((365 - MAX_SPAN_DAYS) * 24)
 
 #: Hard ceiling on tracks in one neighbourhood panel. A bound on a CONTENT-supplied count that
 #: reaches an unauthenticated route, and a readability limit besides: `obs_count: 18000` was
@@ -763,15 +770,21 @@ class WaterfallGenerator:
                 "Observation time",
                 "UTC",
                 #: Newest nearest the longitude axis at the bottom, which is the real product's
-                #: convention. `newest_at: "top"` is authored on one item deliberately: reading a
-                #: plot whose time axis has been flipped is the skill being trained.
+                #: convention. The parameter is honoured because the content authors it, and both
+                #: live items say "bottom": NO item authors "top" today. An earlier comment here
+                #: claimed one did "deliberately", which was invention about the content.
                 inverted=newest_at == "bottom",
                 inversion_note=f"newest nearest the longitude axis at the {newest_at}",
                 ticks=_time_ticks(days, window_start),
             ),
             marks=tuple(marks),
             notes=(
-                f"Newest observations at the {newest_at}, nearest the longitude axis.",
+                (
+                    f"Newest observations at the {newest_at}, nearest the longitude axis."
+                    if newest_at == "bottom"
+                    else f"Newest observations at the {newest_at}. The longitude axis is at the"
+                    " bottom, so time runs UP the page on this one."
+                ),
                 "Objects within 50 km of the primary.",
             )
             + (
@@ -791,7 +804,12 @@ class WaterfallGenerator:
             panels=(panel,),
             header=(
                 ("Span", f"{days:.0f} days"),
-                ("From", _stamp(window_start, 0.0)),
+                #: Marked HERE and not only in the footer. The timestamps appear in the header,
+                #: the panel notes and five axis ticks, while the disclosure was one lowercase
+                #: clause at the end of a four-part footer - and a screenshot carries the header
+                #: without it. `gaps PROVISIONAL` on the same footer shows what an unmissable
+                #: marker looks like in this codebase; this matches it.
+                ("From (synthetic)", _stamp(window_start, 0.0)),
                 ("To", _moment(window_end)),
                 ("Window", f"{bounds[0]:+.1f}° to {bounds[1]:+.1f}° of the primary"),
             )

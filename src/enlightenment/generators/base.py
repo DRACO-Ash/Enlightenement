@@ -33,9 +33,9 @@ class Axis:
     ● A magnitude axis runs brighter UPWARD, so the smaller number is at the top. A photometry
       surface drawn the other way up is not a styling choice, it is wrong, and an operator
       reading it would learn the opposite of the signature.
-    ● A waterfall's time axis runs with the NEWEST observations nearest the longitude axis at the
-      bottom, which is the convention of the real product. "Brighter upward" said of a time axis
-      is nonsense, and it was rendered on every waterfall.
+    ● A waterfall's time axis runs with the NEWEST observations nearest the longitude axis, which
+      on the two items that author it is the bottom - the convention of the real product.
+      "Brighter upward" said of a time axis is nonsense, and it was rendered on every waterfall.
 
     So the reason travels with the axis in `inversion_note` rather than being assumed by the
     renderer of the caption.
@@ -256,7 +256,9 @@ class GeneratorRegistry:
         """Product ids the content references and no renderer claims. Empty is the healthy case."""
         return tuple(sorted(referenced - self.product_ids))
 
-    def unread(self, generator_name: str, params: dict[str, Any]) -> tuple[str, ...]:
+    def unread(
+        self, generator_name: str, params: dict[str, Any], board: tuple[str, ...] = ()
+    ) -> tuple[str, ...]:
         """Authored parameters this renderer does not honour. Empty means the scene is expressed.
 
         Keys beginning with an underscore are excluded by design: `_legacy_generator` is the
@@ -278,9 +280,15 @@ class GeneratorRegistry:
             #: exactly those. A wrong figure in a served disclosure, against the hard rule on
             #: inventing figures in user-facing data - conservative in direction, which is why
             #: it survived, but a floor presented as a count.
+            #: Only the renderers ON THE BOARD. Subtracting every renderer's vocabulary forgives
+            #: a parameter nobody present reads, in a figure served on the manifest. The board is
+            #: resolved by `generators.board_for`, the same function `compose` renders from, so
+            #: the census and the render cannot disagree about what is on screen.
             beneath: set[str] = set()
-            for renderer in self._by_name.values():
-                beneath |= renderer.reads
+            for product in board:
+                renderer = self._by_product.get(product)
+                if renderer is not None:
+                    beneath |= renderer.reads
             return tuple(sorted(authored - COMPOSITION_READS[generator_name] - beneath))
         generator = self._by_name.get(generator_name)
         if generator is None:

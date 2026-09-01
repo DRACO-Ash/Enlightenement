@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -525,3 +526,112 @@ def test_a_hostile_content_count_cannot_make_a_large_payload(loop: DrillLoop) ->
     for name, params in hostile:
         body = json.dumps(compose(registry, name, params, 7)[0].for_client())
         assert len(body) < HOSTILE_PARAM_BUDGET, f"{name} {params}: {len(body):,} bytes"
+
+
+def test_an_item_that_cannot_resolve_its_answer_is_not_served_twice_in_a_row(
+    loop: DrillLoop, tmp_path: Path
+) -> None:
+    """An unscorable item became an ABSORBING STATE that ended the operator's session.
+
+    Refusing to score it was right and was not enough. `select` is a pure function of due-state
+    and rating, and the unscored path records no run and advances no schedule, so the same item
+    was chosen on every turn: measured on the real package at rating 1340, six consecutive serves
+    returned DRL-0008, six unscorable results, no rating movement. The penalty that behaviour
+    replaced cost six rating points; this cost the whole sitting.
+
+    A "does not move the rating" assertion is exactly what let it through, so this asserts
+    PROGRESS: serve, score, serve again, and the second item must differ.
+    """
+    store = ProgressStore(tmp_path / "progress.json")
+    progress = store.load("operator-absorbing")
+    progress.rating = 1340
+    store.save(progress)
+
+    served: list[str] = []
+    for _ in range(4):
+        drill = loop.serve(operator_id="operator-absorbing")
+        served.append(drill.item_id)
+        loop.score(
+            run_id=drill.run_id,
+            response="manoeuvre",
+            confidence=3,
+            operator_id="operator-absorbing",
+        )
+    assert len(set(served)) > 1, f"the loop served the same item every turn: {served}"
+    assert store.load("operator-absorbing").runs, "no attempt was recorded, so nothing advances"
+
+
+def test_the_withheld_items_are_named_rather_than_silently_dropped(loop: DrillLoop) -> None:
+    """Excluding an item from selection hides a content gap unless the exclusion is disclosed."""
+    manifest = loop.manifest()
+    withheld = manifest["items_without_a_resolvable_answer"]
+    assert isinstance(withheld, list)
+    #: One today: DRL-0008, whose manoeuvre count is not readable off the relative-motion track.
+    #: If this grows, a renderer has stopped answering an item it used to answer.
+    assert withheld == ["DRL-0008"], withheld
+
+
+def test_two_products_on_one_board_cannot_both_supply_the_answer(
+    package: ContentPackage, tmp_path: Path
+) -> None:
+    """A composite merges its renderers' server-side facts, so draw order could pick the answer.
+
+    Deleting this guard left the whole suite green, which is the reason for the test rather than
+    a footnote to it: it is a fail-closed control on answer integrity and CLAUDE.md's rule is
+    that a control nothing verifies is a failed control.
+    """
+    from enlightenment.content import Drill
+    from enlightenment.generators import GeneratorRegistry
+    from enlightenment.generators.base import Axis, Marks, Panel, Stimulus
+
+    class _Twin:
+        """Two of these on one board both claim to have computed the answer."""
+
+        def __init__(self, product_id: str) -> None:
+            self.product_id = product_id
+            self.name = product_id
+            self.reads: frozenset[str] = frozenset()
+
+        def render(self, params: dict[str, Any], seed: int) -> Stimulus:
+            del params
+            return Stimulus(
+                product_id=self.product_id,
+                generator=self.name,
+                title=self.product_id,
+                panels=(
+                    Panel("p", Axis("x"), Axis("y"), marks=(Marks("m", "track", (0.0,), (0.0,)),)),
+                ),
+                derived={"expected_value": float(seed % 7)},
+            )
+
+    registry = GeneratorRegistry()
+    registry.register(_Twin("PRD-ONE"))
+    registry.register(_Twin("PRD-TWO"))
+
+    clash = Drill(
+        id="DRL-CLASH",
+        stimulus={
+            "product_id": "PRD-ONE",
+            "generator": "composite",
+            "params": {"products": ["PRD-ONE", "PRD-TWO"]},
+        },
+        prompt="Both products computed this. Which one wins?",
+        response_format="numeric_estimate",
+        answer={"accept": ["computed_from_params"], "tolerance": {"absolute": 0}},
+    )
+    package_with_clash = ContentPackage(CONTENT)
+    package_with_clash.load()
+    package_with_clash.drills = (*package_with_clash.drills, clash)
+    #: The id index is built at load and does not follow an append, so it is set here too.
+    #: Worth knowing rather than working around silently: `drills` is public and mutable while
+    #: the index behind `drill()` is private, so the two can disagree. Nothing in production
+    #: mutates `drills`, which is why this is a note and not a change.
+    package_with_clash._by_id[clash.id] = clash
+
+    loop = DrillLoop(
+        content=package_with_clash,
+        registry=registry,
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    with pytest.raises(DrillError, match="depend on render order"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-CLASH")

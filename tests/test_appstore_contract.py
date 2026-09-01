@@ -895,6 +895,10 @@ UNSWEPT_CITED_SUITES: frozenset[str] = frozenset({"test_appstore_contract.py"})
 #: surface and the backup symlink refusal - and those four are now cited rather than exempted.
 UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
     {
+        # --- PRESENTATION. The axis-label refit keeps timestamps inside the plot box at every
+        # width; a clipped label is a legibility fault and a wrong reading, not an access control,
+        # and `docs/SECURITY.md` is not where a reader should look for it.
+        "test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gutter",
         # --- test_training_scoring.py. TRAINING CORRECTNESS, the first kind described below.
         # Restored in V0.24.1 after both gates found `training/scoring.py` live and named by no
         # test at all. Three of its assertions DO carry register rows - the rating band, the

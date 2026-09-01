@@ -355,3 +355,49 @@ def test_a_numeric_answer_scores_its_magnitude_and_its_direction_separately(
     assert silent.matched == "partial", "the direction the prompt asks for is not scored"
     assert 0 < silent.credit < 1
     assert wrong_rate.matched == "none"
+
+
+def test_a_computed_item_still_awards_the_credit_its_content_authors(
+    package: ContentPackage,
+) -> None:
+    """Driven through `match()` on the REAL content, because the register cited a token test.
+
+    DRL-0030's key is the computed sentinel and its content also authors one partial answer worth
+    half credit, with a note explaining where the direction comes from, plus two rejects with
+    teaching text. The matcher that scores a computed answer consulted none of them, so the
+    partly-correct operator scored zero and both authored explanations were replaced by a generic
+    string. Deleting that block leaves the whole suite green unless this test exists.
+    """
+    from enlightenment.generators import build_registry, compose
+
+    drill = package.drill("DRL-0030")
+    assert drill is not None
+    assert drill.answer.partial, "this item no longer authors a partial answer"
+    assert drill.answer.reject, "this item no longer authors a rejected answer"
+
+    derived: dict[str, object] = {}
+    for stimulus in compose(
+        build_registry(),
+        drill.stimulus.generator,
+        drill.stimulus.params,
+        20260901,
+        drill.stimulus.product_id,
+    ):
+        derived.update(stimulus.derived)
+
+    authored_partial = drill.answer.partial[0]
+    scored = match(authored_partial.value, drill.answer, drill.response_format, derived)
+    assert scored.matched == "partial"
+    assert scored.credit == pytest.approx(authored_partial.credit)
+    assert scored.note == authored_partial.note, "the authored note was replaced"
+
+    for rejected in drill.answer.reject:
+        outcome = match(rejected.value, drill.answer, drill.response_format, derived)
+        assert outcome.matched == "reject", rejected.value
+        assert outcome.why_wrong == rejected.why_wrong, "the authored reason was replaced"
+
+    #: And the direction still scores, so honouring the authored lists did not shadow it.
+    direction = derived["expected_text"]
+    assert isinstance(direction, tuple)
+    right = match(f"it is drifting {direction[0]}", drill.answer, drill.response_format, derived)
+    assert right.matched == "accept"

@@ -92,12 +92,26 @@ function banner(message) {
 const PLOT_WIDTH = 620;
 const PLOT_HEIGHT = 260;
 const PAD = { left: 58, right: 16, top: 14, bottom: 40 };
-/* A timestamp needs more gutter than a number. 58px fits "0.003" and clipped "23 Jan 09:00Z" to
- * "Jan 09:00Z" - the day silently sheared off the left edge of the viewBox, which is worse than a
- * bare number because it looks like a complete label. Measured from the longest supplied tick
- * rather than guessed, so a future label of any length still fits. */
-const TICK_CHAR_WIDTH = 7.4;
+/* A timestamp needs more gutter than a number: 58px fits "0.003" and clipped "23 Jan 09:00Z" to
+ * "Jan 09:00Z", the day sheared off the viewBox, which is worse than a bare number because it
+ * looks like a complete label. This reserve is a FIRST GUESS only - it is computed at build time
+ * from the nominal font size, and `sizePlotText` then resets that size after layout, so the
+ * guarantee comes from the measured refit there rather than from this arithmetic.
+ *
+ * Derived from the font size rather than eyeballed: 0.62 em is the advance of every monospace
+ * face in the stack (SF Mono, Menlo, Cascadia Mono, DejaVu Sans Mono are all 0.600 to 0.603, and
+ * the margin covers the fallback). */
+const TICK_ADVANCE_EM = 0.62;
 const TICK_GUTTER = 14;
+/* Refit passes for the measured gutter. Widening the viewBox changes the scale, which changes the
+ * font size, which changes the width: three passes converge on every width measured. */
+const TEXT_FIT_PASSES = 3;
+const TEXT_FIT_TOLERANCE = 0.5;
+const TEXT_FIT_PAD = 4;
+/* Where the horizontal tick labels and the axis caption sit below the axis, in multiples of the
+ * applied font size. At the nominal 13 units these land on 240 and 256, the original positions. */
+const X_TICK_OFFSET_EM = 1.55;
+const X_CAPTION_OFFSET_EM = 2.75;
 
 /* Text inside a plot must not scale with the plot, and this is measured rather than assumed.
  * A plot in a wide column renders LARGER than its own coordinate system and one in a narrow
@@ -154,7 +168,7 @@ function drawPanel(panel) {
 
   const supplied = (panel.y && panel.y.ticks) || [];
   const widest = supplied.reduce((most, [, text]) => Math.max(most, String(text).length), 0);
-  const padLeft = Math.max(PAD.left, widest * TICK_CHAR_WIDTH + TICK_GUTTER);
+  const padLeft = Math.max(PAD.left, widest * AXIS_FONT_PX * TICK_ADVANCE_EM + TICK_GUTTER);
   const plotW = PLOT_WIDTH - padLeft - PAD.right;
   const plotH = PLOT_HEIGHT - PAD.top - PAD.bottom;
   const sx = (value) => padLeft + ((value - x0) / (x1 - x0)) * plotW;
@@ -192,7 +206,7 @@ function drawPanel(panel) {
   for (let i = 0; i <= 4; i += 1) {
     const x = padLeft + (i / 4) * plotW;
     const label = svg('text', {
-      x, y: PLOT_HEIGHT - PAD.bottom + 20, fill: 'var(--ink3)',
+      x, y: PLOT_HEIGHT - PAD.bottom + 20, 'data-role': 'x-tick', fill: 'var(--ink3)',
       'font-size': AXIS_FONT_PX, 'text-anchor': 'middle', 'font-family': 'var(--data)',
     });
     label.textContent = formatTick(x0 + (i / 4) * (x1 - x0));
@@ -204,7 +218,7 @@ function drawPanel(panel) {
   }
 
   const axisLabel = svg('text', {
-    x: PLOT_WIDTH / 2, y: PLOT_HEIGHT - 4, fill: 'var(--ink4)',
+    x: PLOT_WIDTH / 2, y: PLOT_HEIGHT - 4, 'data-role': 'x-caption', fill: 'var(--ink4)',
     'font-size': AXIS_FONT_PX, 'text-anchor': 'middle', 'font-family': 'var(--data)',
   });
   axisLabel.textContent = axisCaption(panel.x);
@@ -226,14 +240,71 @@ function drawPanel(panel) {
 }
 
 function sizePlotText(frame) {
-  const box = frame.getBoundingClientRect();
-  const viewBox = frame.viewBox && frame.viewBox.baseVal;
-  if (!box.width || !viewBox || !viewBox.width) return;
-  const scale = box.width / viewBox.width;
-  if (!Number.isFinite(scale) || scale <= 0) return;
-  const size = Math.max(AXIS_FONT_PX / scale, AXIS_FONT_PX / 3);
-  for (const text of frame.querySelectorAll('text')) {
-    text.setAttribute('font-size', size.toFixed(2));
+  /* Two jobs, and the second exists because the first defeated the axis gutter.
+   *
+   * Text is sized in viewBox units so it RENDERS at a constant CSS size whatever the plot's
+   * width: as the plot narrows the scale falls and the size in viewBox units grows. The left
+   * gutter was reserved once at build time in viewBox units and did not grow with it, so below
+   * roughly 680 CSS px the timestamp labels sheared off the left edge of the viewBox - measured
+   * in a browser at 620, 480 and 390 px viewports, leftmost label x of -14, -55 and -100. That
+   * is the owner-reported clipping fault reproduced by the fix for the owner-reported clipping
+   * fault, and the comment beside the gutter constant claimed a label of any length would fit.
+   *
+   * So after sizing, the actual overflow is MEASURED with getBBox and the viewBox is widened to
+   * the left to contain it. Geometry is untouched: the canvas simply starts further left.
+   * Widening changes the scale, which changes the size, so it iterates - bounded, because a
+   * bounded loop that gives up slightly small beats an unbounded one that hangs the frame. */
+  for (let pass = 0; pass < TEXT_FIT_PASSES; pass += 1) {
+    const box = frame.getBoundingClientRect();
+    const viewBox = frame.viewBox && frame.viewBox.baseVal;
+    if (!box.width || !viewBox || !viewBox.width) return;
+    const scale = box.width / viewBox.width;
+    if (!Number.isFinite(scale) || scale <= 0) return;
+    const size = Math.max(AXIS_FONT_PX / scale, AXIS_FONT_PX / 3);
+    for (const text of frame.querySelectorAll('text')) {
+      text.setAttribute('font-size', size.toFixed(2));
+    }
+
+    /* The horizontal labels sit BELOW the axis at offsets that must scale with the text, or they
+     * collide with the caption: at a 31-unit font the fixed 20 and 36 unit offsets overlap, which
+     * a screenshot at 430px showed plainly while every number was inside the box. Positioned from
+     * the size actually applied, and chosen to land on the original 240 and 256 at 13 units so the
+     * nominal design is unchanged. */
+    const axisY = PLOT_HEIGHT - PAD.bottom;
+    for (const tick of frame.querySelectorAll('[data-role="x-tick"]')) {
+      tick.setAttribute('y', (axisY + size * X_TICK_OFFSET_EM).toFixed(1));
+    }
+    for (const caption of frame.querySelectorAll('[data-role="x-caption"]')) {
+      caption.setAttribute('y', (axisY + size * X_CAPTION_OFFSET_EM).toFixed(1));
+    }
+
+    /* Expand on every side the text actually needs, not just the left: the same fixed-gutter
+     * fault applies to each edge, and only the left one had been found. */
+    let minX = viewBox.x;
+    let minY = viewBox.y;
+    let maxX = viewBox.x + viewBox.width;
+    let maxY = viewBox.y + viewBox.height;
+    for (const text of frame.querySelectorAll('text')) {
+      const bounds = text.getBBox();
+      if (!bounds.width && !bounds.height) continue;
+      minX = Math.min(minX, bounds.x);
+      minY = Math.min(minY, bounds.y);
+      maxX = Math.max(maxX, bounds.x + bounds.width);
+      maxY = Math.max(maxY, bounds.y + bounds.height);
+    }
+    const grew = minX < viewBox.x - TEXT_FIT_TOLERANCE
+      || minY < viewBox.y - TEXT_FIT_TOLERANCE
+      || maxX > viewBox.x + viewBox.width + TEXT_FIT_TOLERANCE
+      || maxY > viewBox.y + viewBox.height + TEXT_FIT_TOLERANCE;
+    if (!grew) return;
+    const x0 = Math.min(minX, viewBox.x) - TEXT_FIT_PAD;
+    const y0 = Math.min(minY, viewBox.y) - TEXT_FIT_PAD;
+    const x1 = Math.max(maxX, viewBox.x + viewBox.width) + TEXT_FIT_PAD;
+    const y1 = Math.max(maxY, viewBox.y + viewBox.height) + TEXT_FIT_PAD;
+    frame.setAttribute(
+      'viewBox',
+      `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`,
+    );
   }
 }
 

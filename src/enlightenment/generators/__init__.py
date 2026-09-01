@@ -31,6 +31,32 @@ def build_registry() -> GeneratorRegistry:
     return registry
 
 
+def board_for(
+    registry: GeneratorRegistry,
+    generator: str,
+    params: dict[str, Any],
+    product_id: str = "",
+) -> tuple[str, ...]:
+    """The product ids a stimulus actually renders, resolved ONCE and used by two callers.
+
+    `compose` needs it to render and `GeneratorRegistry.unread` needs it to census, and the two
+    must not disagree: the census briefly subtracted the vocabulary of EVERY renderer for a
+    composition mode, which forgives a parameter no product on the board reads. Nothing
+    under-reported on the shipped library, but it is a served figure and the direction of the
+    error had turned from conservative to wrong.
+    """
+    if generator in PRODUCT_RENDERERS:
+        renderer = registry.by_name(generator)
+        return () if renderer is None else (renderer.product_id,)
+    if generator == "probe":
+        named = product_id or str(params.get("product_id") or params.get("product") or "")
+        return (named,) if named else ()
+    requested = params.get("products", "all")
+    if requested == "all" or not isinstance(requested, list):
+        return tuple(sorted(registry.product_ids))
+    return tuple(str(product) for product in requested)
+
+
 def compose(
     registry: GeneratorRegistry,
     generator: str,
@@ -93,6 +119,7 @@ __all__ = [
     "Marks",
     "Panel",
     "Stimulus",
+    "board_for",
     "build_registry",
     "compose",
     "rng",
