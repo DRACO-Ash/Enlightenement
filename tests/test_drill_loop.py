@@ -26,6 +26,11 @@ from enlightenment.training import (
 
 CONTENT = Path(__file__).resolve().parents[1] / "content"
 
+#: What a single renderer may produce from a deliberately absurd content count. Far below the
+#: service budget, because a renderer that needs megabytes for one panel is drawing something
+#: nobody can read.
+HOSTILE_PARAM_BUDGET = 2 * 1024 * 1024
+
 
 @pytest.fixture(scope="module")
 def package() -> ContentPackage:
@@ -356,16 +361,28 @@ def test_the_speed_bonus_is_decided_by_the_server_clock_not_the_client_s(
     slow = loop.serve(operator_id="operator-slow", item_id=item.id)
     held = loop.pending[slow.run_id]
     held.served_at = held.served_at - timedelta(seconds=item.time_target_s + 120)
-    lied = loop.score(
-        run_id=slow.run_id,
-        response="manoeuvre",
-        confidence=4,
-        elapsed_ms=0,
-        operator_id="operator-slow",
-    )
-    assert lied.correct
-    fired = {c["rule_id"] for c in lied.as_dict()["score_components"]}
-    assert "D-FAST-AND-CORRECT" not in fired, "the client's own timer decided the bonus"
+    #: Every claim a client can make, not just zero. The first repair took `min(measured,
+    #: claimed)`, which closed 0 and negatives and left everything else open: `elapsed_ms: 1` on
+    #: a run the server had watched for 21.5 seconds still collected the bonus over the real
+    #: route. A concession on a value the client controls is the same hole with a nicer reason.
+    for claimed in (0, 1, 500, -4000):
+        replayed = loop.serve(operator_id=f"operator-slow-{claimed}", item_id=item.id)
+        held_again = loop.pending[replayed.run_id]
+        held_again.served_at = held_again.served_at - timedelta(seconds=item.time_target_s + 120)
+        lied = loop.score(
+            run_id=replayed.run_id,
+            response="manoeuvre",
+            confidence=4,
+            elapsed_ms=claimed,
+            operator_id=f"operator-slow-{claimed}",
+        )
+        assert lied.correct
+        fired = {c["rule_id"] for c in lied.as_dict()["score_components"]}
+        assert "D-FAST-AND-CORRECT" not in fired, (
+            f"a claim of {claimed} ms bought the speed bonus on a run the server timed at"
+            f" more than {item.time_target_s} seconds"
+        )
+    del slow, held
 
 
 def test_the_served_drill_map_is_bounded_by_count(loop: DrillLoop) -> None:
@@ -481,3 +498,43 @@ def test_every_served_stimulus_stays_inside_a_stated_payload_budget(
         if size > MAX_PAYLOAD_BYTES:
             oversized.append(f"{drill.id}: {size:,} bytes")
     assert not oversized, oversized
+
+
+def test_a_stimulus_over_the_budget_is_refused_rather_than_served(
+    package: ContentPackage, loop: DrillLoop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The budget was DECLARED as a runtime bound and referenced only by a test.
+
+    So it held for the library as it stands and for nothing else - and `CONTENT_DIR` is a
+    supported operator knob whose tree that test never runs. A control that exists only in the
+    suite is a control the deployment does not have.
+    """
+    monkeypatch.setattr("enlightenment.training.drill.MAX_PAYLOAD_BYTES", 512)
+    with pytest.raises(DrillError, match="byte budget"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=package.drills[0].id)
+
+
+def test_a_hostile_content_count_cannot_make_a_large_payload(loop: DrillLoop) -> None:
+    """Nine parameters other than `headcount` produced 8 MB to 146 MB payloads, and three did not
+    finish rendering at all - a cost a byte budget cannot see, because it is spent before there
+    are any bytes to measure. Each count is now bounded at the renderer that consumes it."""
+    from enlightenment.generators import build_registry, compose
+
+    registry = build_registry()
+    hostile = (
+        ("light_curve", {"intervals": 20_000}),
+        ("gabbard", {"fragments": 500_000}),
+        ("neighbourhood", {"rows": 200_000}),
+        ("coco", {"rows": 200_000}),
+        ("pass_schedule", {"hours": 100_000}),
+        ("pass_schedule", {"sensors": 20_000}),
+        ("tric", {"state_change_markers": 200_000}),
+        ("tric", {"revolutions": 100_000}),
+        ("residual", {"days": 100_000}),
+        ("waterfall", {"cycles_shown": 100_000}),
+        ("waterfall", {"headcount": 200_000}),
+        ("ephemeris", {"elapsed_min": 1_000_000}),
+    )
+    for name, params in hostile:
+        body = json.dumps(compose(registry, name, params, 7)[0].for_client())
+        assert len(body) < HOSTILE_PARAM_BUDGET, f"{name} {params}: {len(body):,} bytes"

@@ -18,6 +18,7 @@ Two properties this module exists to hold, both easy to lose:
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -53,8 +54,12 @@ DEMONSTRATION_OPERATOR = "synthetic-operator"
 PENDING_TTL_SECONDS: Final = 20 * 60
 MAX_PENDING: Final = 512
 
-#: Longest content-supplied item version stored on a run row. See `_bounded`.
-MAX_ITEM_VERSION: Final = 64
+#: Longest content-supplied string stored on a run row: the version, the item id, the procedure
+#: id, the competency axis. Capping the version alone left the other three unbounded from the
+#: same source into the same file, which is read whole on every request. `content/models.py`
+#: declares no maximum length on any of them.
+MAX_CONTENT_STRING: Final = 64
+MAX_ITEM_VERSION: Final = MAX_CONTENT_STRING
 
 #: Largest serialised drill payload, bytes. A budget rather than a limit on any one field: the
 #: 159 MB waterfall that prompted it came from a plausible-looking parameter read as a count, and
@@ -177,7 +182,7 @@ def _bounded(value: Any) -> str:
     stored verbatim on every run row, and the progress file is read whole on every request.
     """
     text = str(value or "")
-    return text[:MAX_ITEM_VERSION] if len(text) > MAX_ITEM_VERSION else text
+    return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
 
 
 class DrillLoop:
@@ -265,6 +270,19 @@ class DrillLoop:
         for stimulus in rendered:
             derived.update(stimulus.derived)
 
+        #: The budget, ENFORCED rather than merely tested. It was declared as a runtime bound and
+        #: referenced only by a test, so it held for the library as it stands and for nothing
+        #: else - and `CONTENT_DIR` is a supported operator knob whose tree that test never runs.
+        #: Each count is also capped at its own renderer, which is where the cost is actually
+        #: spent; this is the backstop for the next parameter nobody thought of.
+        wire = tuple(stimulus.for_client() for stimulus in rendered)
+        size = len(json.dumps(wire))
+        if size > MAX_PAYLOAD_BYTES:
+            raise DrillError(
+                f"{item.id}: the rendered stimulus is {size:,} bytes, over the"
+                f" {MAX_PAYLOAD_BYTES:,} byte budget, so it is refused rather than served"
+            )
+
         run_id = uuid.uuid4().hex
         self._pending[run_id] = _Pending(
             drill=item, seed=seed, derived=derived, served_at=now_utc()
@@ -279,7 +297,7 @@ class DrillLoop:
             elo=item.elo,
             confidence_required=item.confidence_required,
             time_target_s=item.time_target_s,
-            stimuli=tuple(s.for_client() for s in rendered),
+            stimuli=wire,
             content_hash=self._content.content_hash,
             seed=seed,
         )
@@ -306,22 +324,38 @@ class DrillLoop:
             self._pending.popitem(last=False)
 
     def score(
-        self, *, run_id: str, response: str, confidence: int, elapsed_ms: int, operator_id: str
+        self,
+        *,
+        run_id: str,
+        response: str,
+        confidence: int,
+        elapsed_ms: int,  # noqa: ARG002 - accepted at the boundary, deliberately not read
+        operator_id: str,
     ) -> ScoredDrill:
-        """Score one submission. Idempotent: a second call returns the first result."""
+        """Score one submission. Idempotent: a second call returns the first result.
+
+        `elapsed_ms` stays in the signature because the client sends it and it is validated at
+        the boundary like every other field. It is not READ: see below.
+        """
         pending = self._pending.get(run_id)
         if pending is None:
             raise DrillError("that drill run is unknown or has expired")
         if pending.result is not None:
             return pending.result
 
-        #: **The server's own clock decides the speed bonus, not the client's.** `elapsed_ms`
-        #: arrives in the submission body, and a client posting `elapsed_ms: 0` collected
-        #: `D-FAST-AND-CORRECT` every time. `served_at` was already recorded and read nowhere.
-        #: The client figure is kept only as telemetry, and the smaller of the two is used so a
-        #: slow network cannot cost an operator a bonus they earned.
-        measured_ms = int((now_utc() - pending.served_at).total_seconds() * 1000)
-        elapsed = min(measured_ms, elapsed_ms) if elapsed_ms > 0 else measured_ms
+        #: **The server's own clock decides the speed bonus. Full stop.** `elapsed_ms` arrives in
+        #: the submission body, and a client posting `0` collected `D-FAST-AND-CORRECT` every
+        #: time. The first repair took `min(measured, claimed)`, reasoning that a slow network
+        #: should not cost an operator a bonus they earned - which closed `0` and negatives and
+        #: left every other value open, because `min` lets the client only ever REDUCE elapsed.
+        #: Posting `elapsed_ms: 1` on a run that genuinely took 21.5 seconds against a 20 second
+        #: target collected the bonus over the real route. A concession to the client on a value
+        #: the client controls is not a smaller hole, it is the same hole with a nicer reason.
+        #:
+        #: `elapsed_ms` is accepted on the request and then DISCARDED. It is not recorded either:
+        #: a value nothing reads is better dropped than carried, and "kept as telemetry" is the
+        #: kind of half-claim this register has already been caught making twice.
+        elapsed = int((now_utc() - pending.served_at).total_seconds() * 1000)
 
         item = pending.drill
         outcome = match(response, item.answer, item.response_format, pending.derived)
@@ -338,6 +372,7 @@ class DrillLoop:
         operator_id: str,
         run_id: str,
     ) -> ScoredDrill:
+        """Score one submission. `elapsed_ms` here is the SERVER's measurement, always."""
         rubric = self._content.rubric(DRILL_RUBRIC_ID)
         if rubric is None:
             raise DrillError(f"{DRILL_RUBRIC_ID} is missing from the content package")
@@ -379,11 +414,11 @@ class DrillLoop:
         axis.brier_total += brier
         progress.runs.append(
             RunRecord(
-                item_id=item.id,
+                item_id=_bounded(item.id),
                 item_version=_bounded(item.model_extra.get("version") if item.model_extra else ""),
                 content_hash=self._content.content_hash,
-                procedure_id=self._procedure_for(item),
-                axis=self._competency_for(item),
+                procedure_id=_bounded(self._procedure_for(item)),
+                axis=_bounded(self._competency_for(item)),
                 seed=self._pending_seed(run_id),
                 answered_at=now_utc().isoformat(),
                 classification=outcome.matched,

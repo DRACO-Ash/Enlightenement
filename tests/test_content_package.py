@@ -265,6 +265,37 @@ def test_a_content_file_of_the_wrong_top_level_shape_is_reported_rather_than_rai
         assert any("expected a JSON object" in e or "drill" in e for e in result.errors), name
 
 
+def test_a_content_file_that_is_not_utf_8_or_is_nested_too_deeply_is_reported(
+    tmp_path: Path,
+) -> None:
+    """Two more ways a content file killed the container, and one of them is the DOCUMENTED
+    operator workflow.
+
+    `read_text(encoding="utf-8")` raises `UnicodeDecodeError` and `json.loads` raises
+    `RecursionError`; the handler named `json.JSONDecodeError` and neither of those, so both
+    escaped `create_app` and no health path answered. CLAUDE.md records that the owner's
+    workstation is Windows PowerShell, whose `Out-File` and `>` write UTF-16LE by default, and
+    the shape-error docstring calls `thresholds.local.json` "the one file an operator writes by
+    hand". So the documented way to edit content produced a crash loop.
+
+    `ValueError` is the correct single entry - `UnicodeDecodeError` and `JSONDecodeError` are
+    both subclasses - and `RecursionError` is not a `ValueError`, so it is named separately.
+    """
+    cases = (
+        ("thresholds.example.json", json.dumps({"_meta": {}}).encode("utf-16")),
+        ("cues.json", b'{"cues": [{"id": "\xb0"}]}'),
+        ("traces.json", ("[" * 100_000 + "]" * 100_000).encode("utf-8")),
+    )
+    for name, payload in cases:
+        root = tmp_path / name.replace("/", "_").replace(".", "_")
+        shutil.copytree(CONTENT, root)
+        (root / name).write_bytes(payload)
+        with mock.patch.dict(os.environ, {"CONTENT_DIR": str(root)}):
+            client = TestClient(create_app())
+        assert client.get("/healthz").status_code == HTTPStatus.OK, name
+        assert client.get("/api/v1/content/manifest").json()["ok"] is False, name
+
+
 def test_a_damaged_package_still_lets_the_service_start_and_answer_its_health_paths(
     tmp_path: Path,
 ) -> None:

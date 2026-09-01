@@ -180,7 +180,11 @@ def match_derived_text(response: str, derived: dict[str, Any]) -> Match:
     if not expected:
         return Match(UNSCORABLE, 0.0, note=UNSCORABLE_NOTE)
     typed = normalise(response)
-    tokens = tuple(str(value) for value in expected)
+    #: A bare string is ONE token, not a sequence of letters. `tuple("east")` is
+    #: `('e','a','s','t')`, so typing a single letter matched and scored full credit. Both
+    #: generators emit tuples today, and a mapping is the natural thing for the next author to
+    #: write, so the shape is normalised here rather than trusted at every call site.
+    tokens = (expected,) if isinstance(expected, str) else tuple(str(v) for v in expected)
     if any(re.search(rf"\b{re.escape(token)}\b", typed) for token in tokens):
         return Match("accept", 1.0)
     return Match("none", 0.0, note="Not the direction shown on the surface.")

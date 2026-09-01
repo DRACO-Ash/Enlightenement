@@ -227,11 +227,19 @@ class ContentPackage:
             self._read(errors)
         except (
             OSError,
-            json.JSONDecodeError,
             KeyError,
             TypeError,
             AttributeError,
-            ContentShapeError,
+            RecursionError,
+            #: `ValueError` covers `json.JSONDecodeError` AND `UnicodeDecodeError`, and naming
+            #: only the first left the second escaping `create_app`, so the container did not
+            #: start and no health path answered. The trigger is not exotic: CLAUDE.md records
+            #: that the owner's workstation is Windows PowerShell, whose `Out-File` and `>`
+            #: write UTF-16LE by default, and `thresholds.local.json` is the one content file an
+            #: operator writes by hand. The documented workflow produced the crash loop.
+            #: `RecursionError` is the same fault at depth: `json.loads` raises it on a deeply
+            #: nested document, and it is not a `ValueError`.
+            ValueError,
         ) as exc:
             self.result = LoadResult(ok=False, errors=(f"{type(exc).__name__}: {exc}",))
             return self.result

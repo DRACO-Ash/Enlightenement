@@ -189,13 +189,20 @@ class ProgressStore:
             raw = self._path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return {}
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             # A store that cannot be read yields an empty store rather than a 500. Progress is
             # valuable but it is not the training loop; an operator can still drill.
+            #
+            # `UnicodeDecodeError` belongs here for the same reason: this module's docstring
+            # promises it never raises on bad stored data, and a file that is not UTF-8 made
+            # /api/v1/me and /api/v1/drill/next answer 500 permanently while the health paths
+            # correctly stayed 200. A promise that holds for malformed JSON and not for a
+            # malformed ENCODING is not the promise the docstring makes.
             return {}
         try:
             parsed = json.loads(raw)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
+            # ValueError covers JSONDecodeError; RecursionError is the same fault at depth.
             return {}
         return parsed if isinstance(parsed, dict) else {}
 

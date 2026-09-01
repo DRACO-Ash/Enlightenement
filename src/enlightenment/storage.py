@@ -244,10 +244,16 @@ class TrainingStore:
             raw = self._read_snapshot_bytes().decode("utf-8")
         except FileNotFoundError:
             return empty_snapshot()
+        except UnicodeDecodeError as exc:
+            # Not valid data, and the caller distinguishes invalid data from a caller fault. A
+            # snapshot that is not UTF-8 is exactly as unusable as one that is not JSON.
+            raise ValueError(f"stored snapshot is not valid UTF-8: {exc.reason}") from exc
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"stored snapshot is not valid JSON: {exc.msg}") from exc
+        except RecursionError as exc:
+            raise ValueError("stored snapshot is nested too deeply to parse") from exc
         if not isinstance(parsed, dict):
             # ValueError for the same reason as in migrate(): a malformed snapshot is
             # invalid data, not a caller type error.

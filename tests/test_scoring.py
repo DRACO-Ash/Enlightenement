@@ -21,6 +21,7 @@ from enlightenment.scoring import (
     Facts,
     RubricEvaluator,
     match,
+    match_derived_text,
     match_text,
     normalise,
 )
@@ -287,3 +288,25 @@ def test_a_declared_aggregation_this_evaluator_does_not_apply_is_named(
     assert rubric is not None
     evaluation = RubricEvaluator().evaluate(rubric, Facts(matched="accept", correct=True))
     assert "calibration_weight" in evaluation.unimplemented_aggregation
+
+
+def test_a_derived_answer_token_is_matched_whole_and_never_as_a_pattern() -> None:
+    """Three ways this matcher could give away an item, all closed.
+
+    A bare string `expected_text` was iterated CHARACTER BY CHARACTER - `tuple("east")` is
+    `('e','a','s','t')` - so typing one letter scored full credit. Both generators emit tuples
+    today, which made it latent rather than live, and a plain string is the natural thing for the
+    next generator author to write.
+
+    The token is escaped before it reaches a regex, so a token containing a metacharacter is
+    INERT rather than wild: `.*` matches nothing, because normalisation strips the punctuation
+    from the operator's side too. Inert is the safe direction - a wild token would accept every
+    answer - and the escape is what makes it inert rather than universal.
+
+    And a token matches on a word boundary, so "east" is not found inside "eastwards".
+    """
+    assert match_derived_text("e", {"expected_text": "east"}).matched == "none"
+    assert match_derived_text("drifting east", {"expected_text": "east"}).matched == "accept"
+    assert match_derived_text("anything at all", {"expected_text": (".*",)}).matched == "none"
+    assert match_derived_text("eastwards", {"expected_text": ("east",)}).matched == "none"
+    assert match_derived_text("west", {}).matched == "unscorable"

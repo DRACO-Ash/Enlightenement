@@ -2,6 +2,51 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.24.3 (2026-09-01)
+
+**What.** The security gate re-ran on V0.24.2, confirmed its two earlier majors and five of its
+minors closed, and defeated two controls this register states as CLOSED using a single request
+field and a single file encoding. Those are the two that matter here.
+
+**A concession on a client-controlled value is the same hole with a nicer reason.** V0.24.1 fixed
+the speed bonus by taking `min(server measured, client claimed)`, reasoning that a slow network
+should not cost an operator a bonus they earned. That closed a claim of zero and left every other
+value open, because `min` lets the client only ever REDUCE elapsed: posting `elapsed_ms: 1` on a
+run the server had timed at 21.5 seconds against a 20 second target still bought the bonus, over
+the real unauthenticated route. The test behind the register row tried only zero. The server's
+measurement is now the only input; the client's figure is validated at the boundary, discarded,
+and not recorded either, because a value nothing reads is better dropped than described as
+telemetry. The test now drives four different claims including a negative one.
+
+**The documented operator workflow crashed the container.** `UnicodeDecodeError` and
+`RecursionError` escaped the load handler, which named `json.JSONDecodeError` alone, so a content
+file that is not UTF-8 or is nested too deeply took `create_app` down and no health path answered.
+This is not an exotic input: CLAUDE.md records that the owner's workstation is Windows PowerShell,
+whose `Out-File` and `>` write UTF-16LE by default, and the shape-error docstring itself calls
+`thresholds.local.json` "the one file an operator writes by hand". So the written-down way to edit
+content produced a crash loop. `ValueError` covers both decode failures; `RecursionError` is named
+separately because it is not one. The same omission is closed in the progress store, whose
+docstring promised it never raises on bad stored data, and in the snapshot reader.
+
+**A budget in a test is not a budget.** `MAX_PAYLOAD_BYTES` read as a runtime bound and was
+referenced nowhere outside the suite, so it held for the shipped library and for no other content
+tree - and `CONTENT_DIR` is a supported operator knob whose tree that test never runs. Capping
+`headcount` alone also left nine other content-supplied counts producing 8 MB to 146 MB payloads,
+and three that never finished rendering at all: a cost no byte budget can see, because it is spent
+before there are any bytes to measure. Every count that sizes a loop or a mark list is now bounded
+at the renderer that consumes it, and the service budget is enforced in `serve()`, which refuses
+rather than returns.
+
+**Also.** A bare-string `expected_text` was iterated character by character, so typing one letter
+of "east" scored full credit - latent, because both generators emit tuples, and exactly what the
+next generator author would write. The regex escape around a derived token is now pinned by a
+test. `_bounded` covers the item id, procedure id and competency axis as well as the version: all
+four reach the same file from the same source, and `content/models.py` sets no maximum length on
+any of them.
+
+**How verified.** Loop green, seven legs: 937 passed, 2 skipped, coverage 96.82%. Every fix
+mutation-proved, and the twelve hostile content counts measured before and after.
+
 ## V0.24.2 (2026-09-01)
 
 **What.** The engineering gate re-ran on V0.24.1, confirmed nine of the twelve original findings

@@ -123,6 +123,21 @@ STEP_CHANGE_MAGNITUDES: Final = 0.9
 DEFAULT_NEIGHBOURS: Final = 14
 DEFAULT_DRIFTERS: Final = 3
 
+#: Ceilings on every content-supplied count that sizes a loop, an allocation or a mark list.
+#: `headcount` was capped alone, and nine other parameters then produced payloads between 8 MB
+#: and 146 MB, three of which did not finish rendering at all - which a byte budget cannot see,
+#: because the cost is spent before there are any bytes to measure. A count that reaches a range
+#: needs a bound at the point it reaches it, not a check on what it produced.
+MAX_INTERVALS: Final = 24
+MAX_FRAGMENTS: Final = 400
+MAX_TABLE_ROWS: Final = 60
+MAX_SCHEDULE_HOURS: Final = 168.0
+MAX_SENSORS: Final = 24
+MAX_STATE_CHANGE_MARKS: Final = 40
+MAX_REVOLUTIONS: Final = 12.0
+MAX_SPAN_DAYS: Final = 60.0
+MAX_EPHEMERIS_MINUTES: Final = 2880.0
+
 #: Hard ceiling on tracks in one neighbourhood panel. A bound on a CONTENT-supplied count that
 #: reaches an unauthenticated route, and a readability limit besides: `obs_count: 18000` was
 #: briefly read as a headcount and produced 159 MB of JSON from one anonymous request.
@@ -489,7 +504,7 @@ class ResidualGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        days = float(params.get("days", 7))
+        days = min(float(params.get("days", 7)), MAX_SPAN_DAYS)
         fraction = float(params.get("departure_at_frac", 0.72))
         component = _departure_component(params)
         beta_departs = component == "out_of_plane"
@@ -597,7 +612,7 @@ class WaterfallGenerator:
         stream = rng(seed, self.product_id)
         #: `cycles_shown` is the content's other spelling for the span. One product, two authored
         #: names, and reading only the first left every item drawn over the same window.
-        days = float(params.get("days", params.get("cycles_shown", 5)))
+        days = min(float(params.get("days", params.get("cycles_shown", 5))), MAX_SPAN_DAYS)
         centre = 0.0
 
         #: How many objects are in the neighbourhood. The content authors `headcount` because on
@@ -723,7 +738,7 @@ class LightCurveGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        intervals = int(params.get("intervals", 6))
+        intervals = min(int(params.get("intervals", 6)), MAX_INTERVALS)
         #: A step change in brightness is a change of the object, not of the geometry. The item
         #: that authors it asks the operator to separate the two, so it has to be drawn.
         step_change = bool(params.get("step_change", False))
@@ -852,7 +867,7 @@ class TricGenerator:
         #: Marks along the track. **A reference state change is not a manoeuvre.** DRL-0026
         #: authors six markers with zero manoeuvres precisely so an operator learns to separate a
         #: new element set from a burn, so the two counts are independent by construction.
-        state_changes = int(params.get("state_change_markers", 4))
+        state_changes = min(int(params.get("state_change_markers", 4)), MAX_STATE_CHANGE_MARKS)
 
         #: Separation sets the scale of the loop. Three authored spellings, all in kilometres or
         #: a word, and none of them invented here.
@@ -882,7 +897,7 @@ class TricGenerator:
         )
         #: Authored revolutions, so a six-revolution item shows six and a four-revolution item
         #: does not show six. The window was fixed at two before, which erased the parameter.
-        revolutions = float(params.get("revolutions", 2))
+        revolutions = min(float(params.get("revolutions", 2)), MAX_REVOLUTIONS)
         #: Floored. `samples` is content-driven arithmetic, and a revolution count below 1/70
         #: rounds it to zero, which divides by zero in the segment length. Not reachable from
         #: today's library - the authored values are 4 and 6 - but a bound on a content-supplied
@@ -1147,7 +1162,7 @@ class NeighbourhoodGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        count = int(params.get("rows", 9))
+        count = min(int(params.get("rows", 9)), MAX_TABLE_ROWS)
         rows: list[dict[str, Any]] = []
         for index in range(count):
             drifting = index % 4 == 0
@@ -1208,7 +1223,7 @@ class CocoGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        count = int(params.get("rows", 7))
+        count = min(int(params.get("rows", 7)), MAX_TABLE_ROWS)
         rows = tuple(
             {
                 "designator": f"OBJ-{2000 + index * 3}",
@@ -1256,8 +1271,8 @@ class PassScheduleGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        hours = float(params.get("hours", 12))
-        sensors = int(params.get("sites", params.get("sensors", 6)))
+        hours = min(float(params.get("hours", 12)), MAX_SCHEDULE_HOURS)
+        sensors = min(int(params.get("sites", params.get("sensors", 6))), MAX_SENSORS)
         phenomenology = ["Optical", "Radar", "Phased array", "Passive RF", "On orbit"]
         marks: list[Marks] = []
         for index in range(sensors):
@@ -1326,7 +1341,9 @@ class EphemerisGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        minutes = float(params.get("elapsed_min", params.get("minutes", 96)))
+        minutes = min(
+            float(params.get("elapsed_min", params.get("minutes", 96))), MAX_EPHEMERIS_MINUTES
+        )
         ballistic = bool(params.get("ballistic", False))
         samples = 96
         earth_radius = 6378.137
@@ -1402,7 +1419,7 @@ class GabbardGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        fragments = int(params.get("fragments", 40))
+        fragments = min(int(params.get("fragments", 40)), MAX_FRAGMENTS)
         parent_period = float(params.get("parent_period_min", 101.4))
         parent_altitude = float(params.get("parent_altitude_km", 780.0))
         spread = float(params.get("spread", 1.0))
