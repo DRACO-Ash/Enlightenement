@@ -508,6 +508,34 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
         assert match_derived_text(wrong, compound).matched != "accept", wrong
 
 
+def test_a_derived_direction_token_is_never_compiled_as_a_pattern() -> None:
+    """`re.escape` on the drawn token, held before a generator ever derives it from content.
+
+    The contradiction check interpolates the drawn direction into a regex. Today `expected_text` is
+    only ever one of the four literals at `products.py:886` and `:1310`, so nothing content-shaped
+    reaches the pattern and deleting the escape leaves the suite green - which the security gate
+    found and reported as unheld rather than as exploitable. Both readings are right, and the guard
+    is the cheaper of the two things to keep.
+
+    The failure it prevents is not subtle: a token containing a metacharacter either raises
+    `re.error` inside scoring, which fails an operator's submission on content they cannot see, or
+    silently matches something the plot never drew. This asserts both halves - no exception, and
+    the bracket is treated as text rather than as a character class.
+    """
+    #: A token no generator produces today. That is the point: the guard exists for the day one
+    #: does, and the sibling test at `test_a_derived_answer_token_is_matched_whole_and_never_as_a_
+    #: pattern` holds the same property for the positive match.
+    hostile = {"expected_text": ("east[a-z",)}
+    #: No `re.error`. Refused, because the response does not name the literal token that was drawn.
+    assert match_derived_text("east", hostile).matched != "accept"
+    #: And the class is not honoured: with the escape removed, `east[a-z` compiles to "east"
+    #: followed by one letter, so "eastx" would read as a denial-free correct answer.
+    assert match_derived_text("eastx", hostile).matched != "accept"
+    #: The escape is on the DENIAL path, so drive that too: a denial of the hostile token must not
+    #: raise on its way to a verdict.
+    assert match_derived_text("not east[a-z", hostile).matched != "accept"
+
+
 def test_an_unrelated_negation_does_not_cost_a_correct_numeric_answer(
     package: ContentPackage,
 ) -> None:

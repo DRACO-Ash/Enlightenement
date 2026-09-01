@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ from enlightenment.config import Config
 from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
-from enlightenment.training.drill import MAX_WITHHOLD_REASON
+from enlightenment.training.drill import MAX_CONTENT_STRING, MAX_WITHHOLD_REASON
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_ROOT = ROOT / "content"
@@ -474,6 +475,86 @@ def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_
         assert detail["error"] == "content_unavailable"
         assert detail["content_errors"], "a 503 that names no file sends an author looking blind"
         assert client.get("/api/v1/content/manifest").json()["ok"] is False
+
+
+def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(
+    config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """Twenty entries of unbounded length is not a bound.
+
+    A content error quotes the value that failed validation and `content/models.py` sets no maximum
+    on any of them, so the entry cap alone left the body content-sized. Measured by the security
+    gate on a hostile tree: twenty errors, the longest 4,247 characters, an 85,151-byte response on
+    a route that needs no token. The same fault the withhold reason carried on the manifest one
+    route along, and it predated that fix rather than arriving with it.
+
+    Bounded per error now. The count cap stays: both are needed, and either alone is not a bound.
+    """
+    #: The real tree with one field poisoned, not a stub. An earlier version of this test wrote a
+    #: drills.json into an otherwise empty directory: loading stopped at "missing: cues.json", the
+    #: errors were 44 characters and the mutation survived. The validation error has to be the one
+    #: that QUOTES content, and `_canonical` quotes the rejected generator name.
+    broken = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, broken)
+    document = json.loads((broken / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows[:20]:
+        row.setdefault("stimulus", {})["generator"] = "bogus_" + "Q" * 4000
+    (broken / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=broken, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        response = client.get("/api/v1/drill/next")
+        assert response.status_code == 503
+        errors = response.json()["detail"]["content_errors"]
+        assert errors, "the hostile tree raised no error, so this asserts nothing"
+        for error in errors:
+            assert len(error) <= MAX_WITHHOLD_REASON, f"{len(error)} characters served anonymously"
+        #: And the whole body stays small. The per-error bound and the count cap together, which is
+        #: the claim: 20 x 256 plus the fixed message, not 85 kB.
+        assert len(response.content) < 16 * 1024, (
+            f"{len(response.content)} bytes served anonymously"
+        )
+
+
+def test_an_authored_param_name_is_bounded_on_the_anonymous_manifest(
+    config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """`stimulus_params_unread.params` keys are raw content strings on a route needing no token.
+
+    The entry count was capped at 25 and the NAMES were not: measured, a 500-character authored key
+    was served verbatim. Twenty-five entries of unbounded length is not a bound, which is the same
+    fault the withhold reason and the content errors each carried on their own surface.
+
+    An unread parameter is by definition one no renderer honours, so any string becomes a key here
+    simply by being authored - the least guarded of the three, and the last one found.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    long_key = "beta_" + "K" * 500
+    for row in rows:
+        row.setdefault("stimulus", {}).setdefault("params", {})[long_key] = 1
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        served = client.get("/api/v1/content/manifest").json()
+        params = served["stimulus_params_unread"]["params"]
+        assert params, "no unread parameter was reported, so this asserts nothing"
+        for name in params:
+            assert len(name) <= MAX_CONTENT_STRING, f"{len(name)} characters served as a key"
 
 
 def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gutter(

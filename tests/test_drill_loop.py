@@ -969,7 +969,7 @@ def test_a_withheld_item_id_is_bounded_before_it_reaches_the_unauthenticated_man
         f"the serve-time refusal did not withhold, so the second write site is untested: {reasons}"
     )
     #: The REASON embeds the raw id too, because `_serve_one` builds it as `f"{item.id}: ..."`.
-    #: Capped on the way out by `_bounded_reason`, so this holds both halves at once: an unbounded
+    #: Capped on the way out by `bounded_reason`, so this holds both halves at once: an unbounded
     #: id would show up here as a 3,000-character reason even with the key bounded.
     for reason in reasons.values():
         assert len(reason) <= MAX_WITHHOLD_REASON, f"{len(reason)} characters served as a reason"

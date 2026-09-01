@@ -225,8 +225,12 @@ def _bounded(value: Any) -> str:
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
 
 
-def _bounded_reason(reason: str) -> str:
-    """A refusal reason, length-capped and MARKED when it is cut.
+def bounded_reason(reason: str) -> str:
+    """A content-supplied diagnostic string, length-capped and MARKED when it is cut.
+
+    Public, and named for the job rather than for this module: `training_api` bounds the content
+    load errors it serves on the anonymous 503 with the same helper, and a cross-module import of
+    a private name is how two copies of one rule start diverging.
 
     Separate from `_bounded` because the two answer different questions. `_bounded` protects a
     file read whole on every request and truncates silently, which is right for a version string
@@ -409,7 +413,7 @@ class DrillLoop:
         #: but a bound applied at one of two exits is a bound at neither.
         raise DrillError(
             f"no drill could be rendered within the selection budget of"
-            f" {MAX_SELECTION_ATTEMPTS}: {_bounded_reason(str(last))}"
+            f" {MAX_SELECTION_ATTEMPTS}: {bounded_reason(str(last))}"
         )
 
     def _withhold(self, item_id: str, reason: str) -> None:
@@ -428,7 +432,7 @@ class DrillLoop:
         """
         key = _bounded(item_id)
         if key not in self._unresolvable:
-            bounded = _bounded_reason(reason)
+            bounded = bounded_reason(reason)
             self._unresolvable[key] = bounded
             log_event("drill.withheld", item=key, reason=bounded)
 
@@ -826,5 +830,11 @@ class DrillLoop:
         return {
             "drills_fully_expressed": expressed,
             "drills_total": len(self._content.drills),
-            "params": dict(sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[:25]),
+            #: The param NAME is a raw content string on an unauthenticated route, and the entry
+            #: count alone did not bound it: measured, a 500-character authored key was served
+            #: verbatim. Twenty-five entries of unbounded length is not a bound.
+            "params": {
+                _bounded(key): count
+                for key, count in sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[:25]
+            },
         }

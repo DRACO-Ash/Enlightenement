@@ -47,6 +47,7 @@ from enlightenment.training import (
     DrillError,
     DrillLoop,
 )
+from enlightenment.training.drill import bounded_reason
 
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
     from fastapi import FastAPI
@@ -110,7 +111,12 @@ def _content_unavailable(errors: Sequence[str]) -> HTTPException:
             "message": (
                 "The training content tree did not load. No drill can be served until it does."
             ),
-            "content_errors": list(errors[:20]),
+            #: Each error BOUNDED, not only the list. Measured on a hostile tree: twenty errors,
+            #: the longest 4,247 characters, an 85,151-byte anonymous response - because a content
+            #: error quotes the value that failed validation and `content/models.py` sets no
+            #: maximum on any of them. Twenty entries of unbounded length is not a bound, which is
+            #: the same fault the withhold reason carried on the manifest one route along.
+            "content_errors": [bounded_reason(str(error)) for error in errors[:20]],
         },
     )
 
