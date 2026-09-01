@@ -12,6 +12,7 @@ from enlightenment.scoring.evaluator import (
     RubricEvaluator,
 )
 from enlightenment.scoring.matching import (
+    COMPUTED_SENTINEL,
     MAX_ANSWER_LENGTH,
     UNSCORABLE,
     Match,
@@ -23,6 +24,7 @@ from enlightenment.scoring.matching import (
 )
 
 __all__ = [
+    "COMPUTED_SENTINEL",
     "DRILL_PREDICATES",
     "FULL_CREDIT",
     "MAX_ANSWER_LENGTH",

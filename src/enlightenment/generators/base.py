@@ -27,10 +27,23 @@ from enlightenment.scenario import SeededRandom
 class Axis:
     """One axis of a rendered surface, carrying its own units and direction.
 
-    `inverted` exists for one reason and it is not a preference: a magnitude axis runs brighter
-    upward, which means the smaller number is at the top. A photometry surface drawn the other
-    way up is not a styling choice, it is wrong, and an operator reading it would learn the
-    opposite of the signature.
+    `inverted` exists for two distinct reasons, and they need distinguishing because the
+    interface used to caption both of them "brighter upward":
+
+    ● A magnitude axis runs brighter UPWARD, so the smaller number is at the top. A photometry
+      surface drawn the other way up is not a styling choice, it is wrong, and an operator
+      reading it would learn the opposite of the signature.
+    ● A waterfall's time axis runs with the NEWEST observations nearest the longitude axis at the
+      bottom, which is the convention of the real product. "Brighter upward" said of a time axis
+      is nonsense, and it was rendered on every waterfall.
+
+    So the reason travels with the axis in `inversion_note` rather than being assumed by the
+    renderer of the caption.
+
+    `ticks` carries explicit value-and-label pairs for an axis whose numbers are not the thing an
+    operator reads. A waterfall's vertical axis is a TIMELINE: "0.003" and "4.99" are the
+    internals of the plot, and the operator needs the timestamp. Empty means the interface
+    computes numeric ticks as before.
     """
 
     label: str
@@ -38,6 +51,8 @@ class Axis:
     inverted: bool = False
     minimum: float | None = None
     maximum: float | None = None
+    inversion_note: str = ""
+    ticks: tuple[tuple[float, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +158,8 @@ def _axis_dict(axis: Axis) -> dict[str, Any]:
         "inverted": axis.inverted,
         "minimum": axis.minimum,
         "maximum": axis.maximum,
+        "inversion_note": axis.inversion_note,
+        "ticks": [[value, label] for value, label in axis.ticks],
     }
 
 
@@ -252,9 +269,19 @@ class GeneratorRegistry:
         authored = {key for key in params if not key.startswith("_")}
         if generator_name in COMPOSITION_READS:
             #: The two composition modes are not renderers, so they have no class to declare a
-            #: vocabulary on. What they read is resolved in `compose()` and named here, and the
-            #: renderers underneath are then censused by the caller for the rest.
-            return tuple(sorted(authored - COMPOSITION_READS[generator_name]))
+            #: vocabulary on. What they read is resolved in `compose()` and named here - and the
+            #: renderers UNDERNEATH read the rest, so their vocabularies are subtracted here too.
+            #:
+            #: The previous comment said the caller censused them and the caller did no such
+            #: thing, so the manifest named `headcount` unread on DRL-0104 and `step_change`
+            #: unread on DRL-0086 while the waterfall and the light curve beneath them read
+            #: exactly those. A wrong figure in a served disclosure, against the hard rule on
+            #: inventing figures in user-facing data - conservative in direction, which is why
+            #: it survived, but a floor presented as a count.
+            beneath: set[str] = set()
+            for renderer in self._by_name.values():
+                beneath |= renderer.reads
+            return tuple(sorted(authored - COMPOSITION_READS[generator_name] - beneath))
         generator = self._by_name.get(generator_name)
         if generator is None:
             return tuple(sorted(authored))

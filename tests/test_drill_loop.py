@@ -101,7 +101,6 @@ def test_the_reveal_carries_everything_the_service_withheld(loop: DrillLoop) -> 
         run_id=served.run_id,
         response="manoeuvre",
         confidence=4,
-        elapsed_ms=5000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     payload = result.as_dict()
@@ -119,14 +118,12 @@ def test_a_second_submission_returns_the_first_result_rather_than_rescoring(
         run_id=served.run_id,
         response="manoeuvre",
         confidence=5,
-        elapsed_ms=1000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     second = loop.score(
         run_id=served.run_id,
         response="something completely different",
         confidence=1,
-        elapsed_ms=90_000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     assert second.as_dict() == first.as_dict()
@@ -139,7 +136,6 @@ def test_an_unknown_run_id_is_refused(loop: DrillLoop) -> None:
             run_id="not-a-run",
             response="manoeuvre",
             confidence=3,
-            elapsed_ms=1000,
             operator_id=DEMONSTRATION_OPERATOR,
         )
 
@@ -153,7 +149,6 @@ def test_a_scored_run_records_the_content_hash_it_was_scored_under(
         run_id=served.run_id,
         response="manoeuvre",
         confidence=3,
-        elapsed_ms=4000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     stored = ProgressStore(tmp_path / "progress.json").load(DEMONSTRATION_OPERATOR)
@@ -179,7 +174,6 @@ def test_the_same_operator_and_item_draw_the_same_stimulus_until_they_answer(
         run_id=first.run_id,
         response="manoeuvre",
         confidence=3,
-        elapsed_ms=1000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     after = loop.serve(operator_id=DEMONSTRATION_OPERATOR)
@@ -239,7 +233,6 @@ def test_the_dashboard_never_reports_a_bare_competency_estimate(loop: DrillLoop)
         run_id=served.run_id,
         response="manoeuvre",
         confidence=3,
-        elapsed_ms=3000,
         operator_id=DEMONSTRATION_OPERATOR,
     )
     dashboard = loop.dashboard(operator_id=DEMONSTRATION_OPERATOR)
@@ -319,7 +312,6 @@ def test_an_unscorable_item_does_not_move_a_rating_or_the_schedule(
         run_id=served.run_id,
         response="7",
         confidence=4,
-        elapsed_ms=3000,
         operator_id="operator-unscorable",
     )
     payload = result.as_dict()
@@ -352,7 +344,6 @@ def test_the_speed_bonus_is_decided_by_the_server_clock_not_the_client_s(
         run_id=fast.run_id,
         response="manoeuvre",
         confidence=4,
-        elapsed_ms=800,
         operator_id="operator-fast",
     )
     assert quick.correct, "the fixture answer no longer matches, so this test asserts nothing"
@@ -373,7 +364,6 @@ def test_the_speed_bonus_is_decided_by_the_server_clock_not_the_client_s(
             run_id=replayed.run_id,
             response="manoeuvre",
             confidence=4,
-            elapsed_ms=claimed,
             operator_id=f"operator-slow-{claimed}",
         )
         assert lied.correct
@@ -411,7 +401,6 @@ def test_an_expired_run_is_refused_with_the_message_that_promises_it(loop: Drill
             run_id=served.run_id,
             response="manoeuvre",
             confidence=3,
-            elapsed_ms=1000,
             operator_id=DEMONSTRATION_OPERATOR,
         )
 
@@ -452,7 +441,6 @@ def test_a_content_supplied_version_is_length_capped_before_it_is_stored(
         run_id=served.run_id,
         response="manoeuvre",
         confidence=3,
-        elapsed_ms=2000,
         operator_id="operator-version",
     )
     stored = ProgressStore(tmp_path / "progress.json").load("operator-version")
@@ -473,7 +461,6 @@ def test_the_reveal_names_the_aggregation_the_evaluator_does_not_apply(loop: Dri
         run_id=served.run_id,
         response="manoeuvre",
         confidence=4,
-        elapsed_ms=2000,
         operator_id="operator-aggregation",
     )
     assert "calibration_weight" in result.as_dict()["unimplemented_aggregation"]

@@ -34,6 +34,11 @@ UNSCORABLE: Final = "unscorable"
 COMPUTED_SENTINEL: Final = "computed_from_params"
 UNSCORABLE_NOTE: Final = "This item's expected value could not be resolved."
 
+#: Credit for a numeric answer that is right in magnitude and silent on the direction, where the
+#: prompt asked for both. ENGINE POLICY, named rather than hidden in a branch: the content states
+#: partial credit per authored answer and says nothing about this composition.
+PARTIAL_DIRECTION_CREDIT: Final = 0.5
+
 #: Stripped from the front of a response, once, then again. Two bounded passes rather than a loop,
 #: because an unbounded strip on attacker-controlled input is a denial of service in a regex.
 _FILLERS = (
@@ -126,6 +131,20 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
         return Match(UNSCORABLE, 0.0, note=UNSCORABLE_NOTE)
     if given is None:
         return Match("none", 0.0, note="No number found in the response.", expected=expected)
+
+    #: **Where the direction is a WORD, the number is a magnitude.** DRL-0004 asks the operator to
+    #: "estimate the resulting longitude drift rate in degrees per day, and state the direction",
+    #: and the generator's expected value is signed - negative for a westward drift. So
+    #: "0.12 deg/day west" was marked WRONG for omitting a minus sign the prompt never asked for,
+    #: while the direction word the prompt did ask for was not scored at all. Before the value was
+    #: wired this item refused harmlessly; wiring it turned a harmless refusal into an active
+    #: penalty on the correct answer, which is the same harm one drill along.
+    #:
+    #: So when the generator also supplies a direction, the magnitudes are compared and the
+    #: direction is required separately. A signed answer still passes: its magnitude matches.
+    if derived.get("expected_text"):
+        return _match_magnitude_and_direction(response, answer, derived, given, expected)
+
     inside = _within(given, expected, answer.tolerance)
     if inside:
         return Match("accept", 1.0, within_tolerance=True, expected=expected)
@@ -133,6 +152,38 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
     if rejected is not None:
         return Match("reject", 0.0, why_wrong=rejected, within_tolerance=False, expected=expected)
     return Match("none", 0.0, within_tolerance=False, expected=expected)
+
+
+def _match_magnitude_and_direction(
+    response: str, answer: Answer, derived: dict[str, Any], given: float, expected: float
+) -> Match:
+    """Score a rate whose prompt asks for a magnitude AND a direction.
+
+    The generator's expected value is signed, and the direction is a WORD the prompt asks for
+    separately, so comparing the signed number marked "0.12 deg/day west" wrong for omitting a
+    minus sign nobody requested - while the direction went unscored. Magnitudes are compared and
+    the direction is required on top; a signed answer still passes on its magnitude.
+    """
+    if not _within(abs(given), abs(expected), answer.tolerance):
+        return Match("none", 0.0, within_tolerance=False, expected=expected)
+    if match_derived_text(response, derived, answer).matched != "accept":
+        return Match(
+            "partial",
+            PARTIAL_DIRECTION_CREDIT,
+            note="The rate is right. State which way it drifts.",
+            within_tolerance=True,
+            expected=expected,
+        )
+    return Match("accept", 1.0, within_tolerance=True, expected=expected)
+
+
+def _match_partial(response: str, answer: Answer) -> Match | None:
+    """One authored partial answer, matched exactly as `match_text` matches it."""
+    wanted = normalise(response)
+    for candidate in answer.partial:
+        if normalise(candidate.value) == wanted:
+            return Match("partial", candidate.credit, note=candidate.note)
+    return None
 
 
 def _match_reject(response: str, answer: Answer) -> str | None:
@@ -163,7 +214,9 @@ def match_text(response: str, answer: Answer) -> Match:
     return Match("none", 0.0)
 
 
-def match_derived_text(response: str, derived: dict[str, Any]) -> Match:
+def match_derived_text(
+    response: str, derived: dict[str, Any], answer: Answer | None = None
+) -> Match:
     """A non-numeric answer the RENDERER computed, matched against what it actually drew.
 
     DRL-0030 asks the operator to find the drifting object and state its direction, and its key
@@ -185,8 +238,25 @@ def match_derived_text(response: str, derived: dict[str, Any]) -> Match:
     #: generators emit tuples today, and a mapping is the natural thing for the next author to
     #: write, so the shape is normalised here rather than trusted at every call site.
     tokens = (expected,) if isinstance(expected, str) else tuple(str(v) for v in expected)
-    if any(re.search(rf"\b{re.escape(token)}\b", typed) for token in tokens):
+    #: A token matches the START of a word, so "west" accepts "westwards" and "westerly" - a
+    #: fully correct prose answer that a strict word boundary rejected. It still will not match
+    #: inside a word, so "west" does not accept "southwest".
+    if any(re.search(rf"\b{re.escape(token)}\w*", typed) for token in tokens):
         return Match("accept", 1.0)
+
+    #: **The item's authored partial and reject entries still apply.** This matcher consulted
+    #: neither, so on DRL-0030 "there is a drifting object" - which the content awards 0.5 credit
+    #: with a note explaining that the direction comes from the gradient - scored zero and got a
+    #: generic string instead of the authored teaching text, and both authored misconceptions
+    #: lost their `why_wrong`. A content instruction silently ignored is the fault the
+    #: aggregation reporting exists to prevent, in a matcher added the same week.
+    if answer is not None:
+        partial = _match_partial(response, answer)
+        if partial is not None:
+            return partial
+        rejected = _match_reject(response, answer)
+        if rejected is not None:
+            return Match("reject", 0.0, why_wrong=rejected)
     return Match("none", 0.0, note="Not the direction shown on the surface.")
 
 
@@ -212,7 +282,7 @@ def match(
     if COMPUTED_SENTINEL in answer.accept:
         if response_format is ResponseFormat.NUMERIC_ESTIMATE:
             return match_numeric(response, answer, derived)
-        return match_derived_text(response, derived)
+        return match_derived_text(response, derived, answer)
     if response_format is ResponseFormat.NUMERIC_ESTIMATE:
         return match_numeric(response, answer, derived)
     return match_text(response, answer)

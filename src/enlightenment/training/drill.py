@@ -29,7 +29,14 @@ from typing import Any, Final
 
 from enlightenment.content import ContentPackage, Drill
 from enlightenment.generators import GeneratorRegistry, compose
-from enlightenment.scoring import UNSCORABLE, Facts, Match, RubricEvaluator, match
+from enlightenment.scoring import (
+    COMPUTED_SENTINEL,
+    UNSCORABLE,
+    Facts,
+    Match,
+    RubricEvaluator,
+    match,
+)
 from enlightenment.training.progress import OperatorProgress, ProgressStore, RunRecord, now_utc
 from enlightenment.training.scoring import (
     brier_score,
@@ -59,6 +66,10 @@ MAX_PENDING: Final = 512
 #: same source into the same file, which is read whole on every request. `content/models.py`
 #: declares no maximum length on any of them.
 MAX_CONTENT_STRING: Final = 64
+
+#: The derived keys that ARE an answer. A composite merging two renderers must not resolve a
+#: clash on one of these by render order: the answer is not a matter of which product drew second.
+ANSWER_KEYS: Final = frozenset({"expected_value", "expected_text"})
 MAX_ITEM_VERSION: Final = MAX_CONTENT_STRING
 
 #: Largest serialised drill payload, bytes. A budget rather than a limit on any one field: the
@@ -266,9 +277,28 @@ class DrillLoop:
         except LookupError as exc:
             raise DrillError(f"{item.id}: {exc}") from None
 
+        #: A composite renders several products and their server-side facts are merged, so a key
+        #: one renderer owns can be overwritten by the next in render order.
+        #:
+        #: For an item scored against a computed answer that would decide the answer by draw
+        #: order, silently, because the loser leaves no trace - so it is refused. For every other
+        #: item the answer keys are not read at all, and several renderers emit them
+        #: unconditionally, so they are DROPPED rather than merged: carrying a value nothing reads
+        #: is how a collision becomes load-bearing later without anyone choosing it.
+        scored_on_a_computed_value = COMPUTED_SENTINEL in item.answer.accept
         derived: dict[str, Any] = {}
         for stimulus in rendered:
-            derived.update(stimulus.derived)
+            facts = dict(stimulus.derived)
+            if not scored_on_a_computed_value:
+                for key in ANSWER_KEYS:
+                    facts.pop(key, None)
+            collisions = ANSWER_KEYS & derived.keys() & facts.keys()
+            if collisions:
+                raise DrillError(
+                    f"{item.id}: two products on this board both computed"
+                    f" {sorted(collisions)}, so the answer would depend on render order"
+                )
+            derived.update(facts)
 
         #: The budget, ENFORCED rather than merely tested. It was declared as a runtime bound and
         #: referenced only by a test, so it held for the library as it stands and for nothing
@@ -329,13 +359,13 @@ class DrillLoop:
         run_id: str,
         response: str,
         confidence: int,
-        elapsed_ms: int,  # noqa: ARG002 - accepted at the boundary, deliberately not read
         operator_id: str,
     ) -> ScoredDrill:
         """Score one submission. Idempotent: a second call returns the first result.
 
-        `elapsed_ms` stays in the signature because the client sends it and it is validated at
-        the boundary like every other field. It is not READ: see below.
+        There is no `elapsed_ms` parameter. The client sends one and `DrillAnswer` validates it at
+        the boundary, which is where a wire contract belongs; threading it in here and then
+        suppressing the unused-argument warning was arguing both sides of the same point.
         """
         pending = self._pending.get(run_id)
         if pending is None:

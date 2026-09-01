@@ -24,6 +24,21 @@ import pytest
 
 from enlightenment.content import PRODUCT_RENDERERS, ContentPackage
 from enlightenment.generators import build_registry, compose
+from enlightenment.generators.products import (
+    DEFAULT_LONGITUDE_HALF_WIDTH_DEG,
+    DRIFT_EXCURSION_FACTOR,
+    GEO_PERIOD_S,
+    MAX_FRAGMENTS,
+    MAX_INTERVALS,
+    MAX_NEIGHBOURHOOD_TRACKS,
+    MAX_REVOLUTIONS,
+    MAX_SCHEDULE_HOURS,
+    MAX_SENSORS,
+    MAX_SPAN_DAYS,
+    MAX_STATE_CHANGE_MARKS,
+    MAX_TABLE_ROWS,
+    TIME_TICKS,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT = ROOT / "content"
@@ -36,6 +51,19 @@ CONTENT = ROOT / "content"
 #: strength of a false declaration. `test_every_declared_read_actually_changes_the_surface` is
 #: what stops that recurring, and 5 is the figure that survives it.
 FULLY_EXPRESSED_BASELINE = 5
+
+#: How many `computed_from_params` items resolve an answer from the surface. Two of three:
+#: DRL-0004 (a drift rate from an altitude change) and DRL-0030 (a drift direction). DRL-0008
+#: does NOT, and that is a recorded gap rather than a defect - see `_tric_derived`.
+RESOLVED_COMPUTED_ITEMS = 2
+
+#: The figure DRL-0005 authors, which is the real ASTRA 1M artefact from the flight plan.
+ABSURD_RATE_DEG_DAY = -22900000
+
+#: How much wider a drifter's longitude sweep must be than a station-kept object's jitter before
+#: the drift counts as drawn. The item's key says the object has STOPPED station-keeping, so the
+#: two must not look alike.
+MIN_DRIFT_LEGIBILITY = 5.0
 SEED = 0x4F1A
 
 
@@ -494,10 +522,16 @@ def test_a_numeric_item_resolves_the_value_it_will_be_scored_against(
         #: DIRECTION, which is just as much a fact about the surface the renderer drew.
         if "expected_value" in derived or "expected_text" in derived:
             resolved += 1
-    assert resolved == len(numeric), (
-        f"{resolved} of {len(numeric)} computed items resolve a value the item can be scored"
-        " against. Asserting that ANY of them resolves is not the claim: an item whose sentinel"
-        " resolves to nothing is refused on every attempt, which is safe but never teaches."
+    #: TWO of the three, deliberately. DRL-0008 asks how many manoeuvres are visible in a
+    #: relative-motion track, and the honest measurement is that they are not: an along-track burn
+    #: steps the subsequent drift rate rather than putting a cusp in the track, and a blind
+    #: change-point detector over the distance panel finds no events at any burn count. So that
+    #: item resolves nothing and fails closed. Ratcheted rather than asserted loosely, because
+    #: "any of them resolves" would have passed while two were permanently unscorable.
+    assert resolved == RESOLVED_COMPUTED_ITEMS, (
+        f"{resolved} of {len(numeric)} computed items resolve a value, expected"
+        f" {RESOLVED_COMPUTED_ITEMS}. If a renderer has learned to answer one, raise the"
+        " baseline; if one has stopped, that item now marks nobody and teaches nobody."
     )
 
 
@@ -527,6 +561,26 @@ def test_the_unread_parameter_census_does_not_regress(package: ContentPackage) -
 MIN_BURN_DIVERGENCE = 0.5
 
 
+def _segment_rates(stimulus: object, burns: int) -> list[float]:
+    """Mean along-track rate, km per day, for each segment between burns.
+
+    The along-track series is the second coordinate of the Hill frame, which is the first panel's
+    x axis. Segment boundaries are where `_burned_track` puts them.
+    """
+    panel = stimulus.panels[0]  # type: ignore[attr-defined]
+    track = panel.marks[0]
+    samples = len(track.x)
+    segment = max(samples // (burns + 1), 8)
+    rates: list[float] = []
+    for index in range(burns + 1):
+        low, high = index * segment, min((index + 1) * segment, samples)
+        if high - low < 6:
+            continue
+        span_days = (high - low) * GEO_PERIOD_S * 2 / samples / 86400.0
+        rates.append((track.x[high - 1] - track.x[low]) / span_days)
+    return rates
+
+
 def _separation(first: object, second: object, index: int) -> float:
     """Distance between two tracks at one sample."""
     return math.hypot(
@@ -535,44 +589,50 @@ def _separation(first: object, second: object, index: int) -> float:
     )
 
 
-def test_a_manoeuvre_is_visible_in_the_track_it_is_counted_from() -> None:
-    """The number the item is scored against must be readable off the plot.
+def test_a_manoeuvre_steps_the_drift_rate_and_the_count_is_not_scored() -> None:
+    """What a burn actually does, and the honest limit of it.
 
-    The first version of the burn added a fixed 4.0e-6 km/s to an along-track rate of order
-    5.8e-4 - seven tenths of one percent - and the measured turn angle at every burn was 0.00
-    degrees. Its only trace was a duplicated vertex, which draws as nothing. The item was then
-    marked against a count no operator could read, taking rating points from someone reading the
-    plot correctly. That is worse than the `unscorable` refusal it replaced.
+    Two earlier versions of this test were wrong in opposite directions. The first asserted
+    nothing about legibility at all. The second asserted the manoeuvred track diverges from the
+    unmanoeuvred one by half its own scale, which proves the track is DIFFERENT and not that
+    three events are COUNTABLE - and the item asks "how many manoeuvres are visible" at zero
+    tolerance.
 
-    Asserted as divergence from the SAME track with no burns, because that is the question an
-    analyst answers: has this object done something, and how many times. Before the first burn
-    the two must be identical; after it they must part by a legible fraction of the track.
+    The real signature: an along-track burn is nearly parallel to the velocity it modifies, so it
+    does not turn the track - measured at the burn vertices the local turn is smaller than at a
+    median sample. It steps the subsequent DRIFT RATE. Three burns give four segments whose
+    along-track rates differ by roughly an order of magnitude, and with no burns the rate is
+    constant. That is asserted here.
+
+    And the limit, asserted alongside it: a blind change-point detector over the distance panel
+    finds no events at any burn count, so the COUNT is not scorable and the item must resolve no
+    expected value. A stimulus that cannot support its key must not move a rating.
     """
     registry = build_registry()
-    unburned = compose(registry, "tric", {"geometry": "fmc", "actual_manoeuvres": 0}, SEED)[0]
-    reference = unburned.panels[0].marks[0]
-    scale = max(reference.x) - min(reference.x)
-    assert scale > 0
 
-    for burns in (1, 2, 3):
-        rendered = compose(registry, "tric", {"geometry": "fmc", "actual_manoeuvres": burns}, SEED)[
+    flat = compose(registry, "tric", {"geometry": "nmc_stable"}, SEED)[0]
+    assert flat.derived["manoeuvres"] == 0
+    assert _segment_rates(flat, 1) == pytest.approx(_segment_rates(flat, 1))
+
+    burned = compose(registry, "tric", {"geometry": "fmc", "actual_manoeuvres": 3}, SEED)[0]
+    assert burned.derived["manoeuvres"] == 3
+    rates = _segment_rates(burned, 3)
+    assert len(rates) == 4, rates
+    steps = [abs(rates[i + 1] - rates[i]) for i in range(len(rates) - 1)]
+    baseline = abs(_segment_rates(flat, 1)[0]) or 1.0
+    for index, step in enumerate(steps):
+        assert step > baseline, (
+            f"burn {index + 1} changes the along-track rate by {step:.2f} km/day against an"
+            f" unmanoeuvred rate of {baseline:.2f}: not a step an analyst could read"
+        )
+
+    #: The fail-closed half. `expected_value` absent means `match` refuses the item.
+    assert (
+        "expected_value"
+        not in compose(registry, "tric", {"geometry": "fmc", "manoeuvre_count": "seeded"}, SEED)[
             0
-        ]
-        track = rendered.panels[0].marks[0]
-        assert rendered.derived["manoeuvres"] == burns
-        samples = min(len(track.x), len(reference.x))
-        first_burn = max(samples // (burns + 1), 8)
-
-        before = max(_separation(track, reference, i) for i in range(first_burn))
-        assert before == pytest.approx(0.0, abs=1e-9), (
-            f"{burns} burns: the track differs BEFORE the first burn, so the difference is not"
-            " the burn"
-        )
-        after = max(_separation(track, reference, i) for i in range(first_burn, samples))
-        assert after > scale * MIN_BURN_DIVERGENCE, (
-            f"{burns} burns: the manoeuvred track diverges by {after:.3f} km against a track"
-            f" scale of {scale:.3f} km, which is not something an operator can count"
-        )
+        ].derived
+    )
 
 
 def test_a_burned_track_carries_no_duplicate_vertex() -> None:
@@ -612,6 +672,9 @@ PROBE_VALUES: dict[str, tuple[object, dict[str, object]]] = {
     "manoeuvre_marker": (True, {}),
     "headcount": (5, {}),
     "drifting": (True, {}),
+    #: NOT 3: `DEFAULT_DRIFTERS` is 3, so a probe of 3 renders identically to no probe at all and
+    #: reports a live parameter as inert. A probe value that collides with the default proves
+    #: nothing, and this one cost an afternoon.
     "drifting_object": (2, {}),
     "longitudinal_bounds": (1.0, {}),
     "drift_begins": (True, {}),
@@ -681,8 +744,215 @@ def test_every_declared_read_actually_changes_the_surface() -> None:
                 compose(registry, generator, {**context, parameter: value}, SEED)[0].for_client()
             )
             if without == with_it:
-                inert.append(f"{generator}.{parameter}")
+                inert.append(
+                    f"{generator}.{parameter} (probe {value!r} - if this equals the renderer's"
+                    " own default, the probe is at fault rather than the declaration)"
+                )
     assert not inert, (
         "these parameters are declared as read and change nothing in the rendered surface, so the"
         f" unread census over-reports its own coverage: {inert}"
     )
+
+
+def test_the_newest_observations_are_drawn_nearest_the_longitude_axis() -> None:
+    """The convention of the real product, and the geometry and the COLOUR must agree on it.
+
+    They did not. The vertical axis was inverted so the largest time sat at the bottom, next to
+    the longitude axis, and the note said "newest observations at the bottom" - while the recency
+    ramp was passed elapsed time, where `ramp(0)` is the most-recent stop. So the window START,
+    the oldest data in the plot, was drawn in red at the TOP, and the newest end was drawn as
+    oldest. One panel, two opposite claims about which end is now, in a product where
+    red-for-recency is the first thing an analyst reads.
+
+    Asserted on both halves at once: the newest observation must have the most-recent ramp value
+    AND must be the one the inverted axis places nearest the longitude axis.
+    """
+    stimulus = compose(build_registry(), "waterfall", {"days": 5, "drifting": True}, SEED)[0]
+    panel = stimulus.panels[0]
+    assert panel.y.inverted, "the axis no longer places the newest end at the bottom"
+
+    for group in panel.marks:
+        if not group.x:
+            continue
+        assert group.ramp, "a waterfall track carries no recency ramp"
+        newest = max(range(len(group.y)), key=lambda i: group.y[i])
+        oldest = min(range(len(group.y)), key=lambda i: group.y[i])
+        assert group.ramp[newest] < group.ramp[oldest], (
+            "the recency ramp runs backwards: the oldest observation is coloured as the most"
+            " recent one"
+        )
+        assert group.ramp[newest] == pytest.approx(0.0, abs=0.05), group.ramp[newest]
+
+
+def test_the_waterfall_time_axis_is_labelled_with_timestamps_not_bare_numbers() -> None:
+    """An operator correlates a date against a pass schedule and a provider post.
+
+    "0.003" and "4.99" are the internals of the plot. They cannot be correlated with anything, and
+    every real product on this screen carries a timestamp. The ticks run oldest to newest in the
+    axis's own direction, and the header states the window.
+    """
+    stimulus = compose(build_registry(), "waterfall", {"days": 5}, SEED)[0]
+    axis = stimulus.panels[0].y
+    assert len(axis.ticks) == TIME_TICKS
+    assert axis.unit == "UTC"
+    values = [value for value, _ in axis.ticks]
+    assert values == sorted(values), "the timeline ticks are not in order"
+    for _, label in axis.ticks:
+        assert re.fullmatch(r"\d{2} \w{3} \d{2}:\d{2}Z", label), label
+    header = dict(stimulus.header)
+    assert "From" in header
+    assert "To" in header
+    assert header["From"] != header["To"]
+
+
+def test_an_inverted_axis_states_its_own_reason_for_being_inverted() -> None:
+    """ "Inverted, brighter upward" is true of a magnitude axis and nonsense on a timeline.
+
+    The interface captioned every inverted axis that way, so every waterfall the product has ever
+    drawn told the operator its time axis ran brighter upward. The reason now travels with the
+    axis.
+    """
+    registry = build_registry()
+    photometry = compose(registry, "light_curve", {}, SEED)[0].panels[0].y
+    assert photometry.inverted
+    assert "brighter" in photometry.inversion_note
+
+    timeline = compose(registry, "waterfall", {}, SEED)[0].panels[0].y
+    assert timeline.inverted
+    assert "brighter" not in timeline.inversion_note
+    assert "newest" in timeline.inversion_note
+
+    for generator in sorted(registry.names):
+        for panel in compose(registry, generator, {}, SEED)[0].panels:
+            if panel.y.inverted:
+                assert panel.y.inversion_note, f"{generator}: an inverted axis with no reason"
+
+
+def test_the_timeline_labels_come_from_the_seed_and_never_from_the_clock() -> None:
+    """A debrief redraws what the operator saw from the run log alone.
+
+    A timestamp read off the wall clock would relabel the same surface differently on every
+    render, which breaks the replay this project gates on. The epoch is synthetic, derived from
+    the seed, and the footer says so rather than implying a real collection.
+    """
+    registry = build_registry()
+    first = compose(registry, "waterfall", {"days": 4}, SEED)[0]
+    again = compose(registry, "waterfall", {"days": 4}, SEED)[0]
+    assert first.panels[0].y.ticks == again.panels[0].y.ticks
+
+    other = compose(registry, "waterfall", {"days": 4}, SEED + 1)[0]
+    assert other.panels[0].y.ticks != first.panels[0].y.ticks
+    assert "synthetic epoch" in first.footer
+
+
+def test_an_absurd_authored_rate_is_clamped_for_drawing_and_reported_verbatim() -> None:
+    """DRL-0005 authors the real ASTRA 1M artefact: -22,900,000 degrees per day.
+
+    The whole lesson of the item is that a reported figure cannot be right. Drawn literally it
+    spans 114 million degrees on an axis labelled in degrees, every station-kept object collapses
+    into one pixel column and the plot conveys nothing - so the item that teaches "distrust this
+    number" became the item that shows nothing.
+
+    This assertion did not exist. Deleting the clamp entirely left the whole suite green, which
+    means the fix for it was held by nothing: the read-probe passes either way, because it only
+    requires the parameter to change something.
+    """
+    stimulus = compose(
+        build_registry(),
+        "waterfall",
+        {"days": 5, "drifting": True, "derived_rate_deg_day": ABSURD_RATE_DEG_DAY},
+        SEED,
+    )[0]
+    derived = stimulus.derived
+    assert derived["reported_rate_deg_day"] == ABSURD_RATE_DEG_DAY, "the authored figure was lost"
+    assert derived["rate_clamped"] is True
+
+    bounds = 2 * DEFAULT_LONGITUDE_HALF_WIDTH_DEG
+    excursion = abs(derived["drawn_rate_deg_day"]) * 5
+    assert excursion <= bounds * DRIFT_EXCURSION_FACTOR + 1e-9, (
+        f"the drawn drifter travels {excursion:.1f}° across a {bounds:.1f}° box, so the held"
+        " objects an operator judges it against are squeezed off the panel"
+    )
+
+    #: And the header must state BOTH figures. `for_client()` strips `derived`, so this string is
+    #: the only client-visible disclosure, and it read "drawn to scale" - the plain assertion
+    #: that the drawing represents the number faithfully, which is its negation.
+    header = dict(stimulus.header)
+    assert "Reported rate" in header
+    assert "22,900,000" in header["Reported rate"]
+    assert "drawn to scale" not in header["Reported rate"]
+    assert "clamped" in header["Reported rate"] or "drawn at" in header["Reported rate"]
+
+
+def test_an_authored_drift_onset_actually_draws_a_drift() -> None:
+    """`drift_begins: true` was multiplied by the window and put the onset at its END.
+
+    So DRL-0019 drew a perfectly held longitude while its key says the object has stopped
+    station-keeping. Fixed in code and then cited by a register row while no test mentioned
+    `drift_visible`: setting the default onset fraction to 0.999 would draw no drift at all with
+    the suite green.
+    """
+    registry = build_registry()
+    for params in (
+        {"days": 7, "drift_begins": True},
+        {"days": 7, "ceased_at_cycle": 5, "cycles_shown": 9, "drifting": True},
+        {"days": 7, "drift_begins": 0.4, "drifting": True},
+    ):
+        stimulus = compose(registry, "waterfall", params, SEED)[0]
+        assert stimulus.derived["drift_visible"] is True, params
+        assert stimulus.derived["drift_onset_days"] >= 0.0, params
+        assert stimulus.derived["drift_onset_days"] < 7.0, params
+
+        #: Measured on the MARKS, not on the derived flag. An onset of 0.999 of the window keeps
+        #: `drift_visible` true and `drift_onset_days` under the span while drawing no drift at
+        #: all, and that mutant survived the first version of this test. What matters is that the
+        #: drifting track sweeps a range the held objects do not.
+        drifting = [g for g in stimulus.panels[0].marks if g.role == "object-drift" and g.x]
+        held = [g for g in stimulus.panels[0].marks if g.role == "object-held" and g.x]
+        assert drifting, params
+        assert held, params
+        swept = max(max(g.x) - min(g.x) for g in drifting)
+        jitter = max(max(g.x) - min(g.x) for g in held)
+        assert swept > jitter * MIN_DRIFT_LEGIBILITY, (
+            f"{params}: the drifter sweeps {swept:.3f}° against {jitter:.3f}° of station-keeping"
+            " jitter, which is not a drift an operator can see"
+        )
+
+    held = compose(registry, "waterfall", {"days": 7, "drifting": 0}, SEED)[0].derived
+    assert held["drift_visible"] is False, "a neighbourhood with no drifter reports a drift"
+
+
+#: Every ceiling that bounds a content-supplied count, against the parameter names it governs. A
+#: clamp is the one bound that CHANGES an authored scene rather than refusing it, so no value in
+#: the shipped library may reach one: if it did, the stimulus would quietly stop matching its key.
+CEILINGS: tuple[tuple[str, float], ...] = (
+    ("headcount", MAX_NEIGHBOURHOOD_TRACKS),
+    ("intervals", MAX_INTERVALS),
+    ("fragments", MAX_FRAGMENTS),
+    ("rows", MAX_TABLE_ROWS),
+    ("hours", MAX_SCHEDULE_HOURS),
+    ("sites", MAX_SENSORS),
+    ("sensors", MAX_SENSORS),
+    ("state_change_markers", MAX_STATE_CHANGE_MARKS),
+    ("revolutions", MAX_REVOLUTIONS),
+    ("days", MAX_SPAN_DAYS),
+    ("cycles_shown", MAX_SPAN_DAYS),
+)
+
+
+def test_no_authored_value_in_the_library_is_silently_clamped(package: ContentPackage) -> None:
+    """The ceilings exist to bound a cost, not to rewrite content.
+
+    Every one of them was added after a content count produced a payload between 8 MB and 146 MB.
+    That is the right reason. But a clamp is a SILENT change to the authored scene, which is the
+    fault class this whole line of work is about, so it must never bite a real item: the day one
+    does, this fails and names it, and the answer is to fix the item or raise the ceiling
+    deliberately rather than to discover a contradicted key months later.
+    """
+    clamped: list[str] = []
+    for drill in package.drills:
+        for name, ceiling in CEILINGS:
+            value = drill.stimulus.params.get(name)
+            if isinstance(value, int | float) and not isinstance(value, bool) and value > ceiling:
+                clamped.append(f"{drill.id}: {name}={value} exceeds the {ceiling} ceiling")
+    assert not clamped, clamped

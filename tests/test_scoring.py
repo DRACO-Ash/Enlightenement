@@ -303,10 +303,55 @@ def test_a_derived_answer_token_is_matched_whole_and_never_as_a_pattern() -> Non
     from the operator's side too. Inert is the safe direction - a wild token would accept every
     answer - and the escape is what makes it inert rather than universal.
 
-    And a token matches on a word boundary, so "east" is not found inside "eastwards".
+    A token matches the START of a word, so "drifting eastwards" is accepted - it is a fully
+    correct prose answer that a strict word boundary rejected - while "southwest" is not accepted
+    for "west", because the token must begin the word rather than appear anywhere in it.
     """
     assert match_derived_text("e", {"expected_text": "east"}).matched == "none"
     assert match_derived_text("drifting east", {"expected_text": "east"}).matched == "accept"
     assert match_derived_text("anything at all", {"expected_text": (".*",)}).matched == "none"
-    assert match_derived_text("eastwards", {"expected_text": ("east",)}).matched == "none"
+    assert match_derived_text("eastwards", {"expected_text": ("east",)}).matched == "accept"
+    assert match_derived_text("southwest", {"expected_text": ("west",)}).matched == "none"
     assert match_derived_text("west", {}).matched == "unscorable"
+
+
+def test_a_numeric_answer_scores_its_magnitude_and_its_direction_separately(
+    package: ContentPackage,
+) -> None:
+    """DRL-0004: "estimate the resulting longitude drift rate ... and state the direction".
+
+    The generator's expected value is SIGNED, negative for a westward drift, so an operator
+    answering "0.12 deg/day west" was marked wrong for omitting a minus sign the prompt never
+    asked for - while the direction word the prompt did ask for was not scored at all. Before the
+    value was wired this item refused harmlessly; wiring it turned a harmless refusal into an
+    active penalty on the correct answer.
+    """
+    from enlightenment.generators import build_registry, compose
+
+    drill = package.drill("DRL-0004")
+    assert drill is not None
+    derived: dict[str, object] = {}
+    for stimulus in compose(
+        build_registry(),
+        drill.stimulus.generator,
+        drill.stimulus.params,
+        20260901,
+        drill.stimulus.product_id,
+    ):
+        derived.update(stimulus.derived)
+    expected = derived["expected_value"]
+    assert isinstance(expected, float)
+    assert expected < 0, "this item's expected rate is no longer signed, so it proves nothing"
+
+    signed = match(f"{expected:.3f} deg/day west", drill.answer, drill.response_format, derived)
+    unsigned = match(
+        f"{abs(expected):.3f} deg/day west", drill.answer, drill.response_format, derived
+    )
+    silent = match(f"{abs(expected):.3f} deg/day", drill.answer, drill.response_format, derived)
+    wrong_rate = match("5 deg/day west", drill.answer, drill.response_format, derived)
+
+    assert signed.matched == "accept"
+    assert unsigned.matched == "accept", "a correct unsigned magnitude is still marked wrong"
+    assert silent.matched == "partial", "the direction the prompt asks for is not scored"
+    assert 0 < silent.credit < 1
+    assert wrong_rate.matched == "none"

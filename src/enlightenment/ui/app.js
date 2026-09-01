@@ -92,6 +92,12 @@ function banner(message) {
 const PLOT_WIDTH = 620;
 const PLOT_HEIGHT = 260;
 const PAD = { left: 58, right: 16, top: 14, bottom: 40 };
+/* A timestamp needs more gutter than a number. 58px fits "0.003" and clipped "23 Jan 09:00Z" to
+ * "Jan 09:00Z" - the day silently sheared off the left edge of the viewBox, which is worse than a
+ * bare number because it looks like a complete label. Measured from the longest supplied tick
+ * rather than guessed, so a future label of any length still fits. */
+const TICK_CHAR_WIDTH = 7.4;
+const TICK_GUTTER = 14;
 
 /* Text inside a plot must not scale with the plot, and this is measured rather than assumed.
  * A plot in a wide column renders LARGER than its own coordinate system and one in a narrow
@@ -146,9 +152,12 @@ function drawPanel(panel) {
     style: 'display:block',
   });
 
-  const plotW = PLOT_WIDTH - PAD.left - PAD.right;
+  const supplied = (panel.y && panel.y.ticks) || [];
+  const widest = supplied.reduce((most, [, text]) => Math.max(most, String(text).length), 0);
+  const padLeft = Math.max(PAD.left, widest * TICK_CHAR_WIDTH + TICK_GUTTER);
+  const plotW = PLOT_WIDTH - padLeft - PAD.right;
   const plotH = PLOT_HEIGHT - PAD.top - PAD.bottom;
-  const sx = (value) => PAD.left + ((value - x0) / (x1 - x0)) * plotW;
+  const sx = (value) => padLeft + ((value - x0) / (x1 - x0)) * plotW;
   /* The inverted flag, honoured. Not a preference: a magnitude axis runs brighter upward. */
   const sy = (value) => {
     const t = (value - y0) / (y1 - y0);
@@ -157,21 +166,31 @@ function drawPanel(panel) {
       : PAD.top + plotH - t * plotH;
   };
 
-  for (let i = 0; i <= 4; i += 1) {
-    const y = PAD.top + (i / 4) * plotH;
-    frame.appendChild(svg('line', { x1: PAD.left, y1: y, x2: PLOT_WIDTH - PAD.right, y2: y, stroke: 'var(--grid)', 'stroke-width': 1 }));
-    const value = panel.y && panel.y.inverted
-      ? y0 + (i / 4) * (y1 - y0)
-      : y1 - (i / 4) * (y1 - y0);
+  /* An axis may supply its own ticks, and a TIMELINE must: on a waterfall the vertical axis is
+   * time, and "0.003" to "4.99" are the internals of the plot rather than anything an operator
+   * can correlate against a pass schedule or a provider post. Where ticks are supplied they are
+   * positioned by VALUE through sy(), so they land correctly whichever way the axis runs. */
+  const suppliedTicks = supplied;
+  const yTicks = suppliedTicks.length
+    ? suppliedTicks.map(([value, text]) => ({ y: sy(value), text }))
+    : Array.from({ length: 5 }, (unused, i) => {
+        const y = PAD.top + (i / 4) * plotH;
+        const value = panel.y && panel.y.inverted
+          ? y0 + (i / 4) * (y1 - y0)
+          : y1 - (i / 4) * (y1 - y0);
+        return { y, text: formatTick(value) };
+      });
+  for (const tick of yTicks) {
+    frame.appendChild(svg('line', { x1: padLeft, y1: tick.y, x2: PLOT_WIDTH - PAD.right, y2: tick.y, stroke: 'var(--grid)', 'stroke-width': 1 }));
     const label = svg('text', {
-      x: PAD.left - 8, y: y + 4, fill: 'var(--ink3)',
+      x: padLeft - 8, y: tick.y + 4, fill: 'var(--ink3)',
       'font-size': AXIS_FONT_PX, 'text-anchor': 'end', 'font-family': 'var(--data)',
     });
-    label.textContent = formatTick(value);
+    label.textContent = tick.text;
     frame.appendChild(label);
   }
   for (let i = 0; i <= 4; i += 1) {
-    const x = PAD.left + (i / 4) * plotW;
+    const x = padLeft + (i / 4) * plotW;
     const label = svg('text', {
       x, y: PLOT_HEIGHT - PAD.bottom + 20, fill: 'var(--ink3)',
       'font-size': AXIS_FONT_PX, 'text-anchor': 'middle', 'font-family': 'var(--data)',
@@ -194,7 +213,13 @@ function drawPanel(panel) {
   wrap.appendChild(frame);
   /* Deferred to the next frame, when the SVG has a box to measure. */
   requestAnimationFrame(() => sizePlotText(frame));
-  const yCaption = el('p', 'panel-note', `Vertical: ${axisCaption(panel.y)}${panel.y && panel.y.inverted ? ' · inverted, brighter upward' : ''}`);
+  /* The axis says WHY it is inverted. This read "inverted, brighter upward" for every inverted
+   * axis, which is true of a magnitude axis and nonsense on a timeline - and it was rendered on
+   * every waterfall the product has ever drawn. */
+  const inversionNote = panel.y && panel.y.inverted
+    ? ` · inverted: ${(panel.y.inversion_note || 'see the panel note')}`
+    : '';
+  const yCaption = el('p', 'panel-note', `Vertical: ${axisCaption(panel.y)}${inversionNote}`);
   wrap.appendChild(yCaption);
   for (const note of panel.notes || []) wrap.appendChild(el('p', 'panel-note', note));
   return wrap;

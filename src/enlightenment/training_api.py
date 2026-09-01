@@ -273,6 +273,9 @@ class DrillAnswer(BaseModel):
     drill_run_id: str = Field(min_length=1, max_length=64)
     response: str = Field(min_length=1, max_length=MAX_ANSWER_LENGTH)
     confidence: int = Field(ge=1, le=5)
+    #: Validated and then NOT forwarded. The client's own timer cannot decide a score, so the
+    #: field is bounded here as a wire contract - a client that sends nonsense still gets a 422 -
+    #: and the elapsed time the scorer uses is measured from the server's own `served_at`.
     elapsed_ms: int = Field(ge=0, le=3_600_000)
 
 
@@ -318,7 +321,6 @@ def _register_drill(
                 run_id=payload.drill_run_id,
                 response=payload.response,
                 confidence=payload.confidence,
-                elapsed_ms=payload.elapsed_ms,
                 operator_id=DEMONSTRATION_OPERATOR,
             )
         except DrillError as exc:

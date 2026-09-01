@@ -2,6 +2,77 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.25 (2026-09-01)
+
+**What.** Ash read a rendered waterfall and named two faults in one sentence: the time axis ran
+the wrong way and its labels were bare numbers. Fixing those exposed two more in the same panel.
+The engineering gate's third round then failed V0.24.3 with two blockers and six majors, five of
+them in code the previous two rounds had introduced. This closes all of it.
+
+**The time axis, from the owner's reading of the plot.** The axis already placed the largest time
+at the bottom and the note already said "newest observations at the bottom" - and the recency
+ramp was passed ELAPSED time, where the ramp's zero point is the most-recent stop. So the window
+start, the oldest data on the plot, was drawn in red at the top while the newest end was drawn as
+oldest: one panel making two opposite claims about which end is now, in a product where
+red-for-recency is the first thing an analyst reads. The ramp is now age-normalised and the test
+asserts the geometry and the colour together, because either alone passes while they disagree.
+
+The vertical axis is a timeline, so it carries UTC timestamps and the header states the window.
+"0.003" and "4.99" are the internals of the plot; an operator correlates a date against a pass
+schedule and a provider post. The epoch is derived from the SEED and never the clock - a
+timestamp read off the wall clock would relabel the same surface differently on every render and
+break the replay this project gates on - and the footer says "synthetic epoch, seeded", because
+it is scenario data rather than a claim about a real collection.
+
+**Two more faults the screenshot showed and the data did not.** The interface captioned every
+inverted axis "inverted, brighter upward", which is true of a magnitude axis and nonsense on a
+timeline, and it had been rendered on every waterfall this product has ever drawn; an axis now
+states its own reason. And the first attempt at date labels CLIPPED them - "23 Jan 09:00Z"
+rendered as "Jan 09:00Z", the day sheared off the edge of the viewBox, which is worse than a bare
+number because it looks complete. The gutter is measured from the longest label.
+
+**The burn, which I claimed twice and measured never.** An along-track velocity change is nearly
+PARALLEL to the velocity it modifies, so it does not turn the track: at the burn vertices the
+local turn angle is smaller than at a median sample. What it changes is the subsequent drift
+rate, in a discrete step. V0.24.2 claimed "a visible discontinuity", V0.24.3 claimed a test
+proved legibility while that test measured global divergence - which shows the track is different,
+not that three events are countable - and the item asks "how many manoeuvres are visible" at zero
+tolerance. A blind change-point detector over the distance panel finds no events at any burn
+count, because the natural loop dominates every local window.
+
+So DRL-0008 now resolves no expected value and fails closed. That is a downgrade from the claim
+and an upgrade on the behaviour: the previous version took six rating points off an operator whose
+reading was correct. The drift-rate step IS asserted, because it is real and it is what makes
+forced motion look forced. **The count needs a content decision, not more engine work.**
+
+**A fix that created the harm it was fixing.** DRL-0004's expected rate is signed, negative for a
+westward drift, and its prompt asks for the rate "and the direction". So "0.12 deg/day west" was
+marked WRONG for omitting a minus sign nobody asked for, while the direction the prompt did ask
+for went unscored. Before the value was wired the item refused harmlessly. Magnitude and
+direction are now scored separately, with a named partial for a right rate and no direction.
+
+**Three claims held by nothing.** Deleting the absurd-rate clamp left the whole suite green.
+Setting the drift onset to 0.999 of the window drew no drift with the suite green. And the header
+disclosing the clamp read "drawn to scale" - the plain assertion that the drawing represents the
+figure faithfully, which is its negation, on the one item whose lesson is "distrust a figure that
+cannot be right". All three are now asserted, the last two measured on the marks rather than on a
+derived flag.
+
+**Also.** `match_derived_text` discarded the item's authored partial and reject entries, so a
+half-correct answer the content awards 0.5 scored zero and both authored misconceptions lost
+their teaching text. `MAX_EPHEMERIS_MINUTES` bounded a renderer that draws a fixed 96 samples, so
+it could only ever silently redraw an authored span - deleted, and a new test asserts no value in
+the shipped library is clamped by any ceiling, because a clamp is the one bound that changes the
+authored scene rather than refusing it. The composite census named parameters unread that the
+renderer beneath demonstrably reads. `elapsed_ms` no longer reaches the domain at all. An
+answer-key collision between two products on one board is refused rather than resolved by draw
+order.
+
+**How verified.** Loop green, seven legs: 945 passed, 2 skipped, coverage 96.56%. Every fix
+mutation-proved, and one mutant survived the
+first version of its test (the drift onset), which is recorded here because it is the third time
+this release cycle that an assertion looked sufficient and was not.
+
 ## V0.24.3 (2026-09-01)
 
 **What.** The security gate re-ran on V0.24.2, confirmed its two earlier majors and five of its

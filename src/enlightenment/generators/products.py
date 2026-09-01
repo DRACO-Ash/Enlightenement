@@ -28,6 +28,7 @@ the first questions the job requires.
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 from enlightenment.generators.base import Axis, Column, Marks, Panel, Stimulus, rng
@@ -119,6 +120,15 @@ CROSS_TRACK_RATE_KM_S: Final = 1.1e-5
 #: happened at all, not about reading a marginal one.
 STEP_CHANGE_MAGNITUDES: Final = 0.9
 
+#: The base of the SYNTHETIC epoch a waterfall's timeline is labelled from, and how far past it a
+#: seed may place a window. Fixed rather than taken from the clock, because the same seed must
+#: relabel the same surface identically on any machine and at any time.
+SYNTHETIC_EPOCH_BASE: Final = datetime(2026, 1, 1, tzinfo=UTC)
+SYNTHETIC_EPOCH_SPAN_HOURS: Final = 365 * 24
+
+#: Labelled instants on a timeline axis. Five, to match the interface's five gridlines.
+TIME_TICKS: Final = 5
+
 #: Waterfall defaults, used only where the content states nothing.
 DEFAULT_NEIGHBOURS: Final = 14
 DEFAULT_DRIFTERS: Final = 3
@@ -136,15 +146,18 @@ MAX_SENSORS: Final = 24
 MAX_STATE_CHANGE_MARKS: Final = 40
 MAX_REVOLUTIONS: Final = 12.0
 MAX_SPAN_DAYS: Final = 60.0
-MAX_EPHEMERIS_MINUTES: Final = 2880.0
 
 #: Hard ceiling on tracks in one neighbourhood panel. A bound on a CONTENT-supplied count that
 #: reaches an unauthenticated route, and a readability limit besides: `obs_count: 18000` was
 #: briefly read as a headcount and produced 159 MB of JSON from one anonymous request.
 MAX_NEIGHBOURHOOD_TRACKS: Final = 40
 
-#: How far outside the station-keeping box a drawn drifter may travel across the whole window.
-DRIFT_EXCURSION_FACTOR: Final = 2.5
+#: How far outside the station-keeping box a CLAMPED drifter may travel across the whole window,
+#: as a multiple of the box width. 2.5 put nineteen degrees on an axis whose box is six, so the
+#: held objects - the reference an operator judges the drifter against - were squeezed into the
+#: right-hand quarter of the panel. The drifter has to leave the box visibly and the box has to
+#: stay readable, and 2.5 bought the first at the cost of the second.
+DRIFT_EXCURSION_FACTOR: Final = 1.2
 
 #: Where a drift starts when the content says only THAT it starts, as a fraction of the window.
 DEFAULT_DRIFT_ONSET_FRACTION: Final = 0.35
@@ -365,17 +378,21 @@ def _burned_track(
 ) -> list[RelativeState]:
     """The relative track, propagated in segments with a velocity change at each junction.
 
-    A manoeuvre has to be VISIBLE for "how many manoeuvres are in this relative motion" to be a
-    question about the plot rather than about a number the server picked. The first version was
-    not: a fixed 4.0e-6 km/s against an along-track rate of order 5.8e-4, seven tenths of one
-    percent, and the measured turn angle at every burn was 0.00 degrees. Its only artefact was a
-    DUPLICATED vertex, which draws as nothing. The item was then marked against a count no
-    operator could read, taking rating points from someone reading the plot correctly - worse
-    than the unscorable refusal it replaced.
+    **What a burn does here, stated accurately after getting it wrong twice.** An along-track
+    velocity change is very nearly PARALLEL to the velocity it modifies, so it does not turn the
+    track: measured at the burn vertices, the local turn angle is smaller than at a median
+    sample. What it changes is the subsequent drift rate, in a discrete step - three burns give
+    four segments whose along-track rates differ by roughly an order of magnitude, and with no
+    burns the rate is constant. That step is the real signature and it is what makes the forced
+    motion look forced.
 
-    So the burn is sized as a FRACTION OF THE MOTION rather than as an absolute figure, and the
-    duplicate vertex is gone. `tests/test_generators.py` measures the manoeuvred track against
-    the same track with no burns, so a burn that stops being legible fails the loop.
+    It is NOT a cusp, and two earlier versions of this docstring claimed one. Nor is the count
+    reliably readable: a blind change-point detector over the distance panel finds no events at
+    any burn count, because the natural loop dominates every local window. `_tric_derived`
+    therefore refuses to score the count, and the gap is recorded there.
+
+    The duplicate vertex the first version produced is gone, which was a separate and real fault:
+    two identical samples draw as nothing while looking, in the data, like an event.
     """
     if burns <= 0:
         return [propagate_relative(start, mean_motion, i * step_s) for i in range(samples)]
@@ -416,8 +433,25 @@ def _tric_derived(facts: dict[str, Any], *, asks_for_count: bool) -> dict[str, A
     item that asks how many manoeuvres are visible, and `Stimulus.for_client` strips the whole
     `derived` map, because in the browser this number IS the answer.
     """
-    if asks_for_count:
-        facts["expected_value"] = float(facts["manoeuvres"])
+    #: **The count is NOT scored, and this is a recorded gap rather than a shortcut.**
+    #:
+    #: `expected_value` was set here so DRL-0008 - "how many manoeuvres are visible in this
+    #: relative motion?", tolerance zero - could be marked. Twice I claimed the burn was legible
+    #: enough to support that, and twice the measurement said otherwise. What an along-track burn
+    #: actually does is step the subsequent DRIFT RATE; it does not put a cusp in the track,
+    #: because the velocity change is nearly parallel to the velocity it modifies. The step is
+    #: real and measurable over a whole segment, and a blind change-point detector run over the
+    #: distance panel finds NOTHING at any burn count, because the natural loop dominates every
+    #: local window. An operator counting off the plot cannot reliably reach the authored number.
+    #:
+    #: So the item fails closed: no expected value, `match` refuses it as unscorable, and no
+    #: rating moves. That is strictly better than the alternative it replaced, which took six
+    #: rating points off an operator whose reading of the plot was correct.
+    #:
+    #: **For the content author:** this needs a decision, not more engine work. Either the item
+    #: wants a product that marks state changes explicitly, or it wants a longer window where
+    #: each regime is several revolutions, or it wants a different stimulus.
+    del asks_for_count
     return facts
 
 
@@ -466,6 +500,52 @@ def _drift_onset(params: dict[str, Any], days: float) -> float:
     if isinstance(authored, int | float):
         return days * float(authored)
     return 0.0
+
+
+def _recency(observation_day: float, days: float) -> float:
+    """Age of one observation as a fraction of the window: 0.0 is the newest, 1.0 the oldest.
+
+    The interface's `ramp()` treats 0.0 as the most recent stop, so this must be AGE and not
+    elapsed time. Passing elapsed time coloured the oldest end of the plot as the newest, in a
+    product where red-for-recency is the first thing an operator reads.
+    """
+    if days <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (days - observation_day) / days))
+
+
+def _synthetic_window(days: float, seed: int) -> tuple[datetime, datetime]:
+    """The window a synthetic waterfall covers, derived from the SEED and never from the clock.
+
+    Deterministic on purpose, and it has to be: the debrief redraws exactly what the operator
+    saw from the run log alone, so a timestamp read off the wall clock would relabel the same
+    surface differently on every render and break the replay this project gates on.
+
+    The epoch is therefore SYNTHETIC and the footer says so. It is not a claim about a real
+    collection: no real observation is being asserted, the same way the noise amplitudes are
+    marked PROVISIONAL rather than presented as measured.
+    """
+    offset_hours = seed % SYNTHETIC_EPOCH_SPAN_HOURS
+    start = SYNTHETIC_EPOCH_BASE + timedelta(hours=offset_hours)
+    return (start, start + timedelta(days=days))
+
+
+def _moment(instant: datetime) -> str:
+    """One timestamp, in the day-month-time form an operator reads on the real product."""
+    return instant.strftime("%d %b %H:%MZ")
+
+
+def _stamp(window_start: datetime, observation_day: float) -> str:
+    """The timestamp of an observation given as a day offset into the window."""
+    return _moment(window_start + timedelta(days=observation_day))
+
+
+def _time_ticks(days: float, window_start: datetime) -> tuple[tuple[float, str], ...]:
+    """Five labelled instants across the window, matching the interface's five gridlines."""
+    return tuple(
+        (days * index / (TIME_TICKS - 1), _stamp(window_start, days * index / (TIME_TICKS - 1)))
+        for index in range(TIME_TICKS)
+    )
 
 
 class ResidualGenerator:
@@ -662,20 +742,43 @@ class WaterfallGenerator:
                     role=("object-drift" if drifting else "object-held"),
                     x=tuple(xs),
                     y=tuple(ys),
-                    ramp=tuple(y / max(days, 1e-9) for y in ys),
+                    #: **Recency, and it was backwards.** `ramp(0)` is the most recent stop, and
+                    #: this passed `y / days`, so the window START - the OLDEST observation in the
+                    #: plot - was drawn in the most-recent colour while the newest end was drawn
+                    #: as oldest. The geometry said newest at the bottom and the colour said
+                    #: newest at the top, on the same panel, in a product where red-for-recency
+                    #: is the convention an operator reads first. Age, normalised.
+                    ramp=tuple(_recency(y, days) for y in ys),
                 )
             )
+        #: The vertical axis is a TIMELINE, so it is labelled with timestamps. "0.003" and "4.99"
+        #: are the internals of the plot; an operator reads a date, correlates it against a pass
+        #: schedule and a provider post, and says when something happened. Numbers cannot be
+        #: correlated with anything.
+        window_start, window_end = _synthetic_window(days, seed)
         panel = Panel(
             title="Longitude over time",
             x=Axis("Longitude", "degrees"),
-            y=Axis("Observation time", "days", inverted=newest_at == "bottom"),
+            y=Axis(
+                "Observation time",
+                "UTC",
+                #: Newest nearest the longitude axis at the bottom, which is the real product's
+                #: convention. `newest_at: "top"` is authored on one item deliberately: reading a
+                #: plot whose time axis has been flipped is the skill being trained.
+                inverted=newest_at == "bottom",
+                inversion_note=f"newest nearest the longitude axis at the {newest_at}",
+                ticks=_time_ticks(days, window_start),
+            ),
             marks=tuple(marks),
             notes=(
-                f"Newest observations at the {newest_at}.",
+                f"Newest observations at the {newest_at}, nearest the longitude axis.",
                 "Objects within 50 km of the primary.",
             )
             + (
-                (f"No collection between {gap_start:.2f} and {gap_end:.2f} days.",)
+                (
+                    "No collection between"
+                    f" {_stamp(window_start, gap_start)} and {_stamp(window_start, gap_end)}.",
+                )
                 if gap_end > gap_start
                 else ()
             ),
@@ -688,15 +791,26 @@ class WaterfallGenerator:
             panels=(panel,),
             header=(
                 ("Span", f"{days:.0f} days"),
+                ("From", _stamp(window_start, 0.0)),
+                ("To", _moment(window_end)),
                 ("Window", f"{bounds[0]:+.1f}° to {bounds[1]:+.1f}° of the primary"),
             )
             + (
-                (("Reported rate", f"{reported_rate:,.0f}°/day, drawn to scale"),)
+                (
+                    (
+                        "Reported rate",
+                        f"{reported_rate:,.0f}°/day as reported; the track is drawn at"
+                        f" {drift_rate:+.2f}°/day so the panel can show it",
+                    ),
+                )
                 if drift_rate != reported_rate
                 else ()
             ),
             legend=(("Held longitude", "object-held"), ("Drifting object", "object-drift")),
-            footer=f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL",
+            footer=(
+                f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL"
+                " · synthetic epoch, seeded"
+            ),
             reads_as=(
                 "Time runs down the page with the newest data at the bottom. A vertical line is"
                 " holding station; a diagonal is drifting."
@@ -778,7 +892,7 @@ class LightCurveGenerator:
         panel = Panel(
             title="Visual magnitude against solar equatorial phase angle",
             x=Axis("Solar equatorial phase angle", "degrees", minimum=-90.0, maximum=90.0),
-            y=Axis("Visual magnitude", "mag", inverted=True),
+            y=Axis("Visual magnitude", "mag", inverted=True, inversion_note="brighter upward"),
             marks=tuple(marks),
             notes=(f"Specular feature near {glint_at:.0f}°.", "Interval 0 is the most recent."),
         )
@@ -1341,9 +1455,12 @@ class EphemerisGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        minutes = min(
-            float(params.get("elapsed_min", params.get("minutes", 96))), MAX_EPHEMERIS_MINUTES
-        )
+        #: NOT clamped. This renderer draws a fixed 96 samples whatever the span, so a ceiling
+        #: here bounds no cost, and its only possible effect is to silently redraw an authored
+        #: time span as a shorter one - the fault class this whole line of work is about. A clamp
+        #: CHANGES the authored scene rather than refusing it, so it is only justified where it
+        #: prevents a real cost. `MAX_EPHEMERIS_MINUTES` was deleted for exactly that reason.
+        minutes = float(params.get("elapsed_min", params.get("minutes", 96)))
         ballistic = bool(params.get("ballistic", False))
         samples = 96
         earth_radius = 6378.137
