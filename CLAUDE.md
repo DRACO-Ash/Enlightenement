@@ -126,6 +126,13 @@ requirements*.txt           hash-locked dependencies (the python template marker
   deployed", and the SHA-256 is not a substitute: nobody quotes a digest in a conversation. Six
   tests bind the version across both stamps, `docs/CHANGELOG.md`, the deploy checklist, the
   submission manifest and the artefact, so a missed site fails the loop rather than shipping.
+  **This was not true of the changelog until V0.26.6**, and the correction belongs here rather
+  than only in the entry: the binding asserted `## V{major}.{minor} ` and so was satisfied by any
+  older heading in the same minor series. A patch release with no audit row shipped green, which
+  is every release this project makes. Not a shortcut but a mistake about what varies - the patch
+  is the component that identifies a build here, so major.minor was precisely the wrong half to
+  assert. A binding test that binds less than it claims is worse than no test, because the claim
+  is what stops anyone looking.
 - The App Store slug is `enlightenment`: lowercase, alphanumeric, no hyphen at all, so it
   cannot trip the double-hyphen naming fault that fails a pipeline with zero stages run.
 

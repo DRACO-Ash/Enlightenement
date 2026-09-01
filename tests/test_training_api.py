@@ -617,12 +617,28 @@ def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gut
     #: second of them. Bound to the shape now, and the shape is all a grep can hold: whether a
     #: browser then collects the observer is not asserted anywhere and is not meant to be, because
     #: the point of the release is that the code no longer depends on the answer.
+    #:
+    #: **THESE REJECT BEHAVIOUR-IDENTICAL REFACTORS, and no JavaScript formatter runs in the loop
+    #: to trip them automatically.** Measured: brace-wrapping the `while` body, swapping the push
+    #: above the `observe` call, and rewriting the drain as
+    #: `for (const refit of plotRefits.splice(0)) refit.disconnect();` are all correct code and all
+    #: fail here. Deliberate, because it fails closed - but DECLARED, so the next author reformats
+    #: this test rather than reverting the code it holds. The known survivor is the mirror image:
+    #: inserting `plotRefits.splice(0);` after the push is a real leak both regexes accept, because
+    #: it is an insertion and no mutation operator produces one. Closing that needs a JavaScript
+    #: runtime the loop does not have.
     assert re.search(r"refit\.observe\(frame\);\s*\n\s*plotRefits\.push\(refit\);", script), (
         "the observer is created and never tracked, so releasePlotRefits has nothing to release"
     )
-    assert re.search(
-        r"while \(plotRefits\.length\)\s*plotRefits\.pop\(\)\.disconnect\(\);", script
-    ), "the release does not drain the list, so a multi-panel composite leaks all but one observer"
+    #: TWO assertions, not one. A single regex over the whole statement fired its DRAIN message
+    #: for a DISCONNECT defect, which is a diagnosis that sends a reader to the wrong line - the
+    #: fault this file's own truncation-mark rationale names one test along.
+    assert re.search(r"while \(plotRefits\.length\)", script), (
+        "the release does not drain the list, so a multi-panel composite keeps all but one observer"
+    )
+    assert re.search(r"plotRefits\.pop\(\)\.disconnect\(\);", script), (
+        "the release empties the list without disconnecting: observers dropped still live"
+    )
     assert re.search(r"releasePlotRefits\(\);\s*\n\s*clear\(", script), (
         "the release does not run before the redraw clears the frames it observes"
     )

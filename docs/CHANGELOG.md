@@ -2,6 +2,88 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.6 (2026-09-01)
+
+**What.** Both gates passed V0.26.5 - the first commit in this project where engineering and
+security have passed the same build. Neither found a blocker or a major. Between them they left ten
+minors, and this release takes all ten. Two of them were false claims of mine and one was a false
+claim in `CLAUDE.md`.
+
+**A refusal must not quote content.** The security gate proved a disclosure channel rather than
+arguing one: it set `newest_at` to a real accept string from DRL-0005's own key, and the anonymous
+`/api/v1/content/manifest` served the string back inside `withheld_reasons`. Nothing scoreable
+travelled, because `newest_at` is a two-value layout flag, and nothing bound the message either. A
+validation refusal now names the KEY and its DOMAIN. Structural identifiers - a generator name, a
+product id - are still named, because a typo in one is undiagnosable otherwise, and both are
+length-bounded on the way out.
+
+**A count cap and a length cap are different bounds.** Three surfaces carried the same fault, and
+the withhold reason bounded at V0.26.3 was the third of them rather than the only one. The anonymous
+content 503 capped the error LIST at twenty and not the errors: reproduced exactly, twenty errors,
+the longest 4,253 characters, 85 kB served without a token. The manifest capped
+`stimulus_params_unread.params` at twenty-five entries and not the NAMES: a 500-character authored
+key served verbatim, and an unread parameter is by definition one no renderer honours, so any string
+becomes a key there just by being authored. And the withheld item ID was raw content at both write
+sites: forty items with 3,003-character ids produced a 243,539-byte anonymous manifest, of which
+242 kB was ids and 32 characters was the longest reason - under a comment saying content does not
+get to set the size of an anonymous response.
+
+**And bounding the key alone made the message useless.** Every refusal prefixes its message with
+the item id, so a 3,004-character id filled `MAX_WITHHOLD_REASON` before the sentence began: the
+served reason was the id and the truncation marker, and the diagnosis was truncated away. That is
+the exact failure the mark exists to prevent, produced by the fix for a different fault. The id is
+bounded where the reason is composed as well as where it is stored.
+
+**`MAX_WITHHOLD_REASON` is 256 CODE POINTS.** Measured: 256 astral characters are 988 UTF-8 bytes,
+so the 140-item ceiling is about 138 kB, not the 36 kB a reader computes from "256 x 140". Stated
+rather than quietly changed. The code-point cap is kept, because buying four times on an
+already-bounded response is not worth a new way to emit invalid UTF-8.
+
+**A guard held before it is load-bearing.** `re.escape` on the derived direction token survives
+deletion, because `expected_text` is only ever one of four literals today. Unheld rather than
+exploitable, and both readings are right - the guard is the cheaper of the two things to keep. A
+metacharacter-bearing token would either raise `re.error` inside scoring, failing an operator's
+submission on content they cannot see, or silently match something the plot never drew.
+
+**A binding test that did not bind, and the false claim it supported.** The changelog version
+assertion read `f"## V{major_minor} "`, so it looked for `## V0.26 ` and was satisfied by any older
+V0.26.x heading. The gate defeated it two ways: renaming the newest heading to `## V0.27.9`, and
+suffixing it to `## V0.26.55`, both green. **A patch release with no audit row shipped green**, while
+`CLAUDE.md` claimed six tests bind this document "so a missed site fails the loop rather than
+shipping". The major.minor form was not a shortcut but a mistake about what varies: this project
+bumps the patch on EVERY change by owner decision, so major.minor is precisely the component that
+does not identify a build. It asserts the full version now, and both defeats fail.
+
+**A diagnosis that sent a reader to the wrong line.** One regex covered both the drain and the
+disconnect, so dropping `.disconnect()` reported "the list is not drained" - and the list IS
+drained, `pop()` empties it; the observers are simply dropped still live. Two assertions now, with
+their own messages, each verified against its own mutation. The changelog row that described it
+wrongly is corrected too.
+
+**Declared brittleness.** The two shape regexes reject three behaviour-identical refactors, and no
+JavaScript formatter runs in the loop to trip them. That is deliberate and fails closed, but it was
+undeclared: the comment now names which reformats will trip it, so the next author reformats the
+test rather than reverting the code. The known survivor is named in the same place - inserting
+`plotRefits.splice(0);` after the push is a real leak both regexes accept, because it is an
+insertion and no mutation operator produces one.
+
+**Ledger corrections.** The V0.26.5 table described "every guard the two releases add"; four of its
+ten rows are pre-existing guards newly BOUND, not new code. And it omitted the truncation mark,
+which is a separate control from the length bound with its own killing mutation. Both fixed, and
+every row re-verified by running it rather than by reading it.
+
+**How it was verified.** Loop green on all seven legs: 972 passed, 2 skipped, coverage 97.40%.
+Fourteen mutations this round, each killed by the test written for it, each applied with a
+`count(old) == 1` guard. Four register rows.
+
+**Three test harnesses of mine that asserted nothing, all caught before commit.** One stretched an
+item id in the parsed JSON after the package had loaded, so `_named` refused an id the library did
+not have and `pytest.raises` passed on the wrong error. One bounded only the load-time withhold and
+left the serve-time write site alive. One built a hostile content tree as a lone `drills.json` in an
+empty directory, so loading stopped at "missing: cues.json", the errors were 44 characters, and the
+mutation survived - the error had to be the one that quotes content, which only the real tree with
+one poisoned field produces.
+
 ## V0.26.5 (2026-09-01)
 
 **What.** The engineering gate failed V0.26.4 with one major, and it is the same pattern a THIRD
@@ -24,8 +106,8 @@ sibling control on the same message already carried that rule.
 **A count is not evidence.** V0.26.4 said "six mutations this round, each killed by its own test",
 in the entry that records "mutate every guard the range ADDS" as its own lesson. A count cannot be
 checked by a reader, and it was not even true: that range added a guard whose inversion survived the
-whole suite. Replaced with a table of every guard the two releases add, the mutation applied to each
-and how it fails.
+whole suite. Replaced with a table of every guard these two releases add OR NEWLY BIND, the mutation
+applied to each and how it fails.
 
 **Placement recorded rather than left to be guessed.** `releasePlotRefits()` sits outside
 `loadDrill`'s `try`, deliberately, and now says so: the array only ever holds ResizeObserver
@@ -33,7 +115,9 @@ instances created under the `typeof` guard and `disconnect()` does not throw, bu
 that could throw would reject before `banner(error.message)` exists, leaving the operator with the
 loading text and no error.
 
-**How it was verified, enumerated rather than counted.**
+**How it was verified, enumerated rather than counted.** Every guard these two releases add
+OR NEWLY BIND, and the mutation applied to each. Rows one to four are pre-existing guards given a
+driver, not new code: the fold guard and the `_withhold` dedupe both pre-date V0.26.4.
 
 | Guard | Mutation | Result |
 | --- | --- | --- |
@@ -42,11 +126,12 @@ loading text and no error.
 | `drill.py` dedupe, reason half only | log on every call | fails on the log-line count |
 | `drill.py` dedupe, log half only | reason overwritten | fails on the kept reason |
 | `drill.py` `_bounded_reason(str(last))` | reverted to `{last}` | fails at 3,061 characters |
+| `drill.py` `bounded_reason` truncation mark | dropped, bound kept | fails on the missing mark |
 | `app.js` `releasePlotRefits()` call | deleted | fails on the call ordering |
 | `app.js` `releasePlotRefits()` call | moved after `clear()` | fails on the call ordering |
 | `app.js` `plotRefits.push(refit)` | deleted | fails: nothing is tracked |
 | `app.js` `while` in the release | narrowed to `if` | fails: the list is not drained |
-| `app.js` `.disconnect()` | dropped from the pop | fails: the list is not drained |
+| `app.js` `.disconnect()` | dropped from the pop | fails: observers dropped still live |
 
 Loop green on all seven legs: 967 passed, 2 skipped, coverage 97.19%.
 

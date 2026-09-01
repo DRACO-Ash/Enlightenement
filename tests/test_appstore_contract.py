@@ -1714,13 +1714,24 @@ def test_the_changelog_carries_a_row_for_the_version_being_shipped() -> None:
     a state three commits stale and still said the container image was unverified after two
     commits had changed exactly that. The version-parity test did not cover the changelog, so
     this closes the same gap for the record rather than only for the code.
+
+    **The FULL version, not major.minor. Corrected at V0.26.6 after the engineering gate defeated
+    this two ways.** The assertion read `f"## V{major_minor} "`, so it looked for `## V0.26 ` and
+    was satisfied by any V0.26.x heading already in the file: renaming the newest heading to
+    `## V0.27.9`, and suffixing it to `## V0.26.55`, both left the suite green. A PATCH release
+    with no audit row therefore shipped green, while `CLAUDE.md` claimed six tests bind this
+    document "so a missed site fails the loop rather than shipping". That claim was false for the
+    only release cadence this project actually uses: every change bumps the patch.
+
+    The major.minor form was not a shortcut, it was a mistake about what varies. This project bumps
+    the patch on every change by owner decision, so major.minor is exactly the component that does
+    NOT identify a build.
     """
     version = _pyproject()["project"]["version"]
-    major_minor = ".".join(version.split(".")[:2])
     changelog = (ROOT / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
-    heading = f"## V{major_minor} "
+    heading = f"## V{version} "
     assert heading in changelog, (
-        f"docs/CHANGELOG.md has no audit row for V{major_minor}; newest headings are "
+        f"docs/CHANGELOG.md has no audit row for V{version}; newest headings are "
         f"{re.findall(r'^## (V[0-9.]+)', changelog, re.MULTILINE)[:3]}"
     )
 
