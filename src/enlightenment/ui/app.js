@@ -227,6 +227,19 @@ function drawPanel(panel) {
   wrap.appendChild(frame);
   /* Deferred to the next frame, when the SVG has a box to measure. */
   requestAnimationFrame(() => sizePlotText(frame));
+  /* And again on resize, because the refit is what makes the no-clipping guarantee true and it
+   * ran only at draw time: dragging a window narrower left the stale gutter in place until the
+   * next redraw, which is the clipped-label fault returning by another route.
+   *
+   * The viewBox is RESET to nominal first. Without that the widening ratchets: each resize
+   * measures against an already-widened box and grows it again, and the plot shrinks away. */
+  if (typeof ResizeObserver === 'function') {
+    const refit = new ResizeObserver(() => {
+      frame.setAttribute('viewBox', `0 0 ${PLOT_WIDTH} ${PLOT_HEIGHT}`);
+      sizePlotText(frame);
+    });
+    refit.observe(frame);
+  }
   /* The axis says WHY it is inverted. This read "inverted, brighter upward" for every inverted
    * axis, which is true of a magnitude axis and nonsense on a timeline - and it was rendered on
    * every waterfall the product has ever drawn. */
@@ -285,7 +298,16 @@ function sizePlotText(frame) {
     let maxX = viewBox.x + viewBox.width;
     let maxY = viewBox.y + viewBox.height;
     for (const text of frame.querySelectorAll('text')) {
-      const bounds = text.getBBox();
+      /* getBBox is guarded because it is not universally safe on an unrendered subtree: measured
+       * in Chromium it returns zeros inside a display:none container, and other engines throw
+       * rather than returning. A throw here would escape the requestAnimationFrame callback. The
+       * degraded path is the nominal build-time gutter, which is correct at full width. */
+      let bounds;
+      try {
+        bounds = text.getBBox();
+      } catch (unmeasurable) {
+        return;
+      }
       if (!bounds.width && !bounds.height) continue;
       minX = Math.min(minX, bounds.x);
       minY = Math.min(minY, bounds.y);
