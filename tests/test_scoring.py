@@ -404,25 +404,100 @@ def test_a_computed_item_still_awards_the_credit_its_content_authors(
 
 
 def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one() -> None:
-    """Widening the token match to a prefix let a wrong answer score full credit.
+    """The contradiction check, which was wrong in BOTH directions before this.
 
-    `\\btoken\\w*` accepted "eastwest" and "eastasdfgh" as a correct reading of an eastward drift,
-    and the anywhere-in-the-response search accepted "not east" and "east or west" - an operator
-    naming two directions, or denying the right one, collecting the mark. Full credit for a
-    self-contradictory answer moves a rating that was not earned, which is worse than the
-    pedantry the widening was fixing.
+    It refused correct answers: any "no", "not", "never" or "neither" anywhere in the response
+    triggered it, so "drifting east, no doubt about it", "east, definitely not stationary" and
+    "0.279 deg/day west, no reversal in the trend" all lost credit for a correct reading. And it
+    missed the denials it existed for: "it doesn't drift east", "cannot be east" and "east is
+    wrong" all scored full credit.
+
+    Now two rules. Naming a direction that was not drawn is exact and sound. Denying the drawn one
+    is scoped to a short window BEFORE the direction, which is what stops it firing on a negation
+    about something else.
+
+    **The residual is named rather than claimed closed** - see the group D cases, which still
+    score. Open-ended denial is a semantics problem, and two attempts at widening this check each
+    created a worse fault than the one they closed. Over-refusing a correct reading is the more
+    expensive error, so the check stays narrow and this test records what it does not catch.
     """
     drawn = {"expected_text": ("east",)}
-    for right in ("east", "drifting eastwards", "it is drifting east", "eastern drift"):
+
+    # A. Correct readings, including ones carrying an unrelated negation.
+    for right in (
+        "east",
+        "drifting east",
+        "drifting eastwards",
+        "eastern drift",
+        "drifting east, no doubt about it",
+        "east, definitely not stationary",
+        "east neither fast nor slow",
+        "drifting east and the rate is not constant",
+        "the object is drifting east rather than holding station",
+    ):
         assert match_derived_text(right, drawn).matched == "accept", right
+
+    # B. Denials of the drawn direction, and answers naming another one.
     for wrong in (
-        "eastwest",
-        "eastasdfgh",
         "not east",
+        "definitely not east",
+        "isnt drifting east",
+        "no east",
         "east or west",
         "it is drifting west, not east",
         "southwest",
         "west",
+        "eastwest",
+        "eastasdfgh",
         "e",
     ):
         assert match_derived_text(wrong, drawn).matched != "accept", wrong
+
+    # C. Token spelling and compounds must not refuse a correct answer.
+    assert match_derived_text("drifting east", {"expected_text": ("eastward",)}).matched == "accept"
+    assert match_derived_text("north-east", {"expected_text": ("northeast",)}).matched == "accept"
+    assert match_derived_text("northeast", {"expected_text": ("northeast",)}).matched == "accept"
+    assert match_derived_text("south", {"expected_text": ("northeast",)}).matched != "accept"
+
+    # D. THE RECORDED GAP. These are denials the scoped rule does not catch, and they score.
+    #    Listed so the limit is visible and a future widening starts from the truth.
+    for uncaught in ("it doesnt drift east", "cannot be east", "east is wrong", "hardly east"):
+        assert match_derived_text(uncaught, drawn).matched == "accept", (
+            f"{uncaught!r} is now refused, which is an improvement - move it into group B and"
+            " delete it from this list"
+        )
+
+
+def test_an_unrelated_negation_does_not_cost_a_correct_numeric_answer(
+    package: ContentPackage,
+) -> None:
+    """The same fault through the magnitude-and-direction path, on real content.
+
+    DRL-0004 asks for a rate and a direction. "0.279 deg/day west, no reversal in the trend" is a
+    complete correct answer and was scored `partial 0.5` with a note telling the operator to state
+    the direction they had just stated.
+    """
+    from enlightenment.generators import build_registry, compose
+
+    drill = package.drill("DRL-0004")
+    assert drill is not None
+    derived: dict[str, object] = {}
+    for stimulus in compose(
+        build_registry(),
+        drill.stimulus.generator,
+        drill.stimulus.params,
+        20260901,
+        drill.stimulus.product_id,
+    ):
+        derived.update(stimulus.derived)
+    expected = derived["expected_value"]
+    assert isinstance(expected, float)
+
+    for answer in (
+        f"{abs(expected):.3f} deg/day west",
+        f"{abs(expected):.3f} deg/day west, no reversal in the trend",
+        f"{abs(expected):.3f} deg/day west, definitely not station-keeping",
+    ):
+        assert match(answer, drill.answer, drill.response_format, derived).matched == "accept", (
+            answer
+        )

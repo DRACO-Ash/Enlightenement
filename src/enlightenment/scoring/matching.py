@@ -42,6 +42,13 @@ PARTIAL_DIRECTION_CREDIT: Final = 0.5
 #: Suffixes a direction word may legitimately carry in prose. Bounded on purpose: an open `\w*`
 #: accepted "eastwest" and "eastasdfgh" as a correct reading of an eastward drift.
 DIRECTION_SUFFIXES: Final = r"(?:ward|wards|erly|ern)?"
+#: The same suffixes as plain words, for reducing a token to its stem.
+DIRECTION_SUFFIX_WORDS: Final = ("wards", "ward", "erly", "ern")
+
+#: How many words may sit between a negation and the direction it denies. Small on purpose: the
+#: unscoped version searched the whole response and refused correct answers whose negation was
+#: about something else entirely.
+NEGATION_WINDOW_WORDS: Final = 2
 
 #: The compass vocabulary a drift direction is stated in. Domain fact, not content: used to notice
 #: that a response names a direction which was NOT drawn.
@@ -234,22 +241,81 @@ def match_text(response: str, answer: Answer) -> Match:
     return Match("none", 0.0)
 
 
-def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
-    """Whether the response names a direction other than the drawn one, or denies it.
+def _compass_stem(word: str) -> str:
+    """A direction word reduced to its compass stem, hyphens closed up.
 
-    The compass vocabulary is domain fact rather than content: there are eight of them and they
-    are the words a drift direction is stated in. A response naming one that was not drawn, or
-    prefixed by a negation, is not a correct reading however well it also names the right one.
+    Two things this fixes, both measured. A generator emitting `("eastward",)` was compared
+    literally against the eight canonical words, so it matched none of them and EVERY correct
+    answer was refused as naming a direction that was not drawn. And "north-east" typed against
+    a drawn "northeast" matched both halves as separate directions and was refused, because
+    normalisation keeps the hyphen.
     """
-    wanted = {token.casefold() for token in tokens}
-    named = {
+    closed = word.casefold().replace("-", "").replace(" ", "")
+    for suffix in DIRECTION_SUFFIX_WORDS:
+        if closed.endswith(suffix) and closed[: -len(suffix)] in COMPASS_DIRECTIONS:
+            return closed[: -len(suffix)]
+    return closed
+
+
+def _closed(typed: str) -> str:
+    """The response with hyphens closed up, so "north-east" reads as the compound it is.
+
+    Hyphens only. Removing spaces as well would destroy the word boundaries every pattern here
+    relies on, and "drifting east" would stop matching "east".
+    """
+    return typed.replace("-", "")
+
+
+def _directions_named(typed: str) -> set[str]:
+    """Which compass directions the response names.
+
+    A compound absorbs its halves: with word boundaries "northeast" cannot match `\bnorth\b`,
+    and the filter below is belt and braces for any vocabulary added later. Counting a compound
+    as two directions made every correct compound answer look self-contradictory.
+    """
+    closed = _closed(typed)
+    found = {
         direction
         for direction in COMPASS_DIRECTIONS
-        if re.search(rf"\b{direction}{DIRECTION_SUFFIXES}\b", typed)
+        if re.search(rf"\b{direction}{DIRECTION_SUFFIXES}\b", closed)
     }
-    if named - wanted:
+    return {stem for stem in found if not any(stem != other and stem in other for other in found)}
+
+
+def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
+    """Whether the response names a direction other than the drawn one, or denies the drawn one.
+
+    Two rules, and the difference between them matters because the second was wrong in both
+    directions and is now deliberately narrow.
+
+    ● NAMES ANOTHER DIRECTION. Sound and exact: the compass vocabulary is domain fact, there are
+      eight words, and an answer naming one that was not drawn has not read the plot. Compared on
+      STEMS so "eastward" and "north-east" behave.
+    ● DENIES THE DRAWN ONE. Scoped to a short window BEFORE the direction, because the first
+      version searched the whole response for any "no", "not", "never" or "neither" and so
+      refused "drifting east, no doubt about it", "east, definitely not stationary" and
+      "0.279 deg/day west, no reversal in the trend" - correct answers, penalised, which is the
+      harm this module documents at the magnitude-and-direction branch.
+
+    **NAMED GAP, recorded rather than papered over.** The scoped rule catches "not east" and
+    "isn't drifting east". It does NOT catch open-ended denial: "it doesn't drift east", "cannot
+    be east", "east is wrong", "anything but east", "hardly east" all still score. Those are a
+    semantics problem, not a regex problem, and two attempts at widening this check have each
+    created a worse fault than the one they closed. Over-refusing a correct reading is the more
+    expensive error, so the check stays narrow and this paragraph is the disclosure.
+    """
+    wanted = {_compass_stem(token) for token in tokens}
+    if _directions_named(typed) - wanted:
         return True
-    return any(re.search(rf"\b{negation}\b", typed) for negation in NEGATIONS)
+    closed = _closed(typed)
+    return any(
+        re.search(
+            rf"\b{negation}\b(?:\W+\w+){{0,{NEGATION_WINDOW_WORDS}}}\W+{re.escape(stem)}",
+            closed,
+        )
+        for negation in NEGATIONS
+        for stem in {_compass_stem(token) for token in tokens}
+    )
 
 
 def match_derived_text(
@@ -292,7 +358,15 @@ def match_derived_text(
             0.0,
             note="Name one direction. The answer given names more than one, or denies it.",
         )
-    if any(re.search(rf"\b{re.escape(token)}{DIRECTION_SUFFIXES}\b", typed) for token in tokens):
+    #: Matched on the token's compass STEM against the hyphen-closed response, so a generator
+    #: emitting `("eastward",)` still accepts "drifting east", and a typed "north-east" still
+    #: accepts against a drawn "northeast". Both were refused before, which would have marked
+    #: every correct answer wrong the day a generator spelled its token differently.
+    closed_response = _closed(typed)
+    if any(
+        re.search(rf"\b{re.escape(_compass_stem(token))}{DIRECTION_SUFFIXES}\b", closed_response)
+        for token in tokens
+    ):
         return Match("accept", 1.0)
 
     #: **The item's authored partial and reject entries still apply.** This matcher consulted
