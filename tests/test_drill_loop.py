@@ -815,9 +815,64 @@ def test_a_refusing_pool_raises_the_budget_error_after_exactly_the_allowed_attem
     #: content cannot spin a request while an operator waits.
     assert 1 < MAX_SELECTION_ATTEMPTS <= READABLE_SELECTION_CEILING, MAX_SELECTION_ATTEMPTS
     assert "selection budget" in str(refusal.value), str(refusal.value)
+    #: And this exit is bounded too. It carries a content-sized reason and reaches the
+    #: unauthenticated /api/v1/drill/next as a 503 detail, so the bound applied at `_withhold`
+    #: covers one of two exits unless it is applied here as well.
+    long_refusal = "Y" * 3000
+
+    def refuses_at_length(item: Any, seed: int) -> ServedDrill:
+        raise DrillError(long_refusal)
+
+    loop._serve_one = refuses_at_length  # type: ignore[method-assign]
+    with pytest.raises(DrillError) as oversize:
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR)
+    assert len(str(oversize.value)) <= MAX_WITHHOLD_REASON + 128, (
+        f"the budget message is content-sized: {len(str(oversize.value))} characters"
+    )
     #: And it carries the last reason. A bare "budget spent" tells an author nothing about WHY
     #: every candidate refused, which is the only actionable half of the message.
     assert attempts[-1] in str(refusal.value), str(refusal.value)
+
+
+def test_an_item_keeps_its_first_withhold_reason_and_logs_it_once(
+    loop: DrillLoop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """First reason wins, and the log line fires once. Neither was held by anything.
+
+    Inverting the dedupe to last-writer-wins left all 966 tests green, and coverage named the gap
+    outright: `411->exit` is a missing branch arc, so the "already withheld" path was never taken
+    anywhere in the suite. The V0.26.3 range added a seven-line paragraph defending this control
+    and no driver for it, which is the pattern that release's own changelog names.
+
+    Both halves matter. The reason an operator and an author see should be the one that explains
+    why the item was never served, not whichever refusal happened last. And `_named` does not
+    consult `_unresolvable`, so a named item that keeps refusing keeps reaching `_withhold`: with
+    the dedupe inverted, every anonymous request for it writes another line to the append-only run
+    log, unbounded.
+
+    Driven through `serve(item_id=...)` twice rather than by calling `_withhold` directly, because
+    that is the path on which the case actually arises.
+    """
+    lines: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "enlightenment.training.drill.log_event",
+        lambda event, **fields: lines.append({"event": event, **fields}) or "",
+    )
+    calls = iter(("the first refusal", "the second refusal"))
+
+    def refuses_differently(item: Any, seed: int) -> ServedDrill:
+        raise DrillError(next(calls))
+
+    loop._serve_one = refuses_differently  # type: ignore[method-assign]
+    for _ in range(2):
+        with pytest.raises(DrillError):
+            loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-0005")
+
+    assert loop.manifest()["withheld_reasons"]["DRL-0005"] == "the first refusal", (
+        "the later refusal overwrote the reason that explains why the item was never served"
+    )
+    withheld = [line for line in lines if line["event"] == "drill.withheld"]
+    assert len(withheld) == 1, f"the run log gained a line per request: {withheld}"
 
 
 def test_a_named_item_is_attempted_once_and_never_retried(loop: DrillLoop) -> None:

@@ -2,6 +2,65 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.4 (2026-09-01)
+
+**What.** The engineering gate's sixth round failed V0.26.3 with two majors, and both were controls
+inside the changes I had just made: it ran 21 mutations against my twelve and found two that
+survive inversion with the whole suite green. Its verdict on my twelve was that the claim is true
+and not sufficient, which is the correct reading.
+
+**A comment named the wrong pair, so the test written from it never reached the control.** The
+spaced-compound fold added in V0.26.3 is guarded by `if joined in COMPASS_DIRECTIONS`, and deleting
+that guard left 966 tests green while giving `"east west east"` full credit for an eastward drift -
+a self-contradictory answer, scored correct. The root cause is not the code. The comment said the
+guard exists "so `north west` stays two directions", and that is false: `"northwest"` IS in
+`COMPASS_DIRECTIONS`, so `"north west"` folds like any other compound and is refused, when wrong,
+by the names-another-direction rule. The guard's real domain is the pairs that form NO compound.
+I wrote the test from the comment rather than from the code, so both of its cases fold and neither
+reaches the guard. Group F now carries `"east west east"`, `"east west, definitely east"` and
+`"north south east"`, and keeps the folding pair separately so the two paths stay distinguishable.
+
+**A control closed with prose alone, in the release whose own entry names that pattern.** V0.26.3
+answered the dedupe minor with a seven-line paragraph defending first-reason-wins and no driver for
+it. Inverting the guard to last-writer-wins left all 966 tests green, and the coverage report had
+already named the gap: the already-withheld branch was never taken anywhere in the suite. The
+rationale was sound - `_named` does not consult the withheld set, so the case genuinely arises, and
+the load-time reason is the one that explains why an item was never served - but a sound rationale
+is not a test. Both halves are now driven: the reason kept is the first, and `drill.withheld`
+appears once rather than once per anonymous request against an item that keeps refusing.
+
+**A bound applied at one of two exits is a bound at neither.** The budget message added in V0.26.3
+interpolated the raw refusal, which is a content-sized string, and that message reaches the
+unauthenticated `/api/v1/drill/next` as a 503 detail - the exact principle `MAX_WITHHOLD_REASON`
+was added for two commits earlier. Not a regression, since the code it replaced re-raised the same
+unbounded error directly, and the gate could not reach the path from authored content. Bounded
+anyway, and asserted at 3,000 characters.
+
+**An inference of mine that did not follow from the code.** I recorded that the `ResizeObserver`
+needed no `disconnect()`, because the observer and its frame become unreachable together when
+`clear()` drops the subtree. The gate's objection is correct and I accept it: `observe()` registers
+the observer on its target's Document, not on the local variable that created it, so the retaining
+edge is Document to observer to target and whether it is weak is an implementation detail rather
+than a guarantee. It is also per-redraw, not one-off - a fifty-drill session builds fifty observers.
+The conclusion may still be right in Chromium; the reasoning did not establish it, and a
+`disconnect()` is shorter than the argument. Observers are now tracked and released before each
+redraw clears the frames they watch.
+
+**A tripwire named as one.** The route-level length assertion added in V0.26.3 cannot fail on the
+shipped library, because the only withheld reason is 32 characters. The bound is held by the
+drill-loop test that authors an oversized parameter; this one exists so a future long reason fails
+on the served body. Said plainly rather than left to read as coverage it is not.
+
+**Where the gate was right about my method.** Twelve mutations, each killed, was a true claim about
+twelve mutations and not a claim about the changed region. Two controls in that region survived
+inversion. The lesson recorded for the next round: mutate every guard the range ADDS, not only the
+ones a finding named.
+
+**How it was verified.** Loop green on all seven legs: 967 passed, 2 skipped, coverage 97.19%. Six
+mutations this round, each killed by its own test. One more register row, and two rows extended,
+because the citation sweep failed the loop until they existed - the second round running in which
+that check has caught me before a reviewer did.
+
 ## V0.26.3 (2026-09-01)
 
 **What.** The engineering gate's sixth round failed V0.26.2 with four majors, and two of them were

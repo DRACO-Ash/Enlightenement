@@ -64,6 +64,18 @@ function svg(tag, attributes) {
   return node;
 }
 
+/* Every live plot refit, so a redraw can release the ones whose frame it is about to discard.
+ * A ResizeObserver is registered on its target's Document, not on the local variable that
+ * created it, so "the observer and the frame become unreachable together" does not follow from
+ * this code - it depends on whether the engine makes that edge weak, which is an implementation
+ * detail rather than a guarantee. A 50-drill session builds 50 observers over detached subtrees
+ * on that reading, and disconnecting them is shorter than the argument for not needing to. */
+const plotRefits = [];
+
+function releasePlotRefits() {
+  while (plotRefits.length) plotRefits.pop().disconnect();
+}
+
 function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
@@ -239,6 +251,7 @@ function drawPanel(panel) {
       sizePlotText(frame);
     });
     refit.observe(frame);
+    plotRefits.push(refit);
   }
   /* The axis says WHY it is inverted. This read "inverted, brighter upward" for every inverted
    * axis, which is true of a magnitude axis and nonsense on a timeline - and it was rendered on
@@ -525,6 +538,7 @@ async function loadDrill() {
   document.getElementById('reveal').classList.add('hidden');
   document.getElementById('answer-form').classList.add('hidden');
   document.getElementById('drill-prompt').textContent = 'Loading a drill…';
+  releasePlotRefits();
   clear(document.getElementById('stimuli'));
   try {
     const drill = await api('/api/v1/drill/next');

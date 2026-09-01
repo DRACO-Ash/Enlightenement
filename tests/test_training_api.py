@@ -522,6 +522,16 @@ def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gut
     #: and throws rather than returning in other engines, and this call sits inside a
     #: requestAnimationFrame callback, where a throw escapes silently and abandons the refit
     #: half-applied. Asserting "getBBox in script" above holds the measurement, not the guard.
+    #: AND the observers are released on redraw. `observe()` registers on the target's Document,
+    #: not on the local variable that created it, so an argument that the observer and its frame
+    #: become unreachable together does not follow from this source - it rests on whether the
+    #: engine makes that edge weak. A drill fetch builds a fresh observer per panel, so a long
+    #: session accumulates them over detached subtrees on that reading.
+    assert "releasePlotRefits" in script, "a redraw discards the frame and keeps its observer"
+    assert ".disconnect()" in script, "the observers are tracked and never released"
+    assert re.search(r"releasePlotRefits\(\);\s*\n\s*clear\(", script), (
+        "the release does not run before the redraw clears the frames it observes"
+    )
     assert re.search(r"try \{\s*\n\s*\w+ = \w+\.getBBox\(\);\s*\n\s*\} catch", script), (
         "getBBox is unguarded, so an engine that throws abandons the refit inside a"
         " requestAnimationFrame callback"
@@ -550,5 +560,12 @@ def test_the_withheld_items_are_named_on_the_served_manifest(client: TestClient)
     assert reasons["DRL-0008"], "an item is withheld with no reason given"
     #: Asserted on the SERVED body, not on the loop, because the exposure is the anonymous route.
     #: A content author sets these strings and cannot set their length.
+    #:
+    #: **A TRIPWIRE, and vacuous on the library as it stands.** The only withheld reason today is
+    #: DRL-0008's, at 32 characters, so this loop cannot fail on shipped content: the bound itself
+    #: is held in `test_drill_loop.py`, by the test that authors an oversized parameter to reach
+    #: the branch. This one exists so that a future
+    #: item withheld with a long reason fails HERE, on the served body, rather than being noticed
+    #: on the route by a reviewer. Said plainly rather than left to read as coverage it is not.
     for item, reason in reasons.items():
         assert len(reason) <= MAX_WITHHOLD_REASON, f"{item}: {len(reason)} characters served"

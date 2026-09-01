@@ -389,9 +389,14 @@ class DrillLoop:
         #: return type and nothing else - and told the operator "one item is broken" when the true
         #: fact is "the budget was spent". The last reason is carried, because a bare "budget
         #: spent" is the half of the message an author cannot act on.
+        #: BOUNDED, like every other reason. `{last}` is a content-sized string and this message
+        #: reaches the unauthenticated `/api/v1/drill/next` as a 503 detail, which is the principle
+        #: `MAX_WITHHOLD_REASON` was added for two commits earlier and that this line reintroduced.
+        #: Not a regression - the code this replaced re-raised the same unbounded error directly -
+        #: but a bound applied at one of two exits is a bound at neither.
         raise DrillError(
             f"no drill could be rendered within the selection budget of"
-            f" {MAX_SELECTION_ATTEMPTS}: {last}"
+            f" {MAX_SELECTION_ATTEMPTS}: {_bounded_reason(str(last))}"
         )
 
     def _withhold(self, item_id: str, reason: str) -> None:
