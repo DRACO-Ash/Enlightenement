@@ -282,7 +282,15 @@ def _compass_stem(word: str) -> str:
 
 
 #: A pair of adjacent compass words, for folding "north east" into the compound it is. Rejoined
-#: only when the concatenation is itself a direction, so "north west" stays two directions.
+#: only when the concatenation is ITSELF a direction, so "east west" and "north south" stay two
+#: directions and a self-contradictory answer is still refused.
+#:
+#: **Corrected at V0.26.4.** This comment said the guard exists "so `north west` stays two
+#: directions", which is false: "northwest" IS in COMPASS_DIRECTIONS, so "north west" folds like
+#: any other compound and is refused, when wrong, by the names-another-direction rule instead. The
+#: guard's real domain is the pairs that form no compound - and the test written to hold it used
+#: "north west" and "south east", so it never reached the guard at all. Deleting the guard gave
+#: "east west east" full credit for an eastward drift.
 _SPACED_COMPOUND: Final = re.compile(
     rf"\b({'|'.join(COMPASS_DIRECTIONS)})\s+({'|'.join(COMPASS_DIRECTIONS)})({DIRECTION_SUFFIXES})\b"
 )
@@ -304,7 +312,9 @@ def _closed(typed: str) -> str:
 
     ● A SPACED COMPOUND is the compound. "north-east" was accepted and "north east" refused from
       the same operator reading the same plot, because closing hyphens was the whole of the
-      compound handling and the space is the commoner spelling.
+      compound handling and the space is the commoner spelling. Folded only when the two words
+      form a real compound: "east west" and "north south" are two directions and stay two, or
+      "east west east" would read as one eastward reading and take full credit.
     ● A SPLIT CONTRACTION is the contraction. `normalise` renders "isn't" as "isn t", so the
       "isnt" entry in NEGATIONS only ever fired for an operator who omitted the apostrophe.
 

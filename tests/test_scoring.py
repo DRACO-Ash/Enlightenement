@@ -496,8 +496,14 @@ def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one
     compound = {"expected_text": ("northeast",)}
     for right in ("north east", "drifting north east", "north eastwards", "northeast"):
         assert match_derived_text(right, compound).matched == "accept", right
-    #: Folding must not invent a compound that was not typed: two directions that do not form one
-    #: are still two directions.
+    #: Folding must not invent a compound that was not typed. THESE ARE THE CASES THAT REACH THE
+    #: GUARD: "north west" and "south east" do not - both fold, because "northwest" and "southeast"
+    #: are real compounds, and both are then refused by the names-another-direction rule. The guard
+    #: only ever fires on a pair that forms NO compound, and deleting it gave "east west east" full
+    #: credit for an eastward drift while this test stayed green.
+    for wrong in ("east west east", "east west, definitely east", "north south east"):
+        assert match_derived_text(wrong, drawn).matched != "accept", wrong
+    #: And the pairs that DO fold, refused by the other rule, so the two paths stay distinguishable.
     for wrong in ("north west", "south east"):
         assert match_derived_text(wrong, compound).matched != "accept", wrong
 
