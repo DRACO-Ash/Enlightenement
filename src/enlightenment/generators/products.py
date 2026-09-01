@@ -123,6 +123,10 @@ STEP_CHANGE_MAGNITUDES: Final = 0.9
 #: Labelled instants on a timeline axis. Five, to match the interface's five gridlines.
 TIME_TICKS: Final = 5
 
+#: The only two meaningful values for the waterfall's time direction. Validated rather than
+#: defaulted, because the value reaches a sentence an operator reads.
+NEWEST_AT_VALUES: Final = frozenset({"top", "bottom"})
+
 #: Waterfall defaults, used only where the content states nothing.
 DEFAULT_NEIGHBOURS: Final = 14
 DEFAULT_DRIFTERS: Final = 3
@@ -717,7 +721,16 @@ class WaterfallGenerator:
 
         #: Newest at the bottom is the convention of the real product, and one item authors the
         #: other direction on purpose: reading a plot whose axis has been flipped is the skill.
+        #: Validated, because it reaches served PROSE. `{"newest_at": "sideways"}` rendered
+        #: "Newest observations at the sideways." - an unvalidated content string in an
+        #: operator-facing sentence, which is the boundary rule this project holds everywhere
+        #: else. Two values are meaningful and anything else is a content fault.
         newest_at = str(params.get("newest_at", "bottom"))
+        if newest_at not in NEWEST_AT_VALUES:
+            raise ValueError(
+                f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}, not {newest_at!r}"
+            )
+        newest_at_bottom = newest_at == "bottom"
 
         marks: list[Marks] = []
         times = _geo_pass_times(days, stream)
@@ -773,15 +786,21 @@ class WaterfallGenerator:
                 #: convention. The parameter is honoured because the content authors it, and both
                 #: live items say "bottom": NO item authors "top" today. An earlier comment here
                 #: claimed one did "deliberately", which was invention about the content.
-                inverted=newest_at == "bottom",
-                inversion_note=f"newest nearest the longitude axis at the {newest_at}",
+                inverted=newest_at_bottom,
+                #: Only stated when the axis IS inverted. For the top case it said "newest
+                #: nearest the longitude axis at the top" while the panel note on the same panel
+                #: said the longitude axis is at the bottom: two opposite statements about one
+                #: geometry, both served, which is the fault the register row itself names.
+                inversion_note=(
+                    "newest nearest the longitude axis at the bottom" if newest_at_bottom else ""
+                ),
                 ticks=_time_ticks(days, window_start),
             ),
             marks=tuple(marks),
             notes=(
                 (
                     f"Newest observations at the {newest_at}, nearest the longitude axis."
-                    if newest_at == "bottom"
+                    if newest_at_bottom
                     else f"Newest observations at the {newest_at}. The longitude axis is at the"
                     " bottom, so time runs UP the page on this one."
                 ),

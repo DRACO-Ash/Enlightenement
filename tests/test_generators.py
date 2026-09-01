@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from enlightenment.content import PRODUCT_RENDERERS, ContentPackage
-from enlightenment.generators import build_registry, compose
+from enlightenment.generators import board_for, build_registry, compose
 from enlightenment.generators.products import (
     DEFAULT_LONGITUDE_HALF_WIDTH_DEG,
     GEO_PERIOD_S,
@@ -65,9 +65,13 @@ ABSURD_RATE_DEG_DAY = -22900000
 MIN_DRIFT_LEGIBILITY = 5.0
 
 #: The widest longitude sweep a clamped drifter may be drawn across, in degrees. A LITERAL, not a
-#: multiple of the constant under test: the station-keeping box is 6° wide, and a drifter that
-#: leaves it by a little is readable while one that sweeps 150° flattens the box to a line.
-MAX_READABLE_EXCURSION_DEG = 20.0
+#: multiple of the constant under test - that made the assertion an identity in its own subject.
+#:
+#: Set from the codebase's OWN recorded judgement rather than loosely: `products.py` records that
+#: an excursion factor of 2.5 was rejected for squeezing the held objects into a quarter panel,
+#: and 2.5 x the 6° box is 15°. A 20° bound admitted exactly that rejected value, so it
+#: contradicted the measurement it was meant to encode. Twice the box excludes it.
+MAX_READABLE_EXCURSION_DEG = 12.0
 SEED = 0x4F1A
 
 
@@ -1000,3 +1004,61 @@ def test_no_authored_composite_board_duplicates_a_product(package: ContentPackag
         if isinstance(board, list) and len(set(board)) != len(board):
             duplicated.append(drill.id)
     assert not duplicated, duplicated
+
+
+def test_the_unread_census_uses_the_resolved_board_and_not_every_renderer() -> None:
+    """The census fix was verified by nothing, so it could be reverted with the suite green.
+
+    `unread` subtracts the vocabulary of the renderers ON THE BOARD. Reverting it to subtract
+    every registered renderer's vocabulary left all 956 tests passing, because every ratchet call
+    used the default empty board and never reached the path that produces the served figure.
+
+    Driven with a board naming ONE product and a parameter only a DIFFERENT renderer reads:
+    `headcount` is waterfall's, and a TRIC-only board must therefore still report it unread.
+    """
+    registry = build_registry()
+    params = {"products": ["PRD-TRIC"], "headcount": 5}
+    board = board_for(registry, "composite", params)
+    assert board == ("PRD-TRIC",), board
+    assert "headcount" in registry.unread("composite", params, board), (
+        "a parameter no product on the board reads was forgiven, so the served census"
+        " over-reports its own coverage"
+    )
+    #: And the whole-registry behaviour is what it must NOT do.
+    everything = board_for(registry, "composite", {"products": "all"})
+    assert "headcount" not in registry.unread("composite", params, everything)
+
+
+def test_an_unknown_product_on_a_composite_board_fails_closed() -> None:
+    """The premise of the duplicate-refusal design, which no test had executed.
+
+    Refusing duplicates is only a complete bound because an unknown product id already fails
+    closed - and that `raise` was never reached by the suite, so the argument rested on an
+    unverified line. The probe branch was covered; this is the composite one.
+    """
+    registry = build_registry()
+    with pytest.raises(LookupError, match="no renderer"):
+        compose(registry, "composite", {"products": ["PRD-NOT-A-PRODUCT"]}, SEED)
+
+
+def test_the_waterfall_time_direction_is_validated_before_it_reaches_prose() -> None:
+    """`{"newest_at": "sideways"}` rendered "Newest observations at the sideways."
+
+    An unvalidated content string in an operator-facing sentence, which is the boundary rule this
+    project holds everywhere else. And for the top case the axis note said "newest nearest the
+    longitude axis at the top" while the panel note on the same panel said the axis is at the
+    bottom: two opposite statements about one geometry, both served.
+    """
+    registry = build_registry()
+    for value in ("sideways", "", "BOTTOM", "up"):
+        with pytest.raises(ValueError, match="newest_at"):
+            compose(registry, "waterfall", {"newest_at": value}, SEED)
+
+    bottom = compose(registry, "waterfall", {"newest_at": "bottom"}, SEED)[0].panels[0]
+    assert bottom.y.inverted is True
+    assert "bottom" in bottom.y.inversion_note
+
+    top = compose(registry, "waterfall", {"newest_at": "top"}, SEED)[0].panels[0]
+    assert top.y.inverted is False
+    assert top.y.inversion_note == "", "an axis that is not inverted still explains its inversion"
+    assert "top" in top.notes[0]
