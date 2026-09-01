@@ -163,11 +163,19 @@ SYNTHETIC_EPOCH_SPAN_HOURS: Final = int((365 - MAX_SPAN_DAYS) * 24)
 #: briefly read as a headcount and produced 159 MB of JSON from one anonymous request.
 MAX_NEIGHBOURHOOD_TRACKS: Final = 40
 
-#: How far outside the station-keeping box a CLAMPED drifter may travel across the whole window,
-#: as a multiple of the box width. 2.5 put nineteen degrees on an axis whose box is six, so the
-#: held objects - the reference an operator judges the drifter against - were squeezed into the
-#: right-hand quarter of the panel. The drifter has to leave the box visibly and the box has to
-#: stay readable, and 2.5 bought the first at the cost of the second.
+#: How far a CLAMPED drifter travels across the whole window, as a multiple of the station-keeping
+#: box width. The travel is exactly `box x factor`, because the clamp divides by the window length
+#: and the track then runs for that length.
+#:
+#: **Figures corrected at V0.26.3 to the measured ones.** This comment said 2.5 "put nineteen
+#: degrees on an axis whose box is six". Nineteen is not reproducible from anything here: measured
+#: at the shipped seed, factor 2.5 draws a 15.0° sweep across a 6.0° box, factor 1.2 draws 7.2°,
+#: and factor 25.0 draws 150.0°. Fifteen is also the figure the test's own comment quotes, so the
+#: two records disagreed and the unverifiable one was the one in the source.
+#:
+#: 2.5 was rejected for squeezing the held objects - the reference an operator judges the drifter
+#: against - into the right-hand quarter of the panel. The drifter has to leave the box visibly
+#: and the box has to stay readable, and 2.5 bought the first at the cost of the second.
 DRIFT_EXCURSION_FACTOR: Final = 1.2
 
 #: Where a drift starts when the content says only THAT it starts, as a fraction of the window.

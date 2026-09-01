@@ -69,8 +69,16 @@ MIN_DRIFT_LEGIBILITY = 5.0
 #:
 #: Set from the codebase's OWN recorded judgement rather than loosely: `products.py` records that
 #: an excursion factor of 2.5 was rejected for squeezing the held objects into a quarter panel,
-#: and 2.5 x the 6° box is 15°. A 20° bound admitted exactly that rejected value, so it
+#: and 2.5 x the 6° box is 15°, measured. A 20° bound admitted exactly that rejected value, so it
 #: contradicted the measurement it was meant to encode. Twice the box excludes it.
+#:
+#: **A DISCLOSED GAP, not a verdict.** This ceiling excludes the one factor carrying a recorded
+#: rejection - 2.5, at 15.0° - and admits the shipped 1.2, at 7.2°. It also admits 2.0, at exactly
+#: 12.0°, and nothing in this repository distinguishes 7.2° from 12.0°: 2.5 is the only factor with
+#: a recorded judgement of any kind, and no changelog entry records a browser measurement of the
+#: excursion at any factor. Closing the band needs one, which is owner-blocked work on the same
+#: list as the noise figures. Narrowing the bound to the shipped value instead would make the
+#: assertion an identity in its own subject, which is the fault the comment above records.
 MAX_READABLE_EXCURSION_DEG = 12.0
 SEED = 0x4F1A
 
