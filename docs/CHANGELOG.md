@@ -2,6 +2,81 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.2 (2026-09-01)
+
+**What.** The engineering gate's fifth round failed V0.26.1 with one blocker, two majors and
+eight minors. Every finding was reproduced in this session before anything was changed, and two
+of the gate's own claims were checked and found partly wrong - recorded below, because a reviewer
+being wrong matters as much as a reviewer being right.
+
+**The absorbing state, one door along from where it was closed.** V0.26 stopped an item with no
+resolvable answer being re-served for ever. V0.26.1 then added handlers turning a renderer's
+arithmetic fault into an author-facing 503 - and those refusals fed back into nothing. Selection
+is a pure function of rating and due-state, and a refusal records no run and advances no schedule,
+so an item whose renderer RAISES was chosen again on every request. Measured: one NaN on a content
+parameter, six consecutive 503s on the same item, no progress, health green throughout. The
+load-time probe cannot catch this class because it only inspects items whose answer is computed,
+and this one raised while rendering. A refusal now withholds the item, the request tries the next
+candidate within a bounded budget, and every withheld item is named on the served manifest with
+its reason. An explicitly named item is still never substituted.
+
+While fixing it I added the new field to `manifest()` and not to the route - the exact fault the
+security gate raised one commit earlier. It was caught by driving the route rather than the
+method, which is the only reason it is not in this release.
+
+**A scoring control that was wrong in both directions.** The contradiction check searched the whole
+response for any "no", "not", "never" or "neither". So it PENALISED correct answers - on real
+content, "0.279 deg/day west, no reversal in the trend" scored partial with a note telling the
+operator to state the direction they had just stated, and five correct prose answers scored zero -
+and it MISSED the denials it existed for: "it doesn't drift east", "cannot be east", "east is
+wrong" and "hardly east" all took full credit. Two latent faults sat in the same lines: a generator
+emitting `("eastward",)` would have refused every correct answer, and "north-east" was refused
+against a drawn "northeast" because normalisation keeps the hyphen.
+
+The check now compares compass STEMS against a hyphen-closed response and scopes the denial rule
+to a two-word window before the direction. **The residual is recorded in the test rather than
+claimed closed:** open-ended denial is a semantics problem, two attempts at widening this check
+have each created a worse fault than the one they closed, and over-refusing a correct reading is
+the more expensive error.
+
+**Three guards that could be reverted with the suite green.** The empty-pool refusal, the unread
+census subtracting only the renderers on the board, and the composite unknown-product refusal -
+the last being the stated premise of the duplicate-board design, resting on a line no test
+executed. All three now have drivers. This is the fourth release in which a control existed
+without one, and the pattern is that I write the guard and then the test for the guard's happy
+path rather than for its absence.
+
+**Content values reaching prose, and a threshold contradicting its own measurement.**
+`{"newest_at": "sideways"}` rendered "Newest observations at the sideways."; the value is now
+validated. For the top case the axis note and the panel note asserted opposite geometries on one
+panel. And `MAX_READABLE_EXCURSION_DEG` was 20 degrees, which admitted the excursion factor of 2.5
+that `products.py` records as rejected for illegibility - a bound that contradicted the
+measurement it encoded. Set to twice the six-degree box.
+
+**The interface guarantee only held at draw time.** The refit that makes "no clipped labels" true
+ran once per draw with no resize handling at all, so dragging a window narrower restored the stale
+gutter. A `ResizeObserver` now refits and resets the viewBox to nominal first, because without the
+reset the widening ratchets. Verified in a browser across live resizes from 1400 down to 340 and
+back: every label inside the box, and the viewBox returning to nominal rather than growing.
+`getBBox` is also guarded - in Chromium it returns zeros inside a hidden container, which the
+existing check skips, but other engines throw and the throw would escape the animation callback.
+
+**Where the gate was wrong, checked rather than accepted.** It attributed the suspected flaky test
+partly to `test_middleware.py`, which contains no real-clock sleep at all - all five are in
+`test_http.py`. And its claim that the composite unknown-product line was wholly untested was
+half right: the probe branch was covered, the composite branch was not.
+
+**Deferred to the risk register, not fixed.** One of the gate's eight full-suite runs reported a
+single failure whose name it had suppressed. I ran the timing-sensitive suites twenty consecutive
+times under four competing busy loops and could not reproduce it. Per the remediation protocol an
+unreproducible failure is environmental until proven otherwise, and guessing at a fix would be
+worse than recording it.
+
+**How verified.** Loop green, seven legs: 963 passed, 2 skipped, coverage 97.09%. Seven fixes
+mutation-proved individually, each against a named test. Two of my own mutation experiments were
+invalid on the first attempt - one replacement never applied and one mutated the bound and the
+subject together - and were redone rather than counted.
+
 ## V0.26.1 (2026-09-01)
 
 **What.** The security gate ran alone against V0.26 and failed it with two majors and three
