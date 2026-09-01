@@ -36,6 +36,7 @@ from enlightenment.generators.products import (
     MAX_SPAN_DAYS,
     MAX_STATE_CHANGE_MARKS,
     MAX_TABLE_ROWS,
+    NEWEST_AT_VALUES,
     TIME_TICKS,
 )
 
@@ -855,6 +856,36 @@ def test_the_timeline_labels_come_from_the_seed_and_never_from_the_clock() -> No
     other = compose(registry, "waterfall", {"days": 4}, SEED + 1)[0]
     assert other.panels[0].y.ticks != first.panels[0].y.ticks
     assert "synthetic epoch" in first.footer
+
+
+def test_no_refusal_message_quotes_the_authored_value_that_caused_it() -> None:
+    """A refusal reason reaches the unauthenticated manifest, so it must not quote content.
+
+    The security gate proved the channel rather than argued it: it set `newest_at` to a real
+    accept string from DRL-0005's own key, and the anonymous `/api/v1/content/manifest` served the
+    string back inside `withheld_reasons`. Nothing scoreable travelled, because `newest_at` is a
+    two-value layout flag - but nothing bound the message either, and a refusal that quotes an
+    authored value is a disclosure channel whatever the value happens to be that week.
+
+    The rule this asserts: a validation refusal names the KEY and its DOMAIN. An author who needs
+    to know what they wrote has the file they wrote it in; an anonymous caller does not.
+
+    **Structural identifiers are exempt, deliberately.** A generator name and a product id ARE
+    named, because a typo in one is undiagnosable otherwise, and both are bounded by
+    `MAX_WITHHOLD_REASON` on the way out. The distinction held here is value versus identifier.
+    """
+    registry = build_registry()
+    #: A string that would be a key if this were a scored parameter, which is the point.
+    planted = "reject the value, check epoch separation"
+    with pytest.raises(ValueError, match="newest_at must be one of") as refusal:
+        compose(registry, "waterfall", {"newest_at": planted}, SEED)
+    assert planted not in str(refusal.value), (
+        f"the refusal quotes the authored value, which reaches an anonymous route: {refusal.value}"
+    )
+    #: And it still says enough to fix. The key and both legal values, or the message is useless.
+    assert "newest_at" in str(refusal.value), str(refusal.value)
+    for legal in NEWEST_AT_VALUES:
+        assert legal in str(refusal.value), str(refusal.value)
 
 
 def test_an_absurd_authored_rate_is_clamped_for_drawing_and_reported_verbatim() -> None:

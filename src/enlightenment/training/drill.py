@@ -78,6 +78,13 @@ MAX_CONTENT_STRING: Final = 64
 #: is 190 characters, the unknown-generator refusal, whose sentence is a fixed string. Every
 #: legitimate diagnosis therefore survives whole, and a cut one SAYS it was cut, because a
 #: truncated explanation that reads as complete sends an author looking in the wrong place.
+#:
+#: **256 CODE POINTS, not bytes, and the difference is 4x.** Measured: 256 astral characters are
+#: 988 UTF-8 bytes, so the 140-item ceiling is about 138 kB rather than the 36 kB the naive
+#: reading of "256 x 140" suggests. Stated rather than silently corrected, because the figure a
+#: reviewer computes from this constant should be the figure the wire carries. The code-point cap
+#: is kept deliberately: a byte cap has to avoid splitting a code point, and buying 4x on a
+#: response that is already bounded is not worth a new way to emit invalid UTF-8.
 MAX_WITHHOLD_REASON: Final = 256
 TRUNCATION_MARK: Final = " [truncated]"
 
@@ -254,9 +261,15 @@ class DrillLoop:
         self._evaluator = evaluator if evaluator is not None else RubricEvaluator()
         self._pending: OrderedDict[str, _Pending] = OrderedDict()
         #: Mutable, because an item can also prove unservable at REQUEST time. See `_withhold`.
-        self._unresolvable: dict[str, str] = dict.fromkeys(
-            self._items_without_a_resolvable_answer(), "no generator supplies its answer"
-        )
+        #: The KEY is bounded too, not only the reason. The reason was capped at V0.26.3 under a
+        #: comment saying content does not set the size of an anonymous response, and the comment
+        #: was false in the same fields on the same route: `content/models.py` declares `id: str`
+        #: with no maximum, and 40 items with 3,003-character ids produced a 243,539-byte
+        #: unauthenticated manifest, of which 242 kB was ids and 32 characters was the reason.
+        self._unresolvable: dict[str, str] = {
+            _bounded(item_id): "no generator supplies its answer"
+            for item_id in self._items_without_a_resolvable_answer()
+        }
 
     @property
     def ready(self) -> bool:
@@ -413,13 +426,23 @@ class DrillLoop:
         implementation could apply - only a judgement, which is how a silent overwrite of the
         useful reason by a useless one would arrive. One reason, one log line, per item.
         """
-        if item_id not in self._unresolvable:
+        key = _bounded(item_id)
+        if key not in self._unresolvable:
             bounded = _bounded_reason(reason)
-            self._unresolvable[item_id] = bounded
-            log_event("drill.withheld", item=item_id, reason=bounded)
+            self._unresolvable[key] = bounded
+            log_event("drill.withheld", item=key, reason=bounded)
 
     def _serve_one(self, item: Drill, seed: int) -> ServedDrill:
-        """Render, validate and hold one drill. Raises `DrillError` on any refusal."""
+        """Render, validate and hold one drill. Raises `DrillError` on any refusal.
+
+        **The id is bounded HERE, where the reason is composed, and not only where it is stored.**
+        Every refusal below prefixes the message with the item id, and an id is a raw content
+        string. Measured with a 3,004-character id: the reason reached `MAX_WITHHOLD_REASON` before
+        the sentence began, so the served reason was the id and the marker, and the diagnosis - the
+        one thing an author reads it for - was truncated away. Bounding the key alone fixed the
+        response size and left the message useless.
+        """
+        named = _bounded(item.id)
         try:
             rendered = compose(
                 self._registry,
@@ -429,14 +452,14 @@ class DrillLoop:
                 item.stimulus.product_id,
             )
         except LookupError as exc:
-            raise DrillError(f"{item.id}: {exc}") from None
+            raise DrillError(f"{named}: {exc}") from None
         except ArithmeticError as exc:
             #: A renderer's arithmetic on a content value is a CONTENT fault, so it earns the
             #: author-facing 503 this module documents rather than a generic 500. `elapsed_min: 0`
             #: divides by zero and `1e308` overflows a domain, both from plain authored numbers.
-            raise DrillError(f"{item.id}: the stimulus could not be computed: {exc}") from None
+            raise DrillError(f"{named}: the stimulus could not be computed: {exc}") from None
         except (ValueError, TypeError) as exc:
-            raise DrillError(f"{item.id}: the stimulus parameters are not usable: {exc}") from None
+            raise DrillError(f"{named}: the stimulus parameters are not usable: {exc}") from None
 
         #: A composite renders several products and their server-side facts are merged, so a key
         #: one renderer owns can be overwritten by the next in render order.
@@ -456,7 +479,7 @@ class DrillLoop:
             collisions = ANSWER_KEYS & derived.keys() & facts.keys()
             if collisions:
                 raise DrillError(
-                    f"{item.id}: two products on this board both computed"
+                    f"{named}: two products on this board both computed"
                     f" {sorted(collisions)}, so the answer would depend on render order"
                 )
             derived.update(facts)
@@ -470,7 +493,7 @@ class DrillLoop:
         size = len(json.dumps(wire))
         if size > MAX_PAYLOAD_BYTES:
             raise DrillError(
-                f"{item.id}: the rendered stimulus is {size:,} bytes, over the"
+                f"{named}: the rendered stimulus is {size:,} bytes, over the"
                 f" {MAX_PAYLOAD_BYTES:,} byte budget, so it is refused rather than served"
             )
 

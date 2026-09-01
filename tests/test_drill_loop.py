@@ -26,6 +26,7 @@ from enlightenment.training import (
     ProgressStore,
 )
 from enlightenment.training.drill import (
+    MAX_CONTENT_STRING,
     MAX_SELECTION_ATTEMPTS,
     MAX_WITHHOLD_REASON,
     TRUNCATION_MARK,
@@ -907,17 +908,95 @@ def test_a_named_item_is_attempted_once_and_never_retried(loop: DrillLoop) -> No
     assert attempts == ["DRL-0005"], f"a named item was retried: {attempts}"
 
 
+def test_a_withheld_item_id_is_bounded_before_it_reaches_the_unauthenticated_manifest(
+    tmp_path: Path,
+) -> None:
+    """The KEY, not only the reason. The comment above the reason bound was false in the same
+    fields on the same route.
+
+    V0.26.3 capped the withhold reason under a comment saying content does not get to set the size
+    of an anonymous response. The security gate then measured the same route: `content/models.py`
+    declares `id: str` with no maximum, and 40 items carrying 3,003-character ids produced a
+    243,539-byte unauthenticated manifest response, of which about 242 kB was ids and 32 characters
+    was the longest reason. The bound was real and the claim around it was not.
+
+    Not attacker-reachable - no route accepts an `item_id`, so ids come from the content tree
+    alone - which is why it is a bound rather than a rejection, and why the id keeps the ordinary
+    `MAX_CONTENT_STRING` used for every other content string written into a served structure.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    long_id = "DRL-" + "9" * 3000
+    #: TWO stretched ids, because there are two write sites. DRL-0008 is withheld at LOAD time,
+    #: for having no resolvable answer. DRL-0005 is broken so it refuses at RENDER time, which is
+    #: the second site - bounding only the first left that mutation alive, and an earlier version
+    #: of this test stretched the id in the parsed JSON after the package had loaded, so
+    #: `_named` refused an id the library did not have and the assertion passed on nothing.
+    served_long = "DRL-" + "8" * 3000
+    for row in rows:
+        if row["id"] == "DRL-0008":
+            row["id"] = long_id
+        if row["id"] == "DRL-0005":
+            row["id"] = served_long
+            row.setdefault("stimulus", {}).setdefault("params", {})["days"] = float("nan")
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    stretched = ContentPackage(root)
+    stretched.load()
+    loop = DrillLoop(
+        content=stretched,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    manifest = loop.manifest()
+    named = manifest["items_without_a_resolvable_answer"]
+    assert named, "the stretched item stopped being withheld, so this asserts nothing"
+    for item_id in named:
+        assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters served as an id"
+    for item_id in manifest["withheld_reasons"]:
+        assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters served as a key"
+
+    #: AND the serve-time write site, reached by naming the item that refuses at render.
+    with pytest.raises(DrillError, match="not usable"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=served_long)
+    reasons = loop.manifest()["withheld_reasons"]
+    #: The DIAGNOSIS survives the bound. With the id unbounded here the reason was the id and the
+    #: truncation marker, and the sentence an author reads never began - a bound that fixes the
+    #: response size and destroys the message is not the control this claims to be.
+    assert any("not usable" in reason for reason in reasons.values()), (
+        f"the serve-time refusal did not withhold, so the second write site is untested: {reasons}"
+    )
+    #: The REASON embeds the raw id too, because `_serve_one` builds it as `f"{item.id}: ..."`.
+    #: Capped on the way out by `_bounded_reason`, so this holds both halves at once: an unbounded
+    #: id would show up here as a 3,000-character reason even with the key bounded.
+    for reason in reasons.values():
+        assert len(reason) <= MAX_WITHHOLD_REASON, f"{len(reason)} characters served as a reason"
+    for item_id in loop.manifest()["withheld_reasons"]:
+        assert len(item_id) <= MAX_CONTENT_STRING, (
+            f"{len(item_id)} characters served as a key from the serve-time withhold"
+        )
+
+
 def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_manifest(
     tmp_path: Path,
 ) -> None:
     """The reason is a CONTENT string on a route that needs no token, so its length is not content's
     to choose.
 
-    A refusal message embeds the `repr` of the authored parameter that caused it, and
-    `content/models.py` declares no maximum length on any value in `params`. Measured: a
-    3,000-character `newest_at` produced a 3,100-character reason, stored verbatim, and the
-    library has 140 items - so the anonymous manifest response was bounded by nothing the server
-    controls, and the same string went into the append-only run log.
+    A refusal message embeds a content-supplied string, and `content/models.py` declares no
+    maximum length on any value in `params`. Measured: a 3,000-character parameter produced a
+    3,100-character reason, stored verbatim, and the library has 140 items - so the anonymous
+    manifest response was bounded by nothing the server controls, and the same string went into
+    the append-only run log.
+
+    **Driven through a composite's product id, because the shorter path was closed.** The original
+    measurement used `newest_at`, whose refusal quoted the rejected VALUE; V0.26.6 stopped that
+    message naming the value at all, after the security gate made it carry a real accept string
+    from the item's own key and the anonymous route served it back. A product id is a structural
+    identifier rather than a value and is still named, because that is how an author finds the
+    typo - so it is the honest remaining path to a content-sized reason, and the one this asserts.
 
     The bound is sized from measurement, not taste: the longest reason any real content fault
     produces in this library is 190 characters (the unknown-generator refusal, whose sentence is
@@ -930,7 +1009,9 @@ def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_mani
     rows = document["drills"] if isinstance(document, dict) else document
     for row in rows:
         if row["id"] == "DRL-0005":
-            row.setdefault("stimulus", {}).setdefault("params", {})["newest_at"] = "X" * 3000
+            stimulus = row.setdefault("stimulus", {})
+            stimulus["generator"] = "composite"
+            stimulus.setdefault("params", {})["products"] = ["PRD-" + "X" * 3000]
     (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
 
     broken = ContentPackage(root)
@@ -950,7 +1031,7 @@ def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_mani
     )
     assert reason.endswith(TRUNCATION_MARK), "the reason was cut and does not say so"
     #: The bound must not be so tight that it eats the diagnosis. This is the part an author reads.
-    assert "newest_at" in reason, f"the truncation destroyed the diagnosis: {reason}"
+    assert "composite names product" in reason, f"the truncation destroyed the diagnosis: {reason}"
 
 
 def test_an_explicitly_named_item_is_never_substituted_when_it_refuses(tmp_path: Path) -> None:

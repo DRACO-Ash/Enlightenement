@@ -733,11 +733,16 @@ class WaterfallGenerator:
         #: "Newest observations at the sideways." - an unvalidated content string in an
         #: operator-facing sentence, which is the boundary rule this project holds everywhere
         #: else. Two values are meaningful and anything else is a content fault.
+        #: The refusal names the KEY and its DOMAIN, never the rejected value. This message is
+        #: the reason a withheld item carries, and that reason reaches the unauthenticated
+        #: manifest: the security gate set this parameter to a real accept string from the item's
+        #: own key and the anonymous route served it back. `newest_at` is a two-value layout flag
+        #: today, so nothing scoreable travelled - but nothing bound the message either, and a
+        #: refusal that quotes content is a disclosure channel whatever the content happens to be.
+        #: An author who needs the offending value has the file they wrote it in.
         newest_at = str(params.get("newest_at", "bottom"))
         if newest_at not in NEWEST_AT_VALUES:
-            raise ValueError(
-                f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}, not {newest_at!r}"
-            )
+            raise ValueError(f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}")
         newest_at_bottom = newest_at == "bottom"
 
         marks: list[Marks] = []
