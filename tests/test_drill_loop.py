@@ -25,6 +25,7 @@ from enlightenment.training import (
     DrillLoop,
     ProgressStore,
 )
+from enlightenment.training.drill import MAX_WITHHOLD_REASON, TRUNCATION_MARK
 
 CONTENT = Path(__file__).resolve().parents[1] / "content"
 
@@ -762,6 +763,52 @@ def test_a_serve_time_refusal_withholds_the_item_and_the_session_continues(
     manifest = loop.manifest()
     assert "DRL-0005" in manifest["items_without_a_resolvable_answer"]
     assert "NaN" in manifest["withheld_reasons"]["DRL-0005"], manifest["withheld_reasons"]
+
+
+def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_manifest(
+    tmp_path: Path,
+) -> None:
+    """The reason is a CONTENT string on a route that needs no token, so its length is not content's
+    to choose.
+
+    A refusal message embeds the `repr` of the authored parameter that caused it, and
+    `content/models.py` declares no maximum length on any value in `params`. Measured: a
+    3,000-character `newest_at` produced a 3,100-character reason, stored verbatim, and the
+    library has 140 items - so the anonymous manifest response was bounded by nothing the server
+    controls, and the same string went into the append-only run log.
+
+    The bound is sized from measurement, not taste: the longest reason any real content fault
+    produces in this library is 190 characters (the unknown-generator refusal, whose sentence is
+    fixed), so 256 holds every legitimate diagnosis whole. Truncation is MARKED, because a cut
+    diagnosis that reads as complete is worse than one that admits it was cut.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows:
+        if row["id"] == "DRL-0005":
+            row.setdefault("stimulus", {}).setdefault("params", {})["newest_at"] = "X" * 3000
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    broken = ContentPackage(root)
+    broken.load()
+    loop = DrillLoop(
+        content=broken,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    with pytest.raises(DrillError):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-0005")
+
+    reason = loop.manifest()["withheld_reasons"]["DRL-0005"]
+    assert len(reason) <= MAX_WITHHOLD_REASON, (
+        f"a content author set the length of an anonymous response: {len(reason)} characters"
+        f" against a bound of {MAX_WITHHOLD_REASON}"
+    )
+    assert reason.endswith(TRUNCATION_MARK), "the reason was cut and does not say so"
+    #: The bound must not be so tight that it eats the diagnosis. This is the part an author reads.
+    assert "newest_at" in reason, f"the truncation destroyed the diagnosis: {reason}"
 
 
 def test_an_explicitly_named_item_is_never_substituted_when_it_refuses(tmp_path: Path) -> None:

@@ -68,6 +68,19 @@ MAX_PENDING: Final = 512
 #: declares no maximum length on any of them.
 MAX_CONTENT_STRING: Final = 64
 
+#: Longest withhold reason recorded, and the marker that says one was cut. A refusal message
+#: embeds the `repr` of the authored parameter that caused it, and `content/models.py` declares no
+#: maximum length on any value in `params` - so a 3,000-character `newest_at` produced a
+#: 3,100-character reason, stored verbatim on the UNAUTHENTICATED manifest and in the run log,
+#: across up to 140 items. Content does not get to set the size of an anonymous response.
+#:
+#: 256 is measured, not chosen: the longest reason any real content fault produces in this library
+#: is 190 characters, the unknown-generator refusal, whose sentence is a fixed string. Every
+#: legitimate diagnosis therefore survives whole, and a cut one SAYS it was cut, because a
+#: truncated explanation that reads as complete sends an author looking in the wrong place.
+MAX_WITHHOLD_REASON: Final = 256
+TRUNCATION_MARK: Final = " [truncated]"
+
 #: How many candidate drills one request may try before giving up. Bounded so pathological content
 #: cannot spin a request, and greater than one so a single unservable item does not end a session.
 MAX_SELECTION_ATTEMPTS: Final = 4
@@ -203,6 +216,19 @@ def _bounded(value: Any) -> str:
     """
     text = str(value or "")
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
+
+
+def _bounded_reason(reason: str) -> str:
+    """A refusal reason, length-capped and MARKED when it is cut.
+
+    Separate from `_bounded` because the two answer different questions. `_bounded` protects a
+    file read whole on every request and truncates silently, which is right for a version string
+    nobody reads for meaning. A reason is a DIAGNOSIS an author acts on, so it gets a wider bound
+    and says when it was shortened.
+    """
+    if len(reason) <= MAX_WITHHOLD_REASON:
+        return reason
+    return reason[: MAX_WITHHOLD_REASON - len(TRUNCATION_MARK)] + TRUNCATION_MARK
 
 
 class DrillLoop:
@@ -361,8 +387,9 @@ class DrillLoop:
         than a drill that quietly stops appearing.
         """
         if item_id not in self._unresolvable:
-            self._unresolvable[item_id] = reason
-            log_event("drill.withheld", item=item_id, reason=reason)
+            bounded = _bounded_reason(reason)
+            self._unresolvable[item_id] = bounded
+            log_event("drill.withheld", item=item_id, reason=bounded)
 
     def _serve_one(self, item: Drill, seed: int) -> ServedDrill:
         """Render, validate and hold one drill. Raises `DrillError` on any refusal."""
