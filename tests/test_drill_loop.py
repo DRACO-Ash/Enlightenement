@@ -25,9 +25,22 @@ from enlightenment.training import (
     DrillLoop,
     ProgressStore,
 )
-from enlightenment.training.drill import MAX_WITHHOLD_REASON, TRUNCATION_MARK
+from enlightenment.training.drill import (
+    MAX_SELECTION_ATTEMPTS,
+    MAX_WITHHOLD_REASON,
+    TRUNCATION_MARK,
+    ServedDrill,
+)
 
 CONTENT = Path(__file__).resolve().parents[1] / "content"
+
+#: The selection budget the loop is expected to spend, as a LITERAL. See the assertion that uses
+#: it: comparing against the imported constant is an identity in the thing under test.
+EXPECTED_SELECTION_ATTEMPTS = 4
+
+#: The most attempts one request may make and still answer promptly. Four renders of a dense
+#: waterfall is the realistic worst case behind a single click, and the budget must stay inside it.
+READABLE_SELECTION_CEILING = 6
 
 #: What a single renderer may produce from a deliberately absurd content count. Far below the
 #: service budget, because a renderer that needs megabytes for one panel is drawing something
@@ -763,6 +776,70 @@ def test_a_serve_time_refusal_withholds_the_item_and_the_session_continues(
     manifest = loop.manifest()
     assert "DRL-0005" in manifest["items_without_a_resolvable_answer"]
     assert "NaN" in manifest["withheld_reasons"]["DRL-0005"], manifest["withheld_reasons"]
+
+
+def test_a_refusing_pool_raises_the_budget_error_after_exactly_the_allowed_attempts(
+    loop: DrillLoop,
+) -> None:
+    """The selection budget's own error, which was unreachable and therefore untested.
+
+    `serve` re-raised the last item's refusal on the final attempt, so the trailing
+    "no drill could be rendered within the selection budget" could never execute: coverage showed
+    the line uncovered, and it existed only to satisfy the return type. A line that cannot run is
+    not a control, and the operator lost the ONE fact that distinguishes this case from a single
+    bad item - that the budget was spent.
+
+    The fault is injected at the render boundary rather than authored into content, deliberately.
+    Four consecutive genuine render faults would require knowing the order `select` returns items
+    in, which is a property of due-state and rating and not of this control.
+    """
+    attempts: list[str] = []
+
+    def always_refuses(item: Any, seed: int) -> ServedDrill:
+        attempts.append(item.id)
+        raise DrillError(f"{item.id}: injected refusal")
+
+    loop._serve_one = always_refuses  # type: ignore[method-assign]
+    with pytest.raises(DrillError) as refusal:
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR)
+
+    #: A LITERAL, not the constant under test. Reading `== MAX_SELECTION_ATTEMPTS` made the
+    #: assertion an identity in its own subject: widening the budget to 8 left it green, so the
+    #: bound's existence was held and its VALUE, which is the whole content of the control, was
+    #: not. Changing the budget should cost whoever changes it a line here and a reason.
+    assert len(attempts) == EXPECTED_SELECTION_ATTEMPTS, (
+        f"the loop made {len(attempts)} attempts against a budget of {EXPECTED_SELECTION_ATTEMPTS}"
+    )
+    #: And the two properties that make that number the right shape, either side of it. Greater
+    #: than one, so a single unservable item does not end a session; small enough that pathological
+    #: content cannot spin a request while an operator waits.
+    assert 1 < MAX_SELECTION_ATTEMPTS <= READABLE_SELECTION_CEILING, MAX_SELECTION_ATTEMPTS
+    assert "selection budget" in str(refusal.value), str(refusal.value)
+    #: And it carries the last reason. A bare "budget spent" tells an author nothing about WHY
+    #: every candidate refused, which is the only actionable half of the message.
+    assert attempts[-1] in str(refusal.value), str(refusal.value)
+
+
+def test_a_named_item_is_attempted_once_and_never_retried(loop: DrillLoop) -> None:
+    """Asserted on the attempt COUNT, because the substitution test does not hold this.
+
+    Removing the `item_id is not None` guard leaves `test_an_explicitly_named_item_is_never_
+    substituted_when_it_refuses` green: `_named` returns the same item every time, so the loop
+    withholds it four times and then raises a message that still contains the item id the test
+    matches on. The guard's effect is the attempt count, so the count is what is asserted.
+
+    A debrief asking for one item needs that item or an error, four times as fast as it needs it.
+    """
+    attempts: list[str] = []
+
+    def always_refuses(item: Any, seed: int) -> ServedDrill:
+        attempts.append(item.id)
+        raise DrillError(f"{item.id}: injected refusal")
+
+    loop._serve_one = always_refuses  # type: ignore[method-assign]
+    with pytest.raises(DrillError, match="DRL-0005"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-0005")
+    assert attempts == ["DRL-0005"], f"a named item was retried: {attempts}"
 
 
 def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_manifest(

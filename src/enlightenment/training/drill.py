@@ -365,10 +365,9 @@ class DrillLoop:
         #: V0.26.1 for another. The load-time probe cannot see it, because it only inspects items
         #: whose answer is computed; this one raised while rendering.
         #:
-        #: So a refusal WITHHOLDS the item and the loop tries the next candidate, bounded. An
-        #: explicitly named item is never substituted - the caller asked for that item, and
-        #: `_named` refusing an unknown id is a control a test holds.
-        for remaining in range(MAX_SELECTION_ATTEMPTS, 0, -1):
+        #: So a refusal WITHHOLDS the item and the loop tries the next candidate, bounded.
+        last: DrillError | None = None
+        for _ in range(MAX_SELECTION_ATTEMPTS):
             item = self.select(progress) if item_id is None else self._named(item_id)
             attempt = sum(1 for run in progress.runs if run.item_id == item.id)
             seed = self._seed(operator_id, item.id, attempt)
@@ -376,15 +375,38 @@ class DrillLoop:
                 return self._serve_one(item, seed)
             except DrillError as exc:
                 self._withhold(item.id, str(exc))
-                if item_id is not None or remaining == 1:
+                #: An explicitly named item is NEVER substituted and never retried: the caller
+                #: asked for that item, so a refusal is the answer. `_named` returns the same item
+                #: every call, so without this the loop withholds it four times to reach the same
+                #: outcome - and the substitution test cannot see that, because the budget message
+                #: below still carries the item id it matches on. The attempt count is the effect,
+                #: so a test asserts the count.
+                if item_id is not None:
                     raise
-        raise DrillError("no drill could be rendered within the selection budget")
+                last = exc
+        #: Reached when every candidate refused, and it says so. This used to re-raise the last
+        #: item's error on the final attempt, which made this line unreachable - it existed for the
+        #: return type and nothing else - and told the operator "one item is broken" when the true
+        #: fact is "the budget was spent". The last reason is carried, because a bare "budget
+        #: spent" is the half of the message an author cannot act on.
+        raise DrillError(
+            f"no drill could be rendered within the selection budget of"
+            f" {MAX_SELECTION_ATTEMPTS}: {last}"
+        )
 
     def _withhold(self, item_id: str, reason: str) -> None:
         """Take an item out of selection and say why, once.
 
         Disclosed on the manifest and logged, so a withheld item is a visible content gap rather
         than a drill that quietly stops appearing.
+
+        **FIRST REASON WINS, and that is a choice.** An item withheld at load time for "no
+        generator supplies its answer" can later refuse at render with a more specific message,
+        and the specific one is dropped. Kept anyway: the load-time reason is causally first and
+        explains why the item was never served, a later render refusal on an item already out of
+        selection is a consequence rather than a cause, and "more specific" has no rule an
+        implementation could apply - only a judgement, which is how a silent overwrite of the
+        useful reason by a useless one would arrive. One reason, one log line, per item.
         """
         if item_id not in self._unresolvable:
             bounded = _bounded_reason(reason)
