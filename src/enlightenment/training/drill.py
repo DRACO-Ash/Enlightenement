@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from types import MappingProxyType
 from typing import Any, Final
 
+from enlightenment.audit import log_event
 from enlightenment.content import ContentPackage, Drill
 from enlightenment.generators import GeneratorRegistry, board_for, compose
 from enlightenment.scoring import (
@@ -66,6 +67,10 @@ MAX_PENDING: Final = 512
 #: same source into the same file, which is read whole on every request. `content/models.py`
 #: declares no maximum length on any of them.
 MAX_CONTENT_STRING: Final = 64
+
+#: How many candidate drills one request may try before giving up. Bounded so pathological content
+#: cannot spin a request, and greater than one so a single unservable item does not end a session.
+MAX_SELECTION_ATTEMPTS: Final = 4
 
 #: The derived keys that ARE an answer. A composite merging two renderers must not resolve a
 #: clash on one of these by render order: the answer is not a matter of which product drew second.
@@ -222,7 +227,10 @@ class DrillLoop:
         self._progress = progress
         self._evaluator = evaluator if evaluator is not None else RubricEvaluator()
         self._pending: OrderedDict[str, _Pending] = OrderedDict()
-        self._unresolvable = self._items_without_a_resolvable_answer()
+        #: Mutable, because an item can also prove unservable at REQUEST time. See `_withhold`.
+        self._unresolvable: dict[str, str] = dict.fromkeys(
+            self._items_without_a_resolvable_answer(), "no generator supplies its answer"
+        )
 
     @property
     def ready(self) -> bool:
@@ -323,9 +331,41 @@ class DrillLoop:
         if not self.ready:
             raise DrillError("the content package is not loaded")
         progress = self._progress.load(operator_id)
-        item = self.select(progress) if item_id is None else self._named(item_id)
-        attempt = sum(1 for run in progress.runs if run.item_id == item.id)
-        seed = self._seed(operator_id, item.id, attempt)
+        #: **A refusal must feed back into selection.** `select` is a pure function of rating and
+        #: due-state, and a refusal records no run and advances no schedule, so an item whose
+        #: renderer RAISES was chosen again on every request: measured, one NaN on a content
+        #: parameter produced six consecutive 503s on the same item with no progress. That is the
+        #: absorbing state closed in V0.26 for one cause, reached through the handler added in
+        #: V0.26.1 for another. The load-time probe cannot see it, because it only inspects items
+        #: whose answer is computed; this one raised while rendering.
+        #:
+        #: So a refusal WITHHOLDS the item and the loop tries the next candidate, bounded. An
+        #: explicitly named item is never substituted - the caller asked for that item, and
+        #: `_named` refusing an unknown id is a control a test holds.
+        for remaining in range(MAX_SELECTION_ATTEMPTS, 0, -1):
+            item = self.select(progress) if item_id is None else self._named(item_id)
+            attempt = sum(1 for run in progress.runs if run.item_id == item.id)
+            seed = self._seed(operator_id, item.id, attempt)
+            try:
+                return self._serve_one(item, seed)
+            except DrillError as exc:
+                self._withhold(item.id, str(exc))
+                if item_id is not None or remaining == 1:
+                    raise
+        raise DrillError("no drill could be rendered within the selection budget")
+
+    def _withhold(self, item_id: str, reason: str) -> None:
+        """Take an item out of selection and say why, once.
+
+        Disclosed on the manifest and logged, so a withheld item is a visible content gap rather
+        than a drill that quietly stops appearing.
+        """
+        if item_id not in self._unresolvable:
+            self._unresolvable[item_id] = reason
+            log_event("drill.withheld", item=item_id, reason=reason)
+
+    def _serve_one(self, item: Drill, seed: int) -> ServedDrill:
+        """Render, validate and hold one drill. Raises `DrillError` on any refusal."""
         try:
             rendered = compose(
                 self._registry,
@@ -665,6 +705,8 @@ class DrillLoop:
             #: cannot support its key is a content gap somebody has to decide about, and a silent
             #: exclusion is how it would be forgotten.
             "items_without_a_resolvable_answer": sorted(self._unresolvable),
+            #: Why each was withheld. A bare list of ids says a gap exists; this says what it is.
+            "withheld_reasons": dict(sorted(self._unresolvable.items())),
             "stimulus_params_unread": self._unread_params(),
         }
 

@@ -233,6 +233,10 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             #: the claim "named on the manifest" was true one altitude below the surface an
             #: operator can reach - which is the fault this codebase names at `ScoredDrill`.
             "items_without_a_resolvable_answer": served["items_without_a_resolvable_answer"],
+            #: Serialised in the same edit that adds it to `manifest()`. Adding a field to the
+            #: method and forgetting the route is the exact fault the security gate raised one
+            #: commit ago, and I repeated it within the hour writing this fix.
+            "withheld_reasons": served["withheld_reasons"],
             "why_not_ready": (
                 ""
                 if content.scored_scenarios_ready

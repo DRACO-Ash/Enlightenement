@@ -714,3 +714,134 @@ def test_a_renderer_arithmetic_fault_is_an_author_facing_503_not_a_500(
         )
         with pytest.raises(DrillError):
             loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=target)
+
+
+def test_a_serve_time_refusal_withholds_the_item_and_the_session_continues(
+    tmp_path: Path,
+) -> None:
+    """The absorbing state, one door along from where it was closed.
+
+    V0.26 stopped an item with no resolvable answer being re-served for ever. V0.26.1 then added
+    handlers turning a renderer's arithmetic fault into a 503 - and those refusals fed back into
+    nothing. `select` is a pure function of rating and due-state and a refusal records no run, so
+    an item whose renderer RAISES was chosen again on every request: measured, one NaN on a
+    content parameter produced six consecutive 503s on the same item and no progress.
+
+    The load-time probe cannot catch this class: it only inspects items whose answer is computed,
+    and this one raises while rendering. So the refusal itself must withhold.
+    """
+    from enlightenment.generators import build_registry
+
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows:
+        if row["id"] == "DRL-0005":
+            row.setdefault("stimulus", {}).setdefault("params", {})["days"] = float("nan")
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    broken = ContentPackage(root)
+    broken.load()
+    store = ProgressStore(tmp_path / "progress.json")
+    loop = DrillLoop(content=broken, registry=build_registry(), progress=store)
+
+    served: list[str] = []
+    for _ in range(4):
+        drill = loop.serve(operator_id="operator-refusal")
+        served.append(drill.item_id)
+        loop.score(
+            run_id=drill.run_id,
+            response="manoeuvre",
+            confidence=3,
+            operator_id="operator-refusal",
+        )
+    assert "DRL-0005" not in served, "the raising item was served after it had already refused"
+    assert len(set(served)) > 1, f"the loop served the same item every turn: {served}"
+
+    manifest = loop.manifest()
+    assert "DRL-0005" in manifest["items_without_a_resolvable_answer"]
+    assert "NaN" in manifest["withheld_reasons"]["DRL-0005"], manifest["withheld_reasons"]
+
+
+def test_an_explicitly_named_item_is_never_substituted_when_it_refuses(tmp_path: Path) -> None:
+    """The withholding must not turn `serve(item_id=...)` into "serve something else".
+
+    A debrief asking for a specific run needs that item or an error, never a different drill.
+    """
+    from enlightenment.generators import build_registry
+
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows:
+        if row["id"] == "DRL-0005":
+            row.setdefault("stimulus", {}).setdefault("params", {})["days"] = float("nan")
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    broken = ContentPackage(root)
+    broken.load()
+    loop = DrillLoop(
+        content=broken,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    with pytest.raises(DrillError, match="DRL-0005"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-0005")
+
+
+def test_a_package_with_nothing_servable_refuses_instead_of_raising_from_min(
+    tmp_path: Path,
+) -> None:
+    """The empty-pool guard, which nothing exercised.
+
+    Replacing `if not scorable:` with `if False:` left the whole suite green. Without the guard
+    `min()` on an empty sequence raises `ValueError` from `select`, which sits outside `serve`'s
+    try block and becomes an unhandled 500 rather than the author-facing refusal this module
+    promises.
+    """
+    from enlightenment.content import Drill
+    from enlightenment.generators import GeneratorRegistry
+    from enlightenment.generators.base import Axis, Marks, Panel, Stimulus
+
+    class _Silent:
+        """A renderer that draws a surface and computes no answer, so the item is unresolvable."""
+
+        product_id = "PRD-SILENT"
+        name = "PRD-SILENT"
+        reads: frozenset[str] = frozenset()
+
+        def render(self, params: dict[str, Any], seed: int) -> Stimulus:
+            del params, seed
+            return Stimulus(
+                product_id=self.product_id,
+                generator=self.name,
+                title="silent",
+                panels=(
+                    Panel("p", Axis("x"), Axis("y"), marks=(Marks("m", "track", (0.0,), (0.0,)),)),
+                ),
+            )
+
+    registry = GeneratorRegistry()
+    registry.register(_Silent())
+    only_unresolvable = Drill(
+        id="DRL-ONLY",
+        stimulus={"product_id": "PRD-SILENT", "generator": "probe", "params": {}},
+        prompt="Nothing can answer this.",
+        response_format="numeric_estimate",
+        answer={"accept": ["computed_from_params"], "tolerance": {"absolute": 0}},
+    )
+    empty = ContentPackage(CONTENT)
+    empty.load()
+    empty.drills = (only_unresolvable,)
+    empty._by_id = {only_unresolvable.id: only_unresolvable}
+
+    loop = DrillLoop(
+        content=empty,
+        registry=registry,
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    assert loop.manifest()["items_without_a_resolvable_answer"] == ["DRL-ONLY"]
+    with pytest.raises(DrillError, match="nothing"):
+        loop.serve(operator_id=DEMONSTRATION_OPERATOR)
