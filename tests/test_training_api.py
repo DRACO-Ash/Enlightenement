@@ -505,6 +505,27 @@ def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gut
     assert "X_TICK_OFFSET_EM" in script
     assert "X_CAPTION_OFFSET_EM" in script
     assert "data-role" in script
+    #: The two controls added at V0.26.2, both of which were deletable with the whole suite green -
+    #: the same fault this file names two tests below, in the same release that cited it.
+    #:
+    #: THE REFIT MUST RUN AGAIN ON RESIZE. It ran only at draw time, so dragging a window narrower
+    #: left the stale build-time gutter in place until the next redraw, which is the clipped-label
+    #: fault returning by another route. The viewBox reset is asserted with it, because without the
+    #: reset each resize measures an already-widened box and grows it again until the plot
+    #: disappears - a worse fault than the one the observer closes.
+    assert "ResizeObserver" in script, "the refit does not run again after a resize"
+    assert re.search(
+        r"new ResizeObserver\(\(\) => \{\s*\n\s*\w+\.setAttribute\('viewBox'",
+        script,
+    ), "the resize refit does not reset the viewBox first, so the widening ratchets"
+    #: AND getBBox MUST BE GUARDED. It returns zeros inside a display:none container in Chromium
+    #: and throws rather than returning in other engines, and this call sits inside a
+    #: requestAnimationFrame callback, where a throw escapes silently and abandons the refit
+    #: half-applied. Asserting "getBBox in script" above holds the measurement, not the guard.
+    assert re.search(r"try \{\s*\n\s*\w+ = \w+\.getBBox\(\);\s*\n\s*\} catch", script), (
+        "getBBox is unguarded, so an engine that throws abandons the refit inside a"
+        " requestAnimationFrame callback"
+    )
 
 
 def test_the_withheld_items_are_named_on_the_served_manifest(client: TestClient) -> None:
