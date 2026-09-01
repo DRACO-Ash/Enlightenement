@@ -100,6 +100,20 @@ def compose(
         if requested == "all" or not isinstance(requested, list)
         else [str(p) for p in requested]
     )
+    #: **A duplicated product is refused, not drawn.** An unknown product id already fails closed
+    #: below, so duplication was the one way left to inflate the render loop: a board naming
+    #: `PRD-WATERFALL` thirty times rendered 126 MB and burned seven seconds of CPU on ONE
+    #: unauthenticated request, and the payload budget can only refuse that after the memory is
+    #: already allocated. Refused rather than de-duplicated, because the same product twice is a
+    #: content fault and silently collapsing it would change the authored board.
+    #:
+    #: No arbitrary ceiling: the honest bound is the number of products that exist, and this
+    #: enforces it exactly. Verified against the shipped library, where no board duplicates.
+    if len(set(product_ids)) != len(product_ids):
+        duplicated = sorted({p for p in product_ids if product_ids.count(p) > 1})
+        raise LookupError(
+            f"composite names {duplicated} more than once; a board draws each product once"
+        )
     rendered: list[Stimulus] = []
     for index, wanted in enumerate(product_ids):
         target = registry.for_product(wanted)

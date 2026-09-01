@@ -966,3 +966,37 @@ def test_no_authored_value_in_the_library_is_silently_clamped(package: ContentPa
             if isinstance(value, int | float) and not isinstance(value, bool) and value > ceiling:
                 clamped.append(f"{drill.id}: {name}={value} exceeds the {ceiling} ceiling")
     assert not clamped, clamped
+
+
+def test_a_composite_board_cannot_name_the_same_product_twice() -> None:
+    """A duplicated product was the one way left to inflate the render loop.
+
+    An unknown product id already fails closed, so duplication was the remaining lever: a board
+    naming `PRD-WATERFALL` thirty times rendered 126 MB and burned seven seconds of CPU on ONE
+    unauthenticated request, and the payload budget can only refuse that AFTER the memory is
+    allocated. Refused rather than de-duplicated, because the same product twice is a content
+    fault and quietly collapsing it would change the authored board.
+
+    No arbitrary ceiling: the honest bound is the number of products that exist, and refusing a
+    duplicate enforces exactly that. `products: "all"` still renders every registered product.
+    """
+    registry = build_registry()
+    with pytest.raises(LookupError, match="more than once"):
+        compose(registry, "composite", {"products": ["PRD-WATERFALL"] * 30}, SEED)
+    with pytest.raises(LookupError, match="more than once"):
+        compose(registry, "composite", {"products": ["PRD-TRIC", "PRD-TRIC"]}, SEED)
+
+    everything = compose(registry, "composite", {"products": "all"}, SEED)
+    assert len(everything) == len(registry.product_ids)
+    pair = compose(registry, "composite", {"products": ["PRD-TRIC", "PRD-WATERFALL"]}, SEED)
+    assert len(pair) == 2
+
+
+def test_no_authored_composite_board_duplicates_a_product(package: ContentPackage) -> None:
+    """The refusal above must not be reachable from the shipped library."""
+    duplicated: list[str] = []
+    for drill in package.drills:
+        board = drill.stimulus.params.get("products")
+        if isinstance(board, list) and len(set(board)) != len(board):
+            duplicated.append(drill.id)
+    assert not duplicated, duplicated

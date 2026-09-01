@@ -39,6 +39,26 @@ UNSCORABLE_NOTE: Final = "This item's expected value could not be resolved."
 #: partial credit per authored answer and says nothing about this composition.
 PARTIAL_DIRECTION_CREDIT: Final = 0.5
 
+#: Suffixes a direction word may legitimately carry in prose. Bounded on purpose: an open `\w*`
+#: accepted "eastwest" and "eastasdfgh" as a correct reading of an eastward drift.
+DIRECTION_SUFFIXES: Final = r"(?:ward|wards|erly|ern)?"
+
+#: The compass vocabulary a drift direction is stated in. Domain fact, not content: used to notice
+#: that a response names a direction which was NOT drawn.
+COMPASS_DIRECTIONS: Final = (
+    "north",
+    "south",
+    "east",
+    "west",
+    "northeast",
+    "northwest",
+    "southeast",
+    "southwest",
+)
+
+#: Words that deny whatever follows them. "not east" named the right token and meant the opposite.
+NEGATIONS: Final = ("not", "isnt", "arent", "no", "never", "neither", "rather than", "instead of")
+
 #: Stripped from the front of a response, once, then again. Two bounded passes rather than a loop,
 #: because an unbounded strip on attacker-controlled input is a denial of service in a regex.
 _FILLERS = (
@@ -214,6 +234,24 @@ def match_text(response: str, answer: Answer) -> Match:
     return Match("none", 0.0)
 
 
+def _contradicted(typed: str, tokens: tuple[str, ...]) -> bool:
+    """Whether the response names a direction other than the drawn one, or denies it.
+
+    The compass vocabulary is domain fact rather than content: there are eight of them and they
+    are the words a drift direction is stated in. A response naming one that was not drawn, or
+    prefixed by a negation, is not a correct reading however well it also names the right one.
+    """
+    wanted = {token.casefold() for token in tokens}
+    named = {
+        direction
+        for direction in COMPASS_DIRECTIONS
+        if re.search(rf"\b{direction}{DIRECTION_SUFFIXES}\b", typed)
+    }
+    if named - wanted:
+        return True
+    return any(re.search(rf"\b{negation}\b", typed) for negation in NEGATIONS)
+
+
 def match_derived_text(
     response: str, derived: dict[str, Any], answer: Answer | None = None
 ) -> Match:
@@ -238,10 +276,23 @@ def match_derived_text(
     #: generators emit tuples today, and a mapping is the natural thing for the next author to
     #: write, so the shape is normalised here rather than trusted at every call site.
     tokens = (expected,) if isinstance(expected, str) else tuple(str(v) for v in expected)
-    #: A token matches the START of a word, so "west" accepts "westwards" and "westerly" - a
-    #: fully correct prose answer that a strict word boundary rejected. It still will not match
-    #: inside a word, so "west" does not accept "southwest".
-    if any(re.search(rf"\b{re.escape(token)}\w*", typed) for token in tokens):
+    #: A token matches the word, or the word with one of a NAMED set of suffixes: "west" accepts
+    #: "westwards" and "westerly", which are fully correct prose answers a strict word boundary
+    #: rejected. The suffix set is bounded because an open `\w*` accepted "eastwest" and
+    #: "eastasdfgh" as correct - a wrong answer scoring full credit, which is worse than the
+    #: pedantry it was widening away from.
+    #:
+    #: And a CONTRADICTED direction is refused. An answer naming a compass direction that is not
+    #: the one drawn ("east or west", "drifting west, not east") or negating the one drawn
+    #: ("not east") scored full credit, because the search only asked whether the right token
+    #: appeared anywhere. An operator who names two directions has not read the plot.
+    if _contradicted(typed, tokens):
+        return Match(
+            "none",
+            0.0,
+            note="Name one direction. The answer given names more than one, or denies it.",
+        )
+    if any(re.search(rf"\b{re.escape(token)}{DIRECTION_SUFFIXES}\b", typed) for token in tokens):
         return Match("accept", 1.0)
 
     #: **The item's authored partial and reject entries still apply.** This matcher consulted

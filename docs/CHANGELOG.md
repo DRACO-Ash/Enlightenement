@@ -2,6 +2,55 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.1 (2026-09-01)
+
+**What.** The security gate ran alone against V0.26 and failed it with two majors and three
+minors. Both majors are in code V0.25 and V0.26 added, and both defeat a control this register
+states as closed. Every finding was reproduced here before anything was changed.
+
+**The fix for a crash loop caused a crash loop.** V0.24.3 closed the loader's decode faults so a
+bad content file could never stop the container starting. V0.26 then added a load-time probe that
+renders every sentinel drill to ask whether its answer resolves - and guarded only `LookupError`.
+A single NaN in a content parameter raises `ValueError: cannot convert float NaN to integer`
+straight out of that probe, `asgi.py` calls `create_app()` at import, and the worker never boots:
+a crash loop with no health path to screenshot. Reproduced on four of five cases against the
+shipped library, and `ephemeris` with `elapsed_min: 0` raises `ZeroDivisionError` from a plain
+authored integer. The probe now treats ANY failure as "cannot resolve", which is the fail-closed
+answer and is why the breadth is correct there: the item is withheld and NAMED, so nothing hides
+behind it. At request time the same class of fault now earns the author-facing 503 this module
+documents instead of a generic 500.
+
+**A bound that was not a bound.** Every content-supplied count was capped at its renderer in
+V0.24.3, and the comment claimed "ceilings on every content-supplied count that sizes a loop".
+The composite BOARD is such a count and had none: a board naming one product thirty times
+rendered 126 MB and burned seven seconds of CPU on a single unauthenticated request, and the
+payload budget can only refuse that after the memory is already allocated. The fix needs no
+arbitrary ceiling, which is the part worth keeping: an unknown product id already fails closed,
+so duplication was the only lever left, and a board naming the same product twice is a content
+fault. It is refused rather than de-duplicated, because collapsing it silently would change the
+authored board. Verified: refused in 0.000s with no allocation, `products: "all"` still renders
+all ten, and no board in the shipped library duplicates.
+
+**A disclosure that reached no surface.** V0.26 said the withheld items are "named on the
+manifest" and the route did not serialise them, so it was true of a method and false of every
+surface an operator can reach. The test asserted `loop.manifest()`, one altitude below the thing
+it was claiming. This codebase names that exact fault at `ScoredDrill.as_dict` and then repeated
+it in the commit that cited it.
+
+**Widening a matcher let a wrong answer score.** V0.26 relaxed the direction token to a word
+PREFIX so "westwards" would be accepted, which it should be. It also accepted "eastwest" and
+"eastasdfgh" as a correct reading of an eastward drift, and the pre-existing anywhere-in-the-
+response search accepted "not east" and "east or west". Full credit for a self-contradictory
+answer moves a rating nobody earned, which is worse than the pedantry the widening was fixing.
+The suffix set is now named and bounded, and an answer that names a direction other than the one
+drawn, or denies it, is refused.
+
+**How verified.** Loop green, seven legs: 956 passed, 2 skipped, coverage 97.02%. All five fixes
+mutation-proved individually - each mutation reverted, the full suite run, and the named test
+shown failing - and the four gate findings re-measured after the fix: the container starts on
+every NaN case with health 200, the board refuses with no allocation, both arithmetic edges give
+a 503, and twelve direction answers score as they should.
+
 ## V0.26 (2026-09-01)
 
 **What.** The engineering gate's fourth round failed V0.25 with two blockers and five majors.

@@ -401,3 +401,28 @@ def test_a_computed_item_still_awards_the_credit_its_content_authors(
     assert isinstance(direction, tuple)
     right = match(f"it is drifting {direction[0]}", drill.answer, drill.response_format, derived)
     assert right.matched == "accept"
+
+
+def test_a_direction_answer_is_refused_when_it_names_more_than_one_or_denies_one() -> None:
+    """Widening the token match to a prefix let a wrong answer score full credit.
+
+    `\\btoken\\w*` accepted "eastwest" and "eastasdfgh" as a correct reading of an eastward drift,
+    and the anywhere-in-the-response search accepted "not east" and "east or west" - an operator
+    naming two directions, or denying the right one, collecting the mark. Full credit for a
+    self-contradictory answer moves a rating that was not earned, which is worse than the
+    pedantry the widening was fixing.
+    """
+    drawn = {"expected_text": ("east",)}
+    for right in ("east", "drifting eastwards", "it is drifting east", "eastern drift"):
+        assert match_derived_text(right, drawn).matched == "accept", right
+    for wrong in (
+        "eastwest",
+        "eastasdfgh",
+        "not east",
+        "east or west",
+        "it is drifting west, not east",
+        "southwest",
+        "west",
+        "e",
+    ):
+        assert match_derived_text(wrong, drawn).matched != "accept", wrong

@@ -504,3 +504,17 @@ def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gut
     assert "X_TICK_OFFSET_EM" in script
     assert "X_CAPTION_OFFSET_EM" in script
     assert "data-role" in script
+
+
+def test_the_withheld_items_are_named_on_the_served_manifest(client: TestClient) -> None:
+    """Asserted on the RESPONSE BODY, because the first version asserted one altitude below it.
+
+    `DrillLoop.manifest()` carried the list of items withheld from selection and the route did not
+    serialise it, so "named on the manifest" was true of a method and false of every surface an
+    operator can reach - the exact fault this codebase names at `ScoredDrill.as_dict`, repeated in
+    the commit that cited it.
+    """
+    served = client.get("/api/v1/content/manifest").json()
+    assert "items_without_a_resolvable_answer" in served, sorted(served)
+    #: One today: DRL-0008, whose manoeuvre count is not readable off a relative-motion track.
+    assert served["items_without_a_resolvable_answer"] == ["DRL-0008"]

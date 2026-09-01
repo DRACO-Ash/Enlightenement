@@ -229,6 +229,10 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             "rubric_rules_implemented": served["rubric_rules_implemented"],
             "rubric_rules_unwired": served["rubric_rules_unwired"],
             "stimulus_params_unread": served["stimulus_params_unread"],
+            #: Served, not merely computed. `manifest()` carried this and the route did not, so
+            #: the claim "named on the manifest" was true one altitude below the surface an
+            #: operator can reach - which is the fault this codebase names at `ScoredDrill`.
+            "items_without_a_resolvable_answer": served["items_without_a_resolvable_answer"],
             "why_not_ready": (
                 ""
                 if content.scored_scenarios_ready

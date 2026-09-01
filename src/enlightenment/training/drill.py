@@ -256,7 +256,18 @@ class DrillLoop:
                     RESOLUTION_PROBE_SEED,
                     drill.stimulus.product_id,
                 )
-            except LookupError:
+            except Exception:  # any failure to produce an answer means "cannot resolve"
+                #: DELIBERATELY broad, and this breadth is the fix. Guarding only `LookupError`
+                #: let a renderer's arithmetic escape `create_app` itself: a single NaN in a
+                #: content parameter raised `ValueError: cannot convert float NaN to integer` out
+                #: of this probe, `asgi.py` calls `create_app()` at import, and the worker then
+                #: never boots - a crash loop with no health path to screenshot. Four of five
+                #: probe cases did it, and `ephemeris` with `elapsed_min: 0` raises
+                #: `ZeroDivisionError` from a plain authored integer.
+                #:
+                #: This is a PROBE, not the render path. Any failure to produce an answer means
+                #: exactly "this item cannot resolve one", which is the fail-closed result, and
+                #: the item is then withheld AND NAMED, so nothing is hidden by the breadth.
                 unresolvable.add(drill.id)
                 continue
             facts: dict[str, Any] = {}
@@ -325,6 +336,13 @@ class DrillLoop:
             )
         except LookupError as exc:
             raise DrillError(f"{item.id}: {exc}") from None
+        except ArithmeticError as exc:
+            #: A renderer's arithmetic on a content value is a CONTENT fault, so it earns the
+            #: author-facing 503 this module documents rather than a generic 500. `elapsed_min: 0`
+            #: divides by zero and `1e308` overflows a domain, both from plain authored numbers.
+            raise DrillError(f"{item.id}: the stimulus could not be computed: {exc}") from None
+        except (ValueError, TypeError) as exc:
+            raise DrillError(f"{item.id}: the stimulus parameters are not usable: {exc}") from None
 
         #: A composite renders several products and their server-side facts are merged, so a key
         #: one renderer owns can be overwritten by the next in render order.

@@ -11,6 +11,7 @@ twice.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -635,3 +636,81 @@ def test_two_products_on_one_board_cannot_both_supply_the_answer(
     )
     with pytest.raises(DrillError, match="depend on render order"):
         loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id="DRL-CLASH")
+
+
+#: Content values that make a renderer's arithmetic fail. Every one is a plain number a content
+#: author could type: NaN survives `json.loads` by default, and `elapsed_min: 0` is an integer.
+HOSTILE_NUMBERS: tuple[tuple[str, str, object], ...] = (
+    ("DRL-0030", "days", float("nan")),
+    ("DRL-0030", "headcount", float("nan")),
+    ("DRL-0008", "revolutions", float("nan")),
+    ("DRL-0008", "separation_km", float("nan")),
+)
+
+
+def test_a_renderer_arithmetic_fault_never_stops_the_container_starting(tmp_path: Path) -> None:
+    """The load-time answer probe raised out of `create_app`, so the worker never booted.
+
+    `_items_without_a_resolvable_answer` renders every sentinel drill at construction, and it
+    guarded only `LookupError`. A single NaN in a content parameter raised `ValueError: cannot
+    convert float NaN to integer` straight out of the probe; `asgi.py` calls `create_app()` at
+    import, so the result is a crash loop with no health path to screenshot. Four of five probe
+    cases did it, one commit after the loader's decode faults were closed for the same reason.
+    """
+    import os
+    from http import HTTPStatus
+    from unittest import mock
+
+    from fastapi.testclient import TestClient
+
+    from enlightenment.app import create_app
+
+    for index, (drill_id, key, value) in enumerate(HOSTILE_NUMBERS):
+        root = tmp_path / f"content-{index}"
+        shutil.copytree(CONTENT, root)
+        document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+        rows = document["drills"] if isinstance(document, dict) else document
+        for row in rows:
+            if row["id"] == drill_id:
+                row.setdefault("stimulus", {}).setdefault("params", {})[key] = value
+        (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+        with mock.patch.dict(os.environ, {"CONTENT_DIR": str(root)}):
+            client = TestClient(create_app())
+        assert client.get("/healthz").status_code == HTTPStatus.OK, (drill_id, key)
+        assert client.get("/livez").status_code == HTTPStatus.OK, (drill_id, key)
+
+
+def test_a_renderer_arithmetic_fault_is_an_author_facing_503_not_a_500(
+    package: ContentPackage, tmp_path: Path
+) -> None:
+    """`serve` caught only `LookupError`, so `elapsed_min: 0` became a generic 500.
+
+    A renderer dividing by a content value is a CONTENT fault and earns the 503 that names the
+    item, which is what this module documents. Driven directly, because selection never reaches
+    the ephemeris item.
+    """
+    from enlightenment.generators import build_registry
+
+    for value in (0, 1e308):
+        root = tmp_path / f"eph-{value}"
+        shutil.copytree(CONTENT, root)
+        document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+        rows = document["drills"] if isinstance(document, dict) else document
+        target = ""
+        for row in rows:
+            if (row.get("stimulus") or {}).get("generator") == "ephemeris":
+                row["stimulus"].setdefault("params", {})["elapsed_min"] = value
+                target = target or row["id"]
+        (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+        assert target, "no ephemeris item in the library, so this test asserts nothing"
+
+        broken = ContentPackage(root)
+        broken.load()
+        loop = DrillLoop(
+            content=broken,
+            registry=build_registry(),
+            progress=ProgressStore(tmp_path / f"p-{value}.json"),
+        )
+        with pytest.raises(DrillError):
+            loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=target)
