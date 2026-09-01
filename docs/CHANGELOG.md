@@ -2,6 +2,81 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.3 (2026-09-01)
+
+**What.** The engineering gate's sixth round failed V0.26.2 with four majors, and two of them were
+mutation-proof claims I had made in that release and that did not hold. Every finding was
+reproduced here before anything changed, six root causes were fixed as six commits, and three
+faults the gate did not name turned up while reproducing the ones it did.
+
+**A word count cannot tell what a denial is about.** This is the THIRD shape of the contradiction
+check in three releases, and the reason is measured. A window of "up to two words before the
+direction" is wide enough to jump a clause: `"not station-keeping, drifting west at 0.279 deg/day"`
+scored partial, and `"no doubt drifting east"`, `"not stationary, east"`, `"rather than holding,
+east"`, `"instead of holding, east"` and `"no manoeuvre, east drift"` scored nothing at all. Six
+correct readings, penalised, by the fix for the version that penalised different correct readings.
+The denial must now be ADJACENT to the direction across a closed vocabulary of motion words. Two
+more faults in the same function, found while reproducing that one: a SPACED compound was refused
+where the hyphenated one was accepted, because closing hyphens was the whole of the compound
+handling and the space is the commoner spelling; and the apostrophe form of a contraction was
+caught by nothing, because `normalise` renders `"isn't"` as `"isn t"`, so the `isnt` entry in
+`NEGATIONS` only ever fired for an operator who omitted the apostrophe - while the docstring
+claimed that exact string was caught. Three residual under-catches are now named in the module and
+each was verified by driving it rather than reasoned about.
+
+**Content does not get to set the size of an anonymous response.** A withhold reason embeds the
+`repr` of the authored parameter that caused the refusal, and `content/models.py` declares no
+maximum length on any value in `params`. Measured: a 3,000-character `newest_at` produces a
+3,100-character reason, stored verbatim, served on the unauthenticated manifest and written to the
+run log, across up to 140 items. `MAX_WITHHOLD_REASON` is 256, measured rather than chosen - the
+longest reason any real content fault produces in this library is 190 characters - and a cut reason
+says it was cut. The engineering gate referred this to the security gate rather than adjudicating
+it, which is the correct division and is recorded here as such.
+
+**Two claims of mine from V0.26.2 that were false.** The reasons were serialised on the route and
+asserted by nothing: deleting the field left the whole suite green, which is the same fault, one
+field along, as the one the commit that added it cited. And both new plot controls were deletable
+with everything green - the `ResizeObserver` refit and the `getBBox` guard. Writing the assertion
+for the first of those turned up a third way to lose the behaviour that no finding had named: keep
+the observer and drop only the viewBox reset, and the widening ratchets until the plot disappears.
+Four releases running, the pattern is the same: I write the guard, then a test for the guard's
+happy path rather than for its absence.
+
+**An unreachable line is not a control.** `serve` re-raised the last item's refusal on its final
+attempt, so the trailing "no drill could be rendered within the selection budget" could never
+execute; coverage had named the line and it existed for the return type. The operator was told "one
+item is broken" when the fact was "four candidates refused". Three controls in that loop now have
+drivers, including the named-item early raise, whose mutation two separate gate rounds found
+surviving because `_named` returns the same item every call and the budget message still carries
+the id the substitution test matches on. The effect is the attempt COUNT, so the count is asserted.
+
+**A test of mine that was an identity in its own subject.** The first version of the budget
+assertion read `== MAX_SELECTION_ATTEMPTS`: widening the budget to eight left it green. Found by
+mutating my own new test rather than by a gate, and replaced with a literal.
+
+**Two records of one measurement disagreed, and the source held the wrong one.** `products.py` said
+an excursion factor of 2.5 "put nineteen degrees on an axis whose box is six". Nineteen is not
+reproducible from anything here. Measured at the shipped seed: 2.5 draws 15.0° across a 6.0° box,
+1.2 draws 7.2°, 25.0 draws 150.0°. Fifteen is what the test's own comment quotes, so the
+unverifiable figure was the one in the source. `MAX_READABLE_EXCURSION_DEG` stays at 12.0 and now
+discloses what it does not know: it also admits factor 2.0 at exactly 12.0°, and no entry in this
+repository records a browser measurement of the excursion at any factor. A draft of that comment
+claimed the shipped factor "was checked in a browser"; no entry supports it, and it was removed
+before commit rather than shipped.
+
+**A measurement harness of mine that lied, twice.** The first excursion measurement returned 7.2°
+for every factor, including 25.0, because the subprocess read a stale bytecode cache. Re-run with
+`__pycache__` cleared and the factor in effect printed alongside each figure. And a mypy run
+scoped to two files reported six errors that the project-wide run does not raise, because the
+per-file invocation bypasses the project config. Neither figure went into anything shipped, and
+both are recorded because a harness that agrees with itself is not evidence.
+
+**How it was verified.** The loop is green on all seven legs: 966 passed, 2 skipped, coverage
+97.17%. Every one of the six fixes is killed by its own mutation, twelve mutations in total, each
+applied with a `count(old) == 1` guard after two earlier experiments in this project silently
+applied to nothing. Three new register rows, because the citation sweep failed the loop until they
+existed - which is that check doing exactly what it was built for.
+
 ## V0.26.2 (2026-09-01)
 
 **What.** The engineering gate's fifth round failed V0.26.1 with one blocker, two majors and
