@@ -1438,6 +1438,35 @@ def test_every_test_named_in_the_security_policy_exists() -> None:
     assert cited, "the sweep found no cited test names, so it is asserting nothing"
 
 
+def test_every_control_row_splits_into_the_header_s_columns() -> None:
+    """A stray `|` in a control's prose splits its row into more cells than the header declares,
+    and every check that reads the table by cell INDEX then reads the wrong cell.
+
+    Measured: the shortened-identifier row carried five pipes against a three-column header from
+    `4045e52` to `9db2c42`, six consecutive commits, and nothing failed. The sibling row-shape
+    guard skips on `len(cells) < 4`, a floor rather than an equality, so a row with an EXTRA
+    column passes it. The cost is not hypothetical: the stray pipe cut that row's control cell in
+    half, so measuring the cell by index returned 1,126 characters for a 4,872-character row.
+
+    The header's own width is read from the table and also asserted against a literal, so
+    widening the register is a deliberate two-line edit rather than something a stray character
+    can do.
+    """
+    policy = (ROOT / "docs" / "SECURITY.md").read_text(encoding="utf-8")
+    rows = _control_table_rows(policy).splitlines()
+    cells_per_row = len(rows[0].split("|"))
+    assert cells_per_row == 5, (
+        "the control table header no longer declares exactly three columns, so the checks that"
+        f" index its cells need re-reading before this literal is raised: {rows[0]!r}"
+    )
+    misshapen = [row for row in rows if len(row.split("|")) != cells_per_row]
+    assert misshapen == [], (
+        f"these control-table rows do not split into the header's {cells_per_row - 2} columns, so"
+        " a check reading a cell by index reads the wrong cell there; a literal pipe inside a"
+        f" control's prose has to be escaped: {[row[:120] for row in misshapen]}"
+    )
+
+
 # --- the verified-edit helper is itself executed --------------------------------------
 
 

@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.21 (2026-09-02)
+
+**What.** One blocker, one major and four minors, every one of them in `docs/SECURITY.md` or in a
+figure about it. **The blocker is the fourth consecutive release to put a false figure in the same
+register cell, and this time the figures were transplanted from the row next to it.**
+
+**Three figures belonging to a different fault class.** The sentence written last release to replace
+3,079 deleted characters said "**Nine** instances of this fault reached **nine** consecutive
+releases, and the sweeps written to close it were **four** of them". The shortened-identifier class
+has **seven** instances: V0.26.14 found the sixth, V0.26.15 the seventh, and V0.26.16 and V0.26.17
+each swept the rest of the source and recorded no eighth. Nine, nine and four are the figures of the
+**unbounded-anonymous-response** class in the row three lines below - `docs/SECURITY.md:105`, "NINE
+surfaces across seven releases, and the sweeps written to end the class were themselves four of
+them". So the cell contradicted `src/enlightenment/identifiers.py`, whose docstring says seven, and
+the V0.26.15 audit row, which says seven, and it breached the hard rule on inventing a figure. The
+range was wrong at its lower bound too: V0.26.3 capped a withhold REASON, which is prose. The
+unmarked truncation of an IDENTIFIER was introduced at V0.26.6, and the range now says so and says
+why, so the bound carries its own justification instead of needing to be looked up.
+
+**Reproduced before it was written.** The seven-instance figure was taken from the changelog and
+`identifiers.py`, not from the gate's report - transplanting a figure from an adjacent source is
+precisely what caused this blocker, so no number in this release is transcribed.
+
+**A pair of figures on two different bases.** The V0.26.20 row said the cell "had reached 5,058
+characters" and was "1,791 characters now". Measured: 4,872 for the row at `9db2c42` and 1,790 at
+`ebfc103`, both excluding the newline; 4,208 and 1,126 for the control CELL; 4,873 and 1,791 with
+the newline. **The old figure is reproducible on no basis at all and the new one was the row plus
+its newline**, so the two were never comparable, which is the whole point of quoting them together.
+Both are now on the row basis with the one-line command that produces them.
+
+**The register had no column-count assertion, and had already lost a measurement to that.** Row 102
+carried five pipes against a three-column header for six consecutive commits, `4045e52` to
+`9db2c42`, and nothing failed: the row-shape guard skips on `len(cells) < 4`, a floor rather than an
+equality, so an EXTRA column is invisible to it. The cost was not hypothetical - the control cell
+was split in half, so a cell-indexed measurement of that row returned 1,126 characters for a
+4,872-character row. Now asserted equal to the header's width, with the header's own width asserted
+against a literal so widening the register is a deliberate two-line edit. **Measured: with a stray
+pipe restored to row 102, all 188 other tests in `tests/test_appstore_contract.py` pass and only
+the new one fails.**
+
+**The row that the false figures came from was the worst accretion offender.** `docs/SECURITY.md:105`
+was 2,683 characters against a median control cell of 78 across the register's 156 data rows, and
+its tail duplicated 246 characters verbatim from the row above it - a clause about the withheld
+collections, which is the control row 104 owns. Restructured the way row 102 was: the two
+structural lessons that explain the sweep's shape are kept in one sentence, the byte measurements
+and the per-release account go to this
+changelog, the duplicate and a double space are gone. 1,880 characters now.
+
+**And one clause restored rather than dropped.** The V0.26.20 restructure deleted a live property:
+`audit.py` cuts a log value at 256 unmarked and undigested, so a caller has to shorten before
+`log_event` and cannot rely on the sink. That is back, and the competency-name clause is corrected
+with it - it said the name "keeps the plain bound", but `training/drill.py:831` calls `capped`, which
+appends the truncation marker. **Row 102 is therefore 1,976 characters, up from 1,790.** Recorded
+rather than smoothed over: a row whose subject is accretion grew, because a restored control
+property and a self-justifying range bound are worth more than the count.
+
+**How it was verified.** Loop green on all seven legs: 986 passed, 2 skipped, coverage 97.49%.
+No source changed: the diff is `docs/SECURITY.md`, `docs/CHANGELOG.md`, one new test, and the
+version stamps.
+
 ## V0.26.20 (2026-09-02)
 
 **What.** Two majors, both inside the single sentence written last release to replace a deleted
@@ -19,11 +79,14 @@ prefix", "cut at 256", "63 to 64" are none of those things. **A bolded universal
 inspection is exactly the defect this row exists to record.**
 
 **Then the cell, not the sentence.** Three consecutive releases have failed on prose in this one
-register cell, each new sentence carrying a new flaw, and the cell had reached 5,058 characters and
+register cell, each new sentence carrying a new flaw, and the row had reached 4,872 characters and
 sixteen sentences. **A register cell that grows a clause per round is how a claim outlives the code
-it describes.** It is 1,791 characters now and states the control, the fault it prevents, the
-persisted-format constraint and the one deliberate exception - and it says outright that the history
-lives in this changelog and not there. The register's promise is a control and a test that fails if
+it describes.** It is 1,790 characters at this release and states the control, the fault it
+prevents, the persisted-format constraint and the one deliberate exception - and it says outright
+that the history lives in this changelog and not there. **Both figures are the whole table ROW,
+excluding its newline**, which is `awk 'NR==102{print length($0)}' docs/SECURITY.md`; the pair
+originally recorded here were 5,058 and 1,791, the first reproducible on no basis at all and the
+second the row plus its newline, and V0.26.21 corrected them. The register's promise is a control and a test that fails if
 it regresses, not a narrative.
 
 **Two smaller corrections.** The sibling test's opening line still carried "the last two standing
