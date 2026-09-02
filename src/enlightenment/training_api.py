@@ -66,7 +66,7 @@ MAX_SERVED_ERRORS: Final = 20
 #: and the largest product - PRD-COCO, document plus layout - to 5,616, so this clears honest
 #: content 4.7 times over. The 2,304 in an earlier draft of this comment was the product document
 #: alone, measured without the layout the route serves beside it. The
-#: gate reached 2,497,065 bytes on a procedure and 342,786 on a product by stretching string
+#: gate reached 2,497,065 bytes on a procedure and 342,884 on a product by stretching string
 #: leaves, both anonymous, and the sweep that was supposed to cover these routes skipped them
 #: because its discovery filter dropped every parameterised path.
 MAX_SERVED_DOCUMENT_BYTES: Final = 64 * 1024
@@ -266,6 +266,12 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             #: the claim "named on the manifest" was true one altitude below the surface an
             #: operator can reach - which is the fault this codebase names at `ScoredDrill`.
             "items_without_a_resolvable_answer": served["items_without_a_resolvable_answer"],
+            #: Serialised WITH the list. Capping the list and leaving the total in the method is
+            #: the fault this file names two fields down: a field added to `manifest()` and not to
+            #: the route is true one altitude below the surface an operator reaches.
+            "items_without_a_resolvable_answer_total": served[
+                "items_without_a_resolvable_answer_total"
+            ],
             #: Serialised in the same edit that adds it to `manifest()`. Adding a field to the
             #: method and forgetting the route is the exact fault the security gate raised one
             #: commit ago, and I repeated it within the hour writing this fix.

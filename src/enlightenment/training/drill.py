@@ -92,6 +92,19 @@ MAX_WITHHOLD_REASON: Final = 256
 #: limits, and a test cannot assert a limit it cannot name.
 MAX_SERVED_PARAMS: Final = 25
 
+#: How many withheld items the manifest names, and how many reasons it gives. NINTH surface: both
+#: were bounded per entry and uncapped in COUNT, so their size was set by the number of drills and
+#: by accumulated runtime state. Measured on a tree that loads clean and answers 200: 140 drills
+#: gave a 17,014-byte manifest - already over the 16 kB ceiling this project's own sweep asserts -
+#: and 560 drills gave 64,675. The runtime path is the worse of the two, because `_withhold` adds
+#: an entry per render refusal with a reason up to `MAX_WITHHOLD_REASON` rather than the
+#: 32-character load-time one, so the route grew over the container's life.
+#:
+#: Every sibling field on this same dict was already count-capped. These two were the odd ones out,
+#: against this module's own sentence that entry count and per-entry length are different limits.
+#: The UNTRUNCATED TOTAL is served beside them, so a shortened list cannot read as a complete one.
+MAX_SERVED_WITHHELD: Final = 25
+
 #: How many due item ids and competency rows `/api/v1/me` serves. Both were UNBOUNDED in count or
 #: length until V0.26.8: `due_items` had a bare `[:20]` over raw ids, and the competency id and name
 #: had neither cap. Measured on the shipped library with ids stretched to 3,010 characters and
@@ -829,9 +842,13 @@ class DrillLoop:
             #: Named, not merely excluded. An item withheld from selection because its stimulus
             #: cannot support its key is a content gap somebody has to decide about, and a silent
             #: exclusion is how it would be forgotten.
-            "items_without_a_resolvable_answer": sorted(self._unresolvable),
+            "items_without_a_resolvable_answer": sorted(self._unresolvable)[:MAX_SERVED_WITHHELD],
             #: Why each was withheld. A bare list of ids says a gap exists; this says what it is.
-            "withheld_reasons": dict(sorted(self._unresolvable.items())),
+            "withheld_reasons": dict(sorted(self._unresolvable.items())[:MAX_SERVED_WITHHELD]),
+            #: The TOTAL, untruncated. Capping a disclosure without saying how much was cut turns
+            #: "these are the gaps" into "here are twenty-five of an unstated number", which is a
+            #: worse disclosure than the uncapped list it replaces.
+            "items_without_a_resolvable_answer_total": len(self._unresolvable),
             "stimulus_params_unread": self._unread_params(),
         }
 

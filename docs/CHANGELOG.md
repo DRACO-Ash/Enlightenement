@@ -2,6 +2,60 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.11 (2026-09-02)
+
+**What.** The ninth surface, two majors and three minors. The ninth is the same shape as the eighth
+one order along: two collections that were bounded per entry and uncapped in COUNT, so their size
+was set by the number of drills and by accumulated runtime state rather than by any limit the server
+holds.
+
+**The ninth surface.** `items_without_a_resolvable_answer` and `withheld_reasons` on the anonymous
+manifest. Measured on a tree that loads clean and answers 200: **140 drills served 17,014 bytes -
+already over this project's own 16 kB ceiling - and 560 served 64,675.** The runtime path is worse
+than the content path, because `_withhold` adds an entry per render refusal carrying a reason up to
+256 characters rather than the 32-character load-time one, so the route grew over the container's
+life. Every sibling field on that same dict was already count-capped; these two were the odd ones
+out, against this module's own sentence that entry count and per-entry length are different limits.
+Capped at `MAX_SERVED_WITHHELD`, with the **untruncated total served beside them**, because capping
+a disclosure without saying how much was cut turns "these are the gaps" into "here are
+twenty-five of an unstated number".
+
+**And the ceiling could not see it, exactly as this file says a ceiling cannot.** With ids bounded
+to 64 and load-time reasons at 32 characters, 140 uncapped entries are about 13 kB - under the
+ceiling - so both caps survived inversion until an explicit count assertion existed, guarded by a
+check that the tree withholds more than the cap admits.
+
+**An assertion that asserted nothing, for the second time on the same line.** `cue_id` was bounded
+in code and the hostile tree never stretched it, so real seven-character cue ids made the assertion
+vacuous and deleting the bound left the whole suite green. The V0.26.10 changelog claimed that
+mutation was killed. True of `item_id`, untrue of `cue_id`, in a sentence naming both.
+
+**A guard defeatable from an unrelated constant.** The traversal's answer POST had no status
+assertion, and `DRILL_LIMIT` is 20 against a 24-draw loop, so four draws already re-measured one
+item at head; lowering that unrelated constant to 5 left the test green while it measured six items
+of 140. The answer must now return 200, a permissive limiter is injected for this test because it
+measures size rather than rate, and the floor is set from what the traversal actually reaches.
+
+**A fixture that reproduced a fault the product had already fixed.** Making every item unresolvable
+to lengthen the withheld collections also made every item unscorable, and an unscorable item records
+no run and advances no schedule - the absorbing state closed at V0.26, rebuilt in a test fixture.
+The traversal drew one item of 140 and its own guard caught it. The withhold poison is now opt-in
+and the two trees are separate.
+
+**Arithmetic that was wrong in the loose direction.** The envelope was measured by subtracting a
+re-serialisation, and `json.dumps` defaults differ from what `JSONResponse` renders: understated by
+up to 7,643 bytes and **negative on six of twenty-four draws**, where the assertion held nothing and
+would have printed a negative byte count as its diagnosis. Measured directly now.
+
+**One measurement, two figures, again.** 342,786 against 342,884 for the same stretched product,
+in the comment whose neighbouring figure the previous release corrected.
+
+**How it was verified.** Loop green on all seven legs: 974 passed, 2 skipped, coverage 97.42%. Six
+mutations, each killed by its own test: both withheld count caps, `cue_id`, `item_id`, and the two
+re-proved from the previous round. The changelog binding tightened at V0.26.6 caught the missing
+audit row for this release before the loop would go green, which is that check doing its job for the
+third release running.
+
 ## V0.26.10 (2026-09-02)
 
 **What.** One blocker, three majors and two minors. The eighth surface is not a field: it is that a

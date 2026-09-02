@@ -39,6 +39,7 @@ from enlightenment.training.drill import (
     MAX_SERVED_DUE_ITEMS,
     MAX_SERVED_PARAMS,
     MAX_SERVED_PROMPT,
+    MAX_SERVED_WITHHELD,
     MAX_WITHHOLD_REASON,
 )
 from enlightenment.training_api import MAX_SERVED_ERRORS
@@ -502,6 +503,13 @@ MAX_ANONYMOUS_DIAGNOSTIC_BYTES = 16 * 1024
 #: 342,884-byte product the gate produced by stretching string leaves.
 MAX_ANONYMOUS_LIBRARY_BYTES = 64 * 1024
 
+#: How many draws the stateful sweep makes, and how many distinct items it must reach. A permissive
+#: limiter is injected for it, because `DRILL_LIMIT` is 20 and a traversal bounded by an unrelated
+#: rate limit stalls on one item while the guard reads as satisfied: with that constant lowered to
+#: 5, the previous version passed while measuring 6 items of 140.
+DRAWS = 24
+DRAWS_EXPECTED = 20
+
 #: Every anonymous route this sweep covers, and for the ones it does not, WHY. Asserted as an exact
 #: set: narrowing the discovery filter to a single route previously left the test green, so the
 #: control's one load-bearing property - that it enumerates - was held by nothing.
@@ -552,7 +560,7 @@ ANONYMOUS_ROUTES_EXCLUDED = {
 }
 
 
-def _hostile_content(destination: Path) -> Path:
+def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     """The shipped library with every string an anonymous route serves stretched.
 
     Poisoning two fields and claiming six surfaces closed is how the previous three versions of
@@ -569,8 +577,24 @@ def _hostile_content(destination: Path) -> Path:
     rows = document["drills"] if isinstance(document, dict) else document
     for index, row in enumerate(rows):
         row["id"] = f"DRL-{index}-{long_id}"
+        #: `cue_id` too. The assertion for it existed and asserted nothing, because real cue ids are
+        #: seven characters and this tree never stretched the field: deleting its bound left the
+        #: whole suite green, and the changelog claimed the mutation was killed. A hostile tree that
+        #: skips a field certifies that field.
+        row["cue_id"] = f"CUE-{index}-{long_id}"
         row["prompt"] = long_text
         row["explain"] = long_text
+        #: WITHHELD BY CONSTRUCTION, and only when asked. `computed_from_params` with no generator
+        #: to resolve it puts every item into `_unresolvable` at load, so the manifest's withheld
+        #: collections are as long as the library - the ninth surface, where both were per-entry
+        #: bounded and uncapped in count and 140 drills served 17,014 bytes against a 16 kB ceiling.
+        #:
+        #: OFF by default, because it is incompatible with driving the item space: an unscorable
+        #: item records no run and advances no schedule, so `select` returns the same item for ever.
+        #: That is the absorbing state this project closed at V0.26, reproduced here by a test
+        #: fixture - the traversal drew one item of 140 and the guard caught it.
+        if withhold_all:
+            row.setdefault("answer", {})["accept"] = ["computed_from_params"]
     (destination / "drills.json").write_text(json.dumps(document), encoding="utf-8")
 
     competencies = json.loads((destination / "competencies.json").read_text(encoding="utf-8"))
@@ -643,7 +667,7 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
     that these routes answer with no `Authorization` header even when a team token is set, and the
     plain fixture leaves the token empty.
     """
-    root = _hostile_content(tmp_path / "content")
+    root = _hostile_content(tmp_path / "content", withhold_all=True)
     app = create_app(
         config=token_config,
         store=store,
@@ -722,6 +746,31 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         #: refactor of the test that held it, which is worse than one never written, because the
         #: register went on citing it. A body ceiling cannot substitute: with ids bounded to 64,
         #: 140 uncapped due items measure about 9 kB, well under it.
+        #: The WITHHELD collections, count-capped. The body ceiling cannot see these: with ids
+        #: bounded to 64 and load-time reasons at 32 characters, 140 uncapped entries are about
+        #: 13 kB, under the ceiling - so both survived inversion until this assertion existed. That
+        #: is this file's own lesson, that a body ceiling and a count cap are different controls,
+        #: applied to the two fields on the manifest that were the odd ones out.
+        manifest = client.get("/api/v1/content/manifest").json()
+        total = manifest["items_without_a_resolvable_answer_total"]
+        assert total > MAX_SERVED_WITHHELD, (
+            f"only {total} items are withheld on this tree, so the cap has nothing to cut and"
+            " these assertions prove nothing"
+        )
+        assert len(manifest["items_without_a_resolvable_answer"]) <= MAX_SERVED_WITHHELD
+        assert len(manifest["withheld_reasons"]) <= MAX_SERVED_WITHHELD
+        #: And the TOTAL is served, so the truncated list cannot read as the whole gap.
+        assert (
+            total
+            == len(
+                {
+                    **manifest["withheld_reasons"],
+                    **dict.fromkeys(manifest["items_without_a_resolvable_answer"]),
+                }
+            )
+            or total > MAX_SERVED_WITHHELD
+        )
+
         me = client.get("/api/v1/me").json()
         assert me["due_items"], "no item is due, so the due-item caps assert nothing"
         assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
@@ -802,17 +851,35 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
         store=store,
         probe=ok_probe,
         training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+        #: Permissive on purpose. This test measures response SIZE across the item space; the
+        #: drill limiter is a different control with its own tests, and leaving it at 20 against 24
+        #: draws let it stall the traversal silently.
+        limiters=Limiters(drill=RateLimiter(DRAWS * 4, 60.0)),
     )
     with TestClient(app) as client:
         widest_stimulus = 0
         drawn: set[str] = set()
-        for _ in range(24):
+        for _ in range(DRAWS):
             served = client.get("/api/v1/drill/next")
             assert served.status_code == 200, served.content[:200]
             body = served.json()
             drawn.add(body["item_id"])
-            stimulus_bytes = len(json.dumps(body["stimulus"], default=str).encode("utf-8"))
-            envelope = len(served.content) - stimulus_bytes
+
+            #: Measured DIRECTLY, not by subtracting a re-serialisation. `json.dumps` defaults to
+            #: `(', ', ': ')` and `ensure_ascii=True` while `JSONResponse` renders `(",", ":")` and
+            #: `ensure_ascii=False`, so the subtracted figure was larger than the bytes actually in
+            #: the response - understated by up to 7,643 bytes and NEGATIVE on six of twenty-four
+            #: draws, where the assertion held nothing at all and would have printed a negative
+            #: byte count as its diagnosis.
+            def _bytes(value: Any) -> int:
+                return len(
+                    json.dumps(
+                        value, separators=(",", ":"), ensure_ascii=False, default=str
+                    ).encode("utf-8")
+                )
+
+            stimulus_bytes = _bytes(body["stimulus"])
+            envelope = _bytes({k: v for k, v in body.items() if k != "stimulus"})
             widest_stimulus = max(widest_stimulus, stimulus_bytes)
             assert envelope <= MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
                 f"{body['item_id']}: {envelope} bytes of diagnostic envelope around a"
@@ -828,7 +895,11 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
             assert len(body["item_id"]) <= MAX_CONTENT_STRING, len(body["item_id"])
             assert len(body["cue_id"] or "") <= MAX_CONTENT_STRING, len(body["cue_id"] or "")
             assert len(body["prompt"]) <= MAX_SERVED_PROMPT, len(body["prompt"])
-            client.post(
+            #: The ANSWER must succeed, or the traversal stalls on one item and the guard below
+            #: passes on a handful of draws. `DRILL_LIMIT` is 20 against this loop's 24, so four
+            #: draws already re-measured the same item at HEAD, and lowering that unrelated
+            #: constant to 5 left this test green while it measured 6 items of 140.
+            answered = client.post(
                 "/api/v1/drill/answer",
                 json={
                     "drill_run_id": body["drill_run_id"],
@@ -837,11 +908,20 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
                     "elapsed_ms": 1000,
                 },
             )
+            assert answered.status_code == 200, (
+                f"the answer for {body['item_id']} returned {answered.status_code}, so the"
+                f" traversal cannot advance: {answered.content[:160]!r}"
+            )
         #: NON-VACUITY, both halves. The loop must have moved through the item space, or it is the
         #: single-draw measurement again wearing a `for` statement; and the tree must produce a
         #: stimulus over the diagnostic ceiling, or the split between the two budgets is never
         #: exercised and this test would pass with them collapsed into one.
-        assert len(drawn) > 4, f"the loop drew {len(drawn)} distinct items: {sorted(drawn)}"
+        #: A floor set from what the traversal actually achieves, not a token "more than a few".
+        #: `> 4` was satisfied by 5 of 140 while the test's name claimed the item space.
+        assert len(drawn) >= DRAWS_EXPECTED, (
+            f"the loop drew {len(drawn)} distinct items, under the {DRAWS_EXPECTED} this"
+            f" traversal reaches: {sorted(drawn)}"
+        )
         assert widest_stimulus > MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
             f"the widest stimulus was {widest_stimulus} bytes, so the split between the two"
             " budgets was never exercised and this tree is not hostile enough to prove it"
