@@ -99,6 +99,18 @@ MAX_SERVED_PARAMS: Final = 25
 #: configured. FOURTH round in which this class was recorded closed while a surface was live, which
 #: is why the test that holds it now enumerates ROUTES and asserts a body ceiling rather than
 #: naming fields - a field nobody thought of is exactly what kept getting through.
+#: Operator-facing prose served on an anonymous route, capped. Measured against the shipped
+#: library: the longest prompt is 202 characters and the longest authored `explain` is 562, so 512
+#: and 1024 hold every legitimate string with headroom. SEVENTH surface, and the one that finally
+#: forced the sweep to stop filtering on the HTTP verb: `POST /api/v1/drill/answer` takes no token
+#: and `ScoredDrill.as_dict` served raw `explain`, `note` and `why_wrong`, measured at 201,084
+#: bytes from one stretched authored field. `prompt`, `item_id` and `cue_id` on
+#: `/api/v1/drill/next` were the same class - 206,027 bytes - and the exclusion of that route from
+#: the sweep rested on `MAX_PAYLOAD_BYTES`, which governs the rendered stimuli only and saw 2,904
+#: bytes of that body.
+MAX_SERVED_PROMPT: Final = 512
+MAX_SERVED_PROSE: Final = 1024
+
 MAX_SERVED_DUE_ITEMS: Final = 20
 MAX_SERVED_COMPETENCIES: Final = 32
 TRUNCATION_MARK: Final = " [truncated]"
@@ -152,9 +164,12 @@ class ServedDrill:
         """
         return {
             "drill_run_id": self.run_id,
-            "item_id": self.item_id,
-            "cue_id": self.cue_id,
-            "prompt": self.prompt,
+            #: BOUNDED. `MAX_PAYLOAD_BYTES` governs `stimulus` and nothing else, so these three
+            #: were content-sized on an anonymous route: measured 206,027 bytes, of which the
+            #: rendered stimuli - the only part the budget sees - were 2,904.
+            "item_id": _bounded(self.item_id),
+            "cue_id": _bounded(self.cue_id),
+            "prompt": capped(self.prompt, MAX_SERVED_PROMPT),
             "response_format": self.response_format,
             "elo": self.elo,
             "confidence_required": self.confidence_required,
@@ -190,13 +205,14 @@ class ScoredDrill:
     def as_dict(self) -> dict[str, Any]:
         return {
             "drill_run_id": self.run_id,
-            "item_id": self.item_id,
+            #: BOUNDED, on the route the sweep could not see because it filtered on GET.
+            "item_id": _bounded(self.item_id),
             "matched": self.matched,
             "correct": self.correct,
             "credit": round(self.credit, 4),
-            "explain": self.explain,
-            "note": self.note,
-            "why_wrong": self.why_wrong,
+            "explain": capped(self.explain, MAX_SERVED_PROSE),
+            "note": capped(self.note, MAX_SERVED_PROSE),
+            "why_wrong": capped(self.why_wrong, MAX_SERVED_PROSE),
             "brier": None if self.brier is None else round(self.brier, 4),
             "calibration": self.calibration,
             "rating_delta": (
@@ -238,6 +254,19 @@ def _bounded(value: Any) -> str:
     """
     text = str(value or "")
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
+
+
+def capped(value: Any, limit: int) -> str:
+    """A content-supplied string, capped at `limit` and MARKED when it is cut.
+
+    The generic form of `bounded_reason`, for the served fields whose honest length is not a
+    refusal reason: a prompt, an authored explanation, a scorer's note. Marked for the same reason
+    - a shortened string that reads as complete sends a reader to the wrong place.
+    """
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(TRUNCATION_MARK)] + TRUNCATION_MARK
 
 
 def bounded_reason(reason: str) -> str:

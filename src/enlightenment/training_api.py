@@ -30,6 +30,7 @@ named-individual record can be written before the DPIA is signed. The interface 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -48,11 +49,25 @@ from enlightenment.training import (
     DrillLoop,
     bounded_reason,
 )
+from enlightenment.training.drill import _bounded as bounded_identifier
 
 #: How many content errors either anonymous route serves. A NAMED constant across both, because
 #: the two literals drifted apart once already and the count cap is half of the bound: per-entry
 #: length and entry count are different limits and neither substitutes for the other.
 MAX_SERVED_ERRORS: Final = 20
+
+#: Largest serialised library document either reference route will serve. The library is a
+#: reference and the flight plan makes it anonymous, so its fields are NOT individually bounded -
+#: a per-field cap would mutilate the reference. The control is the document size, and it FAILS
+#: CLOSED: an oversized document is refused with a 503 naming it, rather than served truncated,
+#: because a silently shortened reference is worse than an absent one.
+#:
+#: 64 kB is measured against the shipped library: the largest procedure serialises to 13,888 bytes
+#: and the largest product to 2,304, so this clears honest content more than four times over. The
+#: gate reached 2,497,065 bytes on a procedure and 342,786 on a product by stretching string
+#: leaves, both anonymous, and the sweep that was supposed to cover these routes skipped them
+#: because its discovery filter dropped every parameterised path.
+MAX_SERVED_DOCUMENT_BYTES: Final = 64 * 1024
 
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
     from fastapi import FastAPI
@@ -273,7 +288,7 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "not_found", "message": "No such procedure."},
             )
-        return {"procedure": found.model_dump(mode="json")}
+        return _within_document_budget({"procedure": found.model_dump(mode="json")}, procedure_id)
 
     @app.get("/api/v1/content/product/{product_id}")
     async def product_detail(product_id: str) -> dict[str, Any]:
@@ -286,7 +301,29 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "not_found", "message": "No such product."},
             )
-        return {"product": found.model_dump(mode="json"), "layout": content.layout(product_id)}
+        return _within_document_budget(
+            {"product": found.model_dump(mode="json"), "layout": content.layout(product_id)},
+            product_id,
+        )
+
+
+def _within_document_budget(document: dict[str, Any], identifier: str) -> dict[str, Any]:
+    """A reference document, or a 503 saying it is too large to serve. Never a truncated one."""
+    size = len(json.dumps(document, default=str).encode("utf-8"))
+    if size > MAX_SERVED_DOCUMENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "document_too_large",
+                "message": (
+                    f"The library document {bounded_identifier(identifier)!r} serialises"
+                    f" to {size} bytes,"
+                    f" over the {MAX_SERVED_DOCUMENT_BYTES}-byte budget for an anonymous"
+                    " reference response. This is a content fault, not a request fault."
+                ),
+            },
+        )
+    return document
 
 
 class DrillAnswer(BaseModel):

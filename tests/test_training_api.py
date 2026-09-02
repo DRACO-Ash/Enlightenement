@@ -21,6 +21,7 @@ import json
 import re
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,7 +35,6 @@ from enlightenment.storage import TrainingStore
 from enlightenment.training.drill import (
     MAX_CONTENT_STRING,
     MAX_SERVED_COMPETENCIES,
-    MAX_SERVED_DUE_ITEMS,
     MAX_SERVED_PARAMS,
     MAX_WITHHOLD_REASON,
 )
@@ -484,101 +484,256 @@ def test_a_broken_content_tree_is_a_503_naming_the_files_and_never_takes_health_
         assert client.get("/api/v1/content/manifest").json()["ok"] is False
 
 
-#: The largest body any anonymous JSON route may return on a HOSTILE content tree. Generous against
-#: the honest worst case - the drill payload has its own 4 MB budget and is excluded by name below -
-#: and far below the 221,589 bytes `/api/v1/me` served before V0.26.8.
-MAX_ANONYMOUS_DIAGNOSTIC_BYTES = 64 * 1024
+#: The largest body an anonymous JSON route may return on a HOSTILE content tree. Tightened from
+#: 64 kB at V0.26.9: the gate isolation-tested the ceiling and found it caught two of five real
+#: faults, because a 32 kB competency-id body fitted under it. The measured hostile maximum across
+#: the swept routes is now well under this, and honest content is smaller again.
+MAX_ANONYMOUS_DIAGNOSTIC_BYTES = 16 * 1024
+
+#: The library routes serve a WHOLE authored document by design - the flight plan makes the
+#: procedure and product library an anonymous reference - so their fields are not individually
+#: bounded and a per-field cap would mutilate the reference. The control there is the response size.
+#: Measured on the shipped library: the largest procedure is 13,888 bytes and the largest product
+#: 2,304, so this clears honest content by more than four times and still fails the 2,497,065-byte
+#: response the gate produced by stretching a procedure's string leaves.
+MAX_ANONYMOUS_LIBRARY_BYTES = 64 * 1024
+
+#: Every anonymous route this sweep covers, and for the ones it does not, WHY. Asserted as an exact
+#: set: narrowing the discovery filter to a single route previously left the test green, so the
+#: control's one load-bearing property - that it enumerates - was held by nothing.
+#:
+#: The session routes are excluded for two independent reasons, either sufficient. They are
+#: TOKEN-GATED - the write routes answer 401 without an `Authorization` header - so they are not
+#: anonymous surfaces at all; and their size is governed by `storage.MAX_SESSIONS` and the session
+#: field caps rather than by content, which their own tests hold. Sweeping the collection here
+#: measured an EMPTY fixture store at 33 bytes, certifying nothing, and would have failed falsely
+#: the moment anyone populated the fixture: twenty legitimate sessions measure 49,394 bytes against
+#: a store that admits five hundred.
+#:
+#: `PATCH /api/v1/sessions/{session_id}` is in this set because the exact-set assertion below
+#: refused to pass without it. That is the assertion working: an earlier version could be narrowed
+#: to a single route and stayed green.
+ANONYMOUS_ROUTES_SWEPT = {
+    "GET /api/v1/content/manifest": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    "GET /api/v1/diagnostics": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    "GET /api/v1/me": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    "GET /api/v1/content/procedure/{procedure_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
+    "GET /api/v1/content/product/{product_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
+    "GET /api/v1/drill/next": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    "POST /api/v1/drill/answer": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+}
+ANONYMOUS_ROUTES_EXCLUDED = {
+    "GET /api/v1/sessions",
+    "POST /api/v1/sessions",
+    "PATCH /api/v1/sessions/{session_id}",
+}
 
 
-def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
-    config: Config, store: TrainingStore, tmp_path: Path
-) -> None:
-    """Enumerates ROUTES, not fields, because naming fields is what kept failing.
+def _hostile_content(destination: Path) -> Path:
+    """The shipped library with every string an anonymous route serves stretched.
 
-    FOUR consecutive releases recorded this class as closed while a surface was live. Each time the
-    fix was correct and the sweep was not: V0.26.3 bounded the withhold reason, V0.26.6 found three
-    more surfaces and missed a fourth in the file it edited, V0.26.7 fixed that and missed two on
-    `/api/v1/me`. Measured on the tree below, `/api/v1/me` returned 221,589 bytes with a team token
-    configured and no `Authorization` header.
-
-    The pattern is not carelessness about any one field, it is that a per-field assertion can only
-    ever hold the fields somebody thought of. So this walks the app's own route table, calls every
-    anonymous GET that returns JSON, and asserts a body ceiling. A new route, or a new raw content
-    string on an existing one, fails HERE without anyone having to notice it first.
-
-    `/api/v1/drill/next` is excluded by name: it serves the product payload under the explicit
-    `MAX_PAYLOAD_BYTES` budget, which is a different control with its own tests, and folding a 4 MB
-    allowance into this ceiling would make the ceiling meaningless.
+    Poisoning two fields and claiming six surfaces closed is how the previous three versions of
+    this control passed: a hostile tree certifies the fields it happens to poison. So this
+    stretches the drill id, prompt and explanation, the competency id and name, and the string
+    leaves of a procedure and a product, and adds more competencies than the served cap admits so
+    that cap can bite at all - the shipped library has eight against a cap of thirty-two.
     """
-    root = tmp_path / "content"
-    shutil.copytree(CONTENT_ROOT, root)
-    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    shutil.copytree(CONTENT_ROOT, destination)
+    long_text = "X" * 20000
+    long_id = "9" * 3000
+
+    document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
     for index, row in enumerate(rows):
-        row["id"] = f"DRL-{index}-" + "9" * 3000
-    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+        row["id"] = f"DRL-{index}-{long_id}"
+        row["prompt"] = long_text
+        row["explain"] = long_text
+    (destination / "drills.json").write_text(json.dumps(document), encoding="utf-8")
 
-    competencies = json.loads((root / "competencies.json").read_text(encoding="utf-8"))
+    competencies = json.loads((destination / "competencies.json").read_text(encoding="utf-8"))
     entries = competencies["competencies"] if isinstance(competencies, dict) else competencies
-    for index, entry in enumerate(entries):
-        entry["name"] = "X" * 20000
-        #: The ID as well as the name. Stretching only the name left the id's bound unheld: a
-        #: hostile tree has to be hostile in every field the route serves, or the sweep certifies
-        #: the fields it happened to poison.
-        entry["id"] = f"CMP-{index}-" + "Z" * 3000
-    #: MORE competencies than the cap admits. The shipped library has eight against a cap of
-    #: thirty-two, so with the real library that cap is unfalsifiable and deleting it changes
-    #: nothing - a cap nothing can reach is not a control.
     template = dict(entries[0])
+    for index, entry in enumerate(entries):
+        entry["id"] = f"CMP-{index}-{long_id}"
+        entry["name"] = long_text
     while len(entries) <= MAX_SERVED_COMPETENCIES:
         clone = dict(template)
         clone["id"] = f"CMP-EXTRA-{len(entries)}"
+        clone["name"] = long_text
         entries.append(clone)
-    (root / "competencies.json").write_text(json.dumps(competencies), encoding="utf-8")
+    (destination / "competencies.json").write_text(json.dumps(competencies), encoding="utf-8")
 
+    #: The library documents, stretched at every string leaf rather than at a field this test
+    #: happens to name. `/api/v1/content/procedure/{id}` serves `model_dump()` whole, so any leaf
+    #: is a surface: the gate reached 2,497,065 bytes through one of them.
+    #: The library files, taken from the LOADER's own manifest rather than guessed. An earlier
+    #: version listed "procedures.json", which does not exist - procedures live under
+    #: `procedures/procedures-core.json` - and the loop skipped it silently with `continue`, so
+    #: the procedure route was swept against unstretched content and its mutation survived. A
+    #: hostile tree that silently skips a file certifies the fields it happened to poison, which
+    #: is the fault this whole control exists to end.
+    from enlightenment.content.loader import REQUIRED_FILES
+
+    #: Only the two the reference routes actually serve. Stretching every required file would
+    #: break the drill loop that the same tree has to keep serving.
+    for filename in (
+        name for name in REQUIRED_FILES if "procedures/" in name or name == "products.json"
+    ):
+        path = destination / filename
+        assert path.exists(), f"{filename} is in the loader manifest and absent from the tree"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+
+        def stretch(node: Any, depth: int = 0) -> Any:
+            if isinstance(node, dict):
+                return {
+                    key: (
+                        node[key] if key in {"id", "product_id"} else stretch(node[key], depth + 1)
+                    )
+                    for key in node
+                }
+            if isinstance(node, list):
+                return [stretch(item, depth + 1) for item in node]
+            if isinstance(node, str) and len(node) > 3:
+                return long_text
+            return node
+
+        path.write_text(json.dumps(stretch(payload)), encoding="utf-8")
+    return destination
+
+
+def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """Enumerates ROUTES, not fields, and asserts that it enumerated.
+
+    Five consecutive releases recorded this class as closed while a surface was live. Each fix was
+    correct and each sweep incomplete, because a per-field assertion can only hold the fields
+    somebody thought of. The three faults in the FIRST version of this control were the same shape
+    one level up: it filtered on `"GET" in methods`, so the anonymous `POST /api/v1/drill/answer`
+    served 201,084 bytes unseen; it filtered on `"{" not in path`, so two anonymous library routes
+    served 2,497,065 and 514,545 bytes unseen; and `assert paths` could not tell that the discovery
+    had been narrowed to one route, which a mutation proved by leaving it green.
+
+    So: the route table comes from the app, the discovered set is compared against an EXACT
+    expected set, every route is called with resolved parameters and a valid body, and each carries
+    a named ceiling. `token_config` is used rather than `config`, because the claim being made is
+    that these routes answer with no `Authorization` header even when a team token is set, and the
+    plain fixture leaves the token empty.
+    """
+    root = _hostile_content(tmp_path / "content")
     app = create_app(
-        config=config,
+        config=token_config,
         store=store,
         probe=ok_probe,
         training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
     )
-    #: Taken from the app, not from a list in this file. A route added without a bound is the case
-    #: this exists for, and a hand-maintained list would not contain it.
-    paths = sorted(
-        route.path
+
+    discovered = {
+        f"{method} {route.path}"
         for route in app.routes
         if getattr(route, "path", "").startswith("/api/")
-        and "GET" in getattr(route, "methods", set())
-        and "{" not in getattr(route, "path", "")
-        and route.path != "/api/v1/drill/next"
+        for method in getattr(route, "methods", set())
+        if method in {"GET", "POST", "PATCH", "PUT"}
+    }
+    known = ANONYMOUS_ROUTES_SWEPT.keys() | ANONYMOUS_ROUTES_EXCLUDED
+    assert discovered == known, (
+        "the API route table changed and this sweep was not updated; add the route to"
+        f" ANONYMOUS_ROUTES_SWEPT with a ceiling, or to ANONYMOUS_ROUTES_EXCLUDED with a reason."
+        f" Unexpected: {sorted(discovered - known)}; missing: {sorted(known - discovered)}"
     )
-    assert paths, "no anonymous API GET routes were discovered, so this asserts nothing"
 
     with TestClient(app) as client:
-        oversized = {}
-        for path in paths:
-            response = client.get(path)
-            if len(response.content) > MAX_ANONYMOUS_DIAGNOSTIC_BYTES:
-                oversized[path] = len(response.content)
+        procedure = client.get("/api/v1/content/manifest").json()
+        assert procedure["ok"], (
+            "the hostile tree does not load, so nothing below is measured:"
+            f" {procedure['errors'][:2]}"
+        )
+        oversized: dict[str, int] = {}
+        measured: dict[str, int] = {}
+        for spec, ceiling in sorted(ANONYMOUS_ROUTES_SWEPT.items()):
+            method, template = spec.split(" ", 1)
+            path = _resolved(template, client)
+            if path is None:
+                continue
+            response = (
+                client.get(path)
+                if method == "GET"
+                else client.post(path, json=_answer_body(client))
+            )
+            #: The STATUS is asserted too. A sweep that measures a 422 or a 404 measures an error
+            #: body and proves nothing about the surface it was pointed at - the first version of
+            #: this loop scored a 27-byte 422 on the answer route as a pass.
+            #:
+            #: 503 is allowed and is the DELIBERATE fail-closed branch: a library document over
+            #: budget is refused rather than truncated, because a silently shortened reference is
+            #: worse than an absent one. It must say so, or it is just another error body.
+            assert response.status_code in {200, 503}, (
+                f"{spec} answered {response.status_code}, so its size proves nothing:"
+                f" {response.content[:200]!r}"
+            )
+            if response.status_code == 503:
+                assert "document_too_large" in response.text, (
+                    f"{spec} refused for a reason this sweep does not recognise:"
+                    f" {response.content[:200]!r}"
+                )
+            measured[spec] = len(response.content)
+            if len(response.content) > ceiling:
+                oversized[spec] = len(response.content)
+        #: NON-VACUITY. Every swept route must have been reached and returned something, or a
+        #: ceiling assertion over an empty measurement is a pass that means nothing - which is
+        #: exactly what sweeping an empty session store produced.
+        assert set(measured) == set(ANONYMOUS_ROUTES_SWEPT), (
+            "a swept route was never reached:"
+            f" {sorted(set(ANONYMOUS_ROUTES_SWEPT) - set(measured))}"
+        )
+        thin = {spec: size for spec, size in measured.items() if size <= 32}
+        assert not thin, f"a swept route returned nothing measurable: {thin}; all: {measured}"
+        #: And the honest tree still SERVES those documents, so the fail-closed branch above has
+        #: not been bought by refusing everything. Asserted on the real library, not the
+        #: hostile one.
+        honest = create_app(
+            config=token_config,
+            store=store,
+            probe=ok_probe,
+            training=TrainingPaths(
+                content_root=CONTENT_ROOT, progress_path=tmp_path / "honest.json"
+            ),
+        )
+        with TestClient(honest) as plain:
+            for path in ("/api/v1/content/procedure/PROC-MNV", "/api/v1/content/product/PRD-TRIC"):
+                served = plain.get(path)
+                assert served.status_code == 200, (
+                    f"{path} refuses the SHIPPED library, so the document budget is too tight:"
+                    f" {served.content[:200]!r}"
+                )
         assert not oversized, (
-            f"content set the size of an anonymous response: {oversized}, against a ceiling of"
-            f" {MAX_ANONYMOUS_DIAGNOSTIC_BYTES}"
+            f"content set the size of an anonymous response: {oversized}; all measured: {measured}"
         )
 
-        #: AND the collections themselves, because a body ceiling alone cannot see a count cap that
-        #: never bites: removing `[:MAX_SERVED_DUE_ITEMS]` on this tree still fitted under any
-        #: ceiling loose enough for honest content. The generic sweep is the safety net for the
-        #: field nobody thought of; these hold the caps that exist.
-        me = client.get("/api/v1/me").json()
-        assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
-        assert len(me["competencies"]) <= MAX_SERVED_COMPETENCIES, len(me["competencies"])
-        for item_id in me["due_items"]:
-            assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters as a due id"
-        for row in me["competencies"]:
-            assert len(row["name"]) <= MAX_CONTENT_STRING, (
-                f"{len(row['name'])} characters as a name"
-            )
-            assert len(row["competency_id"]) <= MAX_CONTENT_STRING, row["competency_id"][:40]
+
+def _resolved(template: str, client: TestClient) -> str | None:
+    """A concrete path for a route template, with ids taken from the served library."""
+    if "{procedure_id}" in template:
+        library = client.get("/api/v1/content/manifest").json()
+        procedures = library.get("counts", {}).get("procedures", 0)
+        return template.replace("{procedure_id}", "PROC-MNV") if procedures else None
+    if "{product_id}" in template:
+        return template.replace("{product_id}", "PRD-TRIC")
+    return template
+
+
+def _answer_body(client: TestClient) -> dict[str, Any]:
+    """A valid answer body for the drill served to this client, so the POST reaches the reveal."""
+    drill = client.get("/api/v1/drill/next").json()
+    return {
+        "drill_run_id": drill["drill_run_id"],
+        "response": "manoeuvre",
+        "confidence": 3,
+        #: Required by `DrillAnswer`, validated and then deliberately not forwarded. Omitting it
+        #: gave a 422 of 27 bytes, which the non-vacuity guard caught - a sweep that measures an
+        #: error body certifies nothing, which is the fault it exists to prevent.
+        "elapsed_ms": 1000,
+    }
 
 
 def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(

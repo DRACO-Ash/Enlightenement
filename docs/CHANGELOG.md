@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.9 (2026-09-02)
+
+**What.** The V0.26.8 sweep was written to end this class and was itself three instances of it. Two
+blockers and five majors, all taken. **Seven surfaces now, across five releases: each fix correct
+and each sweep incomplete, because the sweep kept being narrower than the sentence describing it.**
+
+**The seventh surface, and why the sweep could not see it.** `POST /api/v1/drill/answer` takes no
+token and `ScoredDrill.as_dict` served raw `explain`, `note` and `why_wrong`: 201,084 bytes from one
+stretched authored field. The sweep filtered on `"GET" in methods`, so an anonymous POST was
+invisible to it by construction.
+
+**Two more the path filter dropped.** `"{" not in path` silently excluded both library routes.
+Measured anonymous: 2,497,065 bytes for a procedure and 342,884 for a product. An undocumented
+regex was making a scoping decision that belongs to the owner and the register.
+
+**The exclusion that rested on a false claim.** `/api/v1/drill/next` was excluded because
+`MAX_PAYLOAD_BYTES` was said to govern it. That budget governs the rendered stimuli only: it saw
+2,904 bytes of a 206,027-byte body whose `prompt` was 200,085. `prompt`, `item_id` and `cue_id` are
+bounded now and the route is swept like the rest.
+
+**The control could not tell it had stopped controlling.** Narrowing the discovery filter to a
+single route left the test green - `assert paths` only asked that the list was non-empty. And the
+five explicit assertions passed over empty collections, which is the "assertion that cannot reach
+the mechanism" fault reproduced inside the fix for it. The discovered set is now compared against
+an EXACT expected set, every swept route must be reached, its status is asserted before its size,
+and an empty measurement fails.
+
+**The exact-set assertion earned itself immediately.** It refused to pass until
+`PATCH /api/v1/sessions/{session_id}` was listed - a route the previous filter had never seen.
+
+**A route certified by a measurement of nothing.** `/api/v1/sessions` was swept against an empty
+fixture store at 33 bytes, and the 64 kB ceiling would have failed falsely the moment anyone
+populated it: twenty legitimate sessions are 49,394 bytes against a store admitting five hundred.
+It is excluded by name for two independent reasons, either sufficient - it is token-gated, and its
+size is governed by `MAX_SESSIONS` rather than by content.
+
+**The library routes fail closed rather than truncate.** Their fields are NOT individually bounded,
+because the flight plan makes the procedure and product library an anonymous reference and a
+per-field cap would mutilate it. An over-budget document is refused with a 503 naming it, on a
+64 kB budget measured against the shipped library's 13,888-byte largest procedure. A companion
+assertion proves the real library still serves, so the fail-closed branch is not bought by refusing
+everything.
+
+**And my own hostile tree skipped a file.** It listed `procedures.json`, which does not exist -
+procedures live under `procedures/procedures-core.json` - and the loop skipped it with `continue`,
+so the procedure route was swept against unstretched content and its mutation survived. The file
+list now comes from the loader's own manifest. A tree that silently skips a file certifies the
+fields it happened to poison, which is the fault this whole control exists to end.
+
+**The ceiling, tightened on measurement.** 64 kB caught two of five real faults in isolation
+testing, because a 32 kB body fitted under it. 16 kB for the diagnostic routes, against a measured
+hostile maximum of 8,131 bytes and honest bodies far smaller.
+
+**The token claim, made true.** The register said these routes answer "with a team token
+configured"; the fixture the test used sets an empty token. It uses `token_config` now.
+
+**How it was verified.** Loop green on all seven legs: 973 passed, 2 skipped, coverage 97.42%. Five
+mutations against the rebuilt control, each killed: prompt, explain, procedure, product, and the
+narrowed route discovery that previously passed.
+
 ## V0.26.8 (2026-09-01)
 
 **What.** Fourth consecutive release in which this project recorded the unbounded-anonymous-string
