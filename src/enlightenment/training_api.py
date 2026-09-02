@@ -63,7 +63,9 @@ MAX_SERVED_ERRORS: Final = 20
 #: because a silently shortened reference is worse than an absent one.
 #:
 #: 64 kB is measured against the shipped library: the largest procedure serialises to 13,888 bytes
-#: and the largest product to 2,304, so this clears honest content more than four times over. The
+#: and the largest product - PRD-COCO, document plus layout - to 5,616, so this clears honest
+#: content 4.7 times over. The 2,304 in an earlier draft of this comment was the product document
+#: alone, measured without the layout the route serves beside it. The
 #: gate reached 2,497,065 bytes on a procedure and 342,786 on a product by stretching string
 #: leaves, both anonymous, and the sweep that was supposed to cover these routes skipped them
 #: because its discovery filter dropped every parameterised path.

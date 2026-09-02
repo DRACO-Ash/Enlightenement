@@ -2,6 +2,61 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.10 (2026-09-02)
+
+**What.** One blocker, three majors and two minors. The eighth surface is not a field: it is that a
+sweep enumerating ROUTES still certifies whichever STATE a stateful route happens to serve from.
+And the V0.26.9 rebuild of that sweep silently deleted two assertions it inherited, which is a
+control lost to a refactor of the test that held it.
+
+**The eighth surface.** `/api/v1/drill/next` is idempotent until answered, so the route sweep
+measured one item out of 140. Driven serve-then-answer across the item space on the same hostile
+tree, **eight of the first twenty-one items exceeded the ceiling, to 145,130 bytes** - 8.9 times the
+ceiling and 17 times the "measured hostile maximum" the previous entry asserted. The V0.26.9 pass
+was an accident of draw order.
+
+**And the ceiling on that route was the wrong control anyway.** The overflow is `stimulus`, which
+answers to `MAX_PAYLOAD_BYTES` - a four-megabyte picture budget structurally incompatible with a
+16 kB text ceiling. The two are split now: the diagnostic envelope against the ceiling, the rendered
+stimuli against the payload budget. V0.26.8 excluded this route on a false rationale and V0.26.9
+included it under a false ceiling; both were one number doing two jobs.
+
+**A control lost to a refactor.** Rebuilding the sweep at V0.26.9 deleted the two count-cap
+assertions on `/api/v1/me` that V0.26.8 had added, and the register went on citing them. Both caps
+returned to surviving inversion. Restored, with a non-vacuity guard, and the deleted block's own
+reason restated: a body ceiling cannot see a count cap that never bites, because 140 uncapped due
+items with bounded ids are about 9 kB.
+
+**Bounds the code had and no test agreed with.** `item_id` and `cue_id` on the served drill were
+`_bounded` at V0.26.9 and asserted by nothing: reverting both left the whole suite green, because at
+3,003-character ids the body reached about 6.5 kB, under the ceiling. The changelog claimed they
+were bounded. True of the code, unheld.
+
+**The discovery filter was still narrower than the claim.** It scoped to `startswith("/api/")` and a
+hand-written method set, so a DELETE route or a JSON route under another prefix was invisible to the
+sweep AND to the exact-set assertion that exists to notice narrowing. It now takes the whole route
+table and subtracts HEAD and OPTIONS, and every exclusion - the five health paths, `/`, the three
+`/ui` routes, the three session routes - is named with its reason rather than made by a filter.
+
+**A figure that was measured wrong.** "The largest product is 2,304 bytes" was the product document
+alone; the route serves the layout beside it, and the largest is 5,616. The conclusion is unchanged
+at 4.7 times headroom, but the number was asserted and untrue.
+
+**What the gate confirmed rather than found.** Fail-closed-with-503 on the library documents is the
+right call over bounding the leaves, and 64 kB is the right budget. `cues[]` and `thresholds.source`
+are not content surfaces: the first reaches the wire only as `cue_id`, the second is set by loader
+code from a fixed filename.
+
+**A process failure of mine, recorded because it cost real work.** Splitting an over-long test, I
+ran `git checkout -- tests/test_training_api.py` and destroyed every uncommitted repair in that
+file. This project has recorded that exact mistake before. The work was replayed from the session
+rather than reconstructed from memory, and every control re-proved by mutation afterwards rather
+than assumed to have survived the replay.
+
+**How it was verified.** Loop green on all seven legs: 974 passed, 2 skipped, coverage 97.42%. Six
+mutations, each killed by its own test: `item_id`/`cue_id`, both count caps, `prompt`, `explain`,
+and the narrowed route discovery.
+
 ## V0.26.9 (2026-09-02)
 
 **What.** The V0.26.8 sweep was written to end this class and was itself three instances of it. Two

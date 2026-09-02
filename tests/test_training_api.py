@@ -34,8 +34,11 @@ from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import TrainingStore
 from enlightenment.training.drill import (
     MAX_CONTENT_STRING,
+    MAX_PAYLOAD_BYTES,
     MAX_SERVED_COMPETENCIES,
+    MAX_SERVED_DUE_ITEMS,
     MAX_SERVED_PARAMS,
+    MAX_SERVED_PROMPT,
     MAX_WITHHOLD_REASON,
 )
 from enlightenment.training_api import MAX_SERVED_ERRORS
@@ -493,9 +496,10 @@ MAX_ANONYMOUS_DIAGNOSTIC_BYTES = 16 * 1024
 #: The library routes serve a WHOLE authored document by design - the flight plan makes the
 #: procedure and product library an anonymous reference - so their fields are not individually
 #: bounded and a per-field cap would mutilate the reference. The control there is the response size.
-#: Measured on the shipped library: the largest procedure is 13,888 bytes and the largest product
-#: 2,304, so this clears honest content by more than four times and still fails the 2,497,065-byte
-#: response the gate produced by stretching a procedure's string leaves.
+#: Measured through this control on the shipped library: the largest procedure document is 13,903
+#: bytes and the largest product, document plus the layout served beside it, is 5,616. So this
+#: clears honest content 4.7 times over and still fails the 2,497,065-byte procedure and
+#: 342,884-byte product the gate produced by stretching string leaves.
 MAX_ANONYMOUS_LIBRARY_BYTES = 64 * 1024
 
 #: Every anonymous route this sweep covers, and for the ones it does not, WHY. Asserted as an exact
@@ -522,7 +526,26 @@ ANONYMOUS_ROUTES_SWEPT = {
     "GET /api/v1/drill/next": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
     "POST /api/v1/drill/answer": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
 }
+#: Excluded, each with a reason, because widening the discovery to the whole route table brings in
+#: every route the app declares and a silent filter is what let three surfaces through.
+#:
+#: ● The five health paths and `/` answer a fixed dict with no content-derived string in it, and
+#:   the App Store contract requires them 200 and unauthenticated. `test_appstore_contract` holds
+#:   their status and shape; a size ceiling here could only fail falsely.
+#: ● The `/ui` routes serve the interface from an allowlisted filename set - source files, not the
+#:   content tree - so their size is a property of the repository, not of authored data.
+#: ● The session routes are token-gated, and their size is governed by `storage.MAX_SESSIONS` and
+#:   the session field caps rather than by content. Either reason alone is sufficient.
 ANONYMOUS_ROUTES_EXCLUDED = {
+    "GET /",
+    "GET /health",
+    "GET /healthz",
+    "GET /livez",
+    "GET /ping",
+    "GET /readyz",
+    "GET /ui",
+    "GET /ui/",
+    "GET /ui/{filename}",
     "GET /api/v1/sessions",
     "POST /api/v1/sessions",
     "PATCH /api/v1/sessions/{session_id}",
@@ -628,12 +651,17 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
     )
 
+    #: The WHOLE route table, with the automatic verbs subtracted rather than a hand-written list
+    #: of the ones this test thought of. Scoping to `startswith("/api/")` and an explicit method
+    #: set made a DELETE route, or a JSON route under another prefix, invisible to the sweep AND to
+    #: the exact-set assertion that exists to notice narrowing. Nothing is live today - no mounts,
+    #: no `include_router`, no WebSocket, no `StaticFiles` - but "nothing is live today" is the
+    #: sentence that preceded every surface in this class.
     discovered = {
         f"{method} {route.path}"
         for route in app.routes
-        if getattr(route, "path", "").startswith("/api/")
         for method in getattr(route, "methods", set())
-        if method in {"GET", "POST", "PATCH", "PUT"}
+        if method not in {"HEAD", "OPTIONS"}
     }
     known = ANONYMOUS_ROUTES_SWEPT.keys() | ANONYMOUS_ROUTES_EXCLUDED
     assert discovered == known, (
@@ -688,6 +716,21 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         )
         thin = {spec: size for spec, size in measured.items() if size <= 32}
         assert not thin, f"a swept route returned nothing measurable: {thin}; all: {measured}"
+
+        #: The COUNT caps on `/api/v1/me`. These existed at V0.26.8 and the V0.26.9 rebuild of this
+        #: test DELETED them, so both caps went back to surviving inversion - a control lost to a
+        #: refactor of the test that held it, which is worse than one never written, because the
+        #: register went on citing it. A body ceiling cannot substitute: with ids bounded to 64,
+        #: 140 uncapped due items measure about 9 kB, well under it.
+        me = client.get("/api/v1/me").json()
+        assert me["due_items"], "no item is due, so the due-item caps assert nothing"
+        assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
+        assert len(me["competencies"]) == MAX_SERVED_COMPETENCIES, len(me["competencies"])
+        for item_id in me["due_items"]:
+            assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters as a due id"
+        for row in me["competencies"]:
+            assert len(row["name"]) <= MAX_CONTENT_STRING, len(row["name"])
+            assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])
         #: And the honest tree still SERVES those documents, so the fail-closed branch above has
         #: not been bought by refusing everything. Asserted on the real library, not the
         #: hostile one.
@@ -734,6 +777,75 @@ def _answer_body(client: TestClient) -> dict[str, Any]:
         #: error body certifies nothing, which is the fault it exists to prevent.
         "elapsed_ms": 1000,
     }
+
+
+def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """The eighth surface, and it is a class rather than a field.
+
+    `/api/v1/drill/next` is idempotent until answered, so the route sweep beside this one measured
+    whichever item happened to be drawn first - one of 140. Driven serve-then-answer across the
+    item space on the same hostile tree, eight of the first twenty-one items exceeded the 16 kB
+    ceiling, to 145,130 bytes. A sweep that enumerates routes but not the STATE a stateful route
+    serves from certifies the draw it happened to get, which is this whole fault one order up.
+
+    It also SPLITS the two budgets, which are different controls with different numbers. The
+    rendered stimuli answer to `MAX_PAYLOAD_BYTES`, a four-megabyte picture budget; everything else
+    on that payload is diagnostic text and answers to the 16 kB ceiling. Asserting one number over
+    both is how this route was excluded on a false rationale at V0.26.8 and then included under a
+    false ceiling at V0.26.9.
+    """
+    root = _hostile_content(tmp_path / "content")
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        widest_stimulus = 0
+        drawn: set[str] = set()
+        for _ in range(24):
+            served = client.get("/api/v1/drill/next")
+            assert served.status_code == 200, served.content[:200]
+            body = served.json()
+            drawn.add(body["item_id"])
+            stimulus_bytes = len(json.dumps(body["stimulus"], default=str).encode("utf-8"))
+            envelope = len(served.content) - stimulus_bytes
+            widest_stimulus = max(widest_stimulus, stimulus_bytes)
+            assert envelope <= MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
+                f"{body['item_id']}: {envelope} bytes of diagnostic envelope around a"
+                f" {stimulus_bytes}-byte stimulus, against {MAX_ANONYMOUS_DIAGNOSTIC_BYTES}"
+            )
+            assert stimulus_bytes <= MAX_PAYLOAD_BYTES, (
+                f"{body['item_id']}: {stimulus_bytes}-byte stimulus against {MAX_PAYLOAD_BYTES}"
+            )
+            #: The bounded identifiers on the same payload. Reverting either to raw left the whole
+            #: suite green: at 3,003-character ids the body reached about 6.5 kB, under the
+            #: ceiling. The changelog said these were bounded; the code was right and no test
+            #: agreed with it.
+            assert len(body["item_id"]) <= MAX_CONTENT_STRING, len(body["item_id"])
+            assert len(body["cue_id"] or "") <= MAX_CONTENT_STRING, len(body["cue_id"] or "")
+            assert len(body["prompt"]) <= MAX_SERVED_PROMPT, len(body["prompt"])
+            client.post(
+                "/api/v1/drill/answer",
+                json={
+                    "drill_run_id": body["drill_run_id"],
+                    "response": "manoeuvre",
+                    "confidence": 3,
+                    "elapsed_ms": 1000,
+                },
+            )
+        #: NON-VACUITY, both halves. The loop must have moved through the item space, or it is the
+        #: single-draw measurement again wearing a `for` statement; and the tree must produce a
+        #: stimulus over the diagnostic ceiling, or the split between the two budgets is never
+        #: exercised and this test would pass with them collapsed into one.
+        assert len(drawn) > 4, f"the loop drew {len(drawn)} distinct items: {sorted(drawn)}"
+        assert widest_stimulus > MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
+            f"the widest stimulus was {widest_stimulus} bytes, so the split between the two"
+            " budgets was never exercised and this tree is not hostile enough to prove it"
+        )
 
 
 def test_an_anonymous_content_503_is_bounded_per_error_and_not_only_in_count(
