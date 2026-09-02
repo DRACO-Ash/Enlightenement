@@ -19,6 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from enlightenment.identifiers import served_identifier
+
 
 class ResponseFormat(StrEnum):
     """How the operator answers, which decides how the response is matched and scored.
@@ -92,7 +94,13 @@ class Stimulus(_Record):
     def _canonical(cls, value: str) -> str:
         if value not in CANONICAL_GENERATORS:
             raise ValueError(
-                f"generator {value!r} is outside the canonical twelve declared in the"
+                #: Shortened, because a generator name is a content-authored string with no
+                #: declared maximum here and this message reaches the anonymous
+                #: `content_unavailable` 503. Inside the register's structural-identifier
+                #: carve-out - a typo in a generator name is undiagnosable otherwise - but the
+                #: carve-out promises the name is bounded on the way out, and it was not.
+                f"generator {served_identifier(value)!r} is outside the canonical twelve"
+                " declared in the"
                 " _generator_contract block of drills.json. If this is a legacy name it belongs"
                 " in params as _legacy_generator and must not be implemented."
             )
@@ -166,7 +174,11 @@ class Drill(_Record):
     @classmethod
     def _rated_band(cls, value: int) -> int:
         if not MIN_ELO <= value <= MAX_ELO:
-            raise ValueError(f"elo {value} is outside the rated band {MIN_ELO} to {MAX_ELO}")
+            #: The VALUE is not named. This message becomes a content error on the anonymous
+            #: `content_unavailable` 503 and on the manifest, and an authored `elo` of
+            #: 99999999 was served back from both. The key and its domain are the whole
+            #: diagnosis an author needs; they have the file they wrote the number in.
+            raise ValueError(f"elo is outside the rated band {MIN_ELO} to {MAX_ELO}")
         return value
 
 

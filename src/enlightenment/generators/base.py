@@ -17,9 +17,11 @@ corrected layout fails the test and names the renderer to fix.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
+from enlightenment.identifiers import served_identifier
 from enlightenment.scenario import SeededRandom
 
 
@@ -315,3 +317,57 @@ def rng(seed: int, salt: str) -> SeededRandom:
     """
     digest = hashlib.sha256(salt.encode("utf-8")).digest()[:4]
     return SeededRandom(seed ^ int.from_bytes(digest, "big"))
+
+
+class ContentParameterError(ValueError):
+    """A stimulus parameter that cannot be used, described WITHOUT quoting the authored value.
+
+    **The reason this type exists rather than a plain `ValueError`.** A renderer's refusal becomes
+    a withhold reason and reaches the unauthenticated manifest and an anonymous 503, so the
+    boundary rule in `docs/SECURITY.md` is that a refusal names the KEY and its DOMAIN and never
+    the value that failed. V0.26.3 removed the one explicit interpolation and left the mechanism
+    that actually carried values: `float("...")` puts the string it could not parse into its own
+    message, and `training/drill.py` reflected that message verbatim. Measured, against a copy of
+    the shipped tree in TWO anonymous requests: an authored parameter value was served on both
+    `GET /api/v1/drill/next` and `GET /api/v1/content/manifest`.
+
+    So the caller cannot be trusted to interpolate a foreign exception, and it no longer does. This
+    type is the marker for a message the code AUTHORED and can therefore vouch for; anything else
+    is reduced to its class name at the boundary and logged in full server-side. That is
+    fail-closed: a coercion site added later leaks nothing while it waits to be converted.
+    """
+
+
+def authored_number(params: Mapping[str, Any], *keys: str, default: float) -> float:
+    """A number from the authored parameters, refusing by KEY and TYPE rather than by value.
+
+    Several keys may be given, tried in order, because the content spells one fact more than one
+    way - `days` and `cycles_shown` are the same span, `sites` and `sensors` the same count - and
+    reading only the first left every item on the same window.
+
+    The key is put through `served_identifier`: a parameter NAME is a content-authored string with
+    no declared maximum length in `content/models.py`, so it is bounded and kept distinct on the
+    way into a message that reaches an anonymous route.
+    """
+    for key in keys:
+        if key in params:
+            try:
+                return float(params[key])
+            except (TypeError, ValueError) as exc:
+                raise ContentParameterError(
+                    f"the stimulus parameter {served_identifier(key)!r} must be a number"
+                ) from exc
+    return float(default)
+
+
+def authored_count(params: Mapping[str, Any], *keys: str, default: int) -> int:
+    """A whole number from the authored parameters. `authored_number`'s rule, for a count."""
+    for key in keys:
+        if key in params:
+            try:
+                return int(params[key])
+            except (TypeError, ValueError) as exc:
+                raise ContentParameterError(
+                    f"the stimulus parameter {served_identifier(key)!r} must be a whole number"
+                ) from exc
+    return int(default)

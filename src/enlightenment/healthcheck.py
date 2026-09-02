@@ -21,7 +21,9 @@ import sys
 import urllib.error
 import urllib.request
 
-#: Strictly shorter than the platform probe timeout.
+#: `TBC, re-verify` against the platform probe timeout, which this repository does not record;
+#: see the note beside `PROBE_TIMEOUT_SECONDS` in `app.py`. The bound this DOES hold is that the
+#: image healthcheck cannot hang.
 TIMEOUT_SECONDS = 3.0
 
 #: The only status the liveness path returns when the process is alive.

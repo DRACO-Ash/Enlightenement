@@ -779,7 +779,15 @@ def test_a_serve_time_refusal_withholds_the_item_and_the_session_continues(
 
     manifest = loop.manifest()
     assert "DRL-0005" in manifest["items_without_a_resolvable_answer"]
-    assert "NaN" in manifest["withheld_reasons"]["DRL-0005"], manifest["withheld_reasons"]
+    #: The reason names the ITEM and the fault CLASS, and carries no authored value. This
+    #: assertion used to require "NaN" in the reason, which pinned a disclosure: the reason is
+    #: composed from the renderer's exception and reached the unauthenticated manifest, so
+    #: asserting the authored value appears in it was asserting the leak. The security gate served
+    #: a marker string on this exact surface in two anonymous requests.
+    reason = manifest["withheld_reasons"]["DRL-0005"]
+    assert reason.startswith("DRL-0005: "), reason
+    assert "ValueError" in reason, reason
+    assert "nan" not in reason.lower(), reason
 
 
 def test_a_refusing_pool_raises_the_budget_error_after_exactly_the_allowed_attempts(
@@ -1393,12 +1401,18 @@ def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_mani
     manifest response was bounded by nothing the server controls, and the same string went into
     the append-only run log.
 
-    **Driven through a composite's product id, because the shorter path was closed.** The original
-    measurement used `newest_at`, whose refusal quoted the rejected VALUE; V0.26.6 stopped that
-    message naming the value at all, after the security gate made it carry a real accept string
-    from the item's own key and the anonymous route served it back. A product id is a structural
-    identifier rather than a value and is still named, because that is how an author finds the
-    typo - so it is the honest remaining path to a content-sized reason, and the one this asserts.
+    **Every route-level path to a content-sized reason is now closed, and that is what this
+    asserts.** The original measurement used `newest_at`, whose refusal quoted the rejected VALUE;
+    V0.26.6 stopped that message naming the value. This test then drove the bound through a
+    composite's product id, on the argument that a product id is a structural identifier rather
+    than a value and so is still named. It is still named - but it is SHORTENED at the raise site
+    now, so a 3,000-character product id can no longer set the size of the reason at all. A bound
+    the input cannot reach is a stronger property than a bound that cuts, so the absence of the
+    truncation mark is asserted rather than its presence.
+
+    `bounded_reason`'s truncation-and-marking branch is still driven, by the loader-error path in
+    `test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_errors`: a pydantic
+    validation message runs to 311 characters on a fixed sentence with no authored content in it.
 
     The bound is sized from measurement, not taste: the longest reason any real content fault
     produces in this library is 190 characters (the unknown-generator refusal, whose sentence is
@@ -1431,9 +1445,15 @@ def test_a_withhold_reason_is_bounded_before_it_reaches_the_unauthenticated_mani
         f"a content author set the length of an anonymous response: {len(reason)} characters"
         f" against a bound of {MAX_WITHHOLD_REASON}"
     )
-    assert reason.endswith(TRUNCATION_MARK), "the reason was cut and does not say so"
     #: The bound must not be so tight that it eats the diagnosis. This is the part an author reads.
     assert "composite names product" in reason, f"the truncation destroyed the diagnosis: {reason}"
+    assert not reason.endswith(TRUNCATION_MARK), (
+        "a content-authored product id reached the reason at content size and was then cut; it is"
+        f" shortened at the raise site so the reason is never content-sized: {reason}"
+    )
+    assert "X" * (MAX_CONTENT_STRING + 1) not in reason, (
+        f"the raw product id reached the anonymous manifest unshortened: {reason}"
+    )
 
 
 def test_an_explicitly_named_item_is_never_substituted_when_it_refuses(tmp_path: Path) -> None:

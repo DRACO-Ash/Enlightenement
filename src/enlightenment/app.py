@@ -87,7 +87,12 @@ READINESS_PATHS = ("/healthz", "/readyz")
 #: Paths exempt from rate limiting. The platform probes these; a 429 would read as unhealthy.
 UNLIMITED_PATHS = frozenset(LIVENESS_PATHS + READINESS_PATHS + ("/",))
 
-#: Hard probe timeout, strictly shorter than the platform's probe timeout, so a stalled
+#: Hard probe timeout. **`TBC, re-verify`: the claim that this is strictly shorter than the
+#: platform's own probe timeout has no figure in this repository to rest on** - the App Store
+#: publishes no `timeoutSeconds` in `docs/DEPLOYMENT.md` or anywhere else here, and a Kubernetes
+#: default of 1 s would make 2.0 s longer, not shorter. Requested from the owner by name rather
+#: than inferred around, which is this project's rule for a missing document. What is not in
+#: doubt is the property this constant exists for: the probe cannot hang, so a stalled
 #: mount fails loudly instead of hanging and being killed silently by the kubelet.
 PROBE_TIMEOUT_SECONDS = 2.0
 
@@ -126,6 +131,27 @@ DRILL_WINDOW_SECONDS = 60.0
 
 #: Request body cap, enforced on bytes actually read (see :mod:`enlightenment.middleware`).
 MAX_BODY_BYTES = 64 * 1024
+
+#: How many stored sessions the ANONYMOUS listing serves, newest first, and the byte ceiling that
+#: number is sized against. `GET /api/v1/sessions` is unauthenticated by the decision recorded in
+#: `docs/SECURITY.md` accepted risk 5, and it was excluded from the anonymous-body sweep on the
+#: claim that the session routes are token-gated. **That claim was false for the read**, and the
+#: size claim beside it - that `storage.MAX_SESSIONS` and the field caps govern the body, "which
+#: their own tests hold" - was held by nothing: `MAX_SESSIONS` appeared in the suite only in that
+#: comment.
+#:
+#: Measured on the wire, filling the store to `MAX_SESSIONS` through the token-gated write route
+#: with every field inside its declared cap (title 200, scenario 120, notes 2000, all accepted
+#: with 201): **1,231,926 bytes of ASCII and 4,711,926 bytes with astral characters**, from one
+#: unauthenticated request, uncached. The second figure is past this project's own 4 MB
+#: `MAX_PAYLOAD_BYTES`, so the collection was bounded by nothing the server chose.
+#:
+#: 25 matches the sibling served-count caps (`MAX_SERVED_PARAMS`, `MAX_SERVED_WITHHELD`) rather
+#: than being picked, and it holds the astral worst case at about 236 kB against the ceiling
+#: below. The UNTRUNCATED total is served beside the list, and `truncated` says outright that the
+#: listing is short, because a shortened disclosure must never read as a complete one.
+MAX_SERVED_SESSIONS = 25
+MAX_SERVED_SESSIONS_BYTES = 256 * 1024
 
 #: Actor label for a call authenticated with the shared team token.
 TEAM_ACTOR = "team"
@@ -633,8 +659,19 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         if if_none_match and if_none_match.strip() == etag:
             response.status_code = status.HTTP_304_NOT_MODIFIED
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"etag": etag})
-        sessions = [dict(session) for session in snapshot["sessions"]]
-        return {"count": len(sessions), "rev": snapshot["rev"], "sessions": sessions}
+        stored = snapshot["sessions"]
+        #: Newest first, because `storage._enforce_cap` keeps the newest and appends the fresh
+        #: entry at the end. `count` keeps its meaning - how many rows are in this response - and
+        #: `total` is the honest untruncated figure, so a short listing cannot read as the whole
+        #: dataset. Same shape as the withheld collections on the manifest.
+        sessions = [dict(session) for session in stored[-MAX_SERVED_SESSIONS:]]
+        return {
+            "count": len(sessions),
+            "total": len(stored),
+            "truncated": len(sessions) < len(stored),
+            "rev": snapshot["rev"],
+            "sessions": sessions,
+        }
 
     @app.post("/api/v1/sessions", status_code=status.HTTP_201_CREATED)
     async def upsert_session(

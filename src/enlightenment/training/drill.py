@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -29,7 +30,12 @@ from typing import Any, Final
 
 from enlightenment.audit import log_event
 from enlightenment.content import ContentPackage, Drill
-from enlightenment.generators import GeneratorRegistry, board_for, compose
+from enlightenment.generators import (
+    ContentParameterError,
+    GeneratorRegistry,
+    board_for,
+    compose,
+)
 from enlightenment.identifiers import MAX_CONTENT_STRING as _MAX_CONTENT_STRING
 from enlightenment.identifiers import served_identifier
 from enlightenment.scoring import (
@@ -48,6 +54,11 @@ from enlightenment.training.scoring import (
     next_interval_days,
     update_ratings,
 )
+
+#: Where the FULL exception detail goes when a renderer refuses. The served reason names the
+#: parameter key and the type it had to be and nothing else, so the author-facing diagnosis that
+#: a stdlib coercion message carries has to survive somewhere - and a log line is server-side.
+_logger = logging.getLogger("enlightenment.training.drill")
 
 #: The rubric the drill layer scores against, by id. Named here rather than inlined at the call
 #: site so a content author renaming it produces one failure with one fix.
@@ -268,6 +279,15 @@ def _bounded(value: Any) -> str:
     `extra="allow"` carries fields the engine does not model, which is the deliberate reversal
     that let the package load unedited. The residual is length: a 5000-character `version` was
     stored verbatim on every run row, and the progress file is read whole on every request.
+
+    **Scoped honestly: this bounds run-row VALUES, not every content string in the file.**
+    `training/progress.py` keys `axes` and `schedule` on the raw competency id and item id, so an
+    authored id of any length lands in `progress.json` unshortened. Not the V0.26.6 fault - both
+    sides of every comparison are raw, so nothing collapses and nothing is fabricated - and no
+    anonymous response is sized by it, because `due_items` goes through `served_identifier` on the
+    way out. It is content-driven growth of a file this process wrote itself, reachable only by a
+    content author, and shortening it would change a persisted format for that alone. Recorded
+    here rather than left implied by a docstring that claimed the whole file.
     """
     text = str(value or "")
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
@@ -528,15 +548,46 @@ class DrillLoop:
                 seed,
                 item.stimulus.product_id,
             )
-        except LookupError as exc:
+        except ContentParameterError as exc:
+            #: The ONLY exception this module interpolates. `ContentParameterError` is the marker
+            #: for a message the code AUTHORED: it names the parameter key and the type it had to
+            #: be, never the value that failed. Everything else is reduced to its class name
+            #: below, because a refusal reaches the unauthenticated manifest and an anonymous 503
+            #: and `docs/SECURITY.md` promises it names the key and its domain and not the value.
             raise DrillError(f"{named}: {exc}") from None
-        except ArithmeticError as exc:
+        except LookupError as exc:
+            #: A generator or product NAME. Inside the register's structural-identifier carve-out:
+            #: a typo in one is undiagnosable otherwise, and both are shortened at the raise site.
+            raise DrillError(f"{named}: {exc}") from None
+        except ArithmeticError:
             #: A renderer's arithmetic on a content value is a CONTENT fault, so it earns the
             #: author-facing 503 this module documents rather than a generic 500. `elapsed_min: 0`
             #: divides by zero and `1e308` overflows a domain, both from plain authored numbers.
-            raise DrillError(f"{named}: the stimulus could not be computed: {exc}") from None
+            #:
+            #: **The exception is NOT interpolated**, and this is the cheaper of the two things
+            #: to keep rather than a control a test holds. MEASURED on CPython 3.12: no
+            #: `ArithmeticError` message carries its operand - "float division by zero",
+            #: "(34, 'Numerical result out of range')", "math range error", "int too large to
+            #: convert to float" - so re-adding `{exc}` here survives the whole suite. Recorded as
+            #: a declared limit rather than claimed closed, which is this project's rule for a
+            #: guard that is unheld rather than exploitable. The branch itself IS driven; what no
+            #: test can distinguish is a message that would carry a value if CPython ever wrote
+            #: one. Full detail goes to the log either way.
+            _logger.exception("stimulus arithmetic failed for %s", named)
+            raise DrillError(
+                f"{named}: the stimulus could not be computed from its parameters"
+            ) from None
         except (ValueError, TypeError) as exc:
-            raise DrillError(f"{named}: the stimulus parameters are not usable: {exc}") from None
+            #: The fail-closed branch, and the reason this class stays closed as the renderers
+            #: grow: a coercion site that does not yet go through `authored_number` reaches here,
+            #: and the served reason carries its exception CLASS and no content at all. Measured
+            #: before this existed: `float("...")` puts the string it could not parse into its own
+            #: message, and an authored parameter value was served on two anonymous routes in two
+            #: requests against a copy of the shipped tree.
+            _logger.exception("stimulus parameters unusable for %s", named)
+            raise DrillError(
+                f"{named}: the stimulus parameters are not usable ({type(exc).__name__})"
+            ) from None
 
         #: A composite renders several products and their server-side facts are merged, so a key
         #: one renderer owns can be overwritten by the next in render order.

@@ -1,6 +1,6 @@
 [project]
 name = "enlightenment"
-version = "0.26.22"
+version = "0.26.23"
 description = "Orbital warfare training application for the Bluestaq App Store."
 requires-python = ">=3.12,<3.13"
 

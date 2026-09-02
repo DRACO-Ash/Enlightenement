@@ -13,6 +13,7 @@ from enlightenment.content import COMPOSITION_MODES, PRODUCT_RENDERERS
 from enlightenment.generators.base import (
     Axis,
     Column,
+    ContentParameterError,
     Generator,
     GeneratorRegistry,
     Marks,
@@ -21,6 +22,7 @@ from enlightenment.generators.base import (
     rng,
 )
 from enlightenment.generators.products import ALL_GENERATORS
+from enlightenment.identifiers import served_identifier
 
 
 def build_registry() -> GeneratorRegistry:
@@ -75,12 +77,14 @@ def compose(
     if generator in PRODUCT_RENDERERS:
         renderer = registry.by_name(generator)
         if renderer is None:
-            raise LookupError(f"no renderer registered for generator {generator!r}")
+            raise LookupError(
+                f"no renderer registered for generator {served_identifier(generator)!r}"
+            )
         return (renderer.render(params, seed),)
 
     if generator not in COMPOSITION_MODES:
         raise LookupError(
-            f"generator {generator!r} is outside the canonical twelve. Legacy names in params"
+            f"generator {served_identifier(generator)!r} is outside the canonical twelve. Legacy"
             " are traceability only and must not be implemented."
         )
 
@@ -91,7 +95,9 @@ def compose(
         named = product_id or str(params.get("product_id") or params.get("product") or "")
         target = registry.for_product(named)
         if target is None:
-            raise LookupError(f"probe names product {named!r}, which has no renderer")
+            raise LookupError(
+                f"probe names product {served_identifier(named)!r}, which has no renderer"
+            )
         return (target.render(params, seed),)
 
     requested = params.get("products", "all")
@@ -118,7 +124,9 @@ def compose(
     for index, wanted in enumerate(product_ids):
         target = registry.for_product(wanted)
         if target is None:
-            raise LookupError(f"composite names product {wanted!r}, which has no renderer")
+            raise LookupError(
+                f"composite names product {served_identifier(wanted)!r}, which has no renderer"
+            )
         # A different seed per product on the board, so two panels of a composite are not the
         # same surface drawn twice.
         rendered.append(target.render(params, seed + index))
@@ -128,6 +136,7 @@ def compose(
 __all__ = [
     "Axis",
     "Column",
+    "ContentParameterError",
     "Generator",
     "GeneratorRegistry",
     "Marks",

@@ -31,7 +31,17 @@ import math
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
-from enlightenment.generators.base import Axis, Column, Marks, Panel, Stimulus, rng
+from enlightenment.generators.base import (
+    Axis,
+    Column,
+    ContentParameterError,
+    Marks,
+    Panel,
+    Stimulus,
+    authored_count,
+    authored_number,
+    rng,
+)
 from enlightenment.physics import (
     RelativeState,
     no_drift_alongtrack_rate_km_s,
@@ -253,8 +263,8 @@ def _collection_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
     """
     if not params.get("departure_after_gap"):
         return (0.0, 0.0)
-    start = float(params.get("gap_start_frac", 0.55)) * days
-    length = float(params.get("gap_len_hours", 40)) / HOURS_PER_DAY
+    start = authored_number(params, "gap_start_frac", default=0.55) * days
+    length = authored_number(params, "gap_len_hours", default=40) / HOURS_PER_DAY
     return (start, min(start + length, days))
 
 
@@ -603,8 +613,8 @@ class ResidualGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        days = min(float(params.get("days", 7)), MAX_SPAN_DAYS)
-        fraction = float(params.get("departure_at_frac", 0.72))
+        days = min(authored_number(params, "days", default=7), MAX_SPAN_DAYS)
+        fraction = authored_number(params, "departure_at_frac", default=0.72)
         component = _departure_component(params)
         beta_departs = component == "out_of_plane"
         time_departs = component == "in_plane"
@@ -711,7 +721,7 @@ class WaterfallGenerator:
         stream = rng(seed, self.product_id)
         #: `cycles_shown` is the content's other spelling for the span. One product, two authored
         #: names, and reading only the first left every item drawn over the same window.
-        days = min(float(params.get("days", params.get("cycles_shown", 5))), MAX_SPAN_DAYS)
+        days = min(authored_number(params, "days", "cycles_shown", default=5), MAX_SPAN_DAYS)
         centre = 0.0
 
         #: How many objects are in the neighbourhood. The content authors `headcount` because on
@@ -721,7 +731,10 @@ class WaterfallGenerator:
         #: as one, and DRL-0030 authors `obs_count: 18000`: 18,000 tracks, 2.6 million points and
         #: 159 MB of JSON from a single unauthenticated request. The cap is a second line, and it
         #: costs nothing an operator would notice: a waterfall panel is unreadable well below it.
-        neighbours = min(int(params.get("headcount", DEFAULT_NEIGHBOURS)), MAX_NEIGHBOURHOOD_TRACKS)
+        neighbours = min(
+            authored_count(params, "headcount", default=DEFAULT_NEIGHBOURS),
+            MAX_NEIGHBOURHOOD_TRACKS,
+        )
         drifters = _drifter_count(params, neighbours)
 
         bounds = _longitude_bounds(params)
@@ -742,7 +755,7 @@ class WaterfallGenerator:
         #: An author who needs the offending value has the file they wrote it in.
         newest_at = str(params.get("newest_at", "bottom"))
         if newest_at not in NEWEST_AT_VALUES:
-            raise ValueError(f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}")
+            raise ContentParameterError(f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}")
         newest_at_bottom = newest_at == "bottom"
 
         marks: list[Marks] = []
@@ -902,14 +915,14 @@ class LightCurveGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        intervals = min(int(params.get("intervals", 6)), MAX_INTERVALS)
+        intervals = min(authored_count(params, "intervals", default=6), MAX_INTERVALS)
         #: A step change in brightness is a change of the object, not of the geometry. The item
         #: that authors it asks the operator to separate the two, so it has to be drawn.
         step_change = bool(params.get("step_change", False))
-        phase_shift = float(params.get("phase_angle_shift", 0.0))
-        glint_at = float(params.get("glint_phase_deg", 5.0))
-        glint_depth = float(params.get("glint_magnitudes", 3.6))
-        base = float(params.get("base_magnitude", 12.4))
+        phase_shift = authored_number(params, "phase_angle_shift", default=0.0)
+        glint_at = authored_number(params, "glint_phase_deg", default=5.0)
+        glint_depth = authored_number(params, "glint_magnitudes", default=3.6)
+        base = authored_number(params, "base_magnitude", default=12.4)
 
         marks: list[Marks] = []
         for interval in range(intervals):
@@ -1018,7 +1031,7 @@ class TricGenerator:
         #: `manoeuvre_count: "seeded"` asks this renderer to choose, and the number it chooses is
         #: the answer to the item, so it reaches `derived["expected_value"]` and nowhere else.
         if "actual_manoeuvres" in params:
-            manoeuvres = int(params["actual_manoeuvres"])
+            manoeuvres = authored_count(params, "actual_manoeuvres", default=0)
         elif params.get("manoeuvre_count") == "seeded":
             manoeuvres = stream.integer(1, 3)
         else:
@@ -1031,12 +1044,14 @@ class TricGenerator:
         #: Marks along the track. **A reference state change is not a manoeuvre.** DRL-0026
         #: authors six markers with zero manoeuvres precisely so an operator learns to separate a
         #: new element set from a burn, so the two counts are independent by construction.
-        state_changes = min(int(params.get("state_change_markers", 4)), MAX_STATE_CHANGE_MARKS)
+        state_changes = min(
+            authored_count(params, "state_change_markers", default=4), MAX_STATE_CHANGE_MARKS
+        )
 
         #: Separation sets the scale of the loop. Three authored spellings, all in kilometres or
         #: a word, and none of them invented here.
         separation_km = _separation_km(params, stream)
-        radial_km = separation_km / max(float(params.get("ratio", 2.0)), 0.5)
+        radial_km = separation_km / max(authored_number(params, "ratio", default=2.0), 0.5)
 
         # Hill frame, ordered radial, along-track, cross-track, and the order is carried in the
         # type for the same reason the propagator carries TEME: read the wrong way round it is
@@ -1061,7 +1076,7 @@ class TricGenerator:
         )
         #: Authored revolutions, so a six-revolution item shows six and a four-revolution item
         #: does not show six. The window was fixed at two before, which erased the parameter.
-        revolutions = min(float(params.get("revolutions", 2)), MAX_REVOLUTIONS)
+        revolutions = min(authored_number(params, "revolutions", default=2), MAX_REVOLUTIONS)
         #: Floored. `samples` is content-driven arithmetic, and a revolution count below 1/70
         #: rounds it to zero, which divides by zero in the segment length. Not reachable from
         #: today's library - the authored values are 4 and 6 - but a bound on a content-supplied
@@ -1239,12 +1254,12 @@ class DcTableGenerator:
         #: The content's spellings first, this module's older names second. `period_change_s` and
         #: `plane_change_deg` are what the items author; reading only the internal names meant a
         #: table authored with a 12-second period change rendered the default 5.51.
-        nodal_deg = float(params.get("nodal_regression_deg", 7.02))
+        nodal_deg = authored_number(params, "nodal_regression_deg", default=7.02)
         if not params.get("include_natural_secular_drift", True):
             #: One item states the natural nodal regression is excluded, which changes which
             #: column an operator should attribute to the burn.
             nodal_deg = 0.0
-        period_delta_s = float(params.get("period_change_s", params.get("period_delta_s", -5.51)))
+        period_delta_s = authored_number(params, "period_change_s", "period_delta_s", default=-5.51)
 
         #: An altitude change at geostationary DETERMINES a longitude drift rate, and DRL-0004
         #: asks the operator to derive it. So the renderer must both draw the altitude change and
@@ -1252,8 +1267,8 @@ class DcTableGenerator:
         #: nothing on every attempt and the item was permanently unscorable.
         altitude_delta_km = _altitude_delta(params, rng(seed, self.product_id))
         drift_deg_day = _geo_drift_rate_deg_day(altitude_delta_km)
-        inclination_delta = float(
-            params.get("plane_change_deg", params.get("inclination_delta_deg", -0.0002))
+        inclination_delta = authored_number(
+            params, "plane_change_deg", "inclination_delta_deg", default=-0.0002
         )
 
         elements = (
@@ -1326,7 +1341,7 @@ class NeighbourhoodGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        count = min(int(params.get("rows", 9)), MAX_TABLE_ROWS)
+        count = min(authored_count(params, "rows", default=9), MAX_TABLE_ROWS)
         rows: list[dict[str, Any]] = []
         for index in range(count):
             drifting = index % 4 == 0
@@ -1387,7 +1402,7 @@ class CocoGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        count = min(int(params.get("rows", 7)), MAX_TABLE_ROWS)
+        count = min(authored_count(params, "rows", default=7), MAX_TABLE_ROWS)
         rows = tuple(
             {
                 "designator": f"OBJ-{2000 + index * 3}",
@@ -1435,8 +1450,8 @@ class PassScheduleGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        hours = min(float(params.get("hours", 12)), MAX_SCHEDULE_HOURS)
-        sensors = min(int(params.get("sites", params.get("sensors", 6))), MAX_SENSORS)
+        hours = min(authored_number(params, "hours", default=12), MAX_SCHEDULE_HOURS)
+        sensors = min(authored_count(params, "sites", "sensors", default=6), MAX_SENSORS)
         phenomenology = ["Optical", "Radar", "Phased array", "Passive RF", "On orbit"]
         marks: list[Marks] = []
         for index in range(sensors):
@@ -1510,7 +1525,7 @@ class EphemerisGenerator:
         #: time span as a shorter one - the fault class this whole line of work is about. A clamp
         #: CHANGES the authored scene rather than refusing it, so it is only justified where it
         #: prevents a real cost. `MAX_EPHEMERIS_MINUTES` was deleted for exactly that reason.
-        minutes = float(params.get("elapsed_min", params.get("minutes", 96)))
+        minutes = authored_number(params, "elapsed_min", "minutes", default=96)
         ballistic = bool(params.get("ballistic", False))
         samples = 96
         earth_radius = 6378.137
@@ -1586,10 +1601,10 @@ class GabbardGenerator:
 
     def render(self, params: dict[str, Any], seed: int) -> Stimulus:
         stream = rng(seed, self.product_id)
-        fragments = min(int(params.get("fragments", 40)), MAX_FRAGMENTS)
-        parent_period = float(params.get("parent_period_min", 101.4))
-        parent_altitude = float(params.get("parent_altitude_km", 780.0))
-        spread = float(params.get("spread", 1.0))
+        fragments = min(authored_count(params, "fragments", default=40), MAX_FRAGMENTS)
+        parent_period = authored_number(params, "parent_period_min", default=101.4)
+        parent_altitude = authored_number(params, "parent_altitude_km", default=780.0)
+        spread = authored_number(params, "spread", default=1.0)
 
         apogee_x: list[float] = []
         apogee_y: list[float] = []

@@ -27,11 +27,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import ok_probe
-from enlightenment.app import Limiters, TrainingPaths, create_app
+from enlightenment.app import (
+    MAX_SERVED_SESSIONS,
+    MAX_SERVED_SESSIONS_BYTES,
+    Limiters,
+    TrainingPaths,
+    create_app,
+)
 from enlightenment.config import Config
 from enlightenment.content import ContentPackage
 from enlightenment.ratelimit import RateLimiter
-from enlightenment.storage import TrainingStore
+from enlightenment.storage import MAX_SESSIONS, TrainingStore
 from enlightenment.training.drill import (
     MAX_CONTENT_STRING,
     MAX_PAYLOAD_BYTES,
@@ -525,13 +531,22 @@ WITHHELD_ON_THE_HOSTILE_TREE = 94
 #: set: narrowing the discovery filter to a single route previously left the test green, so the
 #: control's one load-bearing property - that it enumerates - was held by nothing.
 #:
-#: The session routes are excluded for two independent reasons, either sufficient. They are
-#: TOKEN-GATED - the write routes answer 401 without an `Authorization` header - so they are not
-#: anonymous surfaces at all; and their size is governed by `storage.MAX_SESSIONS` and the session
-#: field caps rather than by content, which their own tests hold. Sweeping the collection here
-#: measured an EMPTY fixture store at 33 bytes, certifying nothing, and would have failed falsely
-#: the moment anyone populated the fixture: twenty legitimate sessions measure 49,394 bytes against
-#: a store that admits five hundred.
+#: **`GET /api/v1/sessions` is SWEPT, and the two reasons it was excluded on were both wrong.**
+#: The first said the session routes are TOKEN-GATED and therefore "not anonymous surfaces at
+#: all". True of the writes, false of the read: it answers 200 with no `Authorization` header, by
+#: the decision recorded as accepted risk 5 in `docs/SECURITY.md`. The second said their size is
+#: governed by `storage.MAX_SESSIONS` and the field caps "which their own tests hold" - and
+#: `MAX_SESSIONS` appeared nowhere in this suite except that sentence, so nothing held it.
+#:
+#: The security gate measured the consequence on the wire: filling the store to `MAX_SESSIONS`
+#: through the gated write route, with every field inside its declared cap and accepted with 201,
+#: served **1,231,926 bytes of ASCII and 4,711,926 with astral characters** from one
+#: unauthenticated request. The second figure is past `MAX_PAYLOAD_BYTES`.
+#:
+#: The earlier objection to sweeping it was real and is answered rather than argued with: an EMPTY
+#: fixture store measures 33 bytes and certifies nothing, so `_fill_sessions` drives the store to
+#: `MAX_SESSIONS` at the field caps with astral characters - the worst case the boundary model
+#: accepts - and the non-vacuity guard below then means something.
 #:
 #: `PATCH /api/v1/sessions/{session_id}` is in this set because the exact-set assertion below
 #: refused to pass without it. That is the assertion working: an earlier version could be narrowed
@@ -543,6 +558,7 @@ ANONYMOUS_ROUTES_SWEPT = {
     "GET /api/v1/content/procedure/{procedure_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
     "GET /api/v1/content/product/{product_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
     "GET /api/v1/drill/next": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    "GET /api/v1/sessions": MAX_SERVED_SESSIONS_BYTES,
     "POST /api/v1/drill/answer": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
 }
 #: Excluded, each with a reason, because widening the discovery to the whole route table brings in
@@ -553,8 +569,9 @@ ANONYMOUS_ROUTES_SWEPT = {
 #:   their status and shape; a size ceiling here could only fail falsely.
 #: ● The `/ui` routes serve the interface from an allowlisted filename set - source files, not the
 #:   content tree - so their size is a property of the repository, not of authored data.
-#: ● The session routes are token-gated, and their size is governed by `storage.MAX_SESSIONS` and
-#:   the session field caps rather than by content. Either reason alone is sufficient.
+#: ● The session WRITE routes are token-gated: both answer 401 without an `Authorization` header,
+#:   measured, so neither is an anonymous surface. The session READ is not excluded - it is swept
+#:   above, because the claim that it was gated was false.
 ANONYMOUS_ROUTES_EXCLUDED = {
     "GET /",
     "GET /health",
@@ -565,7 +582,6 @@ ANONYMOUS_ROUTES_EXCLUDED = {
     "GET /ui",
     "GET /ui/",
     "GET /ui/{filename}",
-    "GET /api/v1/sessions",
     "POST /api/v1/sessions",
     "PATCH /api/v1/sessions/{session_id}",
 }
@@ -579,10 +595,20 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     stretches the drill id, prompt and explanation, the competency id and name, and the string
     leaves of a procedure and a product, and adds more competencies than the served cap admits so
     that cap can bite at all - the shipped library has eight against a cap of thirty-two.
+
+    **One field is ASTRAL, and that is a dimension this tree was blind to.** Every cap in this
+    project is declared in CODE POINTS and every ceiling in this sweep is in BYTES, and one
+    `U+1F600` is one code point and four bytes. A tree poisoned only with `"X"` therefore
+    certifies the byte ceilings for single-byte content and says nothing about the rest, which the
+    security gate demonstrated by reaching 21,823 bytes on a 16 kB ceiling with astral content.
+    The competency NAME carries it: it is served, it is capped in code points, and its cut is
+    marked, so one field exercises the code-point bound and the byte ceiling together.
     """
     shutil.copytree(CONTENT_ROOT, destination)
     long_text = "X" * HOSTILE_TEXT_LENGTH
     long_id = "9" * 3000
+    #: Four bytes per code point, so a 64-code-point cap admits 256 bytes of this.
+    astral_text = "\U0001f600" * HOSTILE_TEXT_LENGTH
 
     document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
@@ -617,11 +643,11 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     template = dict(entries[0])
     for index, entry in enumerate(entries):
         entry["id"] = f"CMP-{long_id}-{index}"
-        entry["name"] = long_text
+        entry["name"] = astral_text
     while len(entries) <= MAX_SERVED_COMPETENCIES:
         clone = dict(template)
         clone["id"] = f"CMP-EXTRA-{len(entries)}"
-        clone["name"] = long_text
+        clone["name"] = astral_text
         entries.append(clone)
     (destination / "competencies.json").write_text(json.dumps(competencies), encoding="utf-8")
 
@@ -683,6 +709,10 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
     plain fixture leaves the token empty.
     """
     root = _hostile_content(tmp_path / "content", withhold_all=True)
+    #: The session store is DRIVEN, not left empty. `GET /api/v1/sessions` is an anonymous route
+    #: whose body is set by stored state rather than by content, so an empty fixture measures 33
+    #: bytes and certifies nothing - which is why it was excluded for seven releases.
+    stored_sessions = _fill_sessions(store)
     app = create_app(
         config=token_config,
         store=store,
@@ -775,6 +805,7 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         #: refactor of the test that held it, which is worse than one never written, because the
         #: register went on citing it. A body ceiling cannot substitute: with ids bounded to 64,
         #: 140 uncapped due items measure about 9 kB, well under it.
+        _assert_the_session_listing_is_capped(client, stored_sessions)
         me = client.get("/api/v1/me").json()
         assert me["due_items"], "no item is due, so the due-item caps assert nothing"
         assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
@@ -853,6 +884,296 @@ def _resolved(template: str, client: TestClient) -> str | None:
     if "{product_id}" in template:
         return template.replace("{product_id}", "PRD-TRIC")
     return template
+
+
+def test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_total(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """The write path ACCEPTS the values that made this route serve megabytes, and the read caps.
+
+    `GET /api/v1/sessions` is unauthenticated by decision, and it was excluded from the anonymous
+    body sweep on two claims that were both false: that the session routes are token-gated, and
+    that `storage.MAX_SESSIONS` and the field caps govern the body "which their own tests hold".
+    Nothing held it. Measured on the wire at `MAX_SESSIONS`, every field inside its declared cap:
+    1,231,926 bytes of ASCII and 4,711,926 with astral characters, from one anonymous request -
+    the second past `MAX_PAYLOAD_BYTES`.
+
+    This test is the half the sweep cannot make: that the boundary model ACCEPTS these rows with
+    201, so the amplification needs no invalid input and no bug, only a token holder writing
+    inside the caps the API advertises. The byte measurement at full cap is the sweep's job.
+
+    The listing keeps the NEWEST, because `storage._enforce_cap` keeps the newest and appends the
+    fresh entry at the end, and it serves the untruncated `total` beside the short list: a
+    shortened disclosure that reads as a complete one is the fault this project has closed four
+    times in other fields.
+    """
+    written = MAX_SERVED_SESSIONS + 5
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        #: Permissive, because the strict write limiter is 20 per minute and this drives 30
+        #: writes. The limiter has its own tests; borrowing its bound here would only make this
+        #: one fail for the wrong reason.
+        limiters=Limiters(
+            coarse=RateLimiter(999_999, 60),
+            strict=RateLimiter(999_999, 60),
+            drill=RateLimiter(999_999, 60),
+        ),
+        training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        for index in range(written):
+            response = client.post(
+                "/api/v1/sessions",
+                json={
+                    "id": f"session-{index:04d}",
+                    "title": "\U0001f600" * 200,
+                    "scenario": "\U0001f600" * 120,
+                    "notes": "\U0001f600" * 2000,
+                },
+                headers={"x-team-token": token_config.team_token},
+            )
+            assert response.status_code == 201, (
+                f"the boundary model refused a row inside its own declared caps at index"
+                f" {index}: {response.status_code} {response.content[:200]!r}"
+            )
+
+        #: NO header. This is the whole point: the read is anonymous.
+        listing = client.get("/api/v1/sessions")
+        assert listing.status_code == 200, listing.status_code
+        body = listing.json()
+
+    assert body["total"] == written, f"the total is not the honest count: {body['total']}"
+    assert body["count"] == MAX_SERVED_SESSIONS, f"the listing is not capped: {body['count']}"
+    assert len(body["sessions"]) == MAX_SERVED_SESSIONS, len(body["sessions"])
+    assert body["truncated"] is True, "a shortened listing does not say it was shortened"
+    #: The NEWEST are kept. Dropping the newest would make the route useless while still passing
+    #: a count assertion, which is the shape of mistake a cap invites.
+    assert body["sessions"][-1]["id"] == f"session-{written - 1:04d}", body["sessions"][-1]["id"]
+    assert len(listing.content) <= MAX_SERVED_SESSIONS_BYTES, (
+        f"{len(listing.content)} bytes against a ceiling of {MAX_SERVED_SESSIONS_BYTES}"
+    )
+
+
+#: The marker planted into every authored parameter value. Distinctive enough that finding it in
+#: a response body is unambiguous, and it is not a number, so every coercion site refuses on it.
+AUTHORED_VALUE_MARKER = "MARKER-AUTHORED-VALUE-MUST-NOT-BE-SERVED"
+
+
+def _tree_whose_every_parameter_is_poisoned(destination: Path) -> Path:
+    """The shipped content tree with every stimulus parameter set to `AUTHORED_VALUE_MARKER`.
+
+    Every drill is also forced onto ONE renderer, `waterfall`, whose coerced key `days` is among
+    the poisoned ones. That is the load-bearing part and the reason three earlier attempts at this
+    fixture measured nothing: `select` returns one deterministic item, so poisoning a key the
+    selected item's generator does not read renders fine and returns 200. With every candidate on
+    a renderer that must coerce a poisoned key, the whole selection budget refuses in ONE request
+    and both anonymous surfaces compose a reason. The same "one draw hid every item after the
+    first" filter failure the size sweep already records, one class along.
+
+    `answer.accept` is set to a literal so the load-time probe stays clean: the tree must LOAD, or
+    the manifest serves a load error instead of the withhold reasons this test is about.
+    """
+    shutil.copytree(CONTENT_ROOT, destination)
+    document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows:
+        row["stimulus"] = {
+            "product_id": "PRD-WATERFALL",
+            "generator": "waterfall",
+            "params": {
+                "days": AUTHORED_VALUE_MARKER,
+                "headcount": AUTHORED_VALUE_MARKER,
+                "gap_len_hours": AUTHORED_VALUE_MARKER,
+                "derived_rate_deg_day": AUTHORED_VALUE_MARKER,
+            },
+        }
+        row["answer"] = {"accept": ["manoeuvre"]}
+    (destination / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+    return destination
+
+
+def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """A refusal names the KEY and its DOMAIN, never the value that failed - held over the ROUTE
+    TABLE rather than on one renderer's message.
+
+    `docs/SECURITY.md` recorded this control as closed from V0.26.3, and the security gate defeated
+    it in TWO anonymous requests against a copy of the shipped tree. V0.26.3 removed the one
+    explicit interpolation and left the mechanism that actually carried values: `float("...")` puts
+    the string it could not parse into its own message, and `training/drill.py` reflected that
+    message verbatim into both the anonymous `503` on `/api/v1/drill/next` and the
+    `withheld_reasons` map on the anonymous `/api/v1/content/manifest`.
+
+    The cited test passed throughout because it asserted ONE refusal on ONE renderer - the
+    `newest_at` domain check, the message that had been fixed. That is the same defect as a
+    per-field size assertion: it holds the field somebody thought of. So this enumerates the whole
+    route table, drives the refusal, and asserts the marker appears in NO body, 200 or 503 alike.
+
+    What it deliberately does NOT forbid: a generator name or a product id. Those are structural
+    identifiers inside the register's carve-out, because a typo in one is undiagnosable otherwise,
+    and both are shortened at the raise site so neither can size a response.
+    """
+    root = _tree_whose_every_parameter_is_poisoned(tmp_path / "content")
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    discovered = {
+        f"{method} {route.path}"
+        for route in app.routes
+        for method in getattr(route, "methods", set())
+        if method not in {"HEAD", "OPTIONS"}
+    }
+    #: The same exact-set assertion the size sweep makes, for the same reason: a discovery that
+    #: silently narrows to one route is a control that holds one route.
+    known = ANONYMOUS_ROUTES_SWEPT.keys() | ANONYMOUS_ROUTES_EXCLUDED
+    assert discovered == known, (
+        f"the route table changed and this sweep was not updated: {sorted(discovered ^ known)}"
+    )
+
+    with TestClient(app) as client:
+        #: NON-VACUITY, first. The tree must load, and the refusal must actually fire, or the
+        #: absence of the marker below is the absence of any refusal at all.
+        manifest = client.get("/api/v1/content/manifest")
+        assert manifest.json()["ok"], manifest.json()["errors"][:2]
+        refusal = client.get("/api/v1/drill/next")
+        assert refusal.status_code == 503, (
+            "no candidate refused, so this test measures nothing:"
+            f" {refusal.status_code} {refusal.content[:160]!r}"
+        )
+        assert "selection budget" in refusal.text, refusal.text[:200]
+        withheld = client.get("/api/v1/content/manifest").json()["withheld_reasons"]
+        assert withheld, "no item was withheld, so no reason was composed"
+
+        leaked: dict[str, str] = {}
+        for spec in sorted(discovered):
+            method, template = spec.split(" ", 1)
+            path = _resolved(template, client)
+            if path is None:
+                continue
+            response = (
+                client.get(path)
+                if method == "GET"
+                else client.request(method, path, json={"id": "s-1", "title": "t", "scenario": "s"})
+            )
+            if AUTHORED_VALUE_MARKER in response.text:
+                leaked[spec] = response.text[:240]
+
+    assert leaked == {}, (
+        "these anonymous routes served an authored content value inside a refusal, which"
+        f" docs/SECURITY.md promises they never do: {leaked}"
+    )
+    #: And the diagnosis SURVIVED. A refusal that names nothing is not a fix, it is a different
+    #: bug: an author with a mistyped parameter has to be able to find it.
+    assert "must be a number" in refusal.text, (
+        f"the refusal names neither the key nor the type it needed: {refusal.text[:240]}"
+    )
+
+
+#: An authored rating outside the band, used to drive a LOAD-time validation failure. Its digits
+#: are the marker: they are the authored value, and a refusal must not repeat them.
+OUT_OF_BAND_ELO = 99999999
+
+
+def test_no_anonymous_route_serves_an_authored_value_from_a_load_failure(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """The load-failure surface of the same rule, which the render-time sweep cannot reach.
+
+    A tree that FAILS to load serves its validation errors on two anonymous surfaces - the
+    manifest's `errors` list and the `content_unavailable` 503 on `/api/v1/drill/next` - and a
+    pydantic validator's message is composed by this project, not by pydantic. `content/models.py`
+    interpolated the authored `elo` into its own refusal, so an authored 99999999 was served back
+    from both. Measured by the security gate; killed by this test.
+
+    The sibling render-time test cannot see this class, and the difference is structural rather
+    than incidental: it asserts the tree LOADS, because withhold reasons only exist for a tree
+    that loaded. This one asserts the opposite precondition. A single test cannot hold both.
+
+    Pydantic's OWN messages are checked in the same pass and are already value-free - "Input
+    should be a valid string", "Input should be a valid integer" - so the rule needs enforcing
+    only where this project writes the sentence.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    for row in rows[:3]:
+        row["elo"] = OUT_OF_BAND_ELO
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        manifest = client.get("/api/v1/content/manifest")
+        #: NON-VACUITY: the tree must actually have failed, and on the field this test poisons.
+        assert manifest.status_code == 200, manifest.status_code
+        errors = manifest.json()["errors"]
+        assert errors, "the tree loaded, so no validation error was served"
+        assert any("elo" in str(error) for error in errors), errors[:3]
+
+        refusal = client.get("/api/v1/drill/next")
+        assert refusal.status_code == 503, refusal.status_code
+        assert "content_unavailable" in refusal.text, refusal.text[:200]
+
+        for label, text in (("manifest", manifest.text), ("drill/next", refusal.text)):
+            assert str(OUT_OF_BAND_ELO) not in text, (
+                f"the anonymous {label} served the authored value that failed validation:"
+                f" {text[:240]}"
+            )
+        #: And the diagnosis survives: the KEY and its DOMAIN are what an author needs.
+        assert "rated band" in manifest.text, manifest.text[:240]
+
+
+def _assert_the_session_listing_is_capped(client: TestClient, stored: int) -> None:
+    """The listing's COUNT cap and honest total, checked inside the route sweep.
+
+    A helper rather than three more statements in the sweep, which is at ruff's limit. It is
+    asserted HERE as well as in its own test because a byte ceiling cannot tell a capped list from
+    a lucky one: twenty-five rows of short ASCII pass the ceiling with no cap in place at all.
+    """
+    listing = client.get("/api/v1/sessions").json()
+    assert listing["total"] == stored, listing["total"]
+    assert listing["count"] == MAX_SERVED_SESSIONS, listing["count"]
+    assert listing["truncated"] is True, listing["truncated"]
+
+
+def _fill_sessions(store: TrainingStore) -> int:
+    """Drive the session store to its cap at the field caps, so the sweep measures a worst case.
+
+    Written straight to the snapshot rather than through 500 gated writes, because each write
+    takes the advisory lock and an `fsync` and the sweep does not need to re-prove the write path.
+    What the write path accepts IS asserted, once, by
+    `test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_total`.
+
+    ASTRAL characters, not ASCII. Every cap in this project is declared in CODE POINTS and every
+    ceiling is in BYTES, and a `U+1F600` is one code point and four bytes: the ASCII fill measures
+    61,114 bytes where the same row count measures 235,114. A sweep that only ever poisons with
+    `"X"` certifies the byte ceiling for single-byte content and says nothing about the rest.
+    """
+    rows = [
+        {
+            "id": f"session-{index:04d}",
+            "title": "\U0001f600" * 200,
+            "scenario": "\U0001f600" * 120,
+            "notes": "\U0001f600" * 2000,
+            "createdAt": "2026-09-02T00:00:00Z",
+            "updatedAt": "2026-09-02T00:00:00Z",
+        }
+        for index in range(MAX_SESSIONS)
+    ]
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(json.dumps({"rev": MAX_SESSIONS, "sessions": rows}), encoding="utf-8")
+    return len(rows)
 
 
 def _answer_body(client: TestClient) -> dict[str, Any]:

@@ -2,6 +2,93 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.23 (2026-09-02)
+
+**What.** The security gate's first look at this branch since V0.26.5, seventeen releases back.
+Two majors and three minors, all closed. **Both majors were controls `docs/SECURITY.md` recorded
+as closed, and one of them the gate defeated in two anonymous requests against a copy of the
+shipped tree.**
+
+**MAJOR: a refusal served the authored value that caused it.** V0.26.3 closed "a refusal names the
+KEY and its DOMAIN, never the value" by removing the one EXPLICIT interpolation, and left the
+mechanism that actually carried values: `float("...")` puts the string it could not parse into its
+own message, and `training/drill.py` reflected that message verbatim. Reproduced, two
+unauthenticated requests, no accumulation: an authored parameter value was served on
+`GET /api/v1/drill/next` as a 503 detail and on `GET /api/v1/content/manifest` as a withhold
+reason. A second instance in `content/models.py` interpolated an authored `elo` of 99999999 into
+its own validator message and served it from both surfaces.
+
+**The fix is at the boundary, not at the call sites, and that distinction is the whole point.**
+`ContentParameterError` is the marker for a message the code AUTHORED; `drill.py` interpolates
+that type and nothing else, reducing every other exception to its CLASS with the detail logged
+server-side. A coercion site added later therefore leaks nothing while it waits to be converted.
+The diagnosis is kept usable rather than sacrificed: `authored_number` and `authored_count` name
+the key and the type it had to be, so an author reads "the stimulus parameter 'days' must be a
+number" instead of an exception class. Twenty-seven unguarded coercions in `generators/products.py`
+now go through them; the `float(authored)` forms were already `isinstance`-guarded and could not
+raise. The gate's own prescription was to emit the exception class and the generator name, and it
+withdrew that in favour of this: **"the fix made the product worse" is how a control gets quietly
+reverted later.**
+
+**Why the cited test never noticed.** It asserted ONE refusal on ONE renderer - the `newest_at`
+domain check, the message V0.26.3 had already fixed. That is a per-field assertion one level up,
+the same shape as the size sweep's three defeats. The control now enumerates the whole route table
+and asserts the marker appears in NO body, 200 and 503 alike, with the tree's every candidate
+forced onto one renderer whose coerced key is poisoned so the selection budget exhausts in a single
+request. Three of my own fixtures measured nothing before that: poisoning a key the selected item's
+generator does not read renders fine and returns 200.
+
+**MAJOR: the one route excluded from the anonymous-body enumeration, on two false claims.**
+`GET /api/v1/sessions` was excluded because "the session routes are TOKEN-GATED ... so they are not
+anonymous surfaces at all" - true of the writes, false of the read, which answers 200 with no
+header by the decision at accepted risk 5 - and because their size is governed by
+`storage.MAX_SESSIONS` and the field caps "which their own tests hold". **`MAX_SESSIONS` appeared
+in the whole suite only in that sentence.** Measured on the wire at the cap, every field inside its
+declared maximum and every write accepted with 201: **1,231,926 bytes of ASCII and 4,711,926 with
+astral characters from one unauthenticated request**, uncached, the second figure past this
+project's own 4 MB `MAX_PAYLOAD_BYTES`.
+
+Capped at `MAX_SERVED_SESSIONS`, newest kept, with the untruncated `total` and a `truncated` flag
+beside the short list - the withheld-collections precedent, because a shortened disclosure that
+reads as complete is the fault this project has closed four times in other fields. 25 matches the
+sibling served-count caps rather than being picked, and it holds the astral worst case at 235,114
+bytes and the ASCII case at 61,114. The read stays anonymous: that is the owner's recorded
+decision, and a cap is not the place to reverse it. **The number of sessions an anonymous listing
+should show is the owner's to set**, and it is flagged as such rather than settled here.
+
+**MINOR: the hostile tree was blind to bytes.** Every cap in this project is declared in CODE
+POINTS and every ceiling in the sweep is in BYTES, and one `U+1F600` is one code point and four
+bytes - so a tree poisoned only with `"X"` certified the byte ceilings for single-byte content and
+said nothing about the rest. The competency name carries astral characters now. Every ceiling still
+holds, which is a measurement rather than the caveat the row would otherwise have needed.
+
+**MINOR: raw content ids as persisted dict keys.** `training/progress.py` keys `axes` and
+`schedule` on the raw competency id and item id, so `_bounded`'s docstring claimed more than the
+code does. Not the V0.26.6 fault - both sides of every comparison are raw, so nothing collapses -
+and no anonymous response is sized by it. The claim is narrowed to what is true rather than the
+persisted format changed for a content-driven growth path only an author can reach.
+
+**MINOR: a claim with no figure in the repository to rest on.** Four places said the probe timeout
+is "strictly shorter than the platform's", and the App Store publishes no `timeoutSeconds` anywhere
+in this repository - a Kubernetes default of 1 s would make our 2.0 s longer, not shorter. All four
+now carry the explicit `TBC, re-verify` marker, and the figure is **asked of the owner by name**,
+which is this project's rule for a missing document rather than a footnote about an absence.
+
+**Mutation testing: nine mutants, eight killed, one surviving with a measured reason.** Killed: the
+`ValueError` branch re-interpolating the exception; the `elo` message naming the value (twice,
+independently); a coercion reverted to a bare `float`; the session slice removed; `total` computed
+from the served rows instead of the store; the listing keeping the OLDEST; a product id
+unshortened in a `LookupError`. **The survivor is honest and recorded as a declared limit rather
+than reported as held:** re-interpolating the exception in the ARITHMETIC branch survives the whole
+suite, because no `ArithmeticError` message on CPython 3.12 carries its operand - "float division
+by zero", "(34, 'Numerical result out of range')", "math range error". Unheld rather than
+exploitable, the branch itself is driven, and the register says so. The first run of this batch was
+discarded: all nine reported "killed" by the citation sweep failing for tests I had added and not
+yet cited, which is the contamination this project has recorded before.
+
+**How it was verified.** Loop green on all seven legs: 989 passed, 2 skipped, coverage 97.57%. Both gate reproductions
+re-run against the fix and both now clean.
+
 ## V0.26.22 (2026-09-02)
 
 **What.** One minor, in the release that existed to correct figures: the duplicated-span figure in
