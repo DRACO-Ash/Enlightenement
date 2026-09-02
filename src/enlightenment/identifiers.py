@@ -13,9 +13,10 @@ from __future__ import annotations
 import hashlib
 from typing import Final
 
-#: Longest content-supplied string stored on a run row or served as an identity: the version, the
-#: item id, the procedure id, the competency axis. `content/models.py` declares no maximum length on
-#: any of them.
+#: Longest content-supplied string stored on a run row or served as an identity: the item id, the
+#: cue id, the procedure id, the competency axis. `content/models.py` declares no maximum length on
+#: any of them. NOT the version - that is cut silently by `_bounded` and nothing reads it for
+#: meaning, so listing it here overstated what this module governs.
 MAX_CONTENT_STRING: Final = 64
 
 #: How many hex characters of the digest a shortened identifier carries, and the character that
@@ -39,6 +40,16 @@ def served_identifier(item_id: str) -> str:
     A cut id keeps a digest of the whole string. The digest is not a secret and nothing verifies it:
     it exists so two shortened ids differ, and so a reader can see the id was shortened rather than
     mistake it for what the author typed.
+
+    **THE OUTPUT FORM IS A PERSISTED FORMAT, and it changed at V0.26.15.** `RunRecord.item_id` is
+    written through this function into `progress.json` on the platform volume and compared against a
+    freshly computed value, so the exact string matters across an upgrade. Moving the function here
+    also corrected an off-by-one - the old arithmetic reserved two characters for a one-character
+    marker, so a shortened id was 63 characters where it is now exactly 64. The corrected form is
+    kept, because reserving a byte nothing uses is a bug rather than a convention, and the change is
+    recorded here and pinned by a golden-value test rather than left to be discovered on an upgrade.
+    Nothing is deployed, so it costs nothing today; on an existing volume it would reset one item's
+    attempt count once before self-healing.
     """
     if len(item_id) <= MAX_CONTENT_STRING:
         return item_id

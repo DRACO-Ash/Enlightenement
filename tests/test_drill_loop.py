@@ -10,6 +10,7 @@ twice.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -32,6 +33,7 @@ from enlightenment.training.drill import (
     MAX_WITHHOLD_REASON,
     TRUNCATION_MARK,
     ServedDrill,
+    bounded_reason,
 )
 
 CONTENT = Path(__file__).resolve().parents[1] / "content"
@@ -1017,6 +1019,33 @@ def test_a_withheld_item_with_a_long_id_is_excluded_from_selection_not_only_decl
     assert len(set(served)) > 4, f"the loop stalled: {sorted(set(served))}"
 
 
+def test_the_shortened_identifier_form_is_pinned_because_it_is_persisted() -> None:
+    """A GOLDEN VALUE, because this string is written to a volume and compared on the way back.
+
+    `RunRecord.item_id` goes through `served_identifier` into `progress.json` and is compared
+    against a freshly computed value to count attempts, so the exact output form is a persisted
+    format
+    rather than a presentation choice. V0.26.15 changed it silently while describing the change as a
+    relocation: the old arithmetic reserved two characters for a one-character marker, so a
+    shortened id was 63 characters where it is now exactly 64. The corrected form is kept - a
+    reserved byte nothing uses is a bug, not a convention - and pinned here so the next change to it
+    is a decision somebody makes rather than one an upgrade discovers.
+
+    On an existing volume the change resets one item's attempt count once, giving one repeated seed
+    before it self-heals as new rows are written in the new form. Nothing is deployed.
+    """
+    #: Exactly at the cap, not one short of it.
+    assert len(served_identifier("D" * 200)) == MAX_CONTENT_STRING
+    #: The shape: 55 kept characters, the marker, eight hex digits of the digest of the WHOLE input.
+    digest = hashlib.sha256(("D" * 200).encode("utf-8")).hexdigest()[:8]
+    assert served_identifier("D" * 200) == "D" * 55 + "~" + digest
+    #: A short id is returned untouched, so no shipped identifier changes form.
+    assert served_identifier("DRL-0008") == "DRL-0008"
+    assert served_identifier("X" * MAX_CONTENT_STRING) == "X" * MAX_CONTENT_STRING
+    #: And the boundary: one character over the cap is shortened, not passed through.
+    assert served_identifier("X" * (MAX_CONTENT_STRING + 1)) != "X" * (MAX_CONTENT_STRING + 1)
+
+
 def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1048,10 +1077,18 @@ def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_error
     package.load()
     errors = [error for error in package.result.errors if "DRL-QQQ" in str(error)]
     assert len(errors) == 2, [str(error)[:80] for error in errors]
-    assert errors[0] != errors[1], f"two authored ids produced one error string: {errors[0][:120]}"
-    for error in errors:
-        #: The diagnosis survives the cut, which is the half a bound alone destroys.
-        assert "elo" in str(error), f"the identifier ate the message: {str(error)[:160]}"
+
+    #: ASSERTED ON THE SERVED FORM, not on the loader's own output. The first version compared
+    #: `package.result.errors` directly, which is UNCUT: with the raw identifier those two errors
+    #: are already distinct and already carry `elo`, so both assertions passed against the
+    #: vulnerable code and reverting the fix left the whole suite green. The fault lives after
+    #: `bounded_reason` cuts the composite at 256 on the way to two anonymous surfaces, so that is
+    #: where it has to be measured. Same fault as the 503 test one release earlier: a test written
+    #: to hold a fix, passing with the fix removed.
+    served = [bounded_reason(str(error)) for error in errors]
+    assert served[0] != served[1], f"two authored ids served one error string: {served[0][:120]}"
+    for line in served:
+        assert "elo" in line, f"the identifier ate the diagnosis: {line[:160]}"
 
     #: AND THE LOG LINE. Driven through the real emitter with the id the reveal carries.
     lines: list[str] = []

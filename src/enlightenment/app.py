@@ -62,6 +62,7 @@ from enlightenment.auth import AUTH_HEADER, token_ok
 from enlightenment.config import Config, load_config, token_length_bucket
 from enlightenment.content import ContentPackage
 from enlightenment.generators import build_registry
+from enlightenment.identifiers import served_identifier
 from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
 from enlightenment.ratelimit import RateLimiter
@@ -853,7 +854,13 @@ def _register_training(app: FastAPI, runtime: _Runtime, *, paths: TrainingPaths)
     # "caught at load" of a log line overstated what this does.
     unbuilt = registry.unbuilt({d.stimulus.product_id for d in package.drills})
     if unbuilt:
-        log_event("content.unbuilt_products", products=list(unbuilt))
+        log_event(
+            "content.unbuilt_products",
+            #: `log_event` sanitises only string fields, so a LIST of content ids reached the line
+            #: raw and at full length. Boot-only and not the collapse class, since nothing is cut,
+            #: but "a log line is a wire too" is this codebase's own principle.
+            products=[served_identifier(product) for product in unbuilt],
+        )
     loop = DrillLoop(
         content=package,
         registry=registry,

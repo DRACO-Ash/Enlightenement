@@ -41,6 +41,7 @@ from enlightenment.training.drill import (
     MAX_SERVED_PROMPT,
     MAX_SERVED_WITHHELD,
     MAX_WITHHOLD_REASON,
+    TRUNCATION_MARK,
 )
 from enlightenment.training_api import MAX_SERVED_DOCUMENT_BYTES, MAX_SERVED_ERRORS
 
@@ -783,6 +784,10 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         assert len(set(me["due_items"])) == len(me["due_items"]), sorted(me["due_items"])
         for row in me["competencies"]:
             assert len(row["name"]) <= MAX_CONTENT_STRING, len(row["name"])
+            #: And a cut NAME says it was cut. The name had an identity's silent cap while the
+            #: interface renders it as the primary label, so a shortened name read as the one
+            #: somebody chose. Prose gets the marker; an identity gets the digest.
+            assert row["name"].endswith(TRUNCATION_MARK), row["name"][-20:]
             assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])
         assert len({row["competency_id"] for row in me["competencies"]}) == len(
             me["competencies"]
@@ -851,6 +856,71 @@ def _answer_body(client: TestClient) -> dict[str, Any]:
         #: error body certifies nothing, which is the fault it exists to prevent.
         "elapsed_ms": 1000,
     }
+
+
+def test_the_answer_route_logs_two_distinct_names_for_two_long_ids(
+    token_config: Config, store: TrainingStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Driven through the ROUTE, because holding the function is not holding the call site.
+
+    `training_api` passed a raw content id to `log_event`, and `audit.py` cuts a log value at 256
+    with no marker and no digest, so two ids differing only past 256 characters produced
+    byte-identical lines. The first test for this called `served_identifier` in its own body: it
+    held the function and the emitter, and the production line stayed revertible with the whole
+    suite green. A call site is held by driving the caller.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    #: Differing only past the 256-character log cut, so a silent truncation collapses them.
+    shared = "DRL-" + "W" * 300
+    #: EVERY id shares the prefix, so any two draws are two long ids. Poisoning two named items
+    #: instead left selection free not to draw them: thirty draws returned only one of the pair,
+    #: because selection is due-first then rating-matched and owes this test nothing.
+    for index, row in enumerate(rows):
+        row["id"] = f"{shared}-{index}"
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    lines: list[str] = []
+
+    class _Sink:
+        @staticmethod
+        def info(line: str) -> None:
+            lines.append(line)
+
+    monkeypatch.setattr("enlightenment.audit._event_logger", _Sink())
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+        limiters=Limiters(drill=RateLimiter(200, 60.0)),
+    )
+    with TestClient(app) as client:
+        answered: set[str] = set()
+        for _ in range(8):
+            drill = client.get("/api/v1/drill/next").json()
+            reply = client.post(
+                "/api/v1/drill/answer",
+                json={
+                    "drill_run_id": drill["drill_run_id"],
+                    "response": "manoeuvre",
+                    "confidence": 3,
+                    "elapsed_ms": 1000,
+                },
+            )
+            assert reply.status_code == 200, reply.content[:160]
+            if drill["item_id"].startswith("DRL-WWW"):
+                answered.add(drill["item_id"])
+            if len(answered) == 2:
+                break
+    assert len(answered) == 2, f"the two long-id items were not both served: {sorted(answered)}"
+    logged = {line for line in lines if "drill.answered" in line and "DRL-WWW" in line}
+    assert len(logged) == 2, (
+        f"two long-id items produced {len(logged)} distinct log lines:"
+        f" {[line[:110] for line in sorted(logged)]}"
+    )
 
 
 def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(

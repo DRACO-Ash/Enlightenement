@@ -2,6 +2,62 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.16 (2026-09-02)
+
+**What.** One blocker, three majors, four minors. **The lesson is about the method, not the code:**
+my survey of what was held used a mutation weaker than the state the code came from, so it named the
+wrong sites and missed a real one.
+
+**An inversion has to return the code to where it was.** V0.26.15 measured its unheld list by
+substituting a silent truncation at each call site. The state the code actually came from was a RAW
+value, which is longer and easier to detect, so the survey overstated what was unheld and understated
+what was broken. Re-measured with true inversions: **two of eighteen sites survive, not four** -
+`RunRecord.procedure_id` and `.axis`, both write-only audit labels with no reader in the source or
+the suite. The `_serve_one` refusal name and the census key are in fact held. Both figures are now
+recorded, because the gap between them is the finding.
+
+**The test written to hold the seventh instance held nothing.** It asserted on
+`package.result.errors`, which is the loader's UNCUT output: with the raw identifier those two
+errors are already distinct and already carry `elo`, so both assertions passed against the
+vulnerable code and reverting the fix left the suite green. The fault lives AFTER `bounded_reason`
+cuts the composite at 256 on the way to two anonymous surfaces, which is where it is measured now.
+**Fourth consecutive release in which a test written to hold a fix passed with the fix removed.**
+
+**Holding the function is not holding the call site.** The `drill.answered` log fix was asserted by
+nothing: the test called `served_identifier` in its own body, so it held the function and the
+emitter while the production line stayed revertible. It is driven through
+`POST /api/v1/drill/answer` now. And the tree had to be reshaped again: poisoning two named items
+left selection free not to draw them, and thirty draws returned one of the pair, because selection
+is due-first then rating-matched and owes a test nothing.
+
+**A persisted format changed silently while the change was described as a relocation.** Moving the
+function corrected an off-by-one - the old arithmetic reserved two characters for a one-character
+marker - so a shortened id is 64 characters where V0.26.15 produced 63. `RunRecord.item_id` is
+written through it into `progress.json` and compared on the way back, so this is a format, not a
+presentation choice. The corrected arithmetic is kept, because a reserved byte nothing uses is a bug
+rather than a convention, and it is now **pinned by a golden-value test** and recorded in the module
+and the register, rather than left to be discovered on an upgrade.
+
+**Three cousins closed.** `app.py` logged a LIST of content ids, which `log_event` does not sanitise
+because it only handles string fields. `_named` composed a raw id into a message that reaches
+`bounded_reason` and a 503, latent today because no route passes an `item_id`. And the served
+competency NAME had an identity's silent cap while the interface renders it as the primary label: it
+carries the truncation marker now, and that is asserted.
+
+**Something the new module overstated.** Its docstring listed "the version" among the strings served
+as an identity. The version is cut silently by design and nothing reads it for meaning, so the code
+was right and the comment was not.
+
+**No eighth instance.** The gate swept `app.py`, `storage.py`, `middleware.py`, `scenario/`,
+`physics/`, `generators/`, `scoring/`, `models.py`, `auth.py`, `config.py`, `healthcheck.py` and
+`ratelimit.py` and found no identifier truncation anywhere outside `training/` and `identifiers.py`.
+Session ids are rejected rather than coerced. That is the first round of this sequence to find the
+class closed rather than moved.
+
+**How it was verified.** Loop green on all seven legs: 982 passed, 2 skipped, coverage 97.43%. Every
+one of the eighteen call sites inverted individually to its RAW form, with the result recorded rather
+than reasoned; four new tests, each failing under the true inversion of the line it holds.
+
 ## V0.26.15 (2026-09-02)
 
 **What.** One blocker and three majors. A SEVENTH instance of the shortened-identifier class, the

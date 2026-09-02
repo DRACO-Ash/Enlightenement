@@ -781,7 +781,12 @@ class DrillLoop:
         """One drill by id, refused rather than substituted if the library does not have it."""
         item = self._content.drill(item_id)
         if item is None:
-            raise DrillError(f"no drill {item_id!r} in the loaded content package")
+            raise DrillError(
+                #: Shortened, matching `_serve_one` one method away. Latent rather than live - no
+                #: route passes an `item_id` today - but the message reaches `bounded_reason` and a
+                #: 503 the moment one does.
+                f"no drill {served_identifier(item_id)!r} in the loaded content package"
+            )
         return item
 
     def _pending_seed(self, run_id: str) -> int:
