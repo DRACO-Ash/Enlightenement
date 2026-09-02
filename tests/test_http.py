@@ -33,6 +33,7 @@ from enlightenment.config import Config
 from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import STORE_FILENAME, ProbeResult, TrainingStore
+from enlightenment.training.drill import MAX_WITHHOLD_REASON
 
 CONTENT_ROOT = Path(__file__).resolve().parents[1] / "content"
 
@@ -1556,17 +1557,38 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
     `/livez`, `/ping`, `/health` and `/` are dependency-free and stay 200 while the storage-proving
     paths go 503. A downstream fault must never restart a healthy container.
     """
-    corrupt = {
+    #: ALL FIVE shapes the store refuses, not the three the first version drove. The other two -
+    #: not UTF-8 and nested too deep - were uncovered lines in `storage.py` that this 503 depends
+    #: on, so the control was verified for three fifths of its own inputs.
+    corrupt: dict[str, str | bytes] = {
+        #: The NEWLINE, the forged object and the SURROGATE are all in the SAME key, and that
+        #: matters: the walk reports the pointer of the string it found, so a fixture with the
+        #: newline in one key and the surrogate in another value reported a clean pointer and the
+        #: sanitiser mutant survived. The poison has to be in the string the message will quote.
         "a lone surrogate": json.dumps(
-            {"rev": 1, "sessions": [{"id": "s-1", "title": "x"}]}
-        ).replace('"x"', '"x\\ud800"'),
+            {
+                "rev": 1,
+                "sessions": [{"id": "s-1", "title": "ok"}],
+                'K\nENLIGHTENMENT FORGED {"event":"session.upsert","actor":"root"}Z': 1,
+            }
+        ).replace('Z":', '\\ud800":'),
         "not JSON": "{not json",
         "top level not an object": "[]",
+        "nested too deep": "[" * 200_000,
+        #: Valid bytes, not valid UTF-8. The BOM is load-bearing: bare UTF-16LE of ASCII is
+        #: nothing but ASCII interleaved with NULs, and a NUL is perfectly valid UTF-8 - so
+        #: without `\xff\xfe` this decoded cleanly and failed one branch further on as a JSON
+        #: error, leaving the UTF-8 branch uncovered while the fixture claimed to drive it.
+        "not UTF-8": b"\xff\xfe" + '{"rev": 1}'.encode("utf-16-le"),
     }
     for label, body in corrupt.items():
         data_dir = tmp_path / label.replace(" ", "-")
         data_dir.mkdir()
-        (data_dir / STORE_FILENAME).write_text(body, encoding="utf-8")
+        target = data_dir / STORE_FILENAME
+        if isinstance(body, bytes):
+            target.write_bytes(body)
+        else:
+            target.write_text(body, encoding="utf-8")
         app = create_app(
             config=replace(token_config, data_dir=data_dir),
             store=TrainingStore(data_dir),
@@ -1584,8 +1606,35 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
             assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
             #: The message names the fault and never a stored value.
             assert "s-1" not in listing.text, listing.text[:200]
+            #: SINGLE LINE and bounded. The pointer carries stored KEY NAMES, and `app.py` logs
+            #: this text with `_logger.exception`, whose traceback renders it verbatim - so a key
+            #: containing a newline forged a second log line, raw surrogate and all, past the
+            #: claim that every reflected value reaching a log line goes through the shared
+            #: sanitiser. Bounded at the RAISE, which bounds the wire copy and the log copy at
+            #: once; two sanitisers for one string is how they diverge.
+            message = listing.json()["detail"]["message"]
+            assert "\n" not in message, repr(message)
+            assert "\r" not in message, repr(message)
+            assert len(message.encode("utf-8")) <= MAX_WITHHOLD_REASON, len(message)
 
             for path in ("/", "/livez", "/ping", "/health"):
                 assert client.get(path).status_code == 200, (
                     f"{label}: {path} is dependency-free and must stay 200"
                 )
+
+            #: The GATED WRITES answer the same 503, not 500. Before this assertion the `_write`
+            #: handler survived being retargeted to an exception that cannot occur, because
+            #: nothing drove a write against a corrupt snapshot - the identical "held by nothing"
+            #: shape as the read it was added to match.
+            #: `SessionPatch` forbids `id`, and body validation runs BEFORE the store read, so a
+            #: PATCH carrying the upsert body is a legitimate 422 and would have proved nothing.
+            for method, target, payload in (
+                ("POST", "/api/v1/sessions", VALID_SESSION),
+                ("PATCH", "/api/v1/sessions/alpha-one", {"title": "Renamed"}),
+            ):
+                write = client.request(method, target, json=payload, headers=AUTH)
+                assert write.status_code == 503, (
+                    f"{label}: {method} answered {write.status_code}, so a corrupt"
+                    f" snapshot reaches a caller as a traceback: {write.content[:160]!r}"
+                )
+                assert write.json()["detail"]["error"] == "store_unavailable", write.text

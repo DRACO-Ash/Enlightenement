@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from enlightenment.audit import sanitise_log_value
 from enlightenment.identifiers import unencodable_pointer
 
 #: Stamped into every snapshot. Bump it with a forward, idempotent migration.
@@ -273,9 +274,19 @@ class TrainingStore:
         # nobody can diagnose.
         if surrogates := unencodable_pointer(parsed):
             where, total = surrogates
+            # `sanitise_log_value` at the RAISE, not at the wire. This message is the first of the
+            # store's to carry FILE CONTENT - a JSON pointer contains the key names it walks
+            # through - and `app.py` logs it with `_logger.exception`, whose traceback renders the
+            # exception text verbatim. Measured: a snapshot key of
+            # `X\nENLIGHTENMENT FORGED {"event":...}` landed in the log record as a forged second
+            # line, raw surrogate included and unbounded in length, past the claim that every
+            # reflected value reaching a log line goes through the shared sanitiser.
+            #
+            # Bounding it here bounds both copies at once, which is why it is not done at the two
+            # call sites: two sanitisers for one string is how they diverge.
             raise ValueError(
                 f"stored snapshot has {total} string(s) that cannot be encoded as UTF-8;"
-                f" one is at {where}"
+                f" one is at {sanitise_log_value(where)}"
             )
         return migrate(parsed)
 

@@ -1467,24 +1467,34 @@ def test_content_is_read_through_one_boundary_and_nothing_else() -> None:
     offenders: list[str] = []
     for path in sorted(boundary.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        #: Which function each call sits in, if any. The first version walked FUNCTIONS and looked
+        #: for calls inside them, so a MODULE-SCOPE reader was invisible: an
+        #: `_EAGER = json.loads(Path(...).read_text())` at import time kept this test green while
+        #: the same call one line further in was caught. An eager import-time cache is exactly how
+        #: somebody would wire one of the twelve content files nothing reads yet. Every `Call` in
+        #: the module is examined now, and only its ENCLOSING FUNCTION exempts it.
+        enclosing: dict[int, str] = {}
         for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for inner in ast.walk(node):
+                    enclosing.setdefault(id(inner), node.name)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
                 continue
-            if node.name == "_read_json":
+            target = node.func
+            name = (
+                target.attr
+                if isinstance(target, ast.Attribute)
+                else target.id
+                if isinstance(target, ast.Name)
+                else ""
+            )
+            if name not in {"loads", "read_text"}:
                 continue
-            for inner in ast.walk(node):
-                if not isinstance(inner, ast.Call):
-                    continue
-                target = inner.func
-                name = (
-                    target.attr
-                    if isinstance(target, ast.Attribute)
-                    else target.id
-                    if isinstance(target, ast.Name)
-                    else ""
-                )
-                if name in {"loads", "read_text"}:
-                    offenders.append(f"{path.name}::{node.name} calls {name}()")
+            where = enclosing.get(id(node), "<module scope>")
+            if where == "_read_json":
+                continue
+            offenders.append(f"{path.name}::{where} calls {name}()")
     assert offenders == [], (
         "content is read outside `_read_json`, so the surrogate rejection and the shape check no"
         f" longer sit on the one boundary they claim to: {offenders}"

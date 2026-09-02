@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -1120,8 +1121,62 @@ def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
 LONE_SURROGATE = "\ud800"
 
 
+def _poison_a_drill_value(root: Path) -> str:
+    """A surrogate in unvalidated PROSE. The 500 that pydantic's serialiser raised."""
+    path = root / "drills.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    rows[0]["prompt"] = f"SECRET-AUTHORED-PROSE-{LONE_SURROGATE}"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return "/drills/0/prompt"
+
+
+def _poison_a_drill_key(root: Path) -> str:
+    """A surrogate in a dict KEY. Loaded with zero errors and 200 on every route before the walk
+    covered keys, held only by two downstream accidents in two different layers."""
+    path = root / "drills.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    params = rows[1].setdefault("stimulus", {}).setdefault("params", {})
+    params[f"SECRET-AUTHORED-KEY{LONE_SURROGATE}"] = 1
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return "/stimulus/params/SECRET-AUTHORED-KEY"
+
+
+def _poison_a_library_array(root: Path) -> str:
+    """A surrogate in an ARRAY-held string, the third branch and the one with no driver at all.
+
+    Coverage named `identifiers.py:158` as never executed in 994 tests. Deleting that branch left
+    the whole suite green while `GET /api/v1/content/procedure/PROC-MNV` went back to **500** on a
+    poisoned `entry_conditions` entry - the identical defect `docs/SECURITY.md` records as closed
+    for "an unvalidated PROSE leaf of a procedure". Every shipped content file carries arrays of
+    strings and several are served prose, so splitting one walk into three left one third holding
+    an anonymous 500 by nothing. **Holding the walk is not holding its branches**, the same lesson
+    as holding a function rather than its call sites, one level down.
+    """
+    path = root / "procedures" / "procedures-core.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    procedures = document["procedures"] if isinstance(document, dict) else document
+    procedures[0]["entry_conditions"][0] = f"SECRET-ARRAY-PROSE-{LONE_SURROGATE}"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return "/procedures/0/entry_conditions/0"
+
+
+@pytest.mark.parametrize(
+    ("poison", "marker"),
+    [
+        (_poison_a_drill_value, "SECRET-AUTHORED-PROSE"),
+        (_poison_a_drill_key, "SECRET-AUTHORED-KEY"),
+        (_poison_a_library_array, "SECRET-ARRAY-PROSE"),
+    ],
+    ids=["value", "key", "array"],
+)
 def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_a_route(
-    token_config: Config, store: TrainingStore, tmp_path: Path
+    token_config: Config,
+    store: TrainingStore,
+    tmp_path: Path,
+    poison: Callable[[Path], str],
+    marker: str,
 ) -> None:
     """A traceback on an unauthenticated route, from authored data, through four routes.
 
@@ -1133,34 +1188,24 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
     response, which no application code touches.
 
     **Sanitising at each serve site was tried first and was the wrong shape.** The identifier path
-    was fixed and the 500 simply moved to the next unvalidated field, which is the per-field
-    fault this suite has now recorded three times in three different classes. The rejection is at
+    was fixed and the 500 simply moved to the next unvalidated field, which is the per-field fault
+    this suite has now recorded in three separate classes. The rejection is at
     `content/loader._read_json`, the one place content enters the process, so the whole tree fails
     closed to the documented `content_unavailable` 503 rather than one route crashing.
 
-    Two properties, both asserted: no anonymous route answers 5xx except that documented 503, and
-    the load error names the FILE and a JSON POINTER and never the offending value - the same
-    boundary rule every other refusal in this project follows.
+    **Parametrised over the three shapes a string can be held in, because the walk has a branch
+    per shape and one tree cannot drive them all**: `_read_json` raises on the first file it
+    fails, so a tree poisoned in two files reports one error and the second branch goes unproven.
+    That is how the array branch reached this release uncovered.
+
+    Two properties per case: no anonymous route answers 5xx except that documented 503, and the
+    load error names the FILE and a JSON POINTER and never the offending value - except a KEY,
+    which is named because a pointer to a key IS the key, the same structural-identifier carve-out
+    the register records for a generator name.
     """
     root = tmp_path / "content"
     shutil.copytree(CONTENT_ROOT, root)
-    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
-    rows = document["drills"] if isinstance(document, dict) else document
-    #: PROSE, not an id. An id is pattern-validated on some models and this must hold for the
-    #: fields nothing validates, which is where the second 500 lived.
-    rows[0]["prompt"] = f"SECRET-AUTHORED-PROSE-{LONE_SURROGATE}"
-    #: And a KEY, because the walk covered values only at first and nothing crashed - by
-    #: downstream accident in two different places, not by the boundary. A surrogate `params` key
-    #: loaded with zero errors and every route answered 200, because `served_identifier` replaces
-    #: it on the way to the census; a surrogate key in a modelled record is refused by pydantic
-    #: with a message naming no field. Held by luck twice is what this boundary replaces.
-    rows[1].setdefault("stimulus", {}).setdefault("params", {})[
-        f"SECRET-AUTHORED-KEY{LONE_SURROGATE}"
-    ] = 1
-    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
-    assert "\\ud800" in (root / "drills.json").read_text(encoding="utf-8"), (
-        "the fixture no longer writes the surrogate as a JSON escape, so it is not under test"
-    )
+    pointer = poison(root)
 
     app = create_app(
         config=token_config,
@@ -1175,26 +1220,13 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
         assert errors, "the tree loaded with a value that cannot be serialised"
         joined = " ".join(str(error) for error in errors)
         assert "lone surrogate" in joined, joined[:300]
-        assert "drills.json" in joined, joined[:300]
-        #: A pointer to ONE of the two, not to a chosen one: `_unencodable_strings` walks with an
-        #: explicit stack and its docstring says outright that the pointer is the first the
-        #: traversal reaches rather than the first in document order. Asserting `/prompt` here
-        #: assumed an ordering the code refuses to promise, and it failed the moment the key half
-        #: of the walk landed - a test asserting more than the contract, caught by the contract.
-        assert "/drills/0/prompt" in joined or "/stimulus/params/SECRET-AUTHORED-KEY" in joined, (
-            f"the error names no JSON pointer: {joined[:300]}"
-        )
-        #: A KEY is named and a VALUE is not, which is the rule stated precisely rather than as
-        #: "never the offending value". A pointer to a key IS the key, so a pointer that hid it
-        #: would name nothing; the marker sits in BOTH halves of this fixture so each side of the
-        #: distinction has a driver. Before this the marker was only in a value, and a key-name
-        #: disclosure passed green - which the security gate found by putting one in a key.
-        #: Two instances, so the COUNT is real and the KEY was seen as well as the value. Without
-        #: the key half of the walk this reads 1, which is the mutation that holds it.
-        assert "2 string(s)" in joined, f"the walk missed the key: {joined[:300]}"
-        assert "SECRET-AUTHORED-PROSE" not in joined, (
-            f"the load error quoted the authored value that failed it: {joined[:300]}"
-        )
+        assert pointer in joined, f"the error names no JSON pointer for {pointer}: {joined[:400]}"
+        #: A KEY is named and a VALUE is not. The key case asserts the pointer above, which
+        #: contains its marker by construction; the other two must not leak theirs.
+        if poison is not _poison_a_drill_key:
+            assert marker not in joined, (
+                f"the load error quoted the authored value that failed it: {joined[:300]}"
+            )
 
         crashed: dict[str, int] = {}
         for spec in sorted(ANONYMOUS_ROUTES_SWEPT.keys() | ANONYMOUS_ROUTES_EXCLUDED):
@@ -1224,9 +1256,8 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
     package.load()
     raw = " ".join(str(error) for error in package.result.errors)
     assert "lone surrogate" in raw, raw[:300]
-    assert "SECRET-AUTHORED-PROSE" not in raw, (
-        f"the loader's own error quoted the authored value: {raw[:300]}"
-    )
+    if poison is not _poison_a_drill_key:
+        assert marker not in raw, f"the loader's own error quoted the authored value: {raw[:300]}"
 
 
 #: An authored rating outside the band, used to drive a LOAD-time validation failure. Its digits

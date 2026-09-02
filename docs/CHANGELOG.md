@@ -2,6 +2,75 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.30 (2026-09-02)
+
+**What.** One major and five minors, and **the major is a branch of the boundary walk I split last
+release, left holding an anonymous 500 by nothing.** Coverage named the line; my six mutants did
+not include it.
+
+**Splitting one walk into three left one third unheld.** `identifiers.py:158` - the arm that
+catches a bad string held in an ARRAY - never executed in 994 tests. Deleting it leaves the whole
+suite green while a poisoned `entry_conditions` entry takes
+`GET /api/v1/content/procedure/PROC-MNV` back to **500**: the identical defect this register
+records as closed for "an unvalidated PROSE leaf of a procedure". Every shipped content file
+carries arrays of strings and several are served prose. **Holding the walk is not holding its
+branches**, which is the same lesson as holding a function rather than its call sites, one level
+down, and the third time this project has paid for it.
+
+**And one tree could not have driven all three branches**, which is why the gap survived a
+release: `_read_json` raises on the first file it fails, so a tree poisoned in two files reports
+one error and the second branch goes unproven. The test is parametrised over the three shapes a
+string can be held in - a value, a key, an array element - each with its own tree and its own
+pointer assertion. The root-string arm is driven at unit level, because both callers pass a dict
+and the stack only ever holds containers, so it is a documented contract rather than a reachable
+path - and a documented contract with no driver is exactly what the array branch cost.
+
+**A newline-injected log line, from a stored key.** The 503 message carries a JSON pointer, and a
+pointer contains the key names it walks through - so a snapshot key of
+`K\nENLIGHTENMENT FORGED {"event":"session.upsert","actor":"root"}` reached the log record
+verbatim through `_logger.exception`'s traceback, unbounded, past this project's claim that every
+reflected value reaching a log line goes through the shared sanitiser. Bounded at the RAISE rather
+than at the two call sites, because two sanitisers for one string is how they diverge, and that
+bounds the wire copy and the log copy together.
+
+**The gated writes answered 500 where the read answered 503**, which is the asymmetry V0.26.29
+existed to remove, extended by V0.26.29 from four shapes to five. `_write` maps `ValueError` now,
+and neither `UnknownSessionError` nor `StaleRevisionError` is a `ValueError` - checked, so the
+ordering shadows nothing.
+
+**A module-scope reader escaped the one-boundary sweep.** It walked FUNCTIONS and looked for calls
+inside them, so `_EAGER = json.loads(Path(...).read_text())` at import time kept it green while
+the same call one line further in was caught. An eager import-time cache is precisely how somebody
+would wire one of the twelve content files nothing reads yet. Every `Call` in the module is
+examined now and only its enclosing function exempts it.
+
+**Two smaller corrections.** The snapshot register row said "no stored value in it" without the
+key carve-out the content row had just gained, and a stored key is stored state rather than
+authored content - so it says so, and records that the key teaches the volume-write actor nothing
+it did not already have. And **my "not UTF-8" fixture was not invalid UTF-8**: bare UTF-16LE of
+ASCII is ASCII interleaved with NULs, and a NUL is valid UTF-8, so it decoded cleanly and failed
+one branch further on as a JSON error while the fixture claimed to drive the UTF-8 branch. A
+`\xff\xfe` byte-order mark fixes it, and `storage.py` is at **100%** coverage as a result.
+
+**Mutation: four mutants, four killed, two only after the tests were fixed.** The array branch; the
+root-string arm; the write handler retargeted; the sanitiser dropped from the raise. The write
+handler and the sanitiser both survived their first run - nothing drove a write against a corrupt
+snapshot, and my newline fixture put the newline in one key and the surrogate in a different
+value, so the reported pointer was clean and the mutant lived. **Both survivals were faults in
+what I had just written**, which is now the fourth release in a row that has been true, and the
+reason every fix here is mutation-checked rather than reasoned about.
+
+**On the gate's answer to my MINOR 1 question**, recorded because it settles a trade rather than a
+fact: naming a key is acceptable and the pointer should NOT be truncated at the parent. The
+pointer is bounded, the unencodable character is replaced before it is served, and for content the
+key is authored structural data an author cannot act without; for the snapshot it is either one of
+this project's own field names or one planted by the actor who already holds write access.
+Truncating would degrade the only diagnosis that works and buy nothing.
+
+**How it was verified.** Loop green on all seven legs: 996 passed, 2 skipped, coverage 97.80%. Changed-line coverage:
+the two regions the gate named as uncovered are both closed, and `identifiers.py` is at 99% with
+one unavoidable loop-exit arc.
+
 ## V0.26.29 (2026-09-02)
 
 **What.** The security gate returned **PASS** at V0.26.28 and said "build away". Its five minors

@@ -765,6 +765,18 @@ async def _write(
             expected_rev=expected_rev,
             must_exist=must_exist,
         )
+    except ValueError as exc:
+        #: The SAME fail-closed branch the anonymous read got, because a corrupt snapshot is one
+        #: fault and answering it two ways is the asymmetry this release exists to remove. Measured
+        #: before this: every malformed shape gave a generic 500 on `POST` and `PATCH` while the
+        #: read had already been fixed to 503. No write happened and nothing leaked either way, so
+        #: this is diagnosability rather than exposure - but a caller who cannot tell "your request
+        #: was wrong" from "my stored state is unreadable" cannot act on either.
+        _logger.exception("stored snapshot is unreadable on a write")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "store_unavailable", "message": bounded_reason(str(exc))},
+        ) from None
     except UnknownSessionError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="no such session"

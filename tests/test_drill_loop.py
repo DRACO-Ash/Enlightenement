@@ -25,6 +25,7 @@ from enlightenment.identifiers import (
     DIGEST_MARKER,
     cut_to_bytes,
     served_identifier,
+    unencodable_pointer,
     utf8,
 )
 from enlightenment.training import (
@@ -792,6 +793,17 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     assert len(shortened_surrogate.encode("utf-8")) <= MAX_CONTENT_STRING
     #: `rng` digests a product id, which is content-authored.
     assert rng(0, "\ud800") is not None
+
+    #: `unencodable_pointer`'s ROOT-STRING arm and its `where or "/"` pointer. Both callers pass a
+    #: dict and the stack only ever holds the root plus containers, so this branch cannot fire in
+    #: production - it is the documented contract of a shared function, and a documented contract
+    #: with no driver is the pattern the array branch already cost this project one release. Two
+    #: lines make it real and clear the last uncovered region the rewrite added.
+    assert unencodable_pointer("\ud800") == ("/", 1)
+    assert unencodable_pointer("plain") is None
+    #: And the ARRAY arm at the unit level, beside the route-level driver, because the route test
+    #: proves the CONSEQUENCE and this proves the POINTER shape only that branch produces.
+    assert unencodable_pointer({"a": ["ok", "bad\ud800"]}) == ("/a/1", 1)
     assert len(cut_to_bytes("\ud800" * 100, MAX_CONTENT_STRING).encode("utf-8")) <= (
         MAX_CONTENT_STRING
     )
