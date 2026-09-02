@@ -908,6 +908,50 @@ def test_a_named_item_is_attempted_once_and_never_retried(loop: DrillLoop) -> No
     assert attempts == ["DRL-0005"], f"a named item was retried: {attempts}"
 
 
+def test_two_long_item_ids_do_not_collapse_into_one_on_the_manifest(tmp_path: Path) -> None:
+    """A shortened id must still be distinct, and must not read as one an author wrote.
+
+    `_bounded` truncates silently, so ids sharing a prefix longer than the cap collided. Measured:
+    140 distinct authored ids on a 64-character prefix served ONE entry, under a synthetic id
+    matching nothing in the library, while the gap was 94 items wide. Two faults in one line - a
+    fabricated name on an operator-facing surface, which this project forbids outright, and a
+    disclosure understating a content gap 94-fold.
+
+    The exclusion bug behind it is separate and worse: `_unresolvable` was keyed on the BOUNDED id
+    while `select` tested the raw one, so from V0.26.6 to V0.26.11 an over-long id was declared
+    withheld and still selected. Keys are raw now and the bound is applied at the wire.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    shared = "DRL-" + "B" * 100
+    for index, row in enumerate(rows[:2]):
+        row["id"] = f"{shared}-{index}"
+        row.setdefault("answer", {})["accept"] = ["computed_from_params"]
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    package = ContentPackage(root)
+    package.load()
+    loop = DrillLoop(
+        content=package,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    manifest = loop.manifest()
+    named = [
+        item_id
+        for item_id in manifest["items_without_a_resolvable_answer"]
+        if item_id.startswith("DRL-BBB")
+    ]
+    assert len(named) == 2, f"two withheld items collapsed into {len(named)}: {named}"
+    assert len(set(named)) == 2, f"the two served ids are identical: {named}"
+    for item_id in named:
+        assert len(item_id) <= MAX_CONTENT_STRING, len(item_id)
+        #: And it does not pretend to be what the author typed.
+        assert item_id not in {row["id"] for row in rows}, item_id
+
+
 def test_a_withheld_item_id_is_bounded_before_it_reaches_the_unauthenticated_manifest(
     tmp_path: Path,
 ) -> None:

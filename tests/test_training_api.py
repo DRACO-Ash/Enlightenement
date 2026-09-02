@@ -510,6 +510,12 @@ MAX_ANONYMOUS_LIBRARY_BYTES = 64 * 1024
 DRAWS = 24
 DRAWS_EXPECTED = 20
 
+#: How many of the 140 drills have no generator supplying their answer once every item is authored
+#: with the `computed_from_params` sentinel. Measured, and a LITERAL: the remaining 46 are drawn by
+#: renderers that do emit `expected_text` or `expected_value`. Pinning the value is what kills a
+#: hardcoded total - a range check admits any number over the cap, and a hardcoded 26 survived one.
+WITHHELD_ON_THE_HOSTILE_TREE = 94
+
 #: Every anonymous route this sweep covers, and for the ones it does not, WHY. Asserted as an exact
 #: set: narrowing the discovery filter to a single route previously left the test green, so the
 #: control's one load-bearing property - that it enumerates - was held by nothing.
@@ -728,9 +734,23 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
                     f"{spec} refused for a reason this sweep does not recognise:"
                     f" {response.content[:200]!r}"
                 )
-            measured[spec] = len(response.content)
-            if len(response.content) > ceiling:
-                oversized[spec] = len(response.content)
+            #: SPLIT where a body legitimately carries a stimulus. A whole-body ceiling on
+            #: `/api/v1/drill/next` cannot tell a large picture from a large envelope, which is the
+            #: distinction the stateful test exists to make - and it was green here only because
+            #: the selection bug fixed in this release drew the one small item. With selection
+            #: working, that route serves 120,000 bytes of legitimate stimulus on this tree.
+            payload = response.json() if response.status_code == 200 else {}
+            if isinstance(payload, dict) and "stimulus" in payload:
+                stimulus_bytes = _wire_bytes(payload["stimulus"])
+                assert stimulus_bytes <= MAX_PAYLOAD_BYTES, (
+                    f"{spec}: {stimulus_bytes}-byte stimulus against {MAX_PAYLOAD_BYTES}"
+                )
+                size = _wire_bytes({k: v for k, v in payload.items() if k != "stimulus"})
+            else:
+                size = len(response.content)
+            measured[spec] = size
+            if size > ceiling:
+                oversized[spec] = size
         #: NON-VACUITY. Every swept route must have been reached and returned something, or a
         #: ceiling assertion over an empty measurement is a pass that means nothing - which is
         #: exactly what sweeping an empty session store produced.
@@ -746,31 +766,6 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         #: refactor of the test that held it, which is worse than one never written, because the
         #: register went on citing it. A body ceiling cannot substitute: with ids bounded to 64,
         #: 140 uncapped due items measure about 9 kB, well under it.
-        #: The WITHHELD collections, count-capped. The body ceiling cannot see these: with ids
-        #: bounded to 64 and load-time reasons at 32 characters, 140 uncapped entries are about
-        #: 13 kB, under the ceiling - so both survived inversion until this assertion existed. That
-        #: is this file's own lesson, that a body ceiling and a count cap are different controls,
-        #: applied to the two fields on the manifest that were the odd ones out.
-        manifest = client.get("/api/v1/content/manifest").json()
-        total = manifest["items_without_a_resolvable_answer_total"]
-        assert total > MAX_SERVED_WITHHELD, (
-            f"only {total} items are withheld on this tree, so the cap has nothing to cut and"
-            " these assertions prove nothing"
-        )
-        assert len(manifest["items_without_a_resolvable_answer"]) <= MAX_SERVED_WITHHELD
-        assert len(manifest["withheld_reasons"]) <= MAX_SERVED_WITHHELD
-        #: And the TOTAL is served, so the truncated list cannot read as the whole gap.
-        assert (
-            total
-            == len(
-                {
-                    **manifest["withheld_reasons"],
-                    **dict.fromkeys(manifest["items_without_a_resolvable_answer"]),
-                }
-            )
-            or total > MAX_SERVED_WITHHELD
-        )
-
         me = client.get("/api/v1/me").json()
         assert me["due_items"], "no item is due, so the due-item caps assert nothing"
         assert len(me["due_items"]) <= MAX_SERVED_DUE_ITEMS, len(me["due_items"])
@@ -803,6 +798,24 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         )
 
 
+def _wire_bytes(value: Any) -> int:
+    """Serialised size as the ROUTE renders it, not as `json.dumps` defaults would.
+
+    `json.dumps` uses `(", ", ": ")` and `ensure_ascii=True`; `JSONResponse` renders `(",", ":")`
+    and `ensure_ascii=False`. Measuring an envelope by subtracting a default-serialised stimulus
+    overstated the subtrahend by up to 7,643 bytes and produced a NEGATIVE envelope on six of
+    twenty-four draws, where the assertion held nothing and would have printed a negative byte
+    count as its diagnosis.
+
+    **A named approximation.** Reconstructing the envelope from the remaining keys omits the
+    `"stimulus":` key name and its separators, about twelve bytes. Immaterial against a 16 kB
+    ceiling, and it cannot go negative, which was the fault.
+    """
+    return len(
+        json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    )
+
+
 def _resolved(template: str, client: TestClient) -> str | None:
     """A concrete path for a route template, with ids taken from the served library."""
     if "{procedure_id}" in template:
@@ -826,6 +839,68 @@ def _answer_body(client: TestClient) -> dict[str, Any]:
         #: error body certifies nothing, which is the fault it exists to prevent.
         "elapsed_ms": 1000,
     }
+
+
+def test_the_withheld_collections_are_count_capped_and_report_an_honest_total(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """The ninth surface: bounded per entry, uncapped in COUNT.
+
+    Measured on a tree that loads clean and answers 200: 140 drills served a 17,014-byte manifest,
+    already over this project's own 16 kB ceiling, and 560 served 64,675. The runtime path is worse
+    than the content path, because a serve-time refusal carries a reason up to 256 characters rather
+    than the 32-character load-time one, so the route grew over the container's life.
+
+    The body ceiling cannot see this and was never going to: with ids bounded to 64 and load-time
+    reasons at 32 characters, 140 uncapped entries are about 13 kB. That is this file's own lesson -
+    a body ceiling and a count cap are different controls - applied to the two fields on the
+    manifest that were the odd ones out while every sibling was already capped.
+    """
+    root = _hostile_content(tmp_path / "content", withhold_all=True)
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        #: The WITHHELD collections, count-capped. The body ceiling cannot see these: with ids
+        #: bounded to 64 and load-time reasons at 32 characters, 140 uncapped entries are about
+        #: 13 kB, under the ceiling - so both survived inversion until this assertion existed. That
+        #: is this file's own lesson, that a body ceiling and a count cap are different controls,
+        #: applied to the two fields on the manifest that were the odd ones out.
+        manifest = client.get("/api/v1/content/manifest").json()
+        total = manifest["items_without_a_resolvable_answer_total"]
+        assert total > MAX_SERVED_WITHHELD, (
+            f"only {total} items are withheld on this tree, so the cap has nothing to cut and"
+            " these assertions prove nothing"
+        )
+        assert len(manifest["items_without_a_resolvable_answer"]) <= MAX_SERVED_WITHHELD
+        assert len(manifest["withheld_reasons"]) <= MAX_SERVED_WITHHELD
+        #: And the TOTAL is served, so the truncated list cannot read as the whole gap.
+        #: The TOTAL's VALUE, against a count this test works out for itself. The first version of
+        #: this assertion ended `or total > MAX_SERVED_WITHHELD`, which is the exact condition
+        #: asserted four lines above, so the disjunction was unconditionally true and the equality
+        #: branch was dead: replacing the total with `len(...) * 7 + 1000`, and with a hardcoded 26,
+        #: both left the whole suite green. A binding test that binds less than it claims, on the
+        #: line written to end that.
+        #:
+        #: A LITERAL, measured, with a range check either side of it so a content change gives a
+        #: legible failure rather than a bare inequality. Every drill in this tree is authored with
+        #: the `computed_from_params` sentinel, and 94 of the 140 have no generator that supplies
+        #: the answer - the other 46 are drawn by renderers that do emit `expected_text` or
+        #: `expected_value`, which is why the total is not the library size. Pinning the value is
+        #: the only thing that kills a hardcoded total: a range alone admits any number over the
+        #: cap, and 26 survived.
+        authored = len(json.loads((root / "drills.json").read_text(encoding="utf-8"))["drills"])
+        assert MAX_SERVED_WITHHELD < total <= authored, (
+            f"{total} withheld against {authored} authored and a cap of {MAX_SERVED_WITHHELD}"
+        )
+        assert total == WITHHELD_ON_THE_HOSTILE_TREE, (
+            f"the manifest reports {total} withheld where {WITHHELD_ON_THE_HOSTILE_TREE} is"
+            " measured. If the library changed, update the figure and say so; if it did not, the"
+            " total is no longer counting what it claims to count"
+        )
 
 
 def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
@@ -865,21 +940,8 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
             body = served.json()
             drawn.add(body["item_id"])
 
-            #: Measured DIRECTLY, not by subtracting a re-serialisation. `json.dumps` defaults to
-            #: `(', ', ': ')` and `ensure_ascii=True` while `JSONResponse` renders `(",", ":")` and
-            #: `ensure_ascii=False`, so the subtracted figure was larger than the bytes actually in
-            #: the response - understated by up to 7,643 bytes and NEGATIVE on six of twenty-four
-            #: draws, where the assertion held nothing at all and would have printed a negative
-            #: byte count as its diagnosis.
-            def _bytes(value: Any) -> int:
-                return len(
-                    json.dumps(
-                        value, separators=(",", ":"), ensure_ascii=False, default=str
-                    ).encode("utf-8")
-                )
-
-            stimulus_bytes = _bytes(body["stimulus"])
-            envelope = _bytes({k: v for k, v in body.items() if k != "stimulus"})
+            stimulus_bytes = _wire_bytes(body["stimulus"])
+            envelope = _wire_bytes({k: v for k, v in body.items() if k != "stimulus"})
             widest_stimulus = max(widest_stimulus, stimulus_bytes)
             assert envelope <= MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
                 f"{body['item_id']}: {envelope} bytes of diagnostic envelope around a"

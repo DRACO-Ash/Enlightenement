@@ -2,6 +2,65 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.12 (2026-09-02)
+
+**What.** Two blockers, two majors, two minors - and for the first time in this sequence the finding
+is a **live product bug rather than a test weakness**, introduced by one of my own fixes and hidden
+for six releases behind the tests that were supposed to hold it.
+
+**The bug.** `_unresolvable` was keyed on the BOUNDED item id from V0.26.6, and `select` tests
+membership with the RAW id. So any authored id over 64 characters was **declared withheld on the
+anonymous manifest and still selected**. Measured at 65 characters: 94 declared, zero excluded.
+Measured at 3,007: eight consecutive serves returned the same item with no run recorded, no rating
+movement and no schedule advance.
+
+**That is the absorbing state this project closed at V0.26 and the serve-time withhold feedback it
+added at V0.26.1, both defeated, on a route that needs no token, while `CLAUDE.md` and
+`docs/SECURITY.md` recorded both as closed.** The bound was a real fix for a real fault applied to
+the wrong thing: a bound belongs at the wire, where a string is a disclosure, not at the key, where
+it is an identity. Keys are raw now.
+
+**And my diagnosis of it last release was the wrong half.** V0.26.11 said the fixture stalled
+because an unscorable item advances no schedule. It stalled because **the exclusion never happened
+at all**, and making the withhold poison opt-in hid the bug rather than isolating it.
+
+**A fabricated name on an operator-facing surface.** `_bounded` truncates without a marker, so ids
+sharing a 64-character prefix collided: 140 distinct authored ids served ONE entry, under a synthetic
+id matching nothing an author wrote, while the gap was 94 items wide. Two rules broken in one line -
+never invent a name, and never let a shortened disclosure read as a complete one. A cut id now
+carries an eight-character digest of the whole string, so two shortened ids differ and a reader can
+see it was shortened.
+
+**A total that was wrong in both directions and bound by nothing.** It overstated - 94 withheld
+while zero were excluded - and understated, reporting 1 for 94 on colliding keys. Replacing it with
+`len(...) * 7 + 1000`, and with a hardcoded 26, both left the whole suite green. It is computed
+before any bounding now, and its VALUE is pinned against a measured literal, because a range check
+alone admits any number over the cap and a hardcoded 26 survived one.
+
+**An assertion vacuous by construction, on the line written to end that.** The check meant to hold
+the total ended `or total > MAX_SERVED_WITHHELD` - the exact condition asserted four lines above -
+so the disjunction was unconditionally true and the equality branch was dead code.
+
+**A ceiling green only because of the bug.** `GET /api/v1/drill/next` carried the 16 kB diagnostic
+ceiling over its whole body, and passed only because the defective `select` drew the one small item;
+with selection working it serves 120,000 bytes of legitimate stimulus on the hostile tree. The sweep
+now splits any body carrying a stimulus: the envelope against the diagnostic ceiling, the stimulus
+against `MAX_PAYLOAD_BYTES`.
+
+**Arithmetic corrected and named.** The envelope is measured with the separators and `ensure_ascii`
+setting the route actually renders, in one shared helper, and the twelve-byte approximation from
+reconstructing it out of the remaining keys is stated where it is made.
+
+**A third destructive `git checkout` in one session, recorded because it cost real work.** I ran
+`git checkout HEAD -- src/enlightenment/training/drill.py` while it carried every uncommitted repair
+above. Replayed step by step with a `count(old) == 1` guard on each, then **every control re-proved
+by mutation**, because a replay is not evidence. One of those mutations re-introduces the original
+keying bug and is killed by the collision test, which is the strongest form of the guarantee.
+
+**How it was verified.** Loop green on all seven legs: 976 passed, 2 skipped, coverage 97.42%. Four
+mutations after the replay, each killed by its own test: re-keying on the bounded id, colliding the
+served ids, uncapping the list, and hardcoding the total. Two register rows.
+
 ## V0.26.11 (2026-09-02)
 
 **What.** The ninth surface, two majors and three minors. The ninth is the same shape as the eighth

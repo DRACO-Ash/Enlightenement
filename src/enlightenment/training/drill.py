@@ -269,6 +269,26 @@ def _bounded(value: Any) -> str:
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
 
 
+def served_identifier(item_id: str) -> str:
+    """A content id shortened for the wire WITHOUT two distinct ids collapsing into one.
+
+    `_bounded` truncates silently, so ids sharing a prefix longer than the cap collided: 140
+    distinct authored ids on a 64-character prefix served ONE entry, under a synthetic id matching
+    nothing an author wrote, while the gap was 94 items wide. Two faults in one line - a fabricated
+    name on an operator-facing surface, which this project forbids outright, and a disclosure
+    understating a content gap 94-fold.
+
+    So a cut id keeps a short digest of the whole string. The digest is not a secret and not a
+    checksum anybody verifies: it exists so two shortened ids differ, and so a reader can see the id
+    was shortened rather than mistake it for what the author typed.
+    """
+    if len(item_id) <= MAX_CONTENT_STRING:
+        return item_id
+    digest = hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:8]
+    keep = MAX_CONTENT_STRING - len(digest) - 2
+    return f"{item_id[:keep]}~{digest}"
+
+
 def capped(value: Any, limit: int) -> str:
     """A content-supplied string, capped at `limit` and MARKED when it is cut.
 
@@ -322,15 +342,18 @@ class DrillLoop:
         self._evaluator = evaluator if evaluator is not None else RubricEvaluator()
         self._pending: OrderedDict[str, _Pending] = OrderedDict()
         #: Mutable, because an item can also prove unservable at REQUEST time. See `_withhold`.
-        #: The KEY is bounded too, not only the reason. The reason was capped at V0.26.3 under a
-        #: comment saying content does not set the size of an anonymous response, and the comment
-        #: was false in the same fields on the same route: `content/models.py` declares `id: str`
-        #: with no maximum, and 40 items with 3,003-character ids produced a 243,539-byte
-        #: unauthenticated manifest, of which 242 kB was ids and 32 characters was the reason.
-        self._unresolvable: dict[str, str] = {
-            _bounded(item_id): "no generator supplies its answer"
-            for item_id in self._items_without_a_resolvable_answer()
-        }
+        #: KEYED ON THE RAW ID, and bounded only where it is SERVED. V0.26.6 bounded these keys to
+        #: stop 3,003-character ids reaching the anonymous manifest - a real fault fixed in the
+        #: wrong place - and `select` compares a raw `d.id` against this map, so from V0.26.6 to
+        #: V0.26.11 any authored id over `MAX_CONTENT_STRING` was DECLARED withheld and still
+        #: SELECTED. Measured at 65 characters: 94 declared, zero excluded. That defeats both the
+        #: absorbing state closed at V0.26 and the serve-time withhold feedback added at V0.26.1,
+        #: on an anonymous route, while `CLAUDE.md` and `docs/SECURITY.md` recorded it as closed.
+        #: A bound belongs at the wire, where the string is a disclosure, not at the key, where it
+        #: is an identity.
+        self._unresolvable: dict[str, str] = dict.fromkeys(
+            self._items_without_a_resolvable_answer(), "no generator supplies its answer"
+        )
 
     @property
     def ready(self) -> bool:
@@ -487,11 +510,13 @@ class DrillLoop:
         implementation could apply - only a judgement, which is how a silent overwrite of the
         useful reason by a useless one would arrive. One reason, one log line, per item.
         """
-        key = _bounded(item_id)
-        if key not in self._unresolvable:
+        if item_id not in self._unresolvable:
             bounded = bounded_reason(reason)
-            self._unresolvable[key] = bounded
-            log_event("drill.withheld", item=key, reason=bounded)
+            #: The RAW id is the key, so `select` can exclude it. The log line is bounded, because
+            #: that is a wire too: an unbounded id in the append-only run log is the same fault one
+            #: sink along.
+            self._unresolvable[item_id] = bounded
+            log_event("drill.withheld", item=served_identifier(item_id), reason=bounded)
 
     def _serve_one(self, item: Drill, seed: int) -> ServedDrill:
         """Render, validate and hold one drill. Raises `DrillError` on any refusal.
@@ -842,9 +867,15 @@ class DrillLoop:
             #: Named, not merely excluded. An item withheld from selection because its stimulus
             #: cannot support its key is a content gap somebody has to decide about, and a silent
             #: exclusion is how it would be forgotten.
-            "items_without_a_resolvable_answer": sorted(self._unresolvable)[:MAX_SERVED_WITHHELD],
+            "items_without_a_resolvable_answer": [
+                served_identifier(item_id)
+                for item_id in sorted(self._unresolvable)[:MAX_SERVED_WITHHELD]
+            ],
             #: Why each was withheld. A bare list of ids says a gap exists; this says what it is.
-            "withheld_reasons": dict(sorted(self._unresolvable.items())[:MAX_SERVED_WITHHELD]),
+            "withheld_reasons": {
+                served_identifier(item_id): reason
+                for item_id, reason in sorted(self._unresolvable.items())[:MAX_SERVED_WITHHELD]
+            },
             #: The TOTAL, untruncated. Capping a disclosure without saying how much was cut turns
             #: "these are the gaps" into "here are twenty-five of an unstated number", which is a
             #: worse disclosure than the uncapped list it replaces.
