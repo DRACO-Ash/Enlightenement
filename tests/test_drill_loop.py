@@ -908,6 +908,113 @@ def test_a_named_item_is_attempted_once_and_never_retried(loop: DrillLoop) -> No
     assert attempts == ["DRL-0005"], f"a named item was retried: {attempts}"
 
 
+def test_a_long_item_id_still_gets_a_fresh_seed_on_every_attempt(tmp_path: Path) -> None:
+    """`_seed` promises "a stable seed per operator, item and ATTEMPT". It broke on a long id.
+
+    `RunRecord.item_id` is stored shortened, because the progress file is read whole on every
+    request, and `serve` counted attempts by comparing it against the RAW id. For any id over
+    `MAX_CONTENT_STRING` the count was permanently zero, so the attempt component vanished and every
+    re-drill redrew the identical stimulus: measured, three attempts and one distinct seed.
+
+    Same class as the exclusion bug beside this - a shortened string compared against a raw one -
+    and it survived the fix for that one, because nothing asserted it.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    long_id = "DRL-SEED-" + "5" * (MAX_CONTENT_STRING * 2)
+    #: A drill that is servable, so it can be drawn repeatedly. DRL-0004 has a resolvable answer.
+    target = next(row for row in rows if row["id"] == "DRL-0004")
+    target["id"] = long_id
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    package = ContentPackage(root)
+    package.load()
+    loop = DrillLoop(
+        content=package,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    seeds: list[int] = []
+    for _ in range(3):
+        drill = loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=long_id)
+        seeds.append(drill.seed)
+        loop.score(
+            run_id=drill.run_id,
+            response="0.279 deg/day west",
+            confidence=3,
+            operator_id=DEMONSTRATION_OPERATOR,
+        )
+    assert len(set(seeds)) == 3, (
+        f"three attempts drew {len(set(seeds))} distinct seeds, so the attempt component is lost"
+        f" and every re-drill shows the same stimulus: {seeds}"
+    )
+
+
+def test_a_withheld_item_with_a_long_id_is_excluded_from_selection_not_only_declared(
+    tmp_path: Path,
+) -> None:
+    """The EXCLUSION, which is the half no test held while the class recurred for six releases.
+
+    `_unresolvable` was keyed on the bounded id from V0.26.6 and `select` tests membership with the
+    raw one, so any authored id over `MAX_CONTENT_STRING` was declared withheld on the anonymous
+    manifest and still selected: 94 declared, zero excluded, and eight consecutive serves returning
+    the same item with no run recorded. The absorbing state closed at V0.26 and the serve-time
+    feedback added at V0.26.1, both defeated, on a route that needs no token.
+
+    V0.26.12 keyed on the raw id and the gate then reinstated the bug by keying on
+    `served_identifier` instead - within the cap, collision-distinct, so the wire stayed honest and
+    the collision test beside this one still passed - and the whole suite stayed green. That test
+    only ever caught a bounded key because bounded keys collapse PREFIX-SHARING ids; it never
+    reached exclusion.
+
+    So this authors ONE unresolvable item with a long id and no prefix-sharing sibling, and asserts
+    both halves: the manifest names it, and repeated `serve` never returns it. Bounding the key in
+    any way turns this red.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    long_id = "DRL-EXCLUDE-" + "7" * (MAX_CONTENT_STRING * 2)
+    rows[0]["id"] = long_id
+    rows[0].setdefault("answer", {})["accept"] = ["computed_from_params"]
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    package = ContentPackage(root)
+    package.load()
+    loop = DrillLoop(
+        content=package,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+
+    #: DECLARED. Shortened on the wire, so matched on the prefix rather than on equality.
+    named = manifest_ids = loop.manifest()["items_without_a_resolvable_answer"]
+    assert any(item_id.startswith("DRL-EXCLUDE-") for item_id in named), manifest_ids
+
+    #: AND EXCLUDED. Twelve serves, each answered so the schedule advances, and the withheld item
+    #: must never be among them. With the key bounded this returns the same excluded item every
+    #: turn, because `select` cannot see that it is withheld.
+    served: list[str] = []
+    for _ in range(12):
+        drill = loop.serve(operator_id=DEMONSTRATION_OPERATOR)
+        served.append(drill.item_id)
+        loop.score(
+            run_id=drill.run_id,
+            response="manoeuvre",
+            confidence=3,
+            operator_id=DEMONSTRATION_OPERATOR,
+        )
+    assert not any(item_id.startswith("DRL-EXCLUDE-") for item_id in served), (
+        f"a declared-withheld item was served: {sorted(set(served))}"
+    )
+    #: And the session progressed rather than stalling on one item, which is what the absorbing
+    #: state looked like from the operator's side.
+    assert len(set(served)) > 4, f"the loop stalled: {sorted(set(served))}"
+
+
 def test_two_long_item_ids_do_not_collapse_into_one_on_the_manifest(tmp_path: Path) -> None:
     """A shortened id must still be distinct, and must not read as one an author wrote.
 

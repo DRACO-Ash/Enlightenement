@@ -180,8 +180,8 @@ class ServedDrill:
             #: BOUNDED. `MAX_PAYLOAD_BYTES` governs `stimulus` and nothing else, so these three
             #: were content-sized on an anonymous route: measured 206,027 bytes, of which the
             #: rendered stimuli - the only part the budget sees - were 2,904.
-            "item_id": _bounded(self.item_id),
-            "cue_id": _bounded(self.cue_id),
+            "item_id": served_identifier(self.item_id),
+            "cue_id": served_identifier(self.cue_id),
             "prompt": capped(self.prompt, MAX_SERVED_PROMPT),
             "response_format": self.response_format,
             "elo": self.elo,
@@ -219,7 +219,7 @@ class ScoredDrill:
         return {
             "drill_run_id": self.run_id,
             #: BOUNDED, on the route the sweep could not see because it filtered on GET.
-            "item_id": _bounded(self.item_id),
+            "item_id": served_identifier(self.item_id),
             "matched": self.matched,
             "correct": self.correct,
             "credit": round(self.credit, 4),
@@ -281,6 +281,16 @@ def served_identifier(item_id: str) -> str:
     So a cut id keeps a short digest of the whole string. The digest is not a secret and not a
     checksum anybody verifies: it exists so two shortened ids differ, and so a reader can see the id
     was shortened rather than mistake it for what the author typed.
+
+    **Used for every shortened identifier, at every wire AND every storage sink**, because the fault
+    this closes recurred three times in one release from applying `_bounded` in one place and not
+    the next. The stored `RunRecord.item_id` goes through it too, so two long ids sharing a prefix
+    cannot merge their run histories.
+
+    **Named limits.** The digest is 32 bits, which is collision-free by a wide margin within a
+    25-entry cap but grindable by a determined content author; and `~` is not a reserved character,
+    so an author could write a 63-character id ending in a tilde and eight hex digits that reads as
+    shortened. Neither matters at these stakes and both are recorded rather than defended.
     """
     if len(item_id) <= MAX_CONTENT_STRING:
         return item_id
@@ -466,7 +476,14 @@ class DrillLoop:
         last: DrillError | None = None
         for _ in range(MAX_SELECTION_ATTEMPTS):
             item = self.select(progress) if item_id is None else self._named(item_id)
-            attempt = sum(1 for run in progress.runs if run.item_id == item.id)
+            #: COMPARED LIKE WITH LIKE. `RunRecord.item_id` is stored shortened, because the
+            #: progress file is read whole on every request, and this compared it against the raw
+            #: id: for any id over `MAX_CONTENT_STRING` the count was permanently zero, so `_seed`
+            #: lost its attempt component and every re-drill of that item redrew the identical
+            #: stimulus against a docstring promising "a stable seed per operator, item and
+            #: attempt". Measured: three attempts, one distinct seed.
+            stored_id = served_identifier(item.id)
+            attempt = sum(1 for run in progress.runs if run.item_id == stored_id)
             seed = self._seed(operator_id, item.id, attempt)
             try:
                 return self._serve_one(item, seed)
@@ -528,7 +545,7 @@ class DrillLoop:
         one thing an author reads it for - was truncated away. Bounding the key alone fixed the
         response size and left the message useless.
         """
-        named = _bounded(item.id)
+        named = served_identifier(item.id)
         try:
             rendered = compose(
                 self._registry,
@@ -714,11 +731,14 @@ class DrillLoop:
         axis.brier_total += brier
         progress.runs.append(
             RunRecord(
-                item_id=_bounded(item.id),
+                #: `served_identifier`, not `_bounded`: two long ids sharing a prefix would
+                #: otherwise merge their run histories, corrupting the attempt count and the seed
+                #: for both items rather than only losing them.
+                item_id=served_identifier(item.id),
                 item_version=_bounded(item.model_extra.get("version") if item.model_extra else ""),
                 content_hash=self._content.content_hash,
-                procedure_id=_bounded(self._procedure_for(item)),
-                axis=_bounded(self._competency_for(item)),
+                procedure_id=served_identifier(self._procedure_for(item)),
+                axis=served_identifier(self._competency_for(item)),
                 seed=self._pending_seed(run_id),
                 answered_at=now_utc().isoformat(),
                 classification=outcome.matched,
@@ -824,7 +844,7 @@ class DrillLoop:
             interval = axis.interval if axis is not None else None
             competencies.append(
                 {
-                    "competency_id": _bounded(competency.id),
+                    "competency_id": served_identifier(competency.id),
                     "name": _bounded(competency.name),
                     "attempts": axis.attempts if axis is not None else 0,
                     "measured": axis is not None and axis.attempts > 0,
@@ -843,7 +863,11 @@ class DrillLoop:
             "runs_total": len(progress.runs),
             "competencies": competencies,
             "due_now": len(due),
-            "due_items": [_bounded(item_id) for item_id in due[:MAX_SERVED_DUE_ITEMS]],
+            #: `served_identifier` here too. `_bounded` collapsed three distinct authored due
+            #: ids into one served name - a fabricated identifier on an anonymous route, which is
+            #: the fault `served_identifier` exists to end and which this line still carried after
+            #: the manifest was fixed.
+            "due_items": [served_identifier(item_id) for item_id in due[:MAX_SERVED_DUE_ITEMS]],
             "content_hash": self._content.content_hash,
             "identity": (
                 "Operator identity does not exist yet (flight plan step 10). Every run is"
@@ -926,7 +950,13 @@ class DrillLoop:
             #: count alone did not bound it: measured, a 500-character authored key was served
             #: verbatim. Twenty-five entries of unbounded length is not a bound.
             "params": {
-                _bounded(key): count
+                #: And the census keys. Two authored parameter names over the cap sharing a
+                #: prefix would collapse to one entry with the second count overwriting the first,
+                #: under-reporting a disclosed gap. Not reproduced through `registry.unread`, so
+                #: this is consistency rather than a demonstrated fault - and consistency is the
+                #: point: one function for every shortened identifier, so the next one is right by
+                #: default instead of right if somebody remembers.
+                served_identifier(key): count
                 for key, count in sorted(names.items(), key=lambda kv: (-kv[1], kv[0]))[
                     :MAX_SERVED_PARAMS
                 ]

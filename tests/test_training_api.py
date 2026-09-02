@@ -582,7 +582,11 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
     for index, row in enumerate(rows):
-        row["id"] = f"DRL-{index}-{long_id}"
+        #: The distinguishing part goes AFTER the cap, deliberately. With the index first, every
+        #: id differed inside 64 characters and nothing collapsed, so the distinctness assertions
+        #: below could not fail: `_bounded` on `due_items` survived inversion until this changed.
+        #: A hostile tree has to be hostile in the SHAPE the fault needs, not only in length.
+        row["id"] = f"DRL-{long_id}-{index}"
         #: `cue_id` too. The assertion for it existed and asserted nothing, because real cue ids are
         #: seven characters and this tree never stretched the field: deleting its bound left the
         #: whole suite green, and the changelog claimed the mutation was killed. A hostile tree that
@@ -772,6 +776,11 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         assert len(me["competencies"]) == MAX_SERVED_COMPETENCIES, len(me["competencies"])
         for item_id in me["due_items"]:
             assert len(item_id) <= MAX_CONTENT_STRING, f"{len(item_id)} characters as a due id"
+        #: DISTINCT, not merely short. `_bounded` collapsed three distinct authored due ids into one
+        #: served name - a fabricated identifier on an anonymous route, and the fault
+        #: `served_identifier` exists to end, still live on this line after the manifest was fixed.
+        #: This tree's ids share the `DRL-` prefix and differ only past the cap.
+        assert len(set(me["due_items"])) == len(me["due_items"]), sorted(me["due_items"])
         for row in me["competencies"]:
             assert len(row["name"]) <= MAX_CONTENT_STRING, len(row["name"])
             assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])

@@ -2,6 +2,52 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.13 (2026-09-02)
+
+**What.** The V0.26.12 fix for the keying bug was itself held by no test, and the gate proved it by
+**reinstating the live product bug with the whole suite green**. Two more instances of the same class
+were live and unfixed, and reshaping the hostile tree to find them exposed a fifth. One blocker, two
+majors, two minors.
+
+**The fix that was held by nothing.** Keying `_unresolvable` on the SHORTENED id keeps every key
+inside the cap and collision-distinct, so the wire stays honest and the collision test still passes -
+and `select` still compares a raw id, so a long-id item is declared withheld and served anyway. The
+collision test only ever caught a bounded key because bounded keys collapse PREFIX-SHARING ids; it
+never reached exclusion. That is precisely how the bug survived from V0.26.6 to V0.26.11. The
+exclusion is now asserted on an item with a long id and no prefix-sharing sibling: the manifest names
+it AND twelve consecutive serves never return it.
+
+**A promise the docstring makes and the code broke.** `RunRecord.item_id` is stored shortened,
+because the progress file is read whole on every request, and `serve` counted attempts against the
+RAW id. For any id over the cap the count was permanently zero, so `_seed` lost its attempt component
+and every re-drill of that item redrew the identical stimulus - **three attempts, one distinct
+seed** - against a docstring promising "a stable seed per operator, item and attempt".
+
+**A fabricated identifier still on an anonymous route.** `due_items` served three distinct authored
+ids as ONE name, which is the fault `served_identifier` was written to end, on a line the previous
+release did not touch.
+
+**And a fifth, found only by reshaping the tree.** The served drill payload's own `item_id` and
+`cue_id` collapsed the same way. The hostile tree's ids differed BEFORE the cap, so nothing collapsed
+and three distinctness assertions could not fail; moving the distinguishing part past the cap turned
+`due_items` red and then turned the traversal red on a fault nobody had named. **A hostile tree has
+to be hostile in the SHAPE a fault needs, not only in length.**
+
+**The rule this release actually installs.** Every shortened IDENTIFIER goes through one function, at
+every wire and every storage sink, so the next site is right by default rather than right if somebody
+remembers. Five instances, each having survived the fix for the one before it, is not five oversights;
+it is a rule that existed in one place and was applied by hand everywhere else. A competency NAME
+keeps the plain bound, because prose is not an identity.
+
+**Named limits, recorded rather than defended.** The digest is 32 bits - collision-free by a wide
+margin inside a 25-entry cap, grindable by a determined content author - and `~` is not reserved, so
+an author could write a 63-character id ending in a tilde and eight hex digits that reads as
+shortened. Neither matters at these stakes.
+
+**How it was verified.** Loop green on all seven legs: 978 passed, 2 skipped, coverage 97.42%. Five
+mutations, one per instance, each killed by its own test - including the gate's own reinstatement of
+the original bug, which now fails on the exclusion assertion. Two register rows.
+
 ## V0.26.12 (2026-09-02)
 
 **What.** Two blockers, two majors, two minors - and for the first time in this sequence the finding
