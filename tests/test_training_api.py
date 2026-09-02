@@ -508,6 +508,10 @@ MAX_ANONYMOUS_LIBRARY_BYTES = 64 * 1024
 #: limiter is injected for it, because `DRILL_LIMIT` is 20 and a traversal bounded by an unrelated
 #: rate limit stalls on one item while the guard reads as satisfied: with that constant lowered to
 #: 5, the previous version passed while measuring 6 items of 140.
+#: How long the hostile tree makes every operator-facing string. Named, because an assertion in
+#: the sweep is guarded on it and a reshape to a shorter value must not turn that guard false.
+HOSTILE_TEXT_LENGTH = 20000
+
 DRAWS = 24
 DRAWS_EXPECTED = 20
 
@@ -577,7 +581,7 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     that cap can bite at all - the shipped library has eight against a cap of thirty-two.
     """
     shutil.copytree(CONTENT_ROOT, destination)
-    long_text = "X" * 20000
+    long_text = "X" * HOSTILE_TEXT_LENGTH
     long_id = "9" * 3000
 
     document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
@@ -787,7 +791,10 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
             #: And a cut NAME says it was cut. The name had an identity's silent cap while the
             #: interface renders it as the primary label, so a shortened name read as the one
             #: somebody chose. Prose gets the marker; an identity gets the digest.
-            assert row["name"].endswith(TRUNCATION_MARK), row["name"][-20:]
+            #: Guarded on the AUTHORED length, so reshaping the tree to shorter names cannot turn
+            #: this from a real assertion into a false failure.
+            if HOSTILE_TEXT_LENGTH > MAX_CONTENT_STRING:
+                assert row["name"].endswith(TRUNCATION_MARK), row["name"][-20:]
             assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])
         assert len({row["competency_id"] for row in me["competencies"]}) == len(
             me["competencies"]
@@ -856,6 +863,55 @@ def _answer_body(client: TestClient) -> dict[str, Any]:
         #: error body certifies nothing, which is the fault it exists to prevent.
         "elapsed_ms": 1000,
     }
+
+
+def test_the_unbuilt_product_log_line_names_two_long_ids_distinctly(
+    token_config: Config, store: TrainingStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A changed line with ZERO coverage, cited in the register as a closed cousin.
+
+    `if unbuilt:` never executes in the suite by construction: the binding check keeps every
+    referenced product renderable for the shipped tree, so the branch is dead in every other test.
+    An inversion of a line that never runs cannot change a test outcome, which means the claim
+    "every call site inverted individually" was not true of this one - the survey recorded a result
+    for a line nothing executed.
+
+    `log_event` sanitises only string FIELDS, so a list of content ids reached the line raw and at
+    full length. Boot-only, and not the collapse class since nothing was cut, but this codebase's
+    own principle is that a log line is a wire too.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    #: Two product ids no renderer claims, sharing a prefix longer than the cap, so a plain
+    #: truncation collapses them and a raw value is unbounded.
+    shared = "PRD-" + "N" * 300
+    for index, row in enumerate(rows[:2]):
+        row.setdefault("stimulus", {})["product_id"] = f"{shared}-{index}"
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    lines: list[str] = []
+
+    class _Sink:
+        @staticmethod
+        def info(line: str) -> None:
+            lines.append(line)
+
+    monkeypatch.setattr("enlightenment.audit._event_logger", _Sink())
+    create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    emitted = [line for line in lines if "content.unbuilt_products" in line]
+    assert emitted, f"the branch did not run, so this asserts nothing: {len(lines)} lines"
+    named = [name for name in json.loads(emitted[0])["products"] if "PRD-NNN" in name]
+    assert len(named) == 2, named
+    assert len(set(named)) == 2, f"two unbuilt product ids logged as one name: {named}"
+    for name in named:
+        assert len(name) <= MAX_CONTENT_STRING, f"{len(name)} characters in a log line"
 
 
 def test_the_answer_route_logs_two_distinct_names_for_two_long_ids(
@@ -981,6 +1037,11 @@ def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(
         assert named[0] != named[1], (
             f"two distinct authored documents are refused under one name: {named[0]}"
         )
+        #: And BOUNDED. Distinctness alone left this line revertible to the raw identifier, which is
+        #: distinct and unbounded: 982 tests stayed green with a content-sized id on an anonymous
+        #: 503. The two assertions catch different mutations and neither implies the other.
+        for name in named:
+            assert len(name) <= MAX_CONTENT_STRING, f"{len(name)} characters named on a 503"
 
 
 def test_the_withheld_collections_are_count_capped_and_report_an_honest_total(
@@ -1116,7 +1177,14 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
                     "elapsed_ms": 1000,
                 },
             )
-            revealed.add(answered.json()["item_id"] if answered.status_code == 200 else "")
+            #: LENGTH AND DISTINCTNESS, both. Each mutation is invisible to the other's test: a
+            #: truncated id collides, which distinctness catches and a length check does not; a raw
+            #: id is distinct but unbounded, which a length check catches and distinctness does
+            #: not. Asserting one of the two leaves the line revertible to the other.
+            if answered.status_code == 200:
+                revealed_id = answered.json()["item_id"]
+                assert len(revealed_id) <= MAX_CONTENT_STRING, len(revealed_id)
+                revealed.add(revealed_id)
             assert answered.status_code == 200, (
                 f"the answer for {body['item_id']} returned {answered.status_code}, so the"
                 f" traversal cannot advance: {answered.content[:160]!r}"

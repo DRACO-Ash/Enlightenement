@@ -1090,7 +1090,10 @@ def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_error
     for line in served:
         assert "elo" in line, f"the identifier ate the diagnosis: {line[:160]}"
 
-    #: AND THE LOG LINE. Driven through the real emitter with the id the reveal carries.
+    #: AND `_withhold`'s own line. The emitter-only half that used to sit here called
+    #: `served_identifier` in the test body, so it held the function rather than a call site - the
+    #: pattern this release's own record names as the defect - and it is redundant now that
+    #: `training_api`'s line is driven through its route. Removed rather than left as reassurance.
     lines: list[str] = []
 
     class _Sink:
@@ -1099,15 +1102,9 @@ def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_error
             lines.append(line)
 
     monkeypatch.setattr("enlightenment.audit._event_logger", _Sink())
-    from enlightenment.audit import log_event
 
-    for index in range(2):
-        log_event("drill.answered", itemId=served_identifier(f"{shared}-{index}"))
-    assert lines[0] != lines[1], f"two ids produced one log line: {lines[0][:120]}"
-
-    #: AND `_withhold`'s own line, driven rather than asserted about, so the SITE is held and not
+    #: `_withhold`'s own line, driven rather than asserted about, so the SITE is held and not
     #: only the sink. Two prefix-sharing ids must appear as two lines in the append-only run log.
-    lines.clear()
     loop = DrillLoop(
         content=package,
         registry=build_registry(),
@@ -1118,6 +1115,20 @@ def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_error
     withheld = [line for line in lines if "drill.withheld" in line]
     assert len(withheld) == 2, withheld
     assert withheld[0] != withheld[1], f"two withheld ids logged one line: {withheld[0][:120]}"
+
+    #: AND `_named`'s refusal, which survives BOTH mutations and was in neither the held count nor
+    #: the unheld enumeration. Latent - no route passes an `item_id` - but the message reaches
+    #: `bounded_reason` and a 503 the moment one does, so it is asserted rather than argued about.
+    refusals: list[str] = []
+    for index in range(2):
+        try:
+            loop._named(f"{shared}-absent-{index}")
+        except DrillError as exc:
+            refusals.append(bounded_reason(str(exc)))
+    assert len(refusals) == 2, refusals
+    assert refusals[0] != refusals[1], f"two absent ids refused as one: {refusals[0][:120]}"
+    for refusal in refusals:
+        assert "loaded content package" in refusal, f"the id ate the diagnosis: {refusal[:120]}"
 
 
 def test_two_long_item_ids_do_not_collapse_into_one_on_the_manifest(tmp_path: Path) -> None:

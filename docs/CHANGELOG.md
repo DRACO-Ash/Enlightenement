@@ -2,6 +2,56 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.17 (2026-09-02)
+
+**What.** One blocker and four majors. **Neither mutation dominates the other, and two consecutive
+releases got the measurement wrong by assuming one did.**
+
+**The finding, stated as a rule.** A RAW identifier is distinct and unbounded, so a distinctness
+assertion misses it. A TRUNCATED identifier is bounded and collides, so a length assertion misses
+it. Each mutation is invisible to the other's test. **A served identifier is therefore held only
+when it carries a length assertion AND a distinctness assertion**, and a survey run on one axis
+reports the wrong set either way. V0.26.15 measured truncation only and named four unheld sites;
+V0.26.16 measured raw only and named a different two - the right pair of numbers attached to the
+wrong methods, and the lesson drawn from the gap was false as written.
+
+**Measured on both axes at all NINETEEN sites.** Nineteen, not eighteen: the previous count was
+short. Every site is now red on both axes except two - `RunRecord.procedure_id` and `.axis`,
+write-only audit labels with no reader in the source or the suite, enumerated as unheld rather than
+folded into a count.
+
+**Three lines whose removal left 983 tests green, now held on both axes.** The reveal's `item_id` on
+`POST /api/v1/drill/answer` and the name on the anonymous `document_too_large` 503 both had
+distinctness and no length assertion, so either could be reverted to an unbounded content-authored
+string. And `_named`'s refusal message survived both mutations while sitting in neither the held
+count nor the unheld list.
+
+**A changed line with ZERO coverage, cited as a closed cousin.** The `if unbuilt:` branch never
+executes in the suite by construction: the binding renderer check keeps that set empty for the
+shipped tree. An inversion of a line nothing runs cannot change any test outcome, so the claim
+"every call site inverted individually" was not true of it - the survey recorded a result for a
+line that never executed. It has a test now, and each mutation fails on its own assertion: the raw
+form at 306 characters, the truncated form on two ids logged as one name.
+
+**And a survey of mine that was contaminated.** The first re-measurement reported four sites as held
+that were not: the kill was the citation sweep failing for two tests I had added and not yet cited,
+not the mutation. Re-run against a green baseline, and the numbers above are from that run.
+
+**Removed rather than left as reassurance.** The log test still called `served_identifier` in its own
+body - holding the function rather than a call site, the pattern this release's own record names as
+the defect - and it was redundant once the route-driven test existed. Deleted. The competency-name
+marker assertion is also guarded on the authored length now, so reshaping the tree cannot turn a
+real assertion into a false failure.
+
+**Confirmed by the gate rather than by me.** The 63-to-64 persisted format decision stands: the old
+arithmetic reserved two characters for a one-character marker, nothing is deployed, the blast radius
+is one attempt count self-healing on first write, and it is pinned by a test that turns red on all
+four ways of changing it. And there is still no eighth instance of the class anywhere in the source.
+
+**How it was verified.** Loop green on all seven legs: 983 passed, 2 skipped, coverage 97.49%. Both
+mutations applied at every one of the nineteen sites, on a green baseline, with each result recorded
+rather than reasoned.
+
 ## V0.26.16 (2026-09-02)
 
 **What.** One blocker, three majors, four minors. **The lesson is about the method, not the code:**
