@@ -2,6 +2,43 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.19 (2026-09-02)
+
+**What.** Two majors, both documentation integrity, both in the exact subject this sequence exists
+to correct: a test claiming coverage it does not have, and a register row contradicting itself and
+the changelog about the same two fields.
+
+**The hard claim held under measurement.** The gate applied both mutations at all nineteen call
+sites - **38 mutants, 38 killed, zero survivors** - and reconstructed V0.26.17's exact state to
+check the corrected figures rather than accept them: four sites unheld under truncation alone, two
+under raw alone, four not red on both axes where two exceptions had been claimed. All three
+corrected numbers were right.
+
+**A claim that survived a refactor onto the wrong half.** The serve-time refusal test's docstring
+still said it "ALSO holds `RunRecord.procedure_id` and `.axis`". It never touched the progress
+store: that content moved when ruff's complexity limit forced the test in two, and the sentence
+stayed behind. Measured - with `.axis` truncated, that test passes and the split-off one fails. It
+also went on calling those fields "the last two standing exceptions" and "write-only today", the two
+positions the previous release retired, three lines from a sibling arguing the opposite. **A reader
+who deleted that sibling would have consulted this docstring and believed both sites were still
+held**, which is the fault named in four consecutive audit rows before this one.
+
+**A clause that outlived the sentence it justified.** The register said "they are enumerated in the
+changelog as unheld rather than folded into a count" two sentences after saying the same two fields
+are driven and are not exceptions - and the changelog enumerates them as driven, so the row
+contradicted both itself and the document it cited. The previous round's blocker was on this row's
+claims about these two fields; the corrected figures landed and the clause that motivated them did
+not. Re-anchored to what it now explains.
+
+**Recorded, not charged.** The gate noted that several poison lengths are hardcoded without
+asserting they exceed the cap, unlike the precondition fix made one release earlier. It cannot go
+silently vacuous, because the golden-value test pins the output form and any change to the cap turns
+that red first. Left as it is, and written down so the next reader does not have to re-derive why.
+
+**How it was verified.** Loop green on all seven legs: 985 passed, 2 skipped, coverage 97.49%.
+No source changed in this release: the two fixes are a docstring and a register clause, and the
+nineteen-site two-axis result above is the gate's own measurement of the code they describe.
+
 ## V0.26.18 (2026-09-02)
 
 **What.** Two blockers and two majors. **All nineteen sites are now held on both axes, with no

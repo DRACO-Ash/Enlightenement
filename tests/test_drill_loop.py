@@ -1060,11 +1060,15 @@ def test_a_serve_time_refusal_names_two_prefix_sharing_ids_distinctly(tmp_path: 
     be refused under one name matching neither, which is the fabricated-identifier fault on an
     unauthenticated surface. The sibling method one line away had this test; this one did not.
 
-    ALSO holds `RunRecord.procedure_id` and `.axis`, the last two standing exceptions. Both are
-    write-only today, and this repository's register records that exact argument being made for
-    `RunRecord.item_id` and being false: it was stored shortened, compared raw, and every long id
-    sat at attempt zero while three attempts drew one seed. "Write-only" is a property of the
-    current readers, not of a persisted field.
+    **Scope: `_serve_one`'s `named` only.** This paragraph used to claim it also held
+    `RunRecord.procedure_id` and `.axis`, and it never touched the progress store - the claim was
+    true of the test before ruff's complexity limit forced a split, and it stayed behind on the
+    wrong half. Measured: with `.axis` truncated, this test passes and
+    `test_the_persisted_run_labels_are_bounded_and_distinct` fails. It also went on calling those
+    two fields "the last two standing exceptions" and "write-only today", which are the two
+    positions the release retired, three lines from a sibling arguing the opposite. A reader who
+    deleted that sibling would have consulted this docstring and believed both sites were still
+    held, which is the fault this whole sequence is about.
     """
     root = tmp_path / "content"
     shutil.copytree(CONTENT, root)
