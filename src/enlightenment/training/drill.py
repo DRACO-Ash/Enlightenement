@@ -37,7 +37,7 @@ from enlightenment.generators import (
     compose,
 )
 from enlightenment.identifiers import MAX_CONTENT_STRING as _MAX_CONTENT_STRING
-from enlightenment.identifiers import served_identifier
+from enlightenment.identifiers import cut_to_bytes, served_identifier
 from enlightenment.scoring import (
     COMPUTED_SENTINEL,
     UNSCORABLE,
@@ -290,7 +290,7 @@ def _bounded(value: Any) -> str:
     here rather than left implied by a docstring that claimed the whole file.
     """
     text = str(value or "")
-    return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
+    return cut_to_bytes(text, MAX_CONTENT_STRING)
 
 
 def capped(value: Any, limit: int) -> str:
@@ -301,9 +301,11 @@ def capped(value: Any, limit: int) -> str:
     - a shortened string that reads as complete sends a reader to the wrong place.
     """
     text = str(value or "")
-    if len(text) <= limit:
+    #: BYTES, like every ceiling this project asserts against. `TRUNCATION_MARK` is ASCII, so its
+    #: own length is the same in either unit.
+    if len(text.encode("utf-8")) <= limit:
         return text
-    return text[: limit - len(TRUNCATION_MARK)] + TRUNCATION_MARK
+    return cut_to_bytes(text, limit - len(TRUNCATION_MARK)) + TRUNCATION_MARK
 
 
 def bounded_reason(reason: str) -> str:
@@ -317,10 +319,13 @@ def bounded_reason(reason: str) -> str:
     file read whole on every request and truncates silently, which is right for a version string
     nobody reads for meaning. A reason is a DIAGNOSIS an author acts on, so it gets a wider bound
     and says when it was shortened.
+
+    Delegates to `capped` rather than repeating its arithmetic, which is also how the BYTE unit
+    reached it: this function carried its own code-point cut, so converting `capped` alone left a
+    256-CODE-POINT reason - 1,024 bytes of astral content - on the anonymous manifest. Two copies
+    of one rule is how they diverge, which this docstring already said about the cross-module case.
     """
-    if len(reason) <= MAX_WITHHOLD_REASON:
-        return reason
-    return reason[: MAX_WITHHOLD_REASON - len(TRUNCATION_MARK)] + TRUNCATION_MARK
+    return capped(reason, MAX_WITHHOLD_REASON)
 
 
 class DrillLoop:
@@ -564,15 +569,20 @@ class DrillLoop:
             #: author-facing 503 this module documents rather than a generic 500. `elapsed_min: 0`
             #: divides by zero and `1e308` overflows a domain, both from plain authored numbers.
             #:
-            #: **The exception is NOT interpolated**, and this is the cheaper of the two things
-            #: to keep rather than a control a test holds. MEASURED on CPython 3.12: no
-            #: `ArithmeticError` message carries its operand - "float division by zero",
-            #: "(34, 'Numerical result out of range')", "math range error", "int too large to
-            #: convert to float" - so re-adding `{exc}` here survives the whole suite. Recorded as
-            #: a declared limit rather than claimed closed, which is this project's rule for a
-            #: guard that is unheld rather than exploitable. The branch itself IS driven; what no
-            #: test can distinguish is a message that would carry a value if CPython ever wrote
-            #: one. Full detail goes to the log either way.
+            #: **The exception is NOT interpolated, and this branch IS held.** V0.26.23 recorded
+            #: the opposite here - that no `ArithmeticError` message on CPython 3.12 carries its
+            #: operand, so the guard was "unheld rather than exploitable". That was false, and the
+            #: counter-example is one line: `timedelta` interpolates its own argument, so an
+            #: authored `days: -1000000007` raises
+            #: `OverflowError: days=-1000000007; must have magnitude <= 999999999`. With `{exc}`
+            #: restored, that authored operand reached the anonymous 503 AND the manifest's
+            #: withheld reasons with the whole suite green.
+            #:
+            #: The lesson is the one this project keeps relearning: a measured universal written
+            #: into a comment is what stops anyone looking. Held now by the arithmetic case of
+            #: `test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal`, which
+            #: drives a NUMERIC poison - a string cannot reach this branch at all, because it
+            #: fails coercion first. Full detail goes to the log.
             _logger.exception("stimulus arithmetic failed for %s", named)
             raise DrillError(
                 f"{named}: the stimulus could not be computed from its parameters"

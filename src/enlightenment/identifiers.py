@@ -13,7 +13,8 @@ from __future__ import annotations
 import hashlib
 from typing import Final
 
-#: Longest content-supplied string stored on a run row or served as an identity: the item id, the
+#: Longest content-supplied string, in BYTES of UTF-8, stored on a run row or served as an
+#: identity: the item id, the
 #: cue id, the procedure id, the competency axis. `content/models.py` declares no maximum length on
 #: any of them. NOT the version - that is cut silently by `_bounded` and nothing reads it for
 #: meaning, so listing it here overstated what this module governs.
@@ -26,6 +27,32 @@ MAX_CONTENT_STRING: Final = 64
 #: rather than defended, because neither matters at these stakes.
 DIGEST_CHARACTERS: Final = 8
 DIGEST_MARKER: Final = "~"
+
+
+def cut_to_bytes(text: str, limit: int) -> str:
+    """``text`` shortened to at most ``limit`` BYTES of UTF-8, never splitting a code point.
+
+    **The unit is bytes because every ceiling this project asserts is in bytes.** The caps were
+    declared in CODE POINTS and the anonymous-response ceilings in bytes, and one `U+1F600` is one
+    code point and four bytes - so a 64-code-point cap admitted 256 bytes, and the sweep that
+    certified those ceilings poisoned its tree with ASCII. Measured by the security gate: with
+    astral identifiers, `GET /api/v1/me` served 17,407 bytes against a 16,384-byte ceiling that
+    the suite reported as held. Two units for one bound is not a tight bound, it is an unmeasured
+    one.
+
+    For ASCII the two units are identical, so no shipped identifier and no persisted value changes
+    shape: the golden-value test that pins the shortened form is unaffected. What changes is that
+    a multi-byte identifier is now cut where the ceiling is actually drawn.
+
+    Cutting UTF-8 at an arbitrary byte can split a code point, so the tail is decoded with
+    `errors="ignore"`, which drops the incomplete sequence rather than emitting a replacement
+    character. A shortened identifier already carries a digest of the whole string, so losing up
+    to three bytes of the prefix cannot make two ids collide.
+    """
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    return encoded[:limit].decode("utf-8", errors="ignore")
 
 
 def served_identifier(item_id: str) -> str:
@@ -51,8 +78,8 @@ def served_identifier(item_id: str) -> str:
     Nothing is deployed, so it costs nothing today; on an existing volume it would reset one item's
     attempt count once before self-healing.
     """
-    if len(item_id) <= MAX_CONTENT_STRING:
+    if len(item_id.encode("utf-8")) <= MAX_CONTENT_STRING:
         return item_id
     digest = hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:DIGEST_CHARACTERS]
     keep = MAX_CONTENT_STRING - len(digest) - len(DIGEST_MARKER)
-    return f"{item_id[:keep]}{DIGEST_MARKER}{digest}"
+    return f"{cut_to_bytes(item_id, keep)}{DIGEST_MARKER}{digest}"

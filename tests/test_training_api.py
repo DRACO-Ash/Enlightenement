@@ -606,8 +606,12 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     """
     shutil.copytree(CONTENT_ROOT, destination)
     long_text = "X" * HOSTILE_TEXT_LENGTH
-    long_id = "9" * 3000
-    #: Four bytes per code point, so a 64-code-point cap admits 256 bytes of this.
+    #: The IDS are astral too, and that is where the bytes actually are. Poisoning only the
+    #: competency NAME left the byte ceilings certified for ASCII identifiers: measured, astral ids
+    #: took `GET /api/v1/me` to 17,407 bytes against a 16,384-byte ceiling the suite reported as
+    #: held, because `served_identifier` capped 64 CODE POINTS while the ceiling counted BYTES.
+    #: Both are bytes now, so this tree measures the ceiling in the unit the ceiling is written in.
+    long_id = "\U0001f600" * 3000
     astral_text = "\U0001f600" * HOSTILE_TEXT_LENGTH
 
     document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
@@ -960,8 +964,18 @@ def test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_tot
 #: a response body is unambiguous, and it is not a number, so every coercion site refuses on it.
 AUTHORED_VALUE_MARKER = "MARKER-AUTHORED-VALUE-MUST-NOT-BE-SERVED"
 
+#: The NUMERIC poison, and it holds a different branch. A string marker cannot reach the
+#: `ArithmeticError` handler at all: it fails coercion first and takes the `ContentParameterError`
+#: path. This value coerces cleanly and then overflows `timedelta`, which interpolates its own
+#: argument - `OverflowError: days=-1000000007; must have magnitude <= 999999999`. So the claim
+#: this project briefly wrote into `docs/SECURITY.md`, that no `ArithmeticError` message on
+#: CPython 3.12 carries its operand, was FALSE, and the branch was held by nothing while the
+#: register recorded a measured universal. The security gate constructed this counter-example.
+#: The digits are the marker: any anonymous body containing them is serving an authored value.
+AUTHORED_OVERFLOW_POISON = -1000000007
 
-def _tree_whose_every_parameter_is_poisoned(destination: Path) -> Path:
+
+def _tree_whose_every_parameter_is_poisoned(destination: Path, poison: object) -> Path:
     """The shipped content tree with every stimulus parameter set to `AUTHORED_VALUE_MARKER`.
 
     Every drill is also forced onto ONE renderer, `waterfall`, whose coerced key `days` is among
@@ -974,6 +988,9 @@ def _tree_whose_every_parameter_is_poisoned(destination: Path) -> Path:
 
     `answer.accept` is set to a literal so the load-time probe stays clean: the tree must LOAD, or
     the manifest serves a load error instead of the withhold reasons this test is about.
+
+    `poison` is a PARAMETER because the two refusal branches need different shapes of bad value: a
+    string cannot reach the arithmetic handler, and a number cannot reach the coercion one.
     """
     shutil.copytree(CONTENT_ROOT, destination)
     document = json.loads((destination / "drills.json").read_text(encoding="utf-8"))
@@ -983,10 +1000,10 @@ def _tree_whose_every_parameter_is_poisoned(destination: Path) -> Path:
             "product_id": "PRD-WATERFALL",
             "generator": "waterfall",
             "params": {
-                "days": AUTHORED_VALUE_MARKER,
-                "headcount": AUTHORED_VALUE_MARKER,
-                "gap_len_hours": AUTHORED_VALUE_MARKER,
-                "derived_rate_deg_day": AUTHORED_VALUE_MARKER,
+                "days": poison,
+                "headcount": poison,
+                "gap_len_hours": poison,
+                "derived_rate_deg_day": poison,
             },
         }
         row["answer"] = {"accept": ["manoeuvre"]}
@@ -994,11 +1011,24 @@ def _tree_whose_every_parameter_is_poisoned(destination: Path) -> Path:
     return destination
 
 
+@pytest.mark.parametrize(
+    ("poison", "needle", "branch"),
+    [
+        (AUTHORED_VALUE_MARKER, AUTHORED_VALUE_MARKER, "coercion"),
+        (AUTHORED_OVERFLOW_POISON, str(abs(AUTHORED_OVERFLOW_POISON)), "arithmetic"),
+    ],
+    ids=["coercion", "arithmetic"],
+)
 def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
-    token_config: Config, store: TrainingStore, tmp_path: Path
+    token_config: Config,
+    store: TrainingStore,
+    tmp_path: Path,
+    poison: object,
+    needle: str,
+    branch: str,
 ) -> None:
     """A refusal names the KEY and its DOMAIN, never the value that failed - held over the ROUTE
-    TABLE rather than on one renderer's message.
+    TABLE rather than on one renderer's message, and over BOTH refusal branches.
 
     `docs/SECURITY.md` recorded this control as closed from V0.26.3, and the security gate defeated
     it in TWO anonymous requests against a copy of the shipped tree. V0.26.3 removed the one
@@ -1012,11 +1042,20 @@ def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
     per-field size assertion: it holds the field somebody thought of. So this enumerates the whole
     route table, drives the refusal, and asserts the marker appears in NO body, 200 or 503 alike.
 
-    What it deliberately does NOT forbid: a generator name or a product id. Those are structural
+    **Both branches, because a string cannot reach the arithmetic one.** The coercion case fails
+    `float()` and takes the `ContentParameterError` path. The arithmetic case coerces cleanly and
+    then overflows `timedelta`, which interpolates its own argument. V0.26.23 recorded in the code
+    and in the register that no `ArithmeticError` message on CPython 3.12 carries its operand, so
+    the branch was "unheld rather than exploitable" - **that was false**, and with the exception
+    re-interpolated the authored operand reached both anonymous surfaces with the whole suite
+    green. A measured universal in a security register is exactly the claim that stops anyone
+    looking, so the branch is held now rather than excused.
+
+    What this deliberately does NOT forbid: a generator name or a product id. Those are structural
     identifiers inside the register's carve-out, because a typo in one is undiagnosable otherwise,
     and both are shortened at the raise site so neither can size a response.
     """
-    root = _tree_whose_every_parameter_is_poisoned(tmp_path / "content")
+    root = _tree_whose_every_parameter_is_poisoned(tmp_path / "content", poison)
     app = create_app(
         config=token_config,
         store=store,
@@ -1047,6 +1086,12 @@ def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
             f" {refusal.status_code} {refusal.content[:160]!r}"
         )
         assert "selection budget" in refusal.text, refusal.text[:200]
+        #: And the refusal came from the branch this case exists to drive. Without this the
+        #: arithmetic case could silently take the coercion path and hold nothing new.
+        expected = "must be a number" if branch == "coercion" else "could not be computed from its"
+        assert expected in refusal.text, (
+            f"the {branch} branch was not the one that refused: {refusal.text[:240]}"
+        )
         withheld = client.get("/api/v1/content/manifest").json()["withheld_reasons"]
         assert withheld, "no item was withheld, so no reason was composed"
 
@@ -1061,17 +1106,12 @@ def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
                 if method == "GET"
                 else client.request(method, path, json={"id": "s-1", "title": "t", "scenario": "s"})
             )
-            if AUTHORED_VALUE_MARKER in response.text:
+            if needle in response.text:
                 leaked[spec] = response.text[:240]
 
     assert leaked == {}, (
         "these anonymous routes served an authored content value inside a refusal, which"
         f" docs/SECURITY.md promises they never do: {leaked}"
-    )
-    #: And the diagnosis SURVIVED. A refusal that names nothing is not a fix, it is a different
-    #: bug: an author with a mistyped parameter has to be able to find it.
-    assert "must be a number" in refusal.text, (
-        f"the refusal names neither the key nor the type it needed: {refusal.text[:240]}"
     )
 
 

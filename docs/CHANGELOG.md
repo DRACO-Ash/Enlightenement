@@ -2,6 +2,61 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.24 (2026-09-02)
+
+**What.** One major and one minor, both from the security gate's re-run, and **the major is a
+sentence I wrote in V0.26.23 claiming a control could not be held.** It could, and the gate built
+the counter-example in one line.
+
+**A measured universal that was false.** V0.26.23 recorded, in `training/drill.py` and in
+`docs/SECURITY.md`, that re-interpolating the exception in the ARITHMETIC refusal branch survives
+the suite "because no `ArithmeticError` message on CPython 3.12 carries its operand", and called
+the guard unheld rather than exploitable. `datetime.timedelta` interpolates its own argument:
+authored `days: -1000000007` raises
+`OverflowError: days=-1000000007; must have magnitude <= 999999999`, and with the exception
+restored that authored operand reached the anonymous 503 AND the manifest's withheld reasons with
+the whole suite green. **The shipped code never leaked; what failed was the control's holding and
+the basis I gave for not holding it** - which is the exact fault class this register names worst,
+because the claim is what stops anyone looking.
+
+Held now. The route-enumerating test is parameterised over both refusal branches, because the two
+need different shapes of bad value: a string cannot reach the arithmetic handler at all, since it
+fails coercion first, and a number cannot reach the coercion one. Each case asserts WHICH branch
+refused before it looks for the value, so the arithmetic case cannot silently fall back to the
+coercion path and hold nothing new. **Mutation: the combined mutant - bind the exception and
+interpolate it - is killed by the arithmetic case.** The earlier attempt at this mutation changed
+only the message and left `exc` unbound, so it died on a `NameError` in an unrelated test; a
+mutant that fails for the wrong reason is not a kill, and it was re-run properly.
+
+**MINOR: the caps were code points and every ceiling was bytes.** One `U+1F600` is one code point
+and four bytes, so a 64-code-point cap admitted 256, and the hostile tree poisoned its fields with
+`"X"`, which made the two units indistinguishable. The gate measured the consequence: with astral
+identifiers `GET /api/v1/me` served **17,407 bytes against the 16,384-byte ceiling the suite
+reported as held**. V0.26.23 made the competency NAME astral and missed this, because the field
+that dominates those bodies is the ID.
+
+`served_identifier`, `capped`, `bounded_reason` and `_bounded` all cut on BYTES now, through one
+`cut_to_bytes` helper that never splits a code point. `bounded_reason` carried its own copy of the
+arithmetic and now delegates to `capped`, which is how the unit reached it at all - converting
+`capped` alone left a 256-code-point reason, 1,024 bytes, on the anonymous manifest. **ASCII is
+byte-for-byte unchanged, so the persisted shortened-identifier format is not affected** and its
+golden-value test is untouched. `/api/v1/me` measures 8,047 bytes on the astral tree.
+
+**Held as a UNIT, and that was the finding inside the finding.** Reverting any single one of those
+cuts leaves every route ceiling satisfied: the bodies only cross a ceiling when several revert
+together. A control that fires only on the combination holds none of the parts, so the property is
+asserted directly on the four functions. **Five mutants, five killed** - the guard and the cut in
+`served_identifier`, the guard and the cut in `capped`, and `cut_to_bytes` returning its input.
+Two fixtures were needed rather than one: a 200-character astral string is over the cap in either
+unit and so cannot reach the early-return guard, which needs a string SHORT in code points and FAT
+in bytes. Twenty code points and eighty bytes, with the straddle asserted so a reshape cannot
+disarm it silently.
+
+**How it was verified.** Loop green on all seven legs: 991 passed, 2 skipped, coverage 97.57%.
+The `timedelta` counter-example was reproduced directly before the fix was written - one line,
+`timedelta(days=-1000000007)`, printing its own operand - rather than taken from the gate's
+report, and the arithmetic case of the route sweep then drove it through both anonymous surfaces.
+
 ## V0.26.23 (2026-09-02)
 
 **What.** The security gate's first look at this branch since V0.26.5, seventeen releases back.

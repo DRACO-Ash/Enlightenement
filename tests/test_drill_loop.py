@@ -34,6 +34,7 @@ from enlightenment.training.drill import (
     TRUNCATION_MARK,
     ServedDrill,
     bounded_reason,
+    capped,
 )
 
 CONTENT = Path(__file__).resolve().parents[1] / "content"
@@ -697,6 +698,79 @@ def test_a_renderer_arithmetic_fault_never_stops_the_container_starting(tmp_path
             client = TestClient(create_app())
         assert client.get("/healthz").status_code == HTTPStatus.OK, (drill_id, key)
         assert client.get("/livez").status_code == HTTPStatus.OK, (drill_id, key)
+
+
+def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
+    """The caps and the ceilings have to be in the SAME unit, and for one release they were not.
+
+    Every cap in this project is applied to a content string and every ceiling the anonymous-body
+    sweep asserts is in bytes. One `U+1F600` is one code point and four bytes, so a
+    64-code-point cap admitted 256 bytes - and the hostile tree poisoned its fields with `"X"`,
+    which made the two units indistinguishable. Measured by the security gate: with astral
+    identifiers `GET /api/v1/me` served 17,407 bytes against a 16,384-byte ceiling the suite
+    reported as held.
+
+    Asserted here as a UNIT rather than through a route, deliberately. Reverting any one of these
+    three cuts to code points leaves every route ceiling satisfied - the bodies only cross a
+    ceiling when several revert together - so a route-level assertion holds the trio and none of
+    the parts. A control that only fires on a combination is a control with three unheld halves.
+
+    The ASCII form is unchanged, and that is what makes this safe for a persisted format: bytes
+    and code points are the same number for ASCII, so the golden-value test that pins the
+    shortened identifier is untouched.
+    """
+    from enlightenment.training.drill import _bounded
+
+    astral = "\U0001f600" * 200
+    ascii_text = "D" * 200
+    #: SHORT in code points and FAT in bytes: twenty code points, eighty bytes. This is the shape
+    #: the early-return guard sees, and a guard that counts code points waves it straight through
+    #: - which is a separate mutation from the cut itself, and one a 200-character fixture cannot
+    #: reach because 200 is over the cap in either unit.
+    short_but_fat = "\U0001f600" * 20
+    assert len(short_but_fat) < MAX_CONTENT_STRING < len(short_but_fat.encode("utf-8")), (
+        "the fixture no longer straddles the two units, so the guard is not under test"
+    )
+    for label, result in (
+        ("served_identifier", served_identifier(short_but_fat)),
+        ("capped", capped(short_but_fat, MAX_CONTENT_STRING)),
+        ("_bounded", _bounded(short_but_fat)),
+    ):
+        assert len(result.encode("utf-8")) <= MAX_CONTENT_STRING, (
+            f"{label} passed a string of {len(short_but_fat)} code points and"
+            f" {len(short_but_fat.encode('utf-8'))} bytes through a bound of"
+            f" {MAX_CONTENT_STRING} at {len(result.encode('utf-8'))} bytes: its guard is"
+            " counting code points"
+        )
+
+    shortened = served_identifier(astral)
+    assert len(shortened.encode("utf-8")) <= MAX_CONTENT_STRING, (
+        f"served_identifier cut {len(shortened.encode('utf-8'))} bytes against a bound of"
+        f" {MAX_CONTENT_STRING}, so it is counting code points"
+    )
+    #: And the digest survives the cut, so two astral ids sharing a prefix still differ.
+    other = served_identifier(astral + "\U0001f601")
+    assert shortened != other, "two astral ids collapsed into one shortened form"
+
+    marked = capped(astral, MAX_CONTENT_STRING)
+    assert len(marked.encode("utf-8")) <= MAX_CONTENT_STRING, (
+        f"capped cut {len(marked.encode('utf-8'))} bytes against a bound of {MAX_CONTENT_STRING}"
+    )
+    assert marked.endswith(TRUNCATION_MARK), marked
+
+    reason = bounded_reason(astral)
+    assert len(reason.encode("utf-8")) <= MAX_WITHHOLD_REASON, (
+        f"bounded_reason cut {len(reason.encode('utf-8'))} bytes against a bound of"
+        f" {MAX_WITHHOLD_REASON}"
+    )
+
+    #: A cut never leaves a broken code point behind: the tail is dropped, not replaced.
+    assert "\ufffd" not in shortened + marked + reason, "a cut split a code point"
+
+    #: ASCII is unaffected in every one of them, which is the compatibility claim.
+    assert served_identifier(ascii_text) == served_identifier(ascii_text)
+    assert len(served_identifier(ascii_text)) == MAX_CONTENT_STRING
+    assert len(capped(ascii_text, MAX_CONTENT_STRING)) == MAX_CONTENT_STRING
 
 
 def test_a_renderer_arithmetic_fault_is_an_author_facing_503_not_a_500(
