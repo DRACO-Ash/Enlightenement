@@ -2,6 +2,25 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.22 (2026-09-02)
+
+**What.** One minor, in the release that existed to correct figures: the duplicated-span figure in
+the V0.26.21 entry was itself on an unstated basis. **A figure without a stated basis is not a
+figure, which is that entry's own thesis, so it is fixed at the same standard.**
+
+**Measured.** The longest common substring of `docs/SECURITY.md` rows 104 and 105 at `ebfc103` is
+249 characters, 247 stripped of the spaces that flank it - the duplicated sentence with its full
+stop. 246 is the sentence minus that full stop, which is a defensible span but not one the entry
+named. The corrected entry gives 247, says what it is a measurement of, and records what the old
+figure was.
+
+**Nothing else moved.** No source, no register row, no test. The engineering gate returned PASS on
+V0.26.21 with this as its only finding, and confirmed row 105 lost no live control property, that
+`audit.py:30-35` still cuts a log value at 256 with no marker or digest, that `drill.py:831` still
+calls `capped`, and that the nineteen-call-site claim holds at assertion granularity.
+
+**How it was verified.** Loop green on all seven legs: 986 passed, 2 skipped, coverage 97.49%.
+
 ## V0.26.21 (2026-09-02)
 
 **What.** One blocker, one major and four minors, every one of them in `docs/SECURITY.md` or in a
@@ -44,8 +63,11 @@ the new one fails.**
 
 **The row that the false figures came from was the worst accretion offender.** `docs/SECURITY.md:105`
 was 2,683 characters against a median control cell of 78 across the register's 156 data rows, and
-its tail duplicated 246 characters verbatim from the row above it - a clause about the withheld
-collections, which is the control row 104 owns. Restructured the way row 102 was: the two
+its tail duplicated a 247-character sentence verbatim from the row above it - a clause about the
+withheld collections, which is the control row 104 owns. **247 is the longest common substring of
+the two rows, stripped of the spaces that flank it**; it is 249 characters with them, and the 246
+first recorded here was the sentence minus its full stop, on a basis this entry did not state.
+V0.26.22 corrected it. Restructured the way row 102 was: the two
 structural lessons that explain the sweep's shape are kept in one sentence, the byte measurements
 and the per-release account go to this
 changelog, the duplicate and a double space are gone. 1,880 characters now.
