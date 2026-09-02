@@ -1101,7 +1101,7 @@ def test_a_serve_time_refusal_names_two_prefix_sharing_ids_distinctly(tmp_path: 
 
 
 def test_the_persisted_run_labels_are_bounded_and_distinct(tmp_path: Path) -> None:
-    """`RunRecord.procedure_id` and `.axis`, the last two standing exceptions, driven not excused.
+    """`RunRecord.procedure_id` and `.axis`, the last two sites once excused, driven now.
 
     Both were argued to be write-only, and this repository's register records that exact argument
     being made for `RunRecord.item_id` and being false: it was stored shortened, compared raw, and

@@ -2,6 +2,42 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.20 (2026-09-02)
+
+**What.** Two majors, both inside the single sentence written last release to replace a deleted
+clause, in the register cell whose own subject is claims that outlive their code. Fixed, and then
+the cell restructured, because the pattern was the cell and not the sentence.
+
+**The two false claims.** "The clause this replaces was one of them" attached the replaced clause to
+a count of four AUDIT ROWS - it lived in the register, not the changelog, and its species was the
+mirror image: the four claimed coverage they did not have, while this one claimed two fields were
+UNHELD in the same row that says they are driven. Too little coverage, not too much, so it cannot
+belong in that count; and "the last of them", eight words later, had lost its antecedent to the
+interposed aside. Separately, "Every count in this row is measured per site on both axes" is false
+at the first count a reader tests: "seven live instances", "six earlier sweeps", "an 85-character
+prefix", "cut at 256", "63 to 64" are none of those things. **A bolded universal that fails on
+inspection is exactly the defect this row exists to record.**
+
+**Then the cell, not the sentence.** Three consecutive releases have failed on prose in this one
+register cell, each new sentence carrying a new flaw, and the cell had reached 5,058 characters and
+sixteen sentences. **A register cell that grows a clause per round is how a claim outlives the code
+it describes.** It is 1,791 characters now and states the control, the fault it prevents, the
+persisted-format constraint and the one deliberate exception - and it says outright that the history
+lives in this changelog and not there. The register's promise is a control and a test that fails if
+it regresses, not a narrative.
+
+**Two smaller corrections.** The sibling test's opening line still carried "the last two standing
+exceptions" verbatim, one of the two positions V0.26.18 retired. And "two sentences after" was off
+by one on either reading of the pre-edit cell.
+
+**What is not in doubt.** The gate ran its own two-axis sweep over all nineteen call sites -
+**38 mutants, 38 killed, zero survivors** - reproduced the docstring's measured claim independently,
+and confirmed all 197 test names cited across `docs/SECURITY.md` resolve to real test functions. The
+engineering is verified; every failure for three releases has been in prose about it.
+
+**How it was verified.** Loop green on all seven legs: 985 passed, 2 skipped, coverage 97.49%. No
+source changed beyond the version stamp.
+
 ## V0.26.19 (2026-09-02)
 
 **What.** Two majors, both documentation integrity, both in the exact subject this sequence exists
@@ -24,8 +60,8 @@ who deleted that sibling would have consulted this docstring and believed both s
 held**, which is the fault named in four consecutive audit rows before this one.
 
 **A clause that outlived the sentence it justified.** The register said "they are enumerated in the
-changelog as unheld rather than folded into a count" two sentences after saying the same two fields
-are driven and are not exceptions - and the changelog enumerates them as driven, so the row
+changelog as unheld rather than folded into a count" immediately after saying the same two fields
+are driven - and the changelog enumerates them as driven, so the row
 contradicted both itself and the document it cited. The previous round's blocker was on this row's
 claims about these two fields; the corrected figures landed and the clause that motivated them did
 not. Re-anchored to what it now explains.
