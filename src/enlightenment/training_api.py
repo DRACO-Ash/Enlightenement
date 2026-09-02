@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from enlightenment.audit import log_event
 from enlightenment.content import CONTENT_DIR_VARIABLE, ContentPackage
+from enlightenment.identifiers import served_identifier
 from enlightenment.scoring import MAX_ANSWER_LENGTH
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
@@ -49,7 +50,6 @@ from enlightenment.training import (
     DrillLoop,
     bounded_reason,
 )
-from enlightenment.training.drill import served_identifier
 
 #: How many content errors either anonymous route serves. A NAMED constant across both, because
 #: the two literals drifted apart once already and the count cap is half of the bound: per-entry
@@ -403,7 +403,11 @@ def _register_drill(
         log_event(
             "drill.answered",
             actor=DEMONSTRATION_OPERATOR,
-            itemId=scored.item_id,
+            #: SHORTENED. `audit.py` cuts a log value at 256 with no marker and no digest, so two
+            #: ids differing only past 256 characters produced byte-identical log lines. This
+            #: module's own comment says a log line is a wire too, and this was the one identifier
+            #: sink that did not use the function at all.
+            itemId=served_identifier(scored.item_id),
         )
         return scored.as_dict()
 

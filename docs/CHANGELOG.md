@@ -2,6 +2,56 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.15 (2026-09-02)
+
+**What.** One blocker and three majors. A SEVENTH instance of the shortened-identifier class, the
+first outside `training/`; a second sink that used no shortening at all; an undeclared unheld wire;
+and the test written last release to hold the sixth instance, which held nothing.
+
+**The rule moved to where every layer can obey it.** Seven instances reached seven consecutive
+releases, each outside the scope of the sweep before it, because the function lived inside
+`training/drill.py`. `content/` cannot import from `training/`, so the seventh - `content/loader.py`
+composing a raw id into a validation error, the composite then cut at 256 on two anonymous surfaces -
+could not have used it even had somebody remembered. Two distinct authored ids served one identical
+string naming neither, with `location` and `msg`, the only actionable part, truncated away. **A rule
+a layer is unable to obey is not a rule**, so `served_identifier` now lives in
+`enlightenment.identifiers` and every layer imports it.
+
+**The sink that used nothing at all.** `training_api` passed a raw content id to `log_event`, and
+`audit.py` cuts a log value at 256 with no marker and no digest, so two ids differing only past 256
+characters produced byte-identical lines - in a module whose own comment says a log line is a wire
+too.
+
+**An undeclared unheld wire.** The `withheld_reasons` KEYS survived inversion while the sibling list
+beside them was held: two ids sharing a 64-character prefix collapsed to one key with the second
+reason overwriting the first, under-reporting the gap on the anonymous manifest. The previous
+release's "five call sites survive inversion" was false by omission.
+
+**And the test written to hold the sixth instance held nothing.** It compared whole 503 MESSAGES, and
+the two documents serialised to different sizes (138,369 against 139,695) because they came from two
+different source procedures - so the messages differed by their byte counts whatever the identifier
+did. Collapsing the name left the suite green. **Third consecutive audit row carrying a false
+killed-by-its-own-test claim**, which is why this release measures the unheld list rather than
+reasoning it. One template is cloned for both documents now, so they are byte-identical apart from
+the id, the sizes are asserted equal before the names are compared, and the assertion is on the
+extracted name.
+
+**What is unheld, MEASURED.** Four of seventeen call sites survive inversion: `RunRecord.procedure_id`
+and `.axis`, the refusal name in `_serve_one`, and the unread-params census key. All are write-only
+audit labels or a census dimension nothing compares, with every consumer read rather than assumed.
+The `drill.withheld` log label was on that list and is now driven rather than reasoned about, so it
+came off it.
+
+**A prose field that had an identity's cap.** The competency NAME used the silent bound while
+`capped` existed for exactly that, and the interface renders it as the primary label - a silent cut
+reads as the name somebody chose. It carries the truncation marker now. Prose is not an identity.
+
+**How it was verified.** Loop green on all seven legs: 980 passed, 2 skipped, coverage 97.43%. Six
+mutations, each killed by its own test: the 503 identifier with the sizes equalised, the
+`withheld_reasons` keys, the two log sinks, the loader error, and the reveal identifier. The unheld
+list was produced by inverting every call site one at a time and recording the result, not by
+reading the code and deciding.
+
 ## V0.26.14 (2026-09-02)
 
 **What.** Two majors. A SIXTH instance of the shortened-identifier class, outside the module a

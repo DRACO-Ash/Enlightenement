@@ -874,9 +874,14 @@ def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(
     entries = document["procedures"] if isinstance(document, dict) else document
     shared = "PROC-" + "Z" * 85
     #: Over the document budget, so both refuse, and distinguishable only past the cap.
-    for index, entry in enumerate(entries[:2]):
-        entry["id"] = f"{shared}-{index}"
-        entry["name"] = "Y" * (MAX_SERVED_DOCUMENT_BYTES * 2)
+    #: ONE template cloned for both, so the two documents are byte-identical apart from the id and
+    #: serialise to the SAME size. The first version used two different source procedures, so the
+    #: messages differed by their byte counts (138,369 against 139,695) whatever the name did:
+    #: comparing whole messages passed with the identifier collapsed, and the audit row claimed
+    #: mutation killed. Third consecutive round carrying a false killed-by-its-own-test claim.
+    template = dict(entries[0])
+    template["name"] = "Y" * (MAX_SERVED_DOCUMENT_BYTES * 2)
+    entries[:2] = [dict(template, id=f"{shared}-{index}") for index in range(2)]
     core.write_text(json.dumps(document), encoding="utf-8")
 
     app = create_app(
@@ -887,6 +892,7 @@ def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(
     )
     with TestClient(app) as client:
         named: list[str] = []
+        sizes: list[int] = []
         for index in range(2):
             response = client.get(f"/api/v1/content/procedure/{shared}-{index}")
             assert response.status_code == 503, (
@@ -894,9 +900,16 @@ def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(
             )
             message = response.json()["detail"]["message"]
             assert "document_too_large" in response.text, message
-            named.append(message)
+            #: The NAME, extracted, not the whole message. The message carries a byte count, so
+            #: comparing messages compares the counts and never reaches the identifier.
+            named.append(message.split("'")[1])
+            sizes.append(len(response.content))
+        assert sizes[0] == sizes[1], (
+            f"the two documents differ in size ({sizes}), so a message comparison would pass on the"
+            " byte count and this test would not reach the identifier"
+        )
         assert named[0] != named[1], (
-            f"two distinct authored documents are refused under one name: {named[0][:120]}"
+            f"two distinct authored documents are refused under one name: {named[0]}"
         )
 
 

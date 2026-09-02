@@ -19,6 +19,7 @@ import pytest
 
 from enlightenment.content import ContentPackage
 from enlightenment.generators import build_registry
+from enlightenment.identifiers import served_identifier
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
     DrillError,
@@ -991,7 +992,8 @@ def test_a_withheld_item_with_a_long_id_is_excluded_from_selection_not_only_decl
     )
 
     #: DECLARED. Shortened on the wire, so matched on the prefix rather than on equality.
-    named = loop.manifest()["items_without_a_resolvable_answer"]
+    manifest = loop.manifest()
+    named = manifest["items_without_a_resolvable_answer"]
     assert any(item_id.startswith("DRL-EXCLUDE-") for item_id in named), named
 
     #: AND EXCLUDED. Twelve serves, each answered so the schedule advances, and the withheld item
@@ -1013,6 +1015,72 @@ def test_a_withheld_item_with_a_long_id_is_excluded_from_selection_not_only_decl
     #: And the session progressed rather than stalling on one item, which is what the absorbing
     #: state looked like from the operator's side.
     assert len(set(served)) > 4, f"the loop stalled: {sorted(set(served))}"
+
+
+def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A log line is a wire, and a loader error reaches two anonymous routes.
+
+    `audit.py` cuts a log value at 256 characters with no marker and no digest, so two ids differing
+    only past 256 produced byte-identical lines - the one identifier sink that used no shortening at
+    all, in a module whose own comment says a log line is a wire too.
+
+    The loader was the seventh instance of the same class and the first outside `training/`: it
+    composed a RAW id into its error and the composite was then cut at 256, so two distinct authored
+    ids served one identical string naming neither, with `location` and `msg` - the only actionable
+    part - truncated away. `content/` cannot import from `training/`, which is why the function now
+    lives in `enlightenment.identifiers` where every layer can reach it. A rule a layer is unable to
+    obey is not a rule.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    shared = "DRL-" + "Q" * 300
+    for index, row in enumerate(rows[:2]):
+        row["id"] = f"{shared}-{index}"
+        #: An out-of-band value, so each row fails validation and produces its own error.
+        row["elo"] = -99999
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    package = ContentPackage(root)
+    package.load()
+    errors = [error for error in package.result.errors if "DRL-QQQ" in str(error)]
+    assert len(errors) == 2, [str(error)[:80] for error in errors]
+    assert errors[0] != errors[1], f"two authored ids produced one error string: {errors[0][:120]}"
+    for error in errors:
+        #: The diagnosis survives the cut, which is the half a bound alone destroys.
+        assert "elo" in str(error), f"the identifier ate the message: {str(error)[:160]}"
+
+    #: AND THE LOG LINE. Driven through the real emitter with the id the reveal carries.
+    lines: list[str] = []
+
+    class _Sink:
+        @staticmethod
+        def info(line: str) -> None:
+            lines.append(line)
+
+    monkeypatch.setattr("enlightenment.audit._event_logger", _Sink())
+    from enlightenment.audit import log_event
+
+    for index in range(2):
+        log_event("drill.answered", itemId=served_identifier(f"{shared}-{index}"))
+    assert lines[0] != lines[1], f"two ids produced one log line: {lines[0][:120]}"
+
+    #: AND `_withhold`'s own line, driven rather than asserted about, so the SITE is held and not
+    #: only the sink. Two prefix-sharing ids must appear as two lines in the append-only run log.
+    lines.clear()
+    loop = DrillLoop(
+        content=package,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    for index in range(2):
+        loop._withhold(f"{shared}-withheld-{index}", "injected")
+    withheld = [line for line in lines if "drill.withheld" in line]
+    assert len(withheld) == 2, withheld
+    assert withheld[0] != withheld[1], f"two withheld ids logged one line: {withheld[0][:120]}"
 
 
 def test_two_long_item_ids_do_not_collapse_into_one_on_the_manifest(tmp_path: Path) -> None:
@@ -1057,6 +1125,13 @@ def test_two_long_item_ids_do_not_collapse_into_one_on_the_manifest(tmp_path: Pa
         assert len(item_id) <= MAX_CONTENT_STRING, len(item_id)
         #: And it does not pretend to be what the author typed.
         assert item_id not in {row["id"] for row in rows}, item_id
+    #: THE REASONS DICT TOO, on the same response. Its keys survived inversion while the sibling
+    #: list beside it was held: two ids sharing a 64-character prefix collapsed to one key with the
+    #: second reason overwriting the first, under-reporting the gap on the anonymous manifest. An
+    #: undeclared unheld site, and a wire rather than an audit label.
+    assert len(manifest["withheld_reasons"]) == len(
+        manifest["items_without_a_resolvable_answer"]
+    ), sorted(manifest["withheld_reasons"])
 
 
 def test_a_withheld_item_id_is_bounded_before_it_reaches_the_unauthenticated_manifest(

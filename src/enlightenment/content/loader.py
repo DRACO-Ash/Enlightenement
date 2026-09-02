@@ -50,6 +50,7 @@ from enlightenment.content.models import (
     Rubric,
     ScenarioTemplate,
 )
+from enlightenment.identifiers import served_identifier
 
 #: Files the engine reads. The package carries more; these are the ones a missing copy of which
 #: stops the drill loop rather than degrading a later surface.
@@ -158,7 +159,13 @@ def _parse_all[Model](
         try:
             parsed.append(model(**record))
         except ValidationError as exc:
-            identifier = record.get("id", f"index {index}")
+            #: SHORTENED BEFORE COMPOSING. The composite is cut at 256 on two anonymous surfaces,
+            #: so a raw id longer than that ate the whole message: two distinct authored ids served
+            #: one identical string, naming neither, with `location` and `msg` - the only actionable
+            #: part - truncated away. Verbatim the fault `training/drill.py` documents and fixed at
+            #: `_serve_one`, one module along, which is why the function now lives in
+            #: `enlightenment.identifiers` where every layer can reach it.
+            identifier = served_identifier(str(record.get("id", f"index {index}")))
             first = exc.errors()[0]
             location = ".".join(str(part) for part in first.get("loc", ()))
             errors.append(f"{label} {identifier}: {location}: {first.get('msg', 'invalid')}")

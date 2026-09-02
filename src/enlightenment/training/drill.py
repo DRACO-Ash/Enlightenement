@@ -30,6 +30,8 @@ from typing import Any, Final
 from enlightenment.audit import log_event
 from enlightenment.content import ContentPackage, Drill
 from enlightenment.generators import GeneratorRegistry, board_for, compose
+from enlightenment.identifiers import MAX_CONTENT_STRING as _MAX_CONTENT_STRING
+from enlightenment.identifiers import served_identifier
 from enlightenment.scoring import (
     COMPUTED_SENTINEL,
     UNSCORABLE,
@@ -66,7 +68,9 @@ MAX_PENDING: Final = 512
 #: id, the competency axis. Capping the version alone left the other three unbounded from the
 #: same source into the same file, which is read whole on every request. `content/models.py`
 #: declares no maximum length on any of them.
-MAX_CONTENT_STRING: Final = 64
+#: Re-exported from `identifiers`, which is where the rule lives now: `content/` cannot import
+#: from `training/`, so a rule kept here was one a whole layer was unable to obey.
+MAX_CONTENT_STRING: Final = _MAX_CONTENT_STRING
 
 #: Longest withhold reason recorded, and the marker that says one was cut. A refusal message
 #: embeds the `repr` of the authored parameter that caused it, and `content/models.py` declares no
@@ -267,36 +271,6 @@ def _bounded(value: Any) -> str:
     """
     text = str(value or "")
     return text[:MAX_CONTENT_STRING] if len(text) > MAX_CONTENT_STRING else text
-
-
-def served_identifier(item_id: str) -> str:
-    """A content id shortened for the wire WITHOUT two distinct ids collapsing into one.
-
-    `_bounded` truncates silently, so ids sharing a prefix longer than the cap collided: 140
-    distinct authored ids on a 64-character prefix served ONE entry, under a synthetic id matching
-    nothing an author wrote, while the gap was 94 items wide. Two faults in one line - a fabricated
-    name on an operator-facing surface, which this project forbids outright, and a disclosure
-    understating a content gap 94-fold.
-
-    So a cut id keeps a short digest of the whole string. The digest is not a secret and not a
-    checksum anybody verifies: it exists so two shortened ids differ, and so a reader can see the id
-    was shortened rather than mistake it for what the author typed.
-
-    **Used for every shortened identifier, at every wire AND every storage sink**, because the fault
-    this closes recurred three times in one release from applying `_bounded` in one place and not
-    the next. The stored `RunRecord.item_id` goes through it too, so two long ids sharing a prefix
-    cannot merge their run histories.
-
-    **Named limits.** The digest is 32 bits, which is collision-free by a wide margin within a
-    25-entry cap but grindable by a determined content author; and `~` is not a reserved character,
-    so an author could write a 63-character id ending in a tilde and eight hex digits that reads as
-    shortened. Neither matters at these stakes and both are recorded rather than defended.
-    """
-    if len(item_id) <= MAX_CONTENT_STRING:
-        return item_id
-    digest = hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:8]
-    keep = MAX_CONTENT_STRING - len(digest) - 2
-    return f"{item_id[:keep]}~{digest}"
 
 
 def capped(value: Any, limit: int) -> str:
@@ -845,7 +819,11 @@ class DrillLoop:
             competencies.append(
                 {
                     "competency_id": served_identifier(competency.id),
-                    "name": _bounded(competency.name),
+                    #: `capped`, not `_bounded`: a competency name is operator-facing PROSE and
+                    #: the interface renders it as the primary label, so a silent cut reads as the
+                    #: name somebody chose. Prose is not an identity, so it needs the marker rather
+                    #: than the digest.
+                    "name": capped(competency.name, MAX_CONTENT_STRING),
                     "attempts": axis.attempts if axis is not None else 0,
                     "measured": axis is not None and axis.attempts > 0,
                     "estimate": None if axis is None else axis.accuracy,
