@@ -345,9 +345,11 @@ def authored_number(params: Mapping[str, Any], *keys: str, default: float) -> fl
     way - `days` and `cycles_shown` are the same span, `sites` and `sensors` the same count - and
     reading only the first left every item on the same window.
 
-    The key is put through `served_identifier`: a parameter NAME is a content-authored string with
-    no declared maximum length in `content/models.py`, so it is bounded and kept distinct on the
-    way into a message that reaches an anonymous route.
+    The key is put through `served_identifier`, and that is DEFENCE IN DEPTH rather than a live
+    need: every `*keys` argument at all 27 call sites is a code literal, so no content-authored
+    name reaches this interpolation today. It is kept because `content/models.py` declares no
+    maximum length on a `params` key, so a future call site deriving a key FROM the content would
+    otherwise put an unbounded authored string into a message that reaches an anonymous route.
     """
     for key in keys:
         if key in params:

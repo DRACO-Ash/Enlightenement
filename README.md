@@ -28,7 +28,7 @@ combined with a token.
 | `GET /livez`, `/ping`, `/health` | none | Liveness. Always 200, dependency-free |
 | `GET /healthz`, `/readyz` | none | Readiness. Proves storage with a real write; 503 with the errno when it cannot |
 | `GET /api/v1/diagnostics` | none | Secret-free read-out: booleans, lengths, errnos, own identity |
-| `GET /api/v1/sessions` | none | List training sessions. Emits an ETag, answers 304 |
+| `GET /api/v1/sessions` | none | List training sessions: the newest 25, with an untruncated `total` and a `truncated` flag beside them. Emits an ETag, answers 304. Capped because the route is unauthenticated and the full collection reached 4.7 MB at the store's own cap |
 | `POST /api/v1/sessions` | token | Create or fully upsert a session. Honours `If-Match`, 409 on a stale revision |
 | `PATCH /api/v1/sessions/{id}` | token | Partial update, anti-shrink. Honours `If-Match` |
 

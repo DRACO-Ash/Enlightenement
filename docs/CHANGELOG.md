@@ -2,6 +2,70 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.26 (2026-09-02)
+
+**What.** The engineering gate's first look since V0.26.21, across four releases of real source
+change. One major and five minors, all closed. **Two of the six were faults I introduced in a
+reflow and in a docstring, which no test could see.**
+
+**The major: a figure whose basis was missing, and the two bases disagree.** Three sites said
+`capped` of 30 astral characters "returned 128 bytes against a bound of 8". The gate measured 116
+at that limit and called the figure unreproducible. Both measurements are right, on different
+implementations: against the BYTE implementation the `max(0, ...)` fix corrects, 30 astral
+characters return **128 bytes at every limit below the marker's own length of 12** - so 128 at 8
+and 128 at the 11 the test drives; against the older CODE-POINT implementation the same input gives
+**116 at 8** and 128 at 11. The byte one is the basis that matters, because the negative slice is
+what the byte implementation introduced. **The defect was stating neither.** All three sites now
+carry the basis and both figures, which is the same correction V0.26.22 made for a different
+number, and the gate was right to fail it: a figure a reviewer cannot reproduce, sitting in an
+audit row, is the fault this sequence has spent five releases closing.
+
+**Three words lost in a reflow, and the served sentence was broken.** Fitting
+`served_identifier(generator)` onto the line dropped "names in params" from the unknown-generator
+refusal, so an author reached through the anonymous 503 read *"...is outside the canonical twelve.
+Legacy are traceability only and must not be implemented."* No test asserts that sentence, so it
+shipped green. Restored. **This is the cost of the reflows that the identifier work required**, and
+it is worth naming: a diagnostic sentence is a served artefact with no assertion behind it.
+
+**A comment that said the opposite of its own slice.** `stored[-25:]` preserves ascending order, so
+the newest row is LAST, and the comment said "Newest first". `docs/SECURITY.md` and the test both
+say and assert "newest kept", which is the substance, and the test asserts `sessions[-1]` - so the
+code and the control were right and only the comment was wrong.
+
+**A single trial quoted as a threshold.** "Two distinct astral ids collapse at about 29,173
+candidates" was one observed draw. The birthday bound puts a 32-bit digest's median first collision
+near 77,000, and an independent trial reached 94,696, so the observed figure errs conservative. The
+basis is stated now, because a bare number reads as the threshold rather than as one sample.
+
+**A justification that applies to no call site.** `authored_number`'s docstring said the key is
+shortened because "a parameter NAME is a content-authored string". Every `*keys` argument at all 27
+call sites is a code literal, so no authored name reaches that interpolation today. It is defence
+in depth against a future call site deriving a key from content, and it now says so.
+
+**And the route table did not record that the listing is partial.** `README.md` is the only place a
+reader learns what `GET /api/v1/sessions` returns, and it still described the whole collection.
+
+**What the gate proved that I had only claimed.** Rendered all 140 shipped drills at three seeds
+under `ebfc103` and `76115bb`: **byte-identical, 420 of 420**. Then 8,400 hostile permutations
+across the 27 converted keys: **zero render-or-raise flips and zero output differences**, the only
+change being the intended `TypeError` to `ContentParameterError`, which the same handler catches. A
+differential over 304 ASCII strings across four sinks and four limits: **zero mismatches** against
+the pre-change implementations, so the persisted identifier format is genuinely untouched. It also
+reproduced both mutation corrections I reported and re-derived nine figures independently, agreeing
+on eight; the ninth differs by a constant 7,890 bytes, which is synthetic timestamps against
+server-written ones.
+
+**One thing it found that is not a finding and should not be lost.** `products.py:352` coerces
+`authored[0]` and `authored[1]` without an ELEMENT-level `isinstance`, so my statement that the
+`float(authored)` forms are all guarded is not true at the element level. It is not exploitable,
+because the boundary reduces it to its exception class - which is the fail-closed property the
+whole fix is built on - but it is the honest correction to a claim of mine, and the next person to
+touch that function should convert it.
+
+**How it was verified.** Loop green on all seven legs: 991 passed, 2 skipped, coverage 97.57%. No behaviour changed: the
+diff is one interpolation restored, four comments, one docstring, `README.md`, `docs/CHANGELOG.md`
+and the version stamps.
+
 ## V0.26.25 (2026-09-02)
 
 **What.** The security gate returned **PASS** on V0.26.24 with five minors. All five closed. Three
@@ -20,8 +84,11 @@ reasoning was upside down as well: two units for one bound made the bound unmeas
 
 **A latent trap, closed rather than remembered.** `capped(value, limit)` with a limit at or below
 the truncation marker's own length passed a NEGATIVE budget to `cut_to_bytes`, where a negative
-slice drops bytes from the END instead of bounding: measured, `capped` of 30 astral characters at a
-limit of 8 returned 128 bytes. Unreachable today - every call site passes 64, 256, 512 or 1024 -
+slice drops bytes from the END instead of bounding: measured, `capped` of 30 astral characters returned 128 bytes at
+every limit below the marker's own length of 12, so 128 at a limit of 8 and 128 at the 11 the
+test drives. **The basis matters and is stated:** against the older CODE-POINT implementation the
+same input gave 116 bytes at 8, and the byte implementation is the one that introduced the
+negative slice. Unreachable today - every call site passes 64, 256, 512 or 1024 -
 and now `max(0, ...)`. **Stated precisely rather than as a clean invariant:** below the marker's
 length the result is the marker alone, twelve bytes, which does exceed the limit. That is a
 constant and not content's choice, and the property this function exists for is that content cannot
@@ -42,7 +109,10 @@ of the cap.
 served prefix of an astral identifier from 55 code points to 13, so for a multi-byte id the
 distinctness of a shortened name now rests on the 32-bit digest where the prefix used to carry most
 of it. Measured by the gate: two distinct astral ids collapse to one served name at about 29,173
-candidates. The actor is the trusted content author and the consequence is merged run history
+candidates - one trial, and a draw well below the median: the birthday bound puts a 32-bit
+digest's median first collision near 77,000 and an independent trial reached 94,696, so the
+observed figure errs conservative. The basis is stated because a bare number reads as a
+threshold. The actor is the trusted content author and the consequence is merged run history
 rather than a disclosure, so the digest is not widened - but "grindable by a determined content
 author" was written when the prefix was four times longer, and a reader would otherwise take it at
 face value. Recorded beside `DIGEST_CHARACTERS`.

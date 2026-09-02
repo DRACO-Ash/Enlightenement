@@ -84,8 +84,8 @@ def compose(
 
     if generator not in COMPOSITION_MODES:
         raise LookupError(
-            f"generator {served_identifier(generator)!r} is outside the canonical twelve. Legacy"
-            " are traceability only and must not be implemented."
+            f"generator {served_identifier(generator)!r} is outside the canonical twelve."
+            " Legacy names in params are traceability only and must not be implemented."
         )
 
     if generator == "probe":

@@ -308,10 +308,18 @@ def capped(value: Any, limit: int) -> str:
     if len(text.encode("utf-8")) <= limit:
         return text
     #: `max(0, ...)`, because a limit at or below the marker's own length made `keep` NEGATIVE and
-    #: `encoded[:negative]` drops bytes from the END rather than bounding: measured,
-    #: `capped(<30 astral characters>, 8)` returned 128 bytes against a bound of 8. Unreachable
-    #: today - every call site passes 64, 256, 512 or 1024 - so a latent trap for the next cap
-    #: somebody adds rather than a live fault, and cheaper to close than to remember.
+    #: `encoded[:negative]` drops bytes from the END rather than bounding.
+    #:
+    #: **Measured, with the basis stated because the two implementations disagree.** Against the
+    #: BYTE implementation this fix corrects, 30 astral characters returned 128 bytes at every
+    #: limit below `len(TRUNCATION_MARK)`, which is 12 - so 128 bytes at a limit of 8 and 128 at a
+    #: limit of 11, which is what the test drives. Against the older CODE-POINT implementation the
+    #: same input gave 116 bytes at 8 and 128 at 11. Both figures are real on their own basis, and
+    #: the byte one is the basis that matters here, because the negative slice is what the byte
+    #: implementation introduced.
+    #:
+    #: Unreachable today - every call site passes 64, 256, 512 or 1024 - so a latent trap for the
+    #: next cap somebody adds rather than a live fault, and cheaper to close than to remember.
     #:
     #: **Stated precisely rather than as a clean invariant:** below `len(TRUNCATION_MARK)` the
     #: result is the marker alone, 12 bytes, which can exceed the limit. That is a constant, not

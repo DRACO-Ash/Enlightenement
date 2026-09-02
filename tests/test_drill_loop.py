@@ -766,9 +766,13 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
 
     #: A limit too small to hold the marker yields the MARKER ALONE, and the point is that the
     #: result is a constant rather than content-sized. Before `max(0, ...)`, a negative `keep`
-    #: sliced bytes off the END and `capped(<30 astral>, 8)` returned 128 bytes against a bound of
-    #: 8, which is content setting the size of the thing meant to bound it. No call site passes a
-    #: limit this small; the trap is held so the next cap somebody adds cannot spring it.
+    #: sliced bytes off the END and 30 astral characters returned 128 bytes against a bound of
+    #: this limit, which is content setting the size of the thing meant to bound it. The figure is
+    #: 128 bytes at EVERY limit below the marker's own length of 12, on the byte implementation
+    #: the `max(0, ...)` corrects; the older code-point one gave 116 at a limit of 8. Both are
+    #: real on their own basis and the byte one is the one that matters, because the negative
+    #: slice is what the byte implementation introduced. No call site passes a limit this small;
+    #: the trap is held so the next cap somebody adds cannot spring it.
     tiny = capped("\U0001f600" * 30, len(TRUNCATION_MARK) - 1)
     assert tiny == TRUNCATION_MARK, tiny
     assert len(tiny.encode("utf-8")) == len(TRUNCATION_MARK), tiny

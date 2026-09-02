@@ -660,10 +660,11 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
             response.status_code = status.HTTP_304_NOT_MODIFIED
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"etag": etag})
         stored = snapshot["sessions"]
-        #: Newest first, because `storage._enforce_cap` keeps the newest and appends the fresh
-        #: entry at the end. `count` keeps its meaning - how many rows are in this response - and
-        #: `total` is the honest untruncated figure, so a short listing cannot read as the whole
-        #: dataset. Same shape as the withheld collections on the manifest.
+        #: The newest 25, in stored order, so the newest row is LAST: `storage._enforce_cap`
+        #: keeps the newest and appends the fresh entry at the end, and the slice preserves that
+        #: ascending order rather than reversing it. `count` keeps its meaning - how many rows
+        #: are in this response - and `total` is the honest untruncated figure, so a short
+        #: listing cannot read as the whole dataset. Same shape as the withheld collections.
         sessions = [dict(session) for session in stored[-MAX_SERVED_SESSIONS:]]
         return {
             "count": len(sessions),

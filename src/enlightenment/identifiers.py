@@ -29,7 +29,11 @@ MAX_CONTENT_STRING: Final = 64
 #: **The prefix carries far less of the distinctness for a multi-byte id than it used to, and that
 #: changes what "grindable" means here.** The cut became BYTES at V0.26.24, so an astral id keeps
 #: 13 code points of prefix where an ASCII one keeps 55. Measured over prefix-sharing astral ids,
-#: two distinct ids collapse to one served name at about 29,173 candidates, against a residual
+#: two distinct ids collapse to one served name at about 29,173 candidates - ONE TRIAL, and a
+#: draw well below the median: a 32-bit digest's median first collision is about 77,000 by the
+#: birthday bound, and an independent trial reached 94,696. The single draw is quoted because it
+#: is the one that was observed, and its basis is given because a bare figure reads as a
+#: threshold. It errs on the conservative side, against a residual
 #: declared when the prefix was four times longer. The actor is the trusted content author and the
 #: consequence is merged run history rather than a disclosure, so the digest is not widened -
 #: but the figure is recorded here, because the sentence above was written about a different
