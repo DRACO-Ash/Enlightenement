@@ -161,6 +161,26 @@ def migrate(snapshot: Snapshot) -> Snapshot:
         # ValueError, not TypeError: this is a data-validation failure at the store
         # boundary, which every caller already handles, not a programming type error.
         raise ValueError("stored snapshot is malformed: 'sessions' is not a list")  # noqa: TRY004
+    # The ELEMENTS, not only the container. Checking the list and not its members left a shape
+    # refused nowhere, and it failed two different ways:
+    #
+    # ● `{"rev": 1, "sessions": [1]}` loaded, and `dict(session)` then raised `TypeError` - not
+    #   `ValueError` - so it escaped the 503 this module's callers map and reached an anonymous
+    #   caller as a **500 on `GET /api/v1/sessions`**, with both gated writes 500 as well and
+    #   `/healthz` still 200. An operator's screenshot shows a healthy pod serving tracebacks.
+    # ● Worse: `[[["id", "GHOST-ONE"], ["title", "Fabricated"]]]` is a list of PAIRS, and `dict()`
+    #   coerces it into a session row nobody ever wrote. Measured, `sessions()` returned
+    #   `[{"id": "GHOST-ONE", "title": "Fabricated"}]` and the anonymous listing served it with an
+    #   honest-looking `count` and `total`. **That is a fabricated record on a read boundary**,
+    #   which breaks the hard rule against inventing data outright, and no length cap or byte
+    #   ceiling can see it because the row is well-formed once coerced.
+    #
+    # The precondition is write access to the data volume, the actor this threat model puts out of
+    # scope - the same precondition as the surrogate refusal above, and refused here for the same
+    # stated reason: dataset integrity sits above its secrecy, and a route that 500s on its own
+    # data cannot be diagnosed from a screenshot.
+    if any(not isinstance(entry, dict) for entry in migrated["sessions"]):
+        raise ValueError("stored snapshot is malformed: 'sessions' holds a non-object entry")
     if not isinstance(migrated["rev"], int) or isinstance(migrated["rev"], bool):
         raise ValueError("stored snapshot is malformed: 'rev' is not an integer")  # noqa: TRY004
     migrated["schemaVersion"] = SCHEMA_VERSION

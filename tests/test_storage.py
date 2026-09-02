@@ -197,9 +197,43 @@ def test_migrate_preserves_unrecognised_fields() -> None:
     assert migrated["rev"] == 0
 
 
-def test_migrate_rejects_a_malformed_sessions_field() -> None:
+@pytest.mark.parametrize("bad_sessions", ["nope", 1, 1.5, True, None, {}])
+def test_migrate_rejects_a_malformed_sessions_field(bad_sessions: object) -> None:
+    """Parametrised like its `rev` sibling, which was already driven over five shapes.
+
+    This drove `"nope"` alone, and the gap that let through was one layer down rather than here:
+    the container was checked and its MEMBERS were not. See the element test below.
+    """
     with pytest.raises(ValueError, match="'sessions' is not a list"):
-        migrate({"sessions": "nope"})
+        migrate({"sessions": bad_sessions})
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        1,
+        "a string",
+        None,
+        True,
+        1.5,
+        #: A list of PAIRS, which is the dangerous one: `dict()` coerces it into a session row
+        #: nobody wrote. Measured before this check existed, `sessions()` returned
+        #: `[{"id": "GHOST-ONE", "title": "Fabricated"}]` and the anonymous listing served it with
+        #: an honest-looking count and total. A fabricated record on a read boundary.
+        [["id", "GHOST-ONE"], ["title", "Fabricated"]],
+    ],
+)
+def test_migrate_rejects_a_sessions_entry_that_is_not_an_object(entry: object) -> None:
+    """The container was checked and its ELEMENTS were not, so this shape was refused nowhere.
+
+    Two distinct failures came out of it: a `TypeError` from `dict(session)`, which escapes the
+    `ValueError` every caller maps and so reached an anonymous caller as a **500** while
+    `/healthz` stayed 200; and the pair-list coercion above, which invents a record. The first is
+    the fail-open this release sequence exists to remove; the second breaks the hard rule against
+    inventing data, and no length cap can see it because the row is well-formed once coerced.
+    """
+    with pytest.raises(ValueError, match="'sessions' holds a non-object entry"):
+        migrate({"rev": 1, "sessions": [entry]})
 
 
 @pytest.mark.parametrize("bad_rev", ["1", 1.5, True, None, []])

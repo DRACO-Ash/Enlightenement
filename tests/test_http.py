@@ -1557,9 +1557,10 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
     `/livez`, `/ping`, `/health` and `/` are dependency-free and stay 200 while the storage-proving
     paths go 503. A downstream fault must never restart a healthy container.
     """
-    #: ALL FIVE shapes the store refuses, not the three the first version drove. The other two -
-    #: not UTF-8 and nested too deep - were uncovered lines in `storage.py` that this 503 depends
-    #: on, so the control was verified for three fifths of its own inputs.
+    #: EVERY shape the store refuses. The first version drove three, then five, and the claim
+    #: "all five" was itself the fault: there was a SIXTH, refused nowhere. A binding test that
+    #: binds less than it claims is what stops anyone looking, so this list is the enumeration and
+    #: `test_migrate_rejects_a_sessions_entry_that_is_not_an_object` holds the member shapes.
     corrupt: dict[str, str | bytes] = {
         #: The NEWLINE, the forged object and the SURROGATE are all in the SAME key, and that
         #: matters: the walk reports the pointer of the string it found, so a fixture with the
@@ -1575,6 +1576,19 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
         "not JSON": "{not json",
         "top level not an object": "[]",
         "nested too deep": "[" * 200_000,
+        #: The SIXTH shape, and the one that escaped every branch: `sessions` was checked to be a
+        #: LIST and its elements were not checked at all. `dict(session)` then raised `TypeError`
+        #: rather than `ValueError`, so it slipped past the mapping every caller relies on and
+        #: reached an anonymous caller as a 500 with `/healthz` still 200.
+        "a sessions entry that is not an object": '{"rev": 1, "sessions": [1]}',
+        #: And the dangerous half of it. A list of PAIRS is coerced by `dict()` into a session row
+        #: NOBODY WROTE: measured, the anonymous listing served
+        #: `{"id": "GHOST-ONE", "title": "Fabricated"}` with an honest-looking count and total. A
+        #: fabricated record on a read boundary, which no length cap or byte ceiling can see
+        #: because the row is well-formed once coerced.
+        "a sessions entry coerced from a pair list": json.dumps(
+            {"rev": 1, "sessions": [[["id", "GHOST-ONE"], ["title", "Fabricated"]]]}
+        ),
         #: Valid bytes, not valid UTF-8. The BOM is load-bearing: bare UTF-16LE of ASCII is
         #: nothing but ASCII interleaved with NULs, and a NUL is perfectly valid UTF-8 - so
         #: without `\xff\xfe` this decoded cleanly and failed one branch further on as a JSON
@@ -1606,6 +1620,10 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
             assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
             #: The message names the fault and never a stored value.
             assert "s-1" not in listing.text, listing.text[:200]
+            #: And no FABRICATED record reaches the wire. This is the assertion the pair-list
+            #: shape exists for: a 503 is the point, but a 200 carrying an invented session would
+            #: be the worse outcome and a status check alone cannot tell them apart.
+            assert "GHOST-ONE" not in listing.text, listing.text[:200]
             #: SINGLE LINE and bounded. The pointer carries stored KEY NAMES, and `app.py` logs
             #: this text with `_logger.exception`, whose traceback renders it verbatim - so a key
             #: containing a newline forged a second log line, raw surrogate and all, past the

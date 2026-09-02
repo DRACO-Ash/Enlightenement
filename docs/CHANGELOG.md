@@ -2,6 +2,56 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.31 (2026-09-02)
+
+**What.** One major, and it is the worst finding of this sequence because it is not a crash: **the
+store served a session record nobody wrote.**
+
+**A shape refused nowhere, failing two different ways.** `migrate` validated that `sessions` is a
+LIST and never validated its MEMBERS.
+
+● `{"rev": 1, "sessions": [1]}` loaded clean. `dict(entry)` then raised `TypeError` - not
+  `ValueError` - so it escaped the mapping every caller relies on and reached an anonymous caller
+  as a **500 on `GET /api/v1/sessions`**, with both gated writes 500 and `/healthz` still 200. An
+  operator's screenshot shows a healthy pod serving tracebacks, which is exactly the diagnosis
+  failure the App Store health contract exists to prevent.
+● **And the half that matters more.** `[[["id", "GHOST-ONE"], ["title", "Fabricated"]]]` is a list
+  of PAIRS, and `dict()` coerces it into a session row. Measured: `sessions()` returned
+  `[{"id": "GHOST-ONE", "title": "Fabricated"}]` and the anonymous listing served it with an
+  honest-looking `count` and `total`. **A fabricated record on a read boundary.** No length cap
+  and no byte ceiling can see it, because the row is well-formed once coerced - and it breaks the
+  hard rule against inventing data outright, at a surface an unauthenticated caller reads.
+
+The element check sits beside the container check and raises the same `ValueError`, so it lands in
+the 503 added last release. Both shapes verified: 503 on the read and both writes, `/livez` 200,
+and `GHOST-ONE` in no body.
+
+**The claim was the fault, not the code.** Last release asserted "**ALL FIVE** shapes the store
+refuses" and this register said "every malformed shape". There was a sixth. That is the pattern
+`CLAUDE.md` names as worse than no test - a binding test that binds less than it claims, because
+the claim is what stops anyone looking - and the enumeration was mine, written one release after
+the gate had already caught me claiming a walk was complete when it was not. `test_http.py`'s
+comment is now the enumeration and the member shapes are held by their own test; two register
+sentences are corrected.
+
+**And the neighbouring test had been driven over exactly one input.**
+`test_migrate_rejects_a_malformed_sessions_field` drove `"nope"` while its `rev` sibling three
+lines below was parametrised over five shapes. Both are parametrised now - the container over six
+shapes, the members over six including the pair-list coercion.
+
+**Mutation: three mutants, three killed**, and the middle one is the one worth naming: an element
+check written as `isinstance(entry, dict | list)` - the shape a careless fix would take - still
+admits the pair-list and still fabricates, and it dies. Removing the element check dies on the
+route test; removing the container check dies on the migration test.
+
+**Where the gate found it, and why I did not.** I enumerated the shapes a STRING can be held in,
+which was the previous round's finding, and stopped there. The snapshot's own schema has a shape
+enumeration too, and it was missing the same kind of member. The gate's words for it: "The gap is
+one layer up." Recorded because the lesson is not about surrogates or sessions - it is that
+finishing one enumeration is not evidence about the next one.
+
+**How it was verified.** Loop green on all seven legs: 1,007 passed, 2 skipped, coverage 97.81%.
+
 ## V0.26.30 (2026-09-02)
 
 **What.** One major and five minors, and **the major is a branch of the boundary walk I split last
