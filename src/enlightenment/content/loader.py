@@ -179,6 +179,9 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _unencodable_strings(node: Any, pointer: str = "") -> tuple[str, int] | None:
     """A JSON pointer to ONE string that cannot be encoded as UTF-8, and how many there are.
 
+    Walks KEYS as well as values, so a surrogate in either is refused here rather than reaching a
+    serve site.
+
     A separate walk rather than a try around `json.dumps`, because the diagnosis an author needs is
     WHERE, and a serialiser exception gives a character position in a rendering they never saw.
 
@@ -199,7 +202,16 @@ def _unencodable_strings(node: Any, pointer: str = "") -> tuple[str, int] | None
                 total += 1
                 first = where or "/" if first is None else first
         elif isinstance(current, dict):
-            stack.extend((value, f"{where}/{key}") for key, value in current.items())
+            #: KEYS as well as values. The first version walked values only, and nothing crashed -
+            #: but only by downstream accident: a surrogate in a `params` key is replaced by
+            #: `served_identifier` on its way to the census, and one in a modelled record's key is
+            #: refused by pydantic's own parser with a message that names no field. Measured: a
+            #: surrogate `params` key loaded with ZERO errors and every route answered 200. Held by
+            #: luck in two different places is the pattern this whole boundary exists to replace,
+            #: so the walk is complete rather than relying on either.
+            for key, value in current.items():
+                stack.append((key, f"{where}/{key}"))
+                stack.append((value, f"{where}/{key}"))
         elif isinstance(current, list):
             stack.extend((value, f"{where}/{index}") for index, value in enumerate(current))
     return (first, total) if first is not None else None

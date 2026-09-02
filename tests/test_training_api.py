@@ -1149,6 +1149,12 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
     #: PROSE, not an id. An id is pattern-validated on some models and this must hold for the
     #: fields nothing validates, which is where the second 500 lived.
     rows[0]["prompt"] = f"SECRET-AUTHORED-PROSE-{LONE_SURROGATE}"
+    #: And a KEY, because the walk covered values only at first and nothing crashed - by
+    #: downstream accident in two different places, not by the boundary. A surrogate `params` key
+    #: loaded with zero errors and every route answered 200, because `served_identifier` replaces
+    #: it on the way to the census; a surrogate key in a modelled record is refused by pydantic
+    #: with a message naming no field. Held by luck twice is what this boundary replaces.
+    rows[1].setdefault("stimulus", {}).setdefault("params", {})[f"key{LONE_SURROGATE}"] = 1
     (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
     assert "\\ud800" in (root / "drills.json").read_text(encoding="utf-8"), (
         "the fixture no longer writes the surrogate as a JSON escape, so it is not under test"
@@ -1168,7 +1174,17 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
         joined = " ".join(str(error) for error in errors)
         assert "lone surrogate" in joined, joined[:300]
         assert "drills.json" in joined, joined[:300]
-        assert "/prompt" in joined, f"the error names no JSON pointer: {joined[:300]}"
+        #: A pointer to ONE of the two, not to a chosen one: `_unencodable_strings` walks with an
+        #: explicit stack and its docstring says outright that the pointer is the first the
+        #: traversal reaches rather than the first in document order. Asserting `/prompt` here
+        #: assumed an ordering the code refuses to promise, and it failed the moment the key half
+        #: of the walk landed - a test asserting more than the contract, caught by the contract.
+        assert "/drills/0/prompt" in joined or "/stimulus/params/key" in joined, (
+            f"the error names no JSON pointer: {joined[:300]}"
+        )
+        #: Two instances, so the COUNT is real and the KEY was seen as well as the value. Without
+        #: the key half of the walk this reads 1, which is the mutation that holds it.
+        assert "2 string(s)" in joined, f"the walk missed the key: {joined[:300]}"
         assert "SECRET-AUTHORED-PROSE" not in joined, (
             f"the load error quoted the authored value that failed it: {joined[:300]}"
         )

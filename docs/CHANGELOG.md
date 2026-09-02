@@ -2,6 +2,39 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.28 (2026-09-02)
+
+**What.** The gap I put to the security gate rather than wait for it to be found twice: the
+surrogate walk added last release inspected dict VALUES and not KEYS. Closed, with the honest
+finding that **nothing crashed through a key, and the reason was downstream luck in two separate
+places rather than the boundary.**
+
+**Measured before the fix.** A lone surrogate in a `stimulus.params` KEY loaded with **zero
+errors** and every route answered **200**. Not a crash - but not a control either:
+`served_identifier` happens to replace it on the way to the unread-parameter census, and a
+surrogate key in a MODELLED record is refused by pydantic's own parser with a message naming no
+field ("procedure PROC-MNV: : Input should be a valid string"). Two different accidents, in two
+different layers, neither written down and neither asserted. **Held by luck in two places is the
+exact pattern this boundary was built to replace**, so the walk covers keys now: a surrogate in a
+key or a value is refused at the load boundary and the tree fails closed to the documented 503.
+Measured after: all three key fixtures report one error and 503 on every content route.
+
+**And my own test asserted more than the contract.** `_unencodable_strings` walks with an explicit
+stack and its docstring says outright that the pointer is the first the traversal REACHES and not
+the first in document order - that wording was added last release precisely to avoid a false
+precision. My test then asserted the pointer names `/prompt`, which assumed the ordering the code
+refuses to promise, and it failed the moment the key half of the walk landed. The contract caught
+a test that over-claimed against it, which is the right way round for once. It now asserts the
+pointer names one of the two known locations, and asserts the COUNT is two, which is what actually
+proves the key was seen.
+
+**Mutation: three mutants, three killed.** Keys dropped from the walk; the boundary check removed;
+the count pinned at one. The first is the one that matters, and it is red now where the same
+mutation would have been invisible a release ago.
+
+**How it was verified.** Loop green on all seven legs: 992 passed, 2 skipped, coverage 97.71%. The three key fixtures and
+the three original surrogate fixtures all re-run and all fail closed.
+
 ## V0.26.27 (2026-09-02)
 
 **What.** The security gate returned **PASS** at head with six minors. One of them was rated MINOR
