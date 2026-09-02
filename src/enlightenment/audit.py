@@ -14,10 +14,22 @@ import json
 import logging
 from typing import Any
 
+from enlightenment.identifiers import cut_to_bytes
+
 #: Cap on the actor field. Long enough for a real identity, short enough to bound growth.
 MAX_ACTOR_LENGTH = 64
 
-#: Cap on any other reflected value written to a log line (a request path, for example).
+#: Cap on any other reflected value written to a log line (a request path, for example), in BYTES
+#: of UTF-8. It cut CODE POINTS until V0.26.25, which left this sink the last one in the old unit
+#: after `docs/SECURITY.md` had begun asserting that every ceiling here is in bytes. Measured: one
+#: anonymous request whose path carried 400 emoji produced a `request.rejected` line of 2,945
+#: bytes against a documented cap of 256.
+#:
+#: **The escaping factor is stated rather than defended.** A log line renders with
+#: `ensure_ascii=True`, so one astral character becomes twelve ASCII characters on the way out: a
+#: value cut to 256 bytes is at most 64 astral characters and so at most 768 rendered characters.
+#: Bounded, and a constant multiple rather than content's choice, which is the property this cap
+#: exists for.
 MAX_LOG_VALUE_LENGTH = 256
 
 #: Placeholder recorded when no identity could be resolved.
@@ -32,7 +44,7 @@ def sanitise_log_value(raw: str | None, *, limit: int = MAX_LOG_VALUE_LENGTH) ->
     if not raw:
         return ""
     cleaned = "".join(ch for ch in raw if ch.isprintable() and ch not in "\r\n")
-    return cleaned.strip()[:limit]
+    return cut_to_bytes(cleaned.strip(), limit)
 
 
 def sanitise_actor(raw: str | None, *, limit: int = MAX_ACTOR_LENGTH) -> str:

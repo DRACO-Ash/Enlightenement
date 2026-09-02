@@ -711,7 +711,7 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     reported as held.
 
     Asserted here as a UNIT rather than through a route, deliberately. Reverting any one of these
-    three cuts to code points leaves every route ceiling satisfied - the bodies only cross a
+    four cuts to code points leaves every route ceiling satisfied - the bodies only cross a
     ceiling when several revert together - so a route-level assertion holds the trio and none of
     the parts. A control that only fires on a combination is a control with three unheld halves.
 
@@ -763,6 +763,15 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
         f"bounded_reason cut {len(reason.encode('utf-8'))} bytes against a bound of"
         f" {MAX_WITHHOLD_REASON}"
     )
+
+    #: A limit too small to hold the marker yields the MARKER ALONE, and the point is that the
+    #: result is a constant rather than content-sized. Before `max(0, ...)`, a negative `keep`
+    #: sliced bytes off the END and `capped(<30 astral>, 8)` returned 128 bytes against a bound of
+    #: 8, which is content setting the size of the thing meant to bound it. No call site passes a
+    #: limit this small; the trap is held so the next cap somebody adds cannot spring it.
+    tiny = capped("\U0001f600" * 30, len(TRUNCATION_MARK) - 1)
+    assert tiny == TRUNCATION_MARK, tiny
+    assert len(tiny.encode("utf-8")) == len(TRUNCATION_MARK), tiny
 
     #: A cut never leaves a broken code point behind: the tail is dropped, not replaced.
     assert "\ufffd" not in shortened + marked + reason, "a cut split a code point"

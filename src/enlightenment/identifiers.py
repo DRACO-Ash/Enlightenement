@@ -25,6 +25,15 @@ MAX_CONTENT_STRING: Final = 64
 #: grindable by a determined content author. `~` is not reserved, so an author could write a
 #: 63-character id ending in a tilde and eight hex digits that reads as shortened. Both are recorded
 #: rather than defended, because neither matters at these stakes.
+#:
+#: **The prefix carries far less of the distinctness for a multi-byte id than it used to, and that
+#: changes what "grindable" means here.** The cut became BYTES at V0.26.24, so an astral id keeps
+#: 13 code points of prefix where an ASCII one keeps 55. Measured over prefix-sharing astral ids,
+#: two distinct ids collapse to one served name at about 29,173 candidates, against a residual
+#: declared when the prefix was four times longer. The actor is the trusted content author and the
+#: consequence is merged run history rather than a disclosure, so the digest is not widened -
+#: but the figure is recorded here, because the sentence above was written about a different
+#: prefix and a reader would otherwise take it at face value.
 DIGEST_CHARACTERS: Final = 8
 DIGEST_MARKER: Final = "~"
 

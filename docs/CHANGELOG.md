@@ -2,6 +2,62 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.25 (2026-09-02)
+
+**What.** The security gate returned **PASS** on V0.26.24 with five minors. All five closed. Three
+were real code faults and two were prose, and the shape of the batch is worth recording: **every one
+of them was a consequence of the byte-unit change the release before, in a place that change did
+not reach.**
+
+**A constant's comment arguing for the unit it no longer used.** `MAX_WITHHOLD_REASON` still read
+"256 CODE POINTS, not bytes, and the difference is 4x", with the code-point cap "kept
+deliberately" because a byte cap "has to avoid splitting a code point". Both sentences were false
+the moment `bounded_reason` began delegating to `capped`. Measured: `bounded_reason` of 300 astral
+characters is 256 bytes, not the 988 the comment predicts, and the served ceiling is 6.4 kB, not
+the 138 kB a reviewer computes from it. **The old comment claimed its purpose was that the figure
+a reviewer computes should be the figure the wire carries, while stating the opposite** - and the
+reasoning was upside down as well: two units for one bound made the bound unmeasured, not generous.
+
+**A latent trap, closed rather than remembered.** `capped(value, limit)` with a limit at or below
+the truncation marker's own length passed a NEGATIVE budget to `cut_to_bytes`, where a negative
+slice drops bytes from the END instead of bounding: measured, `capped` of 30 astral characters at a
+limit of 8 returned 128 bytes. Unreachable today - every call site passes 64, 256, 512 or 1024 -
+and now `max(0, ...)`. **Stated precisely rather than as a clean invariant:** below the marker's
+length the result is the marker alone, twelve bytes, which does exceed the limit. That is a
+constant and not content's choice, and the property this function exists for is that content cannot
+set the size. Marking is not dropped to make the arithmetic tidy, because a silent cut is the fault
+the function is there to prevent.
+
+**The last sink still counting code points.** `audit.sanitise_log_value` cut 256 CODE POINTS while
+`docs/SECURITY.md` had begun asserting that every ceiling here is in bytes. The gate measured the
+consequence: one anonymous request whose path carried 400 emoji produced a `request.rejected` line
+of **2,945 bytes against a documented cap of 256**, because a log line renders with
+`ensure_ascii=True` and one astral character becomes twelve ASCII characters. Bounded, so the fault
+was an 11.5x amplification rather than unbounded growth, and no injection or secret followed. It
+cuts bytes now, and **the escaping factor is asserted rather than described**: a value cut to 256
+bytes is at most 64 astral characters and so at most 768 rendered characters, a constant multiple
+of the cap.
+
+**A residual whose declaration was written about a different prefix.** The byte cut shrinks the
+served prefix of an astral identifier from 55 code points to 13, so for a multi-byte id the
+distinctness of a shortened name now rests on the 32-bit digest where the prefix used to carry most
+of it. Measured by the gate: two distinct astral ids collapse to one served name at about 29,173
+candidates. The actor is the trusted content author and the consequence is merged run history
+rather than a disclosure, so the digest is not widened - but "grindable by a determined content
+author" was written when the prefix was four times longer, and a reader would otherwise take it at
+face value. Recorded beside `DIGEST_CHARACTERS`.
+
+**And one miscount.** The docstring justifying the unit-level assertion said "any one of these
+three cuts" where the test asserts four and the register says four.
+
+**Mutation: two new mutants, two killed.** The negative budget restored, killed by the byte-unit
+test; the audit sink reverted to code points, killed by `test_a_reflected_value_is_length_bounded`
+after that test was given the astral case it lacked. **The audit mutant SURVIVED the first run** -
+the sink's byte cut was unheld when I made it, which is the same defect as the change it was
+fixing, so it is recorded rather than quietly repaired.
+
+**How it was verified.** Loop green on all seven legs: 991 passed, 2 skipped, coverage 97.57%.
+
 ## V0.26.24 (2026-09-02)
 
 **What.** One major and one minor, both from the security gate's re-run, and **the major is a

@@ -94,12 +94,14 @@ MAX_CONTENT_STRING: Final = _MAX_CONTENT_STRING
 #: legitimate diagnosis therefore survives whole, and a cut one SAYS it was cut, because a
 #: truncated explanation that reads as complete sends an author looking in the wrong place.
 #:
-#: **256 CODE POINTS, not bytes, and the difference is 4x.** Measured: 256 astral characters are
-#: 988 UTF-8 bytes, so the 140-item ceiling is about 138 kB rather than the 36 kB the naive
-#: reading of "256 x 140" suggests. Stated rather than silently corrected, because the figure a
-#: reviewer computes from this constant should be the figure the wire carries. The code-point cap
-#: is kept deliberately: a byte cap has to avoid splitting a code point, and buying 4x on a
-#: response that is already bounded is not worth a new way to emit invalid UTF-8.
+#: **256 BYTES of UTF-8, which is the unit the wire is measured in.** It was 256 CODE POINTS until
+#: V0.26.25, under a comment arguing the difference was not worth avoiding a split code point -
+#: and that reasoning was upside down, because every ceiling this project asserts is in bytes, so
+#: two units for one bound made the bound unmeasured rather than generous. Measured then: 256
+#: astral characters are 1,024 bytes and the 25-entry served ceiling was about 25 kB. Measured
+#: now: `bounded_reason` returns 256 bytes for any input, so that ceiling is 6.4 kB. The figure a
+#: reviewer computes from this constant is now the figure the wire carries, which is what the old
+#: comment claimed to be doing while stating the opposite.
 MAX_WITHHOLD_REASON: Final = 256
 
 #: How many unread parameter names the census serves. Named rather than a literal in the slice,
@@ -305,7 +307,19 @@ def capped(value: Any, limit: int) -> str:
     #: own length is the same in either unit.
     if len(text.encode("utf-8")) <= limit:
         return text
-    return cut_to_bytes(text, limit - len(TRUNCATION_MARK)) + TRUNCATION_MARK
+    #: `max(0, ...)`, because a limit at or below the marker's own length made `keep` NEGATIVE and
+    #: `encoded[:negative]` drops bytes from the END rather than bounding: measured,
+    #: `capped(<30 astral characters>, 8)` returned 128 bytes against a bound of 8. Unreachable
+    #: today - every call site passes 64, 256, 512 or 1024 - so a latent trap for the next cap
+    #: somebody adds rather than a live fault, and cheaper to close than to remember.
+    #:
+    #: **Stated precisely rather than as a clean invariant:** below `len(TRUNCATION_MARK)` the
+    #: result is the marker alone, 12 bytes, which can exceed the limit. That is a constant, not
+    #: content's choice, and the property this function exists for is that CONTENT cannot set the
+    #: size. Marking is not dropped to satisfy the arithmetic: a silent cut is the fault this
+    #: whole function is here to prevent.
+    keep = max(0, limit - len(TRUNCATION_MARK))
+    return cut_to_bytes(text, keep) + TRUNCATION_MARK
 
 
 def bounded_reason(reason: str) -> str:

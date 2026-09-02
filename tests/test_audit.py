@@ -40,7 +40,28 @@ def test_no_control_character_survives_a_reflected_value(hostile: str) -> None:
 
 
 def test_a_reflected_value_is_length_bounded() -> None:
+    """Bounded in BYTES, which is the unit the log line is measured in.
+
+    This sink cut CODE POINTS until V0.26.25, and it was the last one left in the old unit after
+    the served caps moved to bytes. Measured by the security gate: one anonymous request whose
+    path carried 400 emoji produced a `request.rejected` line of 2,945 bytes against a documented
+    cap of 256, because a log line renders with `ensure_ascii=True` and one astral character
+    becomes twelve ASCII characters.
+
+    The escaping factor is asserted rather than described: a value cut to 256 bytes is at most 64
+    astral characters and so at most 768 rendered characters. A constant multiple of the cap, never
+    content's choice, which is the whole property.
+    """
     assert len(sanitise_log_value("x" * 5000)) == MAX_LOG_VALUE_LENGTH
+
+    astral = sanitise_log_value("\U0001f600" * 5000)
+    assert len(astral.encode("utf-8")) <= MAX_LOG_VALUE_LENGTH, (
+        f"the log sink cut {len(astral.encode('utf-8'))} bytes against a bound of"
+        f" {MAX_LOG_VALUE_LENGTH}, so it is counting code points"
+    )
+    assert "\ufffd" not in astral, "the cut split a code point"
+    #: The RENDERED line, which is where the amplification lands.
+    assert len(json.dumps(astral)) <= 12 * MAX_LOG_VALUE_LENGTH, len(json.dumps(astral))
 
 
 def test_an_empty_reflected_value_stays_empty_rather_than_becoming_anonymous() -> None:
