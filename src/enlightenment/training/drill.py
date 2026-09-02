@@ -37,7 +37,7 @@ from enlightenment.generators import (
     compose,
 )
 from enlightenment.identifiers import MAX_CONTENT_STRING as _MAX_CONTENT_STRING
-from enlightenment.identifiers import cut_to_bytes, served_identifier
+from enlightenment.identifiers import cut_to_bytes, served_identifier, utf8
 from enlightenment.scoring import (
     COMPUTED_SENTINEL,
     UNSCORABLE,
@@ -305,8 +305,8 @@ def capped(value: Any, limit: int) -> str:
     text = str(value or "")
     #: BYTES, like every ceiling this project asserts against. `TRUNCATION_MARK` is ASCII, so its
     #: own length is the same in either unit.
-    if len(text.encode("utf-8")) <= limit:
-        return text
+    if len(utf8(text)) <= limit:
+        return cut_to_bytes(text, limit)
     #: `max(0, ...)`, because a limit at or below the marker's own length made `keep` NEGATIVE and
     #: `encoded[:negative]` drops bytes from the END rather than bounding.
     #:
@@ -397,7 +397,7 @@ class DrillLoop:
         correlated stimuli, and a sum or an exclusive-or gives exactly that.
         """
         material = f"{self._content.content_hash}:{operator_id}:{item_id}:{attempt}"
-        return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
+        return int.from_bytes(hashlib.sha256(utf8(material)).digest()[:8], "big")
 
     def _items_without_a_resolvable_answer(self) -> frozenset[str]:
         """Drills whose `computed_from_params` answer no generator can supply.

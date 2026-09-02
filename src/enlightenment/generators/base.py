@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from enlightenment.identifiers import served_identifier
+from enlightenment.identifiers import served_identifier, utf8
 from enlightenment.scenario import SeededRandom
 
 
@@ -315,7 +315,7 @@ def rng(seed: int, salt: str) -> SeededRandom:
     later. A digest is stable across processes, releases and machines, which is the actual
     requirement.
     """
-    digest = hashlib.sha256(salt.encode("utf-8")).digest()[:4]
+    digest = hashlib.sha256(utf8(salt)).digest()[:4]
     return SeededRandom(seed ^ int.from_bytes(digest, "big"))
 
 

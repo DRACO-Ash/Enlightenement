@@ -1115,6 +1115,97 @@ def test_no_anonymous_route_serves_an_authored_content_value_in_a_refusal(
     )
 
 
+#: Legal JSON that `str.encode("utf-8")` refuses. `json.loads('"\\ud800"')` returns this, so a
+#: content author can write one with an escape sequence and no invalid byte in the file.
+LONE_SURROGATE = "\ud800"
+
+
+def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_a_route(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """A traceback on an unauthenticated route, from authored data, through four routes.
+
+    A lone surrogate is legal JSON and legal in a Python `str`, and encoding one to UTF-8 raises.
+    Nothing expected that. Measured: three drills whose ids carried one produced a **500 on the
+    anonymous `/api/v1/me`**, because `served_identifier` encodes to measure a length; and a
+    surrogate in an unvalidated PROSE leaf of a procedure produced a **500 on the anonymous
+    `/api/v1/content/procedure/{id}`**, raised by pydantic's own serialiser while rendering the
+    response, which no application code touches.
+
+    **Sanitising at each serve site was tried first and was the wrong shape.** The identifier path
+    was fixed and the 500 simply moved to the next unvalidated field, which is the per-field
+    fault this suite has now recorded three times in three different classes. The rejection is at
+    `content/loader._read_json`, the one place content enters the process, so the whole tree fails
+    closed to the documented `content_unavailable` 503 rather than one route crashing.
+
+    Two properties, both asserted: no anonymous route answers 5xx except that documented 503, and
+    the load error names the FILE and a JSON POINTER and never the offending value - the same
+    boundary rule every other refusal in this project follows.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    #: PROSE, not an id. An id is pattern-validated on some models and this must hold for the
+    #: fields nothing validates, which is where the second 500 lived.
+    rows[0]["prompt"] = f"SECRET-AUTHORED-PROSE-{LONE_SURROGATE}"
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+    assert "\\ud800" in (root / "drills.json").read_text(encoding="utf-8"), (
+        "the fixture no longer writes the surrogate as a JSON escape, so it is not under test"
+    )
+
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        manifest = client.get("/api/v1/content/manifest")
+        assert manifest.status_code == 200, manifest.status_code
+        errors = manifest.json()["errors"]
+        assert errors, "the tree loaded with a value that cannot be serialised"
+        joined = " ".join(str(error) for error in errors)
+        assert "lone surrogate" in joined, joined[:300]
+        assert "drills.json" in joined, joined[:300]
+        assert "/prompt" in joined, f"the error names no JSON pointer: {joined[:300]}"
+        assert "SECRET-AUTHORED-PROSE" not in joined, (
+            f"the load error quoted the authored value that failed it: {joined[:300]}"
+        )
+
+        crashed: dict[str, int] = {}
+        for spec in sorted(ANONYMOUS_ROUTES_SWEPT.keys() | ANONYMOUS_ROUTES_EXCLUDED):
+            method, template = spec.split(" ", 1)
+            path = _resolved(template, client)
+            if path is None:
+                continue
+            response = (
+                client.get(path)
+                if method == "GET"
+                else client.request(method, path, json={"id": "s-1", "title": "t", "scenario": "s"})
+            )
+            #: 503 is the documented fail-closed branch. Anything else in the 5xx range is a
+            #: traceback reaching an anonymous caller.
+            if response.status_code >= 500 and response.status_code != 503:
+                crashed[spec] = response.status_code
+
+    assert crashed == {}, (
+        f"these anonymous routes crashed on content carrying a lone surrogate: {crashed}"
+    )
+
+    #: AND on the loader's UNCUT output. The served form above is bounded to 256 bytes by
+    #: `bounded_reason`, so a message that appended the whole document would have its disclosure
+    #: truncated away and pass this test - measured: that exact mutation survived. The
+    #: non-disclosure is a property of the MESSAGE, so it is asserted where the message is whole.
+    package = ContentPackage(root)
+    package.load()
+    raw = " ".join(str(error) for error in package.result.errors)
+    assert "lone surrogate" in raw, raw[:300]
+    assert "SECRET-AUTHORED-PROSE" not in raw, (
+        f"the loader's own error quoted the authored value: {raw[:300]}"
+    )
+
+
 #: An authored rating outside the band, used to drive a LOAD-time validation failure. Its digits
 #: are the marker: they are the authored value, and a refusal must not repeat them.
 OUT_OF_BAND_ELO = 99999999

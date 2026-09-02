@@ -42,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from enlightenment.audit import log_event
 from enlightenment.content import CONTENT_DIR_VARIABLE, ContentPackage
-from enlightenment.identifiers import served_identifier
+from enlightenment.identifiers import served_identifier, utf8
 from enlightenment.scoring import MAX_ANSWER_LENGTH
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
@@ -317,7 +317,7 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
 
 def _within_document_budget(document: dict[str, Any], identifier: str) -> dict[str, Any]:
     """A reference document, or a 503 saying it is too large to serve. Never a truncated one."""
-    size = len(json.dumps(document, default=str).encode("utf-8"))
+    size = len(utf8(json.dumps(document, default=str)))
     if size > MAX_SERVED_DOCUMENT_BYTES:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

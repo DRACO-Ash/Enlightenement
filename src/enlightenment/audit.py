@@ -16,7 +16,11 @@ from typing import Any
 
 from enlightenment.identifiers import cut_to_bytes
 
-#: Cap on the actor field. Long enough for a real identity, short enough to bound growth.
+#: Cap on the actor field, in BYTES **by delegation**: `sanitise_actor` calls `sanitise_log_value`,
+#: so the byte cut applies here too. Recorded because the reasoning that nearly left it out was
+#: that the actor is server-chosen rather than content-supplied - true, but not what makes it
+#: byte-bounded, and a reader told this field was deliberately left unconverted might convert it
+#: again and cut it twice. Long enough for a real identity, short enough to bound growth.
 MAX_ACTOR_LENGTH = 64
 
 #: Cap on any other reflected value written to a log line (a request path, for example), in BYTES
@@ -25,11 +29,15 @@ MAX_ACTOR_LENGTH = 64
 #: anonymous request whose path carried 400 emoji produced a `request.rejected` line of 2,945
 #: bytes against a documented cap of 256.
 #:
-#: **The escaping factor is stated rather than defended.** A log line renders with
-#: `ensure_ascii=True`, so one astral character becomes twelve ASCII characters on the way out: a
-#: value cut to 256 bytes is at most 64 astral characters and so at most 768 rendered characters.
-#: Bounded, and a constant multiple rather than content's choice, which is the property this cap
-#: exists for.
+#: **The escaping factor is stated per BYTE, because that is the unit the cap is in and the worst
+#: case is not astral.** A log line renders with `ensure_ascii=True`, and the global maximum is
+#: **3.0 rendered ASCII characters per UTF-8 byte** - brute-forced over all 1,114,112 code points
+#: and attained twice: by an astral character (4 bytes becoming 12) and equally by any 2-byte BMP
+#: character, since `U+00A1` renders as `\u00a1`, 2 bytes becoming 6. A backslash or a quote is
+#: 2.0 and 3-byte CJK is 2.0, so neither is the bound. So 256 bytes is at most 768 rendered
+#: characters. Bounded, and a constant multiple rather than content's choice, which is the
+#: property this cap exists for. The earlier wording gave the same number from the astral case
+#: alone, which covered one of the two characters that attain it.
 MAX_LOG_VALUE_LENGTH = 256
 
 #: Placeholder recorded when no identity could be resolved.

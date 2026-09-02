@@ -453,10 +453,20 @@ def test_the_probe_mode_resolves_the_product_from_the_stimulus() -> None:
 
 
 def test_an_unresolvable_generator_fails_closed() -> None:
-    """A drill served with no stimulus is a drill an operator answers by guessing."""
+    """A drill served with no stimulus is a drill an operator answers by guessing.
+
+    The refusal SENTENCE is asserted, not just the exception. It reaches an author through the
+    anonymous `content_unavailable` 503, and it has now lost words to a reflow TWICE: fitting
+    `served_identifier(generator)` onto the line dropped "names in params", so the served text
+    read "...outside the canonical twelve. Legacy are traceability only and must not be
+    implemented." Nothing in 991 tests could see it, because a `match=` on two words passes
+    whatever happens to the rest. A served string with no assertion behind it is a served string
+    that decays.
+    """
     registry = build_registry()
-    with pytest.raises(LookupError, match="canonical twelve"):
+    with pytest.raises(LookupError, match="canonical twelve") as unknown:
         compose(registry, "residual_series", {}, SEED)
+    assert "Legacy names in params are traceability only" in str(unknown.value), str(unknown.value)
     with pytest.raises(LookupError, match="no renderer"):
         compose(registry, "probe", {}, SEED, "PRD-NOT-A-PRODUCT")
 

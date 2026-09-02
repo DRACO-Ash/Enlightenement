@@ -2,6 +2,72 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.27 (2026-09-02)
+
+**What.** The security gate returned **PASS** at head with six minors. One of them was rated MINOR
+and unreachable; **investigating it found a live fail-open 500 on two anonymous routes**, so it is
+recorded here as the major it turned out to be. The other five are closed too.
+
+**A lone surrogate in authored content crashed four routes.** `"\ud800"` is legal JSON:
+`json.loads` returns a `str` holding a code point that `str.encode("utf-8")` refuses, and an author
+can write one as an escape sequence with no invalid byte anywhere in the file. Nothing downstream
+expected that. **Measured, and the gate rated this unreachable because it checked the REQUEST
+paths - the CONTENT path is the live one:**
+
+● three drills whose IDS carried one produced a **500 on the anonymous `/api/v1/me`**, because
+  `served_identifier` encodes to measure a length;
+● one in an unvalidated PROSE leaf of a procedure produced a **500 on the anonymous
+  `/api/v1/content/procedure/{id}`**, raised by pydantic's own serialiser while rendering the
+  response, which no application code touches.
+
+A traceback on an unauthenticated route from authored data breaks two hard rules at once: every
+untrusted value is validated at the boundary, and a control that cannot be verified is treated as
+failed. **My own byte change at V0.26.24 widened the first one** - the code-point guard measured
+`len(item_id)` and only the digest encoded, so the crash was confined to ids over the cap; the byte
+guard encodes every id. Recorded plainly rather than left as an inherited fault.
+
+**Sanitising at each serve site was tried first and was the wrong shape.** I fixed the identifier
+path, re-ran the attack, and the 500 had simply moved to the next unvalidated field - pydantic's
+serialiser, several frames past anything this code owns. That is the per-field fault this suite has
+now recorded in three separate classes: a defence applied field by field holds the fields somebody
+thought of. **The rejection is at `content/loader._read_json`, the one place content enters the
+process**, so the whole tree fails closed to the documented `content_unavailable` 503 rather than
+one route crashing. All three attack fixtures now return 503 with `ok: false` and a load error.
+
+The refusal names the file, the count and a JSON pointer, and never the offending value.
+`identifiers.utf8` is kept as defence in depth, held by its own assertion because the boundary now
+stops anything reaching it - a guard nothing can drive is a guard nobody will keep.
+
+**And a claim of mine that only the length cap was holding.** The mutation that appends the whole
+document to the refusal SURVIVED the first run: the served form is bounded to 256 bytes by
+`bounded_reason`, so the disclosure was truncated away and the test passed. Non-disclosure is a
+property of the MESSAGE, so it is asserted on the loader's uncut output as well as on the served
+one. That is the V0.26.16 lesson in reverse, and worth stating: assert on the served form for a
+SIZE property and on the raw form for a DISCLOSURE property, because each is blind to the other.
+
+**The five prose and precision minors.** A test asserting the rendered log line at `12 x 256` when
+the code claims 768 - four times looser than its own figure, and under the code-point revert it
+fired only because 256 emoji render as 3,074 against 3,072, so a cap of 255 would have slipped
+past green. **A binding test that binds less than it claims** is the fault `CLAUDE.md` names as
+worse than no test, so it now asserts the real ratio: **3.0 rendered characters per UTF-8 byte,
+brute-forced over all 1,114,112 code points and attained twice** - by an astral character and
+equally by any 2-byte BMP character, since `U+00A1` renders as `\u00a1`. My earlier wording gave
+the right number from the astral case alone, covering one of the two characters that reach it.
+`MAX_ACTOR_LENGTH` now records that it is byte-bounded BY DELEGATION rather than by the actor being
+server-chosen, because a reader told it was deliberately left unconverted might convert it again
+and cut twice. Row 102's "every ceiling is in bytes" is narrowed to served bodies and cuts, since
+the pydantic input caps count code points and are bounded downstream. And the restored
+`LookupError` sentence is asserted, having now lost words to a reflow twice with 991 tests unable
+to see it.
+
+**Mutation: five mutants, five killed, two of them only after the tests were fixed.** The boundary
+check removed; the refusal quoting the document; `utf8` raising again; the `LookupError` losing its
+words again; the actor cap reverted to code points. The second and third survived their first run,
+and both survivals were faults in what I had just written rather than in the fix.
+
+**How it was verified.** Loop green on all seven legs: 992 passed, 2 skipped, coverage 97.71%. All three surrogate attack
+fixtures re-run against the fix and all three fail closed.
+
 ## V0.26.26 (2026-09-02)
 
 **What.** The engineering gate's first look since V0.26.21, across four releases of real source

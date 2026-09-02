@@ -42,6 +42,28 @@ DIGEST_CHARACTERS: Final = 8
 DIGEST_MARKER: Final = "~"
 
 
+def utf8(text: str) -> bytes:
+    """UTF-8 for a content-supplied string, which is not guaranteed to be valid Unicode TEXT.
+
+    **A lone surrogate is legal JSON and legal in a Python `str`, and `str.encode("utf-8")` raises
+    on it.** `json.loads('"\\ud800"')` returns `'\ud800'`, so a content author can put one in an
+    id with an escape sequence and no invalid byte anywhere in the file. Measured before this
+    existed: three drills with `"DRL-\\ud800\\ud800-x"` as their id produced a **500 on the
+    anonymous `/api/v1/me`**, because `served_identifier` encodes to measure the length.
+
+    That is a fail-OPEN crash on an unauthenticated route from authored data, which this project's
+    rules forbid twice over: a control that cannot be verified is treated as failed, and an
+    anonymous route must not be sized or steered by content. `errors="replace"` turns the
+    unencodable character into `?`, which is one byte of valid UTF-8: shorter, visible, and never
+    a traceback.
+
+    **The digest changes for surrogate-bearing input and for nothing else**, so the persisted
+    shortened-identifier format is unaffected by this: the shipped tree contains exactly one
+    non-ASCII string, a degree sign in a detection pattern, which no cap touches.
+    """
+    return text.encode("utf-8", errors="replace")
+
+
 def cut_to_bytes(text: str, limit: int) -> str:
     """``text`` shortened to at most ``limit`` BYTES of UTF-8, never splitting a code point.
 
@@ -59,12 +81,22 @@ def cut_to_bytes(text: str, limit: int) -> str:
 
     Cutting UTF-8 at an arbitrary byte can split a code point, so the tail is decoded with
     `errors="ignore"`, which drops the incomplete sequence rather than emitting a replacement
-    character. A shortened identifier already carries a digest of the whole string, so losing up
+    character. The result is a code-point PREFIX of the input, proved over 400,000 random strings
+    spanning all four byte widths, combining marks and zero-width joiners - so a cut shortens a
+    value and never changes its meaning. The one exception is an input carrying a lone surrogate,
+    which `utf8` replaces with `?` before the cut: unencodable input has no prefix to preserve.
+
+    A shortened identifier already carries a digest of the whole string, so losing up
     to three bytes of the prefix cannot make two ids collide.
     """
-    encoded = text.encode("utf-8")
+    encoded = utf8(text)
+    #: `encoded.decode(...)`, not `text`. For valid Unicode text this is the identity - proved by
+    #: differential over the shipped tree and 400,000 random strings - and for text carrying a
+    #: lone surrogate it returns the `?` form rather than handing back a value that cannot be
+    #: serialised. Returning `text` here left the 500 in place and merely moved it: pydantic's own
+    #: serialiser raised on the unencodable string a few frames later.
     if len(encoded) <= limit:
-        return text
+        return encoded.decode("utf-8", errors="ignore")
     return encoded[:limit].decode("utf-8", errors="ignore")
 
 
@@ -91,8 +123,8 @@ def served_identifier(item_id: str) -> str:
     Nothing is deployed, so it costs nothing today; on an existing volume it would reset one item's
     attempt count once before self-healing.
     """
-    if len(item_id.encode("utf-8")) <= MAX_CONTENT_STRING:
-        return item_id
-    digest = hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:DIGEST_CHARACTERS]
+    if len(utf8(item_id)) <= MAX_CONTENT_STRING:
+        return cut_to_bytes(item_id, MAX_CONTENT_STRING)
+    digest = hashlib.sha256(utf8(item_id)).hexdigest()[:DIGEST_CHARACTERS]
     keep = MAX_CONTENT_STRING - len(digest) - len(DIGEST_MARKER)
     return f"{cut_to_bytes(item_id, keep)}{DIGEST_MARKER}{digest}"

@@ -137,17 +137,72 @@ class ContentShapeError(ValueError):
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    """Read one content file, asserting the shape every caller then assumes.
+    """Read one content file, asserting the shape and the ENCODABILITY every caller then assumes.
 
     Every call site subscripts or calls `.get` on the result. Checking here means one check
     rather than six, and a fault that is reported through `LoadResult` like every other.
+
+    **A lone surrogate is rejected here, at the boundary, because it fail-OPENED four routes.**
+    `"\\ud800"` is legal JSON and `json.loads` returns a `str` holding a code point that
+    `str.encode("utf-8")` refuses. Nothing downstream expected that: measured, three drills whose
+    ids carried one produced a **500 on the anonymous `/api/v1/me`**, and a surrogate in an
+    unvalidated prose leaf of a procedure produced a **500 on the anonymous
+    `/api/v1/content/procedure/{id}`** through pydantic's own serialiser, which raises while
+    rendering the response. A traceback on an unauthenticated route from authored data breaks two
+    rules at once: every untrusted value is validated at the boundary, and a control that cannot
+    be verified is treated as failed.
+
+    Sanitising at each serve site was the wrong shape and was tried first - the identifier path
+    was fixed and the 500 simply moved to the next unvalidated field, because a per-field defence
+    holds the fields somebody thought of. This is the ONE place content enters the process, so
+    this is where the check belongs, and the whole tree fails closed to the documented
+    `content_unavailable` 503 rather than one route crashing.
+
+    The offending value is NOT named, per the boundary rule this project holds everywhere: the
+    message gives the file, the count and the JSON pointer to the first instance, which is what an
+    author needs to find it.
     """
     document = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         raise ContentShapeError(
             f"{path.name}: expected a JSON object at the top level, found {type(document).__name__}"
         )
+    if surrogates := _unencodable_strings(document):
+        where, total = surrogates
+        raise ContentShapeError(
+            f"{path.name}: {total} string(s) carry a lone surrogate, which is legal JSON and"
+            f" cannot be encoded as UTF-8 or served; one is at {where}"
+        )
     return document
+
+
+def _unencodable_strings(node: Any, pointer: str = "") -> tuple[str, int] | None:
+    """A JSON pointer to ONE string that cannot be encoded as UTF-8, and how many there are.
+
+    A separate walk rather than a try around `json.dumps`, because the diagnosis an author needs is
+    WHERE, and a serialiser exception gives a character position in a rendering they never saw.
+
+    "One" rather than "the first": this walks with an explicit stack, so the pointer returned is
+    the first the traversal reaches and not the first in document order. Stated because the
+    message is what an author acts on, and an ordering claim the code does not make is the kind of
+    small false precision this project has had to correct in prose four times.
+    """
+    first: str | None = None
+    total = 0
+    stack: list[tuple[Any, str]] = [(node, pointer)]
+    while stack:
+        current, where = stack.pop()
+        if isinstance(current, str):
+            try:
+                current.encode("utf-8")
+            except UnicodeEncodeError:
+                total += 1
+                first = where or "/" if first is None else first
+        elif isinstance(current, dict):
+            stack.extend((value, f"{where}/{key}") for key, value in current.items())
+        elif isinstance(current, list):
+            stack.extend((value, f"{where}/{index}") for index, value in enumerate(current))
+    return (first, total) if first is not None else None
 
 
 def _parse_all[Model](

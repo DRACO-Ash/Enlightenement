@@ -20,7 +20,7 @@ import pytest
 
 from enlightenment.content import ContentPackage
 from enlightenment.generators import build_registry
-from enlightenment.identifiers import served_identifier
+from enlightenment.identifiers import cut_to_bytes, served_identifier, utf8
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
     DrillError,
@@ -762,6 +762,18 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     assert len(reason.encode("utf-8")) <= MAX_WITHHOLD_REASON, (
         f"bounded_reason cut {len(reason.encode('utf-8'))} bytes against a bound of"
         f" {MAX_WITHHOLD_REASON}"
+    )
+
+    #: `utf8` never raises, held DIRECTLY because nothing reaches it with a surrogate any more:
+    #: `content/loader._read_json` rejects them at the boundary, so this guard is defence in depth
+    #: and a route-level test cannot see it. Measured before that boundary existed - and this is
+    #: why the guard is kept rather than deleted as redundant - an authored `\ud800` in a drill id
+    #: produced a 500 on the anonymous `/api/v1/me`, because `str.encode("utf-8")` refuses a lone
+    #: surrogate and `served_identifier` encodes to measure a length.
+    assert utf8("\ud800") == b"?", utf8("\ud800")
+    assert utf8("ok") == b"ok"
+    assert len(cut_to_bytes("\ud800" * 100, MAX_CONTENT_STRING).encode("utf-8")) <= (
+        MAX_CONTENT_STRING
     )
 
     #: A limit too small to hold the marker yields the MARKER ALONE, and the point is that the

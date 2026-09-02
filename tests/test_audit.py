@@ -60,8 +60,18 @@ def test_a_reflected_value_is_length_bounded() -> None:
         f" {MAX_LOG_VALUE_LENGTH}, so it is counting code points"
     )
     assert "\ufffd" not in astral, "the cut split a code point"
-    #: The RENDERED line, which is where the amplification lands.
-    assert len(json.dumps(astral)) <= 12 * MAX_LOG_VALUE_LENGTH, len(json.dumps(astral))
+    #: The RENDERED line, which is where the amplification lands, asserted at the REAL ratio.
+    #: This was `12 * MAX_LOG_VALUE_LENGTH` = 3072, four times looser than the 768 the code
+    #: claims - and under the code-point revert it fired only because 256 emoji render as 3074
+    #: against 3072, so a cap of 255 would have slipped past green. A binding test that binds
+    #: less than it claims is the fault `CLAUDE.md` names as worse than no test.
+    #:
+    #: 3.0 rendered characters per UTF-8 byte is the GLOBAL worst case, brute-forced over all
+    #: 1,114,112 code points: attained by an astral character (4 bytes to 12) and equally by any
+    #: 2-byte BMP character (U+00A1 renders as `\u00a1`, 2 bytes to 6). Plus the two quotes
+    #: `json.dumps` adds.
+    rendered = len(json.dumps(astral))
+    assert rendered <= 3 * MAX_LOG_VALUE_LENGTH + 2, rendered
 
 
 def test_an_empty_reflected_value_stays_empty_rather_than_becoming_anonymous() -> None:
