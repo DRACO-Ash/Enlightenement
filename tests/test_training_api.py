@@ -791,10 +791,14 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
             #: And a cut NAME says it was cut. The name had an identity's silent cap while the
             #: interface renders it as the primary label, so a shortened name read as the one
             #: somebody chose. Prose gets the marker; an identity gets the digest.
-            #: Guarded on the AUTHORED length, so reshaping the tree to shorter names cannot turn
-            #: this from a real assertion into a false failure.
-            if HOSTILE_TEXT_LENGTH > MAX_CONTENT_STRING:
-                assert row["name"].endswith(TRUNCATION_MARK), row["name"][-20:]
+            #: The PRECONDITION is asserted, not used as a condition. Guarding the assertion with
+            #: `if HOSTILE_TEXT_LENGTH > MAX_CONTENT_STRING` made it self-disabling: a reshape to
+            #: shorter text would remove the control silently instead of telling anyone, which is
+            #: the pattern this release's own record is about.
+            assert HOSTILE_TEXT_LENGTH > MAX_CONTENT_STRING, (
+                "the tree is no longer hostile enough for the marker to be measurable"
+            )
+            assert row["name"].endswith(TRUNCATION_MARK), row["name"][-20:]
             assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])
         assert len({row["competency_id"] for row in me["competencies"]}) == len(
             me["competencies"]
@@ -1303,10 +1307,16 @@ def test_an_authored_param_name_is_bounded_on_the_anonymous_manifest(
     document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
     rows = document["drills"] if isinstance(document, dict) else document
     long_key = "beta_" + "K" * 500
+    #: TWO names sharing a prefix past the cap. One long name proves the length bound and is blind
+    #: to a collision: the census key survived truncation with 983 tests green, and its keys are a
+    #: DICT, so two collapsing names merge their counts and under-report the very census the code
+    #: says must not be under-reported.
+    sibling_key = long_key + "-sibling"
     #: MORE distinct names than the census serves, so the count cap is load-bearing here too.
     for row in rows:
         params = row.setdefault("stimulus", {}).setdefault("params", {})
         params[long_key] = 1
+        params[sibling_key] = 1
         for extra in range(MAX_SERVED_PARAMS + 5):
             params[f"beta_unread_{extra}"] = 1
     (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
@@ -1327,6 +1337,11 @@ def test_an_authored_param_name_is_bounded_on_the_anonymous_manifest(
         assert len(params) <= MAX_SERVED_PARAMS, f"{len(params)} names served"
         for name in params:
             assert len(name) <= MAX_CONTENT_STRING, f"{len(name)} characters served as a key"
+        #: DISTINCT as well as short. Two authored names sharing a prefix past the cap must remain
+        #: two entries with two counts, or the census silently halves itself.
+        beta_keys = [name for name in params if name.startswith("beta_KKK")]
+        assert len(beta_keys) == 2, f"two authored names collapsed to {len(beta_keys)}: {beta_keys}"
+        assert len(set(beta_keys)) == 2, beta_keys
 
 
 def test_the_plot_refits_its_text_after_layout_rather_than_reserving_a_fixed_gutter(

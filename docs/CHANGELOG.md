@@ -2,6 +2,50 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.18 (2026-09-02)
+
+**What.** Two blockers and two majors. **All nineteen sites are now held on both axes, with no
+standing exceptions.** The rule V0.26.17 stated was right; it was applied at fifteen sites and
+asserted at nineteen.
+
+**The rule caught two sites the release that stated it had missed.** `_serve_one`'s own `named` and
+the unread-params census key each carried a length assertion and no distinctness assertion, so both
+survived the truncation mutation with 983 tests green - the exact failure mode the rule names, in
+the release that named it. `named` prefixes every serve-time refusal, which reaches the anonymous
+manifest's `withheld_reasons` and a 503; the census key is a DICT key, so two collapsing names merge
+their counts and halve the census the code says must not be under-reported. Both are held on both
+axes now, and the sibling method one line from `_serve_one` had this test while `_serve_one`, whose
+docstring says "the id is bounded HERE", did not.
+
+**The last two exceptions are driven rather than excused.** `RunRecord.procedure_id` and `.axis` were
+argued to be write-only. This register records that exact argument being made for
+`RunRecord.item_id` and being false - it was stored shortened, compared raw, and every long id sat
+at attempt zero while three attempts drew one seed. **Write-only is a property of the current
+readers, not of a persisted field.** Both are asserted bounded and distinct off the progress file
+now.
+
+**And holding them took two goes, because the first assertion could not fail.** Asserting that the
+stored labels are short passed on the shipped library, where every procedure id is eight characters:
+the values had to be poisoned, and they come from the item's CUE rather than the drill, so the cues
+are what needed poisoning. The first version of that then poisoned the SAME cue twice, because two
+adjacent drills share one, and the second write overwrote the first - the assertion caught it, which
+is a fixture failing honestly rather than the code.
+
+**A count wrong for the fourth consecutive release, and this time in the register's own subject.**
+V0.26.17 claimed two exceptions where four sites were not red on both axes. Corrected, and the
+contradictory figure inside it - "a different set of four under raw alone", where the raw figure was
+two - corrected with it. The row also carried a malformed nested bold span and an orphaned clause
+left in front of a replacement sentence.
+
+**A guard of mine that made an assertion self-disabling.** The competency-name marker check was
+wrapped in `if HOSTILE_TEXT_LENGTH > MAX_CONTENT_STRING`, so a reshape to shorter text would have
+removed the control silently instead of telling anyone. The precondition is asserted now and the
+assertion runs unconditionally, which is the pattern this whole sequence is about.
+
+**How it was verified.** Loop green on all seven legs: 985 passed, 2 skipped, coverage 97.49%. Both
+mutations applied at each of the four sites the gate flagged, on a green baseline, with every result
+recorded: raw red and truncation red at all four.
+
 ## V0.26.17 (2026-09-02)
 
 **What.** One blocker and four majors. **Neither mutation dominates the other, and two consecutive

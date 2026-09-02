@@ -23,7 +23,7 @@ identifiers, no credentials. The tool refuses to write a file that fails that ch
 
 | Item | Where it comes from | Status |
 |---|---|---|
-| `tools/udl_characterise.py` | this repository, `V0.26.17` | **Ready** |
+| `tools/udl_characterise.py` | this repository, `V0.26.18` | **Ready** |
 | Python 3.11 or newer on the workstation | already there, or the system Python | `python --version` (PowerShell). If `python` opens the Microsoft Store, use `py --version` |
 | UDL credentials at `~/.config/phase_offset/credentials.ini`, mode `600` | your existing file | Check |
 | Endpoint profile: `[endpoints]` and `[query]` | the UDL API documentation, supplied 25 August 2026 | **Ready, pre-filled in the template** |

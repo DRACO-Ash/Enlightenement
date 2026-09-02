@@ -1046,6 +1046,130 @@ def test_the_shortened_identifier_form_is_pinned_because_it_is_persisted() -> No
     assert served_identifier("X" * (MAX_CONTENT_STRING + 1)) != "X" * (MAX_CONTENT_STRING + 1)
 
 
+def test_a_serve_time_refusal_names_two_prefix_sharing_ids_distinctly(tmp_path: Path) -> None:
+    """`_serve_one`'s own name, whose docstring says "the id is bounded HERE" and which nothing
+    held.
+
+    It survived the truncation mutation with 983 tests green: the only test reaching it used ONE
+    long id, and a truncation of one id is still bounded and still the right length. That is
+    exactly the failure mode this release's rule names - a length assertion is blind to a collision,
+    a distinctness assertion is blind to an unbounded value, and a line needs both.
+
+    `named` prefixes every refusal from `_serve_one`, which reaches `bounded_reason` and then the
+    anonymous manifest's `withheld_reasons` and a 503. Two ids sharing a 64-character prefix would
+    be refused under one name matching neither, which is the fabricated-identifier fault on an
+    unauthenticated surface. The sibling method one line away had this test; this one did not.
+
+    ALSO holds `RunRecord.procedure_id` and `.axis`, the last two standing exceptions. Both are
+    write-only today, and this repository's register records that exact argument being made for
+    `RunRecord.item_id` and being false: it was stored shortened, compared raw, and every long id
+    sat at attempt zero while three attempts drew one seed. "Write-only" is a property of the
+    current readers, not of a persisted field.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    shared = "DRL-" + "R" * 200
+    #: Two items broken at render, sharing a prefix past the cap, so both refuse and both are named.
+    for index, row in enumerate(rows[:2]):
+        row["id"] = f"{shared}-{index}"
+        row.setdefault("stimulus", {}).setdefault("params", {})["days"] = float("nan")
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+
+    package = ContentPackage(root)
+    package.load()
+    loop = DrillLoop(
+        content=package,
+        registry=build_registry(),
+        progress=ProgressStore(tmp_path / "progress.json"),
+    )
+    refusals: list[str] = []
+    for index in range(2):
+        with pytest.raises(DrillError) as refusal:
+            loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=f"{shared}-{index}")
+        refusals.append(bounded_reason(str(refusal.value)))
+    assert refusals[0] != refusals[1], (
+        f"two prefix-sharing ids refused under one name: {refusals[0][:120]}"
+    )
+    for refusal in refusals:
+        assert "not usable" in refusal, f"the id ate the diagnosis: {refusal[:140]}"
+
+
+def test_the_persisted_run_labels_are_bounded_and_distinct(tmp_path: Path) -> None:
+    """`RunRecord.procedure_id` and `.axis`, the last two standing exceptions, driven not excused.
+
+    Both were argued to be write-only, and this repository's register records that exact argument
+    being made for `RunRecord.item_id` and being false: it was stored shortened, compared raw, and
+    every long id sat at attempt zero while three attempts drew one seed. **Write-only is a property
+    of the current readers, not of a persisted field.**
+
+    Holding them took two goes. Asserting the stored labels are SHORT passed on the shipped library,
+    where every procedure id is eight characters, so the values had to be poisoned - and they come
+    from the item's CUE rather than the drill, so the cues are what needed poisoning. The first
+    version of that poisoned the SAME cue twice, because two adjacent drills share one and the
+    second write overwrote the first; the distinctness assertion caught it, which is a fixture
+    failing honestly rather than the code.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT, root)
+    document = json.loads((root / "drills.json").read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    shared = "DRL-" + "R" * 200
+    #: `procedure_id` and `axis` come from the
+    #: item's CUE, so the cues are what has to be poisoned: asserting only that the stored fields
+    #: are short passed on the shipped library, where every procedure id is eight characters, and
+    #: both sites survived inversion with the whole suite green.
+    cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))
+    cue_rows = cues["cues"] if isinstance(cues, dict) else cues
+    #: Two drills with DISTINCT cues. Taking two adjacent rows poisoned the same cue twice - they
+    #: share one - so the second write overwrote the first and both runs stored one procedure id.
+    #: The assertion caught it, which is the fixture failing honestly rather than the code.
+    seen: set[str] = set()
+    servable = []
+    for row in rows[2:]:
+        if row["cue_id"] and row["cue_id"] not in seen:
+            seen.add(row["cue_id"])
+            servable.append(row)
+        if len(servable) == 2:
+            break
+    assert len(servable) == 2, "the library has fewer than two drills with distinct cues"
+    long_procedure = "PROC-" + "P" * 200
+    long_axis = "CMP-" + "A" * 200
+    for index, row in enumerate(servable):
+        row["id"] = f"{shared}-run-{index}"
+        cue = next(entry for entry in cue_rows if entry["id"] == row["cue_id"])
+        #: Prefix-sharing past the cap, so a truncation collapses them and a raw value is unbounded.
+        cue["procedure_id"] = f"{long_procedure}-{index}"
+        cue["competency_id"] = f"{long_axis}-{index}"
+    (root / "cues.json").write_text(json.dumps(cues), encoding="utf-8")
+    (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
+    replayed = ContentPackage(root)
+    replayed.load()
+    store = ProgressStore(tmp_path / "progress-runs.json")
+    runs_loop = DrillLoop(content=replayed, registry=build_registry(), progress=store)
+    for index in range(2):
+        drill = runs_loop.serve(operator_id=DEMONSTRATION_OPERATOR, item_id=f"{shared}-run-{index}")
+        runs_loop.score(
+            run_id=drill.run_id,
+            response="manoeuvre",
+            confidence=3,
+            operator_id=DEMONSTRATION_OPERATOR,
+        )
+    rows_written = store.load(DEMONSTRATION_OPERATOR).runs
+    stored = [run for run in rows_written if run.item_id.startswith("DRL-RRR")]
+    assert len(stored) == 2, [run.item_id for run in rows_written]
+    for run in stored:
+        for field in (run.item_id, run.procedure_id, run.axis):
+            assert len(field) <= MAX_CONTENT_STRING, f"{len(field)} characters persisted"
+    #: DISTINCT on every persisted label, not only the item id. Two prefix-sharing values that
+    #: collapse merge two runs' provenance into one row's worth of audit, which is the same fault
+    #: as a fabricated id one field along.
+    for label in ("item_id", "procedure_id", "axis"):
+        values = {getattr(run, label) for run in stored}
+        assert len(values) == 2, f"{label} collapsed to {len(values)}: {sorted(values)}"
+
+
 def test_two_long_ids_produce_two_distinct_log_lines_and_two_distinct_load_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

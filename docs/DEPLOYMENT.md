@@ -19,7 +19,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
 | Content directory | `CONTENT_DIR`, and only that name. `ENLIGHTENMENT_CONTENT_DIR` was read by the loader's own resolver at V0.24.0 and is now dead. An operator who set it got the baked-in tree served over HTTP while the validator checked a different one, so verification leg 2 could pass green against content the server never loads. Set nowhere in the Dockerfile: platform injection wins, as for `PORT` and `DATA_DIR` |
-| Version | 0.26.17, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.26.18, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -155,8 +155,8 @@ the volume.
 
 ## Pre-submission checklist
 
-- [x] Verification loop green (`sh scripts/verify.sh`), 983 passed and 2 skipped, coverage 97.49%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.17`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Verification loop green (`sh scripts/verify.sh`), 985 passed and 2 skipped, coverage 97.49%
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.18`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
