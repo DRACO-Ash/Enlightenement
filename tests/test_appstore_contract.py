@@ -1438,6 +1438,59 @@ def test_every_test_named_in_the_security_policy_exists() -> None:
     assert cited, "the sweep found no cited test names, so it is asserting nothing"
 
 
+def test_content_is_read_through_one_boundary_and_nothing_else() -> None:
+    """`_read_json` is the only place content enters the process, enforced rather than described.
+
+    The surrogate rejection, the shape check and the JSON-pointer diagnosis all live in
+    `_read_json`, and the claim that it is the ONE entry point is what makes that placement
+    sufficient. Nothing enforced it: **twelve of the twenty-three files in `content/` are read by
+    no code at all today**, and a future flight-plan step wiring one of them with a bare
+    `json.loads` would reintroduce the whole class with the suite green.
+
+    So this asserts the boundary structurally, the same technique as the route-table enumeration
+    that holds the anonymous-body sweep: no module under `src/enlightenment/content/` may call
+    `json.loads` or `Path.read_text` except inside `_read_json` itself.
+
+    **`read_bytes` is exempt, and the reason is the property rather than convenience.** The check
+    forbids the two calls that turn a content file into a Python `str` - `json.loads` and
+    `read_text` - because a lone surrogate can only exist in a `str`. `ContentPackage._hash` reads
+    raw BYTES for a digest and never decodes them, so no string is produced and nothing can carry
+    a surrogate; the first version of this test forbade `read_bytes` too and found that reader
+    immediately, which is the check working and the exemption being reasoned rather than assumed.
+
+    DECLARED LIMIT: this holds the content package's own modules. A reader elsewhere in the source
+    could still open a content file directly, and no matcher catches that without hard-coding a
+    list of paths nobody maintains. The check is scoped in writing rather than quietly, because
+    every defeat of a sweep in this project has come from a claim wider than the code.
+    """
+    boundary = ROOT / "src" / "enlightenment" / "content"
+    offenders: list[str] = []
+    for path in sorted(boundary.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name == "_read_json":
+                continue
+            for inner in ast.walk(node):
+                if not isinstance(inner, ast.Call):
+                    continue
+                target = inner.func
+                name = (
+                    target.attr
+                    if isinstance(target, ast.Attribute)
+                    else target.id
+                    if isinstance(target, ast.Name)
+                    else ""
+                )
+                if name in {"loads", "read_text"}:
+                    offenders.append(f"{path.name}::{node.name} calls {name}()")
+    assert offenders == [], (
+        "content is read outside `_read_json`, so the surrogate rejection and the shape check no"
+        f" longer sit on the one boundary they claim to: {offenders}"
+    )
+
+
 def test_every_control_row_splits_into_the_header_s_columns() -> None:
     """A stray `|` in a control's prose splits its row into more cells than the header declares,
     and every check that reads the table by cell INDEX then reads the wrong cell.

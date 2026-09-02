@@ -50,7 +50,7 @@ from enlightenment.content.models import (
     Rubric,
     ScenarioTemplate,
 )
-from enlightenment.identifiers import served_identifier
+from enlightenment.identifiers import served_identifier, unencodable_pointer
 
 #: Files the engine reads. The package carries more; these are the ones a missing copy of which
 #: stops the drill loop rather than degrading a later surface.
@@ -158,63 +158,26 @@ def _read_json(path: Path) -> dict[str, Any]:
     this is where the check belongs, and the whole tree fails closed to the documented
     `content_unavailable` 503 rather than one route crashing.
 
-    The offending value is NOT named, per the boundary rule this project holds everywhere: the
-    message gives the file, the count and the JSON pointer to the first instance, which is what an
-    author needs to find it.
+    The offending VALUE is not named, per the boundary rule this project holds everywhere: the
+    message gives the file, the count and a JSON pointer, which is what an author needs to find
+    it. **A KEY is named, and that is not an exception to the rule but a consequence of it:** a
+    JSON pointer to a key IS the key, so a pointer that did not name it would name nothing. The
+    same carve-out the register already records for a generator name and a product id - a
+    structural identifier is named because a typo in one is undiagnosable otherwise - and the key
+    goes out through `utf8`, so the unencodable character itself is replaced rather than served.
     """
     document = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         raise ContentShapeError(
             f"{path.name}: expected a JSON object at the top level, found {type(document).__name__}"
         )
-    if surrogates := _unencodable_strings(document):
+    if surrogates := unencodable_pointer(document):
         where, total = surrogates
         raise ContentShapeError(
             f"{path.name}: {total} string(s) carry a lone surrogate, which is legal JSON and"
             f" cannot be encoded as UTF-8 or served; one is at {where}"
         )
     return document
-
-
-def _unencodable_strings(node: Any, pointer: str = "") -> tuple[str, int] | None:
-    """A JSON pointer to ONE string that cannot be encoded as UTF-8, and how many there are.
-
-    Walks KEYS as well as values, so a surrogate in either is refused here rather than reaching a
-    serve site.
-
-    A separate walk rather than a try around `json.dumps`, because the diagnosis an author needs is
-    WHERE, and a serialiser exception gives a character position in a rendering they never saw.
-
-    "One" rather than "the first": this walks with an explicit stack, so the pointer returned is
-    the first the traversal reaches and not the first in document order. Stated because the
-    message is what an author acts on, and an ordering claim the code does not make is the kind of
-    small false precision this project has had to correct in prose four times.
-    """
-    first: str | None = None
-    total = 0
-    stack: list[tuple[Any, str]] = [(node, pointer)]
-    while stack:
-        current, where = stack.pop()
-        if isinstance(current, str):
-            try:
-                current.encode("utf-8")
-            except UnicodeEncodeError:
-                total += 1
-                first = where or "/" if first is None else first
-        elif isinstance(current, dict):
-            #: KEYS as well as values. The first version walked values only, and nothing crashed -
-            #: but only by downstream accident: a surrogate in a `params` key is replaced by
-            #: `served_identifier` on its way to the census, and one in a modelled record's key is
-            #: refused by pydantic's own parser with a message that names no field. Measured: a
-            #: surrogate `params` key loaded with ZERO errors and every route answered 200. Held by
-            #: luck in two different places is the pattern this whole boundary exists to replace,
-            #: so the walk is complete rather than relying on either.
-            for key, value in current.items():
-                stack.append((key, f"{where}/{key}"))
-                stack.append((value, f"{where}/{key}"))
-        elif isinstance(current, list):
-            stack.extend((value, f"{where}/{index}") for index, value in enumerate(current))
-    return (first, total) if first is not None else None
 
 
 def _parse_all[Model](

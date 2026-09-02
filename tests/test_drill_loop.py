@@ -20,7 +20,13 @@ import pytest
 
 from enlightenment.content import ContentPackage
 from enlightenment.generators import build_registry
-from enlightenment.identifiers import cut_to_bytes, served_identifier, utf8
+from enlightenment.generators.base import rng
+from enlightenment.identifiers import (
+    DIGEST_MARKER,
+    cut_to_bytes,
+    served_identifier,
+    utf8,
+)
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
     DrillError,
@@ -772,6 +778,20 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     #: surrogate and `served_identifier` encodes to measure a length.
     assert utf8("\ud800") == b"?", utf8("\ud800")
     assert utf8("ok") == b"ok"
+    #: The CALL SITES, not only the helper. Three of the six survived inversion to a bare
+    #: `.encode("utf-8")` with all 992 tests green - `served_identifier`'s guard, its digest, and
+    #: the product salt in `generators.base.rng` - because the load boundary blocks content and
+    #: the HTTP edge blocks bodies, so nothing reaches them. `docs/SECURITY.md` says `utf8` is
+    #: kept "so a future caller cannot reintroduce the crash", and at three sites a future caller
+    #: could do exactly that. Holding the function is not holding the call site, which is a
+    #: lesson this project has already recorded once for `served_identifier` itself.
+    assert served_identifier("DRL-\ud800") == "DRL-?", served_identifier("DRL-\ud800")
+    long_surrogate = "D" * 70 + "\ud800"
+    shortened_surrogate = served_identifier(long_surrogate)
+    assert DIGEST_MARKER in shortened_surrogate, shortened_surrogate
+    assert len(shortened_surrogate.encode("utf-8")) <= MAX_CONTENT_STRING
+    #: `rng` digests a product id, which is content-authored.
+    assert rng(0, "\ud800") is not None
     assert len(cut_to_bytes("\ud800" * 100, MAX_CONTENT_STRING).encode("utf-8")) <= (
         MAX_CONTENT_STRING
     )

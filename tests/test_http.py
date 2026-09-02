@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from enlightenment.app import (
     MAX_REVISION_DIGITS,
     Limiters,
     ProbeSettings,
+    TrainingPaths,
     _expected_rev,
     create_app,
 )
@@ -30,7 +32,9 @@ from enlightenment.auth import AUTH_HEADER
 from enlightenment.config import Config
 from enlightenment.middleware import DRAIN_TIMEOUT_SECONDS, BodyLimitMiddleware
 from enlightenment.ratelimit import RateLimiter
-from enlightenment.storage import ProbeResult, TrainingStore
+from enlightenment.storage import STORE_FILENAME, ProbeResult, TrainingStore
+
+CONTENT_ROOT = Path(__file__).resolve().parents[1] / "content"
 
 VALID_SESSION = {"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"}
 AUTH = {AUTH_HEADER: TEST_PLACEHOLDER}
@@ -1523,3 +1527,65 @@ def test_an_error_response_carries_nosniff_too(client: TestClient) -> None:
     refused = client.post("/api/v1/sessions", json={"id": "a", "title": "b"})
     assert refused.status_code == 422
     assert refused.headers.get("x-content-type-options") == "nosniff"
+
+
+def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
+    token_config: Config, tmp_path: Path
+) -> None:
+    """A 500 on an unauthenticated route from data this process wrote itself.
+
+    `GET /api/v1/sessions` is anonymous by the decision at accepted risk 5, and it called
+    `store.load` with no handler. Every malformed shape the store already refuses arrived as an
+    unhandled exception and a generic 500: not JSON, not UTF-8, top level not an object, nested
+    too deep - and, found by the security gate, a string that PARSES and then cannot be encoded,
+    which raises inside pydantic's serialiser while the response is rendered.
+
+    The last of those was the reason to look: the snapshot had no equivalent of the content tree's
+    encodability check, so "the snapshot is trusted stored state" and "the progress file is not"
+    were two different answers to one question in adjacent modules. `TrainingStore.load` runs the
+    same boundary walk now and raises `ValueError` like every other malformed shape, and the route
+    answers a 503 naming the fault.
+
+    Not reachable from the HTTP edge - a surrogate in a body is refused with a generic 422 in
+    every form - so the precondition is write access to the data volume, an actor this threat
+    model puts out of scope. Closed anyway: a route that 500s on its own data is a route nobody
+    can diagnose from a screenshot, which is the distinction the App Store health contract is
+    built on.
+
+    **The health split is asserted alongside**, because that is the property a 503 must not break:
+    `/livez`, `/ping`, `/health` and `/` are dependency-free and stay 200 while the storage-proving
+    paths go 503. A downstream fault must never restart a healthy container.
+    """
+    corrupt = {
+        "a lone surrogate": json.dumps(
+            {"rev": 1, "sessions": [{"id": "s-1", "title": "x"}]}
+        ).replace('"x"', '"x\\ud800"'),
+        "not JSON": "{not json",
+        "top level not an object": "[]",
+    }
+    for label, body in corrupt.items():
+        data_dir = tmp_path / label.replace(" ", "-")
+        data_dir.mkdir()
+        (data_dir / STORE_FILENAME).write_text(body, encoding="utf-8")
+        app = create_app(
+            config=replace(token_config, data_dir=data_dir),
+            store=TrainingStore(data_dir),
+            probe=ok_probe,
+            training=TrainingPaths(
+                content_root=CONTENT_ROOT, progress_path=data_dir / "progress.json"
+            ),
+        )
+        with TestClient(app, raise_server_exceptions=False) as client:
+            listing = client.get("/api/v1/sessions")
+            assert listing.status_code == 503, (
+                f"{label}: answered {listing.status_code}, so a corrupt snapshot reaches an"
+                f" anonymous caller as a traceback: {listing.content[:160]!r}"
+            )
+            assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
+            #: The message names the fault and never a stored value.
+            assert "s-1" not in listing.text, listing.text[:200]
+
+            for path in ("/", "/livez", "/ping", "/health"):
+                assert client.get(path).status_code == 200, (
+                    f"{label}: {path} is dependency-free and must stay 200"
+                )

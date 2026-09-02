@@ -2,6 +2,75 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.29 (2026-09-02)
+
+**What.** The security gate returned **PASS** at V0.26.28 and said "build away". Its five minors
+are closed first, because three were substantive: **a live 500 on an anonymous route, a 230 MB
+amplification the check I added introduced, and three call sites of a defence held by nothing.**
+
+**The check I added for safety was itself a denial surface.** `_unencodable_strings` allocated a
+tuple and an eagerly formatted pointer string for every node, integers included. Measured
+like-for-like on a 6.0 MB document of `{"a": [1] * 2_000_000}`: the old walk peaked at **229.9 MB
+above baseline** in 5,359 ms; the new one allocates **0.0 MB above baseline** in 1,867 ms, and
+walks all 23 shipped files in 12.9 ms. Scalars are tested inline and never pushed, and a pointer is
+built only on a failure. It is startup-only with one worker, so an exhaustion there is "the
+container never started and no health path answered" - the failure this project forbids by name,
+and not one a safety check should introduce.
+
+**A read path that did not go through the boundary, and it reached an anonymous route.** The gate
+answered its own question: `GET /api/v1/sessions` called `store.load` with no handler, so every
+malformed snapshot shape reached an unauthenticated caller as a generic **500** - not JSON, not
+UTF-8, top level not an object, nested too deep, and a string that parses and then cannot be
+encoded, which raises inside pydantic's serialiser while the response renders. That last one is
+what exposed the asymmetry: **"the snapshot is trusted stored state" and "the progress file is not"
+were two different answers to one question in adjacent modules.**
+
+The walk is now shared - lifted to `identifiers.unencodable_pointer` and called by both
+`content/loader._read_json` and `TrainingStore.load` - so the snapshot gets the content tree's rule
+rather than a second copy that drifts. The route answers **503 `store_unavailable`** with the fault
+named, length-bounded, and no stored value in it. All four corrupt shapes verified, and the health
+split asserted alongside: `/`, `/livez`, `/ping` and `/health` stay 200 while only the
+storage-proving paths go 503, because a downstream fault must never restart a healthy container.
+
+**Three call sites of a defence, held by nothing.** Reverting `utf8` to a bare `.encode("utf-8")`
+at `served_identifier`'s guard, at its digest, and at the product salt in `generators.base.rng`
+left all 992 tests green, while `docs/SECURITY.md` said `utf8` is kept "so a future caller cannot
+reintroduce the crash". Holding the function is not holding the call site, which this project has
+already recorded once for `served_identifier` itself. Three assertions, three mutants, three kills.
+
+**A claim of mine that was wrong in the other direction.** The refusal DOES name a key. My code and
+the register both said "never the offending value", and a `params` key called
+`SECRET-AUTHORED-KEY<surrogate>` went out verbatim on both anonymous surfaces. **It is not an
+exception to the rule but a consequence of it:** a JSON pointer to a key IS the key, so a pointer
+that hid it would name nothing, and it is the same structural-identifier carve-out already recorded
+for a generator name. Both sentences are narrowed to say so, and the fixture now carries its marker
+in a key AND a value so each side of the distinction has a driver - the gate found this precisely
+because my marker sat only in a value.
+
+**And the one-boundary claim is enforced rather than described.** `_read_json` being the only place
+content enters was load-bearing for putting the check there, and nothing held it: **twelve of the
+twenty-three files in `content/` are read by no code at all**, so a future step wiring one with a
+bare `json.loads` would reintroduce the class green. A static test now forbids `json.loads` and
+`read_text` anywhere under `src/enlightenment/content/` outside `_read_json`. Its first version
+also forbade `read_bytes` and immediately found `ContentPackage._hash`, which reads raw bytes for a
+digest and never decodes them - so no string exists and no surrogate can hide there. That exemption
+is reasoned rather than assumed, and the check finding it on the first run is the check working.
+
+**Mutation: six mutants, six killed.** The snapshot walk removed; the listing's `ValueError`
+handler retargeted; `utf8` dropped at each of the three unheld sites; the key half of the walk
+removed.
+
+**On the gate's answer to my meta-question**, which is worth recording because I had it slightly
+wrong. I proposed "served form for a SIZE property, raw form for a DISCLOSURE property". The gate's
+correction: the axis is not served-versus-raw but *which side of the transform the property is
+defined on*, and the two-rule form is blind in one direction - a transform can CREATE a disclosure
+rather than truncate one away, and then only the served side shows it. The safe generalisation is
+asymmetric: **assert disclosure on both forms and size on the served form, and name the transform
+each assertion is blind to.** The key-name finding above is exactly that shape from the other end.
+
+**How it was verified.** Loop green on all seven legs: 994 passed, 2 skipped, coverage 97.53%. All six surrogate attack
+fixtures and the three corrupt-snapshot fixtures re-run and all fail closed.
+
 ## V0.26.28 (2026-09-02)
 
 **What.** The gap I put to the security gate rather than wait for it to be found twice: the

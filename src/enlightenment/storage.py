@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from enlightenment.identifiers import unencodable_pointer
+
 #: Stamped into every snapshot. Bump it with a forward, idempotent migration.
 SCHEMA_VERSION = 1
 
@@ -259,6 +261,21 @@ class TrainingStore:
             # invalid data, not a caller type error.
             raise ValueError(  # noqa: TRY004
                 "stored snapshot is malformed: top level is not an object"
+            )
+        # The SAME boundary rule the content tree gets, and it was missing here. A lone surrogate
+        # is legal JSON and cannot be encoded, so it parses cleanly and then raises inside
+        # pydantic's serialiser while the response is being rendered: measured, a **500 on the
+        # unauthenticated `GET /api/v1/sessions`**. Not reachable from the HTTP edge - six body
+        # forms all answer 422 - so the precondition is write access to the data volume, an actor
+        # this threat model puts out of scope. Closed anyway, because "the snapshot is trusted
+        # stored state" and "the progress file is not" were two different answers to one question
+        # in adjacent modules, and because a route that 500s on data it wrote itself is a route
+        # nobody can diagnose.
+        if surrogates := unencodable_pointer(parsed):
+            where, total = surrogates
+            raise ValueError(
+                f"stored snapshot has {total} string(s) that cannot be encoded as UTF-8;"
+                f" one is at {where}"
             )
         return migrate(parsed)
 

@@ -1154,7 +1154,9 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
     #: loaded with zero errors and every route answered 200, because `served_identifier` replaces
     #: it on the way to the census; a surrogate key in a modelled record is refused by pydantic
     #: with a message naming no field. Held by luck twice is what this boundary replaces.
-    rows[1].setdefault("stimulus", {}).setdefault("params", {})[f"key{LONE_SURROGATE}"] = 1
+    rows[1].setdefault("stimulus", {}).setdefault("params", {})[
+        f"SECRET-AUTHORED-KEY{LONE_SURROGATE}"
+    ] = 1
     (root / "drills.json").write_text(json.dumps(document), encoding="utf-8")
     assert "\\ud800" in (root / "drills.json").read_text(encoding="utf-8"), (
         "the fixture no longer writes the surrogate as a JSON escape, so it is not under test"
@@ -1179,9 +1181,14 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
         #: traversal reaches rather than the first in document order. Asserting `/prompt` here
         #: assumed an ordering the code refuses to promise, and it failed the moment the key half
         #: of the walk landed - a test asserting more than the contract, caught by the contract.
-        assert "/drills/0/prompt" in joined or "/stimulus/params/key" in joined, (
+        assert "/drills/0/prompt" in joined or "/stimulus/params/SECRET-AUTHORED-KEY" in joined, (
             f"the error names no JSON pointer: {joined[:300]}"
         )
+        #: A KEY is named and a VALUE is not, which is the rule stated precisely rather than as
+        #: "never the offending value". A pointer to a key IS the key, so a pointer that hid it
+        #: would name nothing; the marker sits in BOTH halves of this fixture so each side of the
+        #: distinction has a driver. Before this the marker was only in a value, and a key-name
+        #: disclosure passed green - which the security gate found by putting one in a key.
         #: Two instances, so the COUNT is real and the KEY was seen as well as the value. Without
         #: the key half of the walk this reads 1, which is the mutation that holds it.
         assert "2 string(s)" in joined, f"the walk missed the key: {joined[:300]}"

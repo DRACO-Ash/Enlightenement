@@ -75,6 +75,7 @@ from enlightenment.storage import (
     probe_writable,
 )
 from enlightenment.training import DrillLoop, ProgressStore
+from enlightenment.training.drill import bounded_reason
 from enlightenment.training_api import register_training_routes, resolve_content_root
 
 #: Liveness paths. Cheap, dependency-free, always 200: a downstream outage must never
@@ -653,7 +654,24 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
     async def list_sessions(
         response: Response, if_none_match: Annotated[str | None, Header()] = None
     ) -> Any:
-        snapshot = await asyncio.to_thread(runtime.store.load)
+        try:
+            snapshot = await asyncio.to_thread(runtime.store.load)
+        except ValueError as exc:
+            #: FAIL CLOSED on a snapshot this process cannot read, rather than 500. Every
+            #: malformed shape the store already refuses - not JSON, not UTF-8, not an object,
+            #: nested too deep, and now a string that cannot be encoded - arrived here as an
+            #: unhandled exception and a generic 500 on an UNAUTHENTICATED route. Measured on all
+            #: four. A 503 naming the fault is diagnosable from a screenshot; a 500 is not, and
+            #: the App Store contract asks for exactly that distinction on the health paths.
+            #:
+            #: The detail is the store's own message, which names the fault and a JSON pointer and
+            #: never a stored value, and it is length-bounded on the way out for the same reason
+            #: every other content-derived string on an anonymous route is.
+            _logger.exception("stored snapshot is unreadable")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"error": "store_unavailable", "message": bounded_reason(str(exc))},
+            ) from None
         etag = f'W/"{snapshot["rev"]}"'
         response.headers["etag"] = etag
         if if_none_match and if_none_match.strip() == etag:

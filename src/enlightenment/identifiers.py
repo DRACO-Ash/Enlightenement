@@ -11,7 +11,7 @@ obey is not a rule, so it moved here.
 from __future__ import annotations
 
 import hashlib
-from typing import Final
+from typing import Any, Final
 
 #: Longest content-supplied string, in BYTES of UTF-8, stored on a run row or served as an
 #: identity: the item id, the
@@ -62,6 +62,101 @@ def utf8(text: str) -> bytes:
     non-ASCII string, a degree sign in a detection pattern, which no cap touches.
     """
     return text.encode("utf-8", errors="replace")
+
+
+def _encodable(text: str) -> bool:
+    """Whether `text` survives UTF-8 encoding. False for a string carrying a lone surrogate."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def unencodable_pointer(node: Any) -> tuple[str, int] | None:
+    """A JSON pointer to ONE string in `node` that cannot be encoded as UTF-8, and how many.
+
+    Shared by the two boundaries that read JSON somebody else wrote: `content/loader._read_json`
+    and `storage.TrainingStore.load`. It lived in the loader first, and the security gate found the
+    consequence of that: a lone surrogate in the stored snapshot produced a **500 on the
+    unauthenticated `GET /api/v1/sessions`**, because the store had no equivalent check. One
+    boundary rule in one place beats two copies that diverge, which is this project's rule for
+    every other shared control.
+
+    **Keys as well as values, at every depth, through lists as well as dicts.** The first version
+    walked values only and nothing crashed - by downstream accident in two separate layers, not by
+    design - so the walk is complete rather than relying on either.
+
+    "One" rather than "the first": this walks with an explicit stack, so the pointer is the first
+    the traversal REACHES and not the first in document order. Stated because the message is what
+    an author acts on, and an ordering claim the code does not make is false precision.
+
+    **Scalars are tested inline and never pushed, and a pointer is built only on a failure.** The
+    first version pushed a tuple and an eagerly formatted pointer string for every node including
+    integers: measured on a 6.0 MB document of `{"a": [1] * 2_000_000}`, `json.loads` peaked at
+    17.1 MB and the walk then peaked at **230.0 MB transient**, thirteen times the parse. Only
+    containers are pushed now. The load path runs at startup with one worker, so an exhaustion
+    there is "the container never started and no health path answered" - the failure this project
+    forbids by name, and not one a check added for safety should introduce.
+
+    Non-recursive on purpose: `[` nested 200,000 deep dies in `json.loads` with the `RecursionError`
+    the loader already catches, and never here.
+    """
+    first: str | None = None
+    total = 0
+    stack: list[tuple[Any, str]] = [(node, "")]
+    while stack:
+        current, where = stack.pop()
+        containers, unencodable = _entries(current, where)
+        stack.extend(containers)
+        for at in unencodable:
+            total += 1
+            if first is None:
+                first = at
+    return (first, total) if first is not None else None
+
+
+def _entries(current: Any, where: str) -> tuple[list[tuple[Any, str]], list[str]]:
+    """Containers under `current` to push, and pointers to its directly-held bad strings.
+
+    Split out of `unencodable_pointer` because ruff's complexity limit is a real bound and a
+    `noqa` would be a suppression. The split is also the honest shape: one function decides what
+    is worth pushing, the other only counts.
+    """
+    if isinstance(current, dict):
+        return _dict_entries(current, where)
+    if isinstance(current, list):
+        return _list_entries(current, where)
+    if isinstance(current, str) and not _encodable(current):
+        return [], [where or "/"]
+    return [], []
+
+
+def _dict_entries(current: dict[Any, Any], where: str) -> tuple[list[tuple[Any, str]], list[str]]:
+    """A dict's pushable children and bad strings. KEYS are checked as well as values."""
+    containers: list[tuple[Any, str]] = []
+    unencodable: list[str] = []
+    for key, value in current.items():
+        at = f"{where}/{key}"
+        if isinstance(key, str) and not _encodable(key):
+            unencodable.append(at)
+        if isinstance(value, dict | list):
+            containers.append((value, at))
+        elif isinstance(value, str) and not _encodable(value):
+            unencodable.append(at)
+    return containers, unencodable
+
+
+def _list_entries(current: list[Any], where: str) -> tuple[list[tuple[Any, str]], list[str]]:
+    """A list's pushable children and bad strings. Scalars are never pushed."""
+    containers: list[tuple[Any, str]] = []
+    unencodable: list[str] = []
+    for index, value in enumerate(current):
+        if isinstance(value, dict | list):
+            containers.append((value, f"{where}/{index}"))
+        elif isinstance(value, str) and not _encodable(value):
+            unencodable.append(f"{where}/{index}")
+    return containers, unencodable
 
 
 def cut_to_bytes(text: str, limit: int) -> str:
