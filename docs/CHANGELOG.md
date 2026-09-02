@@ -2,6 +2,50 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.14 (2026-09-02)
+
+**What.** Two majors. A SIXTH instance of the shortened-identifier class, outside the module a
+scoped sweep had cleared, and a claim in the V0.26.13 audit row that was false: one of the five
+mutations it said were "each killed by its own test" was killed by nothing.
+
+**The sixth instance.** `training_api` named an authored identifier in the anonymous
+`document_too_large` 503 through a **cross-module import of a private helper** - which
+`bounded_reason`'s own docstring forbids, and while the public `served_identifier` already existed.
+Two procedure ids sharing an 85-character prefix, both over the reference budget, were refused under
+ONE name matching neither id an author wrote. A `drill.py`-scoped sweep missed it, which is why the
+rule is "one function, everywhere" rather than "this module is clean".
+
+**My own claim, false.** V0.26.13 said the served drill payload's `item_id` AND `cue_id` collapsed
+and that five mutations were each killed. Reverting the `cue_id` site left all 978 tests green,
+because the reshape stopped at `row["id"]`: the tree still put the distinguishing part BEFORE the cap
+for `cue_id`. **The identical shape fault, one field along, in the file whose own comment names
+`cue_id` as the field that "asserted nothing" once before.** The reshape did not go far enough, and
+that is what left `cue_id` and the dashboard's `competency_id` unheld while the row claimed them.
+
+**Four distinctness assertions where there were length assertions.** The served `cue_id` across the
+traversal, the reveal's `item_id` on the answer route, the dashboard's `competency_id`, and the two
+oversized library documents in the 503. Each was a separate live collapse and each dies to its own
+mutation now.
+
+**What is NOT held, said plainly rather than counted as covered.** Five call sites survive inversion:
+`procedure_id` and `axis` on the run record, the refusal name in `_serve_one`, and the unread-params
+census key. All are write-only audit labels or a census dimension nothing compares, verified by
+reading every consumer rather than assumed. They use the one function for consistency, so the next
+site is right by default, and they are recorded here as unheld rather than folded into a count.
+
+**The migration question, answered with a measurement.** Routing the STORED `RunRecord.item_id`
+through the shortening function changes the form of an existing progress row. The longest identifier
+anywhere in the shipped library is 30 characters, measured across every id leaf, so the shortened
+form equals the raw form for every shipped id and no existing row can hold a different one. Nothing
+is deployed. The residual, bounded and non-corrupting: `CONTENT_DIR` is a supported operator knob, so
+a tree with ids over 64 characters plus a pre-V0.26.13 progress file resets that item's attempt count
+to zero ONCE, giving one repeated seed before it self-heals as new rows are written in the new form.
+No code, one sentence, which is what the evidence supports.
+
+**How it was verified.** Loop green on all seven legs: 979 passed, 2 skipped, coverage 97.42%. Four
+mutations, each killed by its own test: the 503 name, the payload `cue_id`, the reveal `item_id`, and
+the dashboard `competency_id`.
+
 ## V0.26.13 (2026-09-02)
 
 **What.** The V0.26.12 fix for the keying bug was itself held by no test, and the gate proved it by

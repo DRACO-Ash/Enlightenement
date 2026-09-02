@@ -42,7 +42,7 @@ from enlightenment.training.drill import (
     MAX_SERVED_WITHHELD,
     MAX_WITHHOLD_REASON,
 )
-from enlightenment.training_api import MAX_SERVED_ERRORS
+from enlightenment.training_api import MAX_SERVED_DOCUMENT_BYTES, MAX_SERVED_ERRORS
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_ROOT = ROOT / "content"
@@ -591,7 +591,7 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
         #: seven characters and this tree never stretched the field: deleting its bound left the
         #: whole suite green, and the changelog claimed the mutation was killed. A hostile tree that
         #: skips a field certifies that field.
-        row["cue_id"] = f"CUE-{index}-{long_id}"
+        row["cue_id"] = f"CUE-{long_id}-{index}"
         row["prompt"] = long_text
         row["explain"] = long_text
         #: WITHHELD BY CONSTRUCTION, and only when asked. `computed_from_params` with no generator
@@ -611,7 +611,7 @@ def _hostile_content(destination: Path, *, withhold_all: bool = False) -> Path:
     entries = competencies["competencies"] if isinstance(competencies, dict) else competencies
     template = dict(entries[0])
     for index, entry in enumerate(entries):
-        entry["id"] = f"CMP-{index}-{long_id}"
+        entry["id"] = f"CMP-{long_id}-{index}"
         entry["name"] = long_text
     while len(entries) <= MAX_SERVED_COMPETENCIES:
         clone = dict(template)
@@ -784,6 +784,9 @@ def test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree(
         for row in me["competencies"]:
             assert len(row["name"]) <= MAX_CONTENT_STRING, len(row["name"])
             assert len(row["competency_id"]) <= MAX_CONTENT_STRING, len(row["competency_id"])
+        assert len({row["competency_id"] for row in me["competencies"]}) == len(
+            me["competencies"]
+        ), sorted(row["competency_id"] for row in me["competencies"])[:3]
         #: And the honest tree still SERVES those documents, so the fail-closed branch above has
         #: not been bought by refusing everything. Asserted on the real library, not the
         #: hostile one.
@@ -848,6 +851,53 @@ def _answer_body(client: TestClient) -> dict[str, Any]:
         #: error body certifies nothing, which is the fault it exists to prevent.
         "elapsed_ms": 1000,
     }
+
+
+def test_two_oversized_library_documents_are_named_distinctly_in_the_refusal(
+    token_config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """The SIXTH instance of the shortened-identifier class, and the one outside `drill.py`.
+
+    `training_api` imported the private `_bounded` across a module boundary - which
+    `bounded_reason`'s own docstring forbids, and while `served_identifier` was already public - and
+    used it to name an authored identifier in the anonymous `document_too_large` 503. Two procedure
+    ids sharing an 85-character prefix, both over the reference budget, were served as ONE name
+    matching neither id an author wrote, on a route that needs no token.
+
+    A `drill.py`-scoped sweep missed it, which is why the rule is now "one function, everywhere"
+    rather than "this module is clean".
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    core = root / "procedures" / "procedures-core.json"
+    document = json.loads(core.read_text(encoding="utf-8"))
+    entries = document["procedures"] if isinstance(document, dict) else document
+    shared = "PROC-" + "Z" * 85
+    #: Over the document budget, so both refuse, and distinguishable only past the cap.
+    for index, entry in enumerate(entries[:2]):
+        entry["id"] = f"{shared}-{index}"
+        entry["name"] = "Y" * (MAX_SERVED_DOCUMENT_BYTES * 2)
+    core.write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=token_config,
+        store=store,
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app) as client:
+        named: list[str] = []
+        for index in range(2):
+            response = client.get(f"/api/v1/content/procedure/{shared}-{index}")
+            assert response.status_code == 503, (
+                f"the document is under budget, so this asserts nothing: {response.status_code}"
+            )
+            message = response.json()["detail"]["message"]
+            assert "document_too_large" in response.text, message
+            named.append(message)
+        assert named[0] != named[1], (
+            f"two distinct authored documents are refused under one name: {named[0][:120]}"
+        )
 
 
 def test_the_withheld_collections_are_count_capped_and_report_an_honest_total(
@@ -943,6 +993,8 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
     with TestClient(app) as client:
         widest_stimulus = 0
         drawn: set[str] = set()
+        cue_ids: set[str] = set()
+        revealed: set[str] = set()
         for _ in range(DRAWS):
             served = client.get("/api/v1/drill/next")
             assert served.status_code == 200, served.content[:200]
@@ -965,6 +1017,8 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
             #: agreed with it.
             assert len(body["item_id"]) <= MAX_CONTENT_STRING, len(body["item_id"])
             assert len(body["cue_id"] or "") <= MAX_CONTENT_STRING, len(body["cue_id"] or "")
+            if body["cue_id"]:
+                cue_ids.add(body["cue_id"])
             assert len(body["prompt"]) <= MAX_SERVED_PROMPT, len(body["prompt"])
             #: The ANSWER must succeed, or the traversal stalls on one item and the guard below
             #: passes on a handful of draws. `DRILL_LIMIT` is 20 against this loop's 24, so four
@@ -979,6 +1033,7 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
                     "elapsed_ms": 1000,
                 },
             )
+            revealed.add(answered.json()["item_id"] if answered.status_code == 200 else "")
             assert answered.status_code == 200, (
                 f"the answer for {body['item_id']} returned {answered.status_code}, so the"
                 f" traversal cannot advance: {answered.content[:160]!r}"
@@ -992,6 +1047,17 @@ def test_a_stateful_route_is_measured_across_the_item_space_not_on_one_draw(
         assert len(drawn) >= DRAWS_EXPECTED, (
             f"the loop drew {len(drawn)} distinct items, under the {DRAWS_EXPECTED} this"
             f" traversal reaches: {sorted(drawn)}"
+        )
+        #: DISTINCTNESS on every served identity, not only length. Each of these was a separate
+        #: live instance of one fault: a shortened id that collides reads as an identifier no author
+        #: wrote. `cue_id` in particular was named by this file's own comment as the field that
+        #: "asserted nothing" once before, and it asserted nothing again - because the tree put the
+        #: distinguishing part BEFORE the cap for that field while fixing it for the drill id.
+        assert len(cue_ids) == len(drawn), (
+            f"{len(drawn)} items drew {len(cue_ids)} distinct served cue ids: {sorted(cue_ids)[:3]}"
+        )
+        assert len(revealed) == len(drawn), (
+            f"{len(drawn)} items revealed {len(revealed)} distinct item ids on the answer route"
         )
         assert widest_stimulus > MAX_ANONYMOUS_DIAGNOSTIC_BYTES, (
             f"the widest stimulus was {widest_stimulus} bytes, so the split between the two"

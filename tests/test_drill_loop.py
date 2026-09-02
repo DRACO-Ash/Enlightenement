@@ -991,8 +991,8 @@ def test_a_withheld_item_with_a_long_id_is_excluded_from_selection_not_only_decl
     )
 
     #: DECLARED. Shortened on the wire, so matched on the prefix rather than on equality.
-    named = manifest_ids = loop.manifest()["items_without_a_resolvable_answer"]
-    assert any(item_id.startswith("DRL-EXCLUDE-") for item_id in named), manifest_ids
+    named = loop.manifest()["items_without_a_resolvable_answer"]
+    assert any(item_id.startswith("DRL-EXCLUDE-") for item_id in named), named
 
     #: AND EXCLUDED. Twelve serves, each answered so the schedule advances, and the withheld item
     #: must never be among them. With the key bounded this returns the same excluded item every

@@ -49,7 +49,7 @@ from enlightenment.training import (
     DrillLoop,
     bounded_reason,
 )
-from enlightenment.training.drill import _bounded as bounded_identifier
+from enlightenment.training.drill import served_identifier
 
 #: How many content errors either anonymous route serves. A NAMED constant across both, because
 #: the two literals drifted apart once already and the count cap is half of the bound: per-entry
@@ -324,7 +324,7 @@ def _within_document_budget(document: dict[str, Any], identifier: str) -> dict[s
             detail={
                 "error": "document_too_large",
                 "message": (
-                    f"The library document {bounded_identifier(identifier)!r} serialises"
+                    f"The library document {served_identifier(identifier)!r} serialises"
                     f" to {size} bytes,"
                     f" over the {MAX_SERVED_DOCUMENT_BYTES}-byte budget for an anonymous"
                     " reference response. This is a content fault, not a request fault."
