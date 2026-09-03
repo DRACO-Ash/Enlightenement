@@ -23,9 +23,10 @@ from enlightenment.generators import build_registry
 from enlightenment.generators.base import rng
 from enlightenment.identifiers import (
     DIGEST_MARKER,
+    MAX_NESTING_DEPTH,
     cut_to_bytes,
     served_identifier,
-    unencodable_pointer,
+    unservable_pointer,
     utf8,
 )
 from enlightenment.training import (
@@ -794,16 +795,35 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     #: `rng` digests a product id, which is content-authored.
     assert rng(0, "\ud800") is not None
 
-    #: `unencodable_pointer`'s ROOT-STRING arm and its `where or "/"` pointer. Both callers pass a
+    #: `unservable_pointer`'s ROOT-STRING arm and its `where or "/"` pointer. Both callers pass a
     #: dict and the stack only ever holds the root plus containers, so this branch cannot fire in
     #: production - it is the documented contract of a shared function, and a documented contract
     #: with no driver is the pattern the array branch already cost this project one release. Two
     #: lines make it real and clear the last uncovered region the rewrite added.
-    assert unencodable_pointer("\ud800") == ("/", 1)
-    assert unencodable_pointer("plain") is None
+    assert unservable_pointer("\ud800") == ("/", 1, "surrogate")
+    assert unservable_pointer("plain") is None
     #: And the ARRAY arm at the unit level, beside the route-level driver, because the route test
     #: proves the CONSEQUENCE and this proves the POINTER shape only that branch produces.
-    assert unencodable_pointer({"a": ["ok", "bad\ud800"]}) == ("/a/1", 1)
+    assert unservable_pointer({"a": ["ok", "bad\ud800"]}) == ("/a/1", 1, "surrogate")
+
+    #: And the DEPTH arm, which shares this traversal. Both kinds fail identically - inside the
+    #: serialiser, while the response renders, outside every route's try/except - so they are
+    #: checked together rather than in two walks that could drift. The bound is on the deepest
+    #: CONTAINER, so a document whose deepest container sits at `MAX_NESTING_DEPTH` serves and one
+    #: level further does not; asserted from both sides, because a bound asserted from one side is
+    #: a bound nobody can place.
+    def nested(levels: int) -> Any:
+        node: Any = 1
+        for _ in range(levels):
+            node = {"d": node}
+        return node
+
+    assert unservable_pointer(nested(MAX_NESTING_DEPTH)) is None
+    deepest = unservable_pointer(nested(MAX_NESTING_DEPTH + 1))
+    assert deepest is not None, "a document past the serialiser depth was not refused"
+    assert deepest[2] == "depth", deepest
+    #: Four times the deepest thing this project ships, so no real content is near the bound.
+    assert MAX_NESTING_DEPTH == 32, "the depth bound moved; re-measure the shipped content tree"
     assert len(cut_to_bytes("\ud800" * 100, MAX_CONTENT_STRING).encode("utf-8")) <= (
         MAX_CONTENT_STRING
     )

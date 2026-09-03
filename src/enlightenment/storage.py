@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from enlightenment.audit import sanitise_log_value
-from enlightenment.identifiers import unencodable_pointer
+from enlightenment.identifiers import MAX_NESTING_DEPTH, unservable_pointer
 
 #: Stamped into every snapshot. Bump it with a forward, idempotent migration.
 SCHEMA_VERSION = 1
@@ -48,6 +48,13 @@ LOCK_FILENAME = "training.lock"
 
 #: Cap on stored sessions. The newest are kept; a fresh entry is never the one dropped.
 MAX_SESSIONS = 500
+
+#: Longest revision, in digits, on either side of the wire. Comfortably past any real revision (a
+#: 64-bit counter is 19 digits) and far below CPython's 4,300-digit integer conversion limit,
+#: which a longer value would trip as a bare `ValueError`. It lives here rather than in `app`
+#: because the STORED side needs it and `storage` cannot import from `app`; `app` re-exports it,
+#: so the request cap and the storage cap can never drift apart again.
+MAX_REVISION_DIGITS = 19
 
 #: How many timestamped backups to retain, so storage does not grow without limit.
 BACKUP_RETENTION = 5
@@ -183,6 +190,17 @@ def migrate(snapshot: Snapshot) -> Snapshot:
         raise ValueError("stored snapshot is malformed: 'sessions' holds a non-object entry")
     if not isinstance(migrated["rev"], int) or isinstance(migrated["rev"], bool):
         raise ValueError("stored snapshot is malformed: 'rev' is not an integer")  # noqa: TRY004
+    # MAGNITUDE, not only type, and bounded to the same figure the REQUEST side already uses.
+    # `app.py` caps a submitted `If-Match` at `MAX_REVISION_DIGITS` and the stored value had no
+    # bound at all, so the two sides of one number disagreed. The `ETag` is built from it and a
+    # header is not covered by any body ceiling: measured, a planted 4,000-digit `rev` produced a
+    # 4,004-byte `ETag` on the anonymous listing. Past 4,300 digits it happened to 503 anyway,
+    # through CPython's integer-to-string conversion limit surfacing as a bare `ValueError` - a
+    # bound by accident, which is the kind this project does not keep.
+    if len(str(abs(migrated["rev"]))) > MAX_REVISION_DIGITS:
+        raise ValueError(
+            f"stored snapshot is malformed: 'rev' has more than {MAX_REVISION_DIGITS} digits"
+        )
     migrated["schemaVersion"] = SCHEMA_VERSION
     return migrated
 
@@ -292,8 +310,13 @@ class TrainingStore:
         # stored state" and "the progress file is not" were two different answers to one question
         # in adjacent modules, and because a route that 500s on data it wrote itself is a route
         # nobody can diagnose.
-        if surrogates := unencodable_pointer(parsed):
-            where, total = surrogates
+        if unservable := unservable_pointer(parsed):
+            where, total, kind = unservable
+            if kind == "depth":
+                raise ValueError(
+                    f"stored snapshot nests deeper than {MAX_NESTING_DEPTH}, which the response"
+                    f" serialiser refuses; one is at {sanitise_log_value(where)}"
+                )
             # `sanitise_log_value` at the RAISE, not at the wire. This message is the first of the
             # store's to carry FILE CONTENT - a JSON pointer contains the key names it walks
             # through - and `app.py` logs it with `_logger.exception`, whose traceback renders the

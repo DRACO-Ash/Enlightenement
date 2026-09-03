@@ -50,7 +50,7 @@ from enlightenment.content.models import (
     Rubric,
     ScenarioTemplate,
 )
-from enlightenment.identifiers import served_identifier, unencodable_pointer
+from enlightenment.identifiers import MAX_NESTING_DEPTH, served_identifier, unservable_pointer
 
 #: Files the engine reads. The package carries more; these are the ones a missing copy of which
 #: stops the drill loop rather than degrading a later surface.
@@ -171,8 +171,13 @@ def _read_json(path: Path) -> dict[str, Any]:
         raise ContentShapeError(
             f"{path.name}: expected a JSON object at the top level, found {type(document).__name__}"
         )
-    if surrogates := unencodable_pointer(document):
-        where, total = surrogates
+    if unservable := unservable_pointer(document):
+        where, total, kind = unservable
+        if kind == "depth":
+            raise ContentShapeError(
+                f"{path.name}: a value nests deeper than {MAX_NESTING_DEPTH}, which the response"
+                f" serialiser refuses; one is at {where}"
+            )
         raise ContentShapeError(
             f"{path.name}: {total} string(s) carry a lone surrogate, which is legal JSON and"
             f" cannot be encoded as UTF-8 or served; one is at {where}"

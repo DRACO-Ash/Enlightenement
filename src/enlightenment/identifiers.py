@@ -64,6 +64,21 @@ def utf8(text: str) -> bytes:
     return text.encode("utf-8", errors="replace")
 
 
+#: How deep a value may nest before this project refuses to serve it. **A serialiser limit, not a
+#: taste limit.** `pydantic_core` raises `Circular reference detected (depth exceeded)` at about
+#: 250, and that raise happens while the RESPONSE IS RENDERING - outside every route's try/except -
+#: so it reaches an anonymous caller as a 500 while `/healthz` stays 200. Measured: a stored
+#: session row carrying a 252-deep dict produced exactly that on `GET /api/v1/sessions`; 250 was
+#: fine, 252 was not, and a nested list does the same.
+#:
+#: 32 is four times the deepest thing this project actually ships - the two procedure libraries
+#: reach 8, every other content file and every session row is shallower - and an order of
+#: magnitude below where the serialiser gives way. Refusing at the LOAD boundary rather than at
+#: the wire is the same rule as the surrogate check beside it: one boundary in one place beats two
+#: copies that drift.
+MAX_NESTING_DEPTH: Final = 32
+
+
 def _encodable(text: str) -> bool:
     """Whether `text` survives UTF-8 encoding. False for a string carrying a lone surrogate."""
     try:
@@ -73,8 +88,14 @@ def _encodable(text: str) -> bool:
     return True
 
 
-def unencodable_pointer(node: Any) -> tuple[str, int] | None:
-    """A JSON pointer to ONE string in `node` that cannot be encoded as UTF-8, and how many.
+def unservable_pointer(node: Any) -> tuple[str, int, str] | None:
+    """A JSON pointer to ONE value in `node` that cannot be SERVED, how many, and which kind.
+
+    Two kinds, one traversal: a string carrying a lone surrogate, which cannot be encoded as UTF-8,
+    and a value nested past `MAX_NESTING_DEPTH`, which pydantic's serialiser refuses. They are
+    checked together because they fail identically - inside the serialiser, while the response
+    renders, outside every route's try/except, as a 500 on an anonymous route with `/healthz`
+    still 200 - and because a second traversal is a second thing to keep in step.
 
     Shared by the two boundaries that read JSON somebody else wrote: `content/loader._read_json`
     and `storage.TrainingStore.load`. It lived in the loader first, and the security gate found the
@@ -104,22 +125,28 @@ def unencodable_pointer(node: Any) -> tuple[str, int] | None:
     """
     first: str | None = None
     total = 0
-    stack: list[tuple[Any, str]] = [(node, "")]
+    stack: list[tuple[Any, str, int]] = [(node, "", 1)]
     while stack:
-        current, where = stack.pop()
+        current, where, depth = stack.pop()
+        #: DEPTH is checked before the children are pushed, so the refusal names the node that
+        #: crossed the bound rather than one of its descendants. Returned immediately rather than
+        #: counted: a document too deep to serve is refused whole, and walking the rest of it to
+        #: total up strings nobody will ever see is work for no diagnosis.
+        if depth > MAX_NESTING_DEPTH:
+            return (where or "/", 1, "depth")
         containers, unencodable = _entries(current, where)
-        stack.extend(containers)
+        stack.extend((value, at, depth + 1) for value, at in containers)
         for at in unencodable:
             total += 1
             if first is None:
                 first = at
-    return (first, total) if first is not None else None
+    return (first, total, "surrogate") if first is not None else None
 
 
 def _entries(current: Any, where: str) -> tuple[list[tuple[Any, str]], list[str]]:
     """Containers under `current` to push, and pointers to its directly-held bad strings.
 
-    Split out of `unencodable_pointer` because ruff's complexity limit is a real bound and a
+    Split out of `unservable_pointer` because ruff's complexity limit is a real bound and a
     `noqa` would be a suppression. The split is also the honest shape: one function decides what
     is worth pushing, the other only counts.
     """

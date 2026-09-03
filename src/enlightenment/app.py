@@ -40,6 +40,7 @@ factory, so no function approaches the cognitive-complexity cap the quality gate
 # only thing it bought was lazy evaluation - and lazy evaluation is exactly what broke.
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -66,6 +67,9 @@ from enlightenment.identifiers import served_identifier
 from enlightenment.middleware import BodyLimitMiddleware, NoSniffMiddleware
 from enlightenment.models import SessionPatch, SessionUpsert
 from enlightenment.ratelimit import RateLimiter
+from enlightenment.storage import (
+    MAX_REVISION_DIGITS as STORED_MAX_REVISION_DIGITS,
+)
 from enlightenment.storage import (
     SCHEMA_VERSION,
     ProbeResult,
@@ -157,10 +161,11 @@ MAX_SERVED_SESSIONS_BYTES = 256 * 1024
 #: Actor label for a call authenticated with the shared team token.
 TEAM_ACTOR = "team"
 
-#: Longest revision a validator may declare. Comfortably past any real revision (a 64-bit
-#: counter is 19 digits) and far below CPython's 4300-digit integer conversion limit, which a
-#: longer value would trip as a ValueError.
-MAX_REVISION_DIGITS = 19
+#: Longest revision a validator may declare. Re-exported from `storage`, which is where it now
+#: lives, because the STORED side needed the same figure and `storage` cannot import from here.
+#: One constant for one number: the two sides of a revision disagreed for as long as there were
+#: two places to put it, and a planted 4,000-digit `rev` reached an anonymous `ETag` header.
+MAX_REVISION_DIGITS = STORED_MAX_REVISION_DIGITS
 
 _logger = logging.getLogger("enlightenment.app")
 
@@ -684,13 +689,50 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         #: are in this response - and `total` is the honest untruncated figure, so a short
         #: listing cannot read as the whole dataset. Same shape as the withheld collections.
         sessions = [dict(session) for session in stored[-MAX_SERVED_SESSIONS:]]
-        return {
+        body = {
             "count": len(sessions),
             "total": len(stored),
             "truncated": len(sessions) < len(stored),
             "rev": snapshot["rev"],
             "sessions": sessions,
         }
+        #: The byte ceiling ENFORCED, not merely asserted in a test. `MAX_SERVED_SESSIONS_BYTES`
+        #: appeared nowhere in `src/` except its own definition, so it bounded what the write path
+        #: accepts and nothing else: measured, a 5 MB field value planted on the volume produced a
+        #: 5,000,082-byte anonymous response, nineteen times the documented ceiling and past
+        #: `MAX_PAYLOAD_BYTES`. The count cap cannot see that, because the fault is one row's size
+        #: rather than the number of rows.
+        #:
+        #: FAIL CLOSED rather than truncate, the same choice as an oversized library document: a
+        #: silently shortened listing reads as the whole dataset, which is the fault `total` and
+        #: `truncated` exist to prevent, and a row this size did not come through the API.
+        #: `ensure_ascii=False`, because that is what `JSONResponse` renders with. The first
+        #: version left the default `True`, which escapes an astral character to twelve ASCII
+        #: characters instead of four bytes - so it over-counted multi-byte content threefold and
+        #: refused the anonymous-body sweep's own legitimate 500-row astral fixture at 699,264
+        #: bytes against a wire size of about 235,000. Measuring a ceiling in a different encoding
+        #: from the one the wire uses is the code-point-versus-byte fault of V0.26.24, one level
+        #: along, and it was caught by a fixture rather than by reasoning.
+        rendered = len(
+            json.dumps(body, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+        )
+        if rendered > MAX_SERVED_SESSIONS_BYTES:
+            _logger.error(
+                "session listing is %d bytes against a ceiling of %d",
+                rendered,
+                MAX_SERVED_SESSIONS_BYTES,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "store_unavailable",
+                    "message": (
+                        f"the stored sessions render to {rendered} bytes against a ceiling of"
+                        f" {MAX_SERVED_SESSIONS_BYTES}; a row was not written through this API"
+                    ),
+                },
+            )
+        return body
 
     @app.post("/api/v1/sessions", status_code=status.HTTP_201_CREATED)
     async def upsert_session(

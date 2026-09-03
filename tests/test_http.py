@@ -22,6 +22,7 @@ from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
 from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
+    MAX_SERVED_SESSIONS_BYTES,
     Limiters,
     ProbeSettings,
     TrainingPaths,
@@ -36,6 +37,15 @@ from enlightenment.storage import STORE_FILENAME, ProbeResult, TrainingStore
 from enlightenment.training.drill import MAX_WITHHOLD_REASON
 
 CONTENT_ROOT = Path(__file__).resolve().parents[1] / "content"
+
+
+def _nested(levels: int) -> Any:
+    """A value nested `levels` deep, for the serialiser-depth fixture."""
+    node: Any = 1
+    for _ in range(levels):
+        node = {"d": node}
+    return node
+
 
 VALID_SESSION = {"id": "alpha-one", "title": "Alpha One", "scenario": "TBC, re-verify"}
 AUTH = {AUTH_HEADER: TEST_PLACEHOLDER}
@@ -1557,10 +1567,12 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
     `/livez`, `/ping`, `/health` and `/` are dependency-free and stay 200 while the storage-proving
     paths go 503. A downstream fault must never restart a healthy container.
     """
-    #: EVERY shape the store refuses. The first version drove three, then five, and the claim
-    #: "all five" was itself the fault: there was a SIXTH, refused nowhere. A binding test that
-    #: binds less than it claims is what stops anyone looking, so this list is the enumeration and
-    #: `test_migrate_rejects_a_sessions_entry_that_is_not_an_object` holds the member shapes.
+    #: THE SHAPES ENUMERATED BELOW, and nothing more is claimed. This list has now been wrong
+    #: twice by claiming completeness: "all five" missed a `sessions` member that was not an
+    #: object, and the enumeration that replaced it missed nesting depth. Two over-claims in two
+    #: consecutive releases is enough evidence that a hand-written completeness claim about this
+    #: store is not worth making, so the wording is now scoped to the list rather than to the
+    #: store, and the member shapes have their own parametrised test.
     corrupt: dict[str, str | bytes] = {
         #: The NEWLINE, the forged object and the SURROGATE are all in the SAME key, and that
         #: matters: the walk reports the pointer of the string it found, so a fixture with the
@@ -1589,6 +1601,19 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
         "a sessions entry coerced from a pair list": json.dumps(
             {"rev": 1, "sessions": [[["id", "GHOST-ONE"], ["title", "Fabricated"]]]}
         ),
+        #: NESTING DEPTH, the shape the previous enumeration missed. It parses, it survives
+        #: `migrate`, it carries no surrogate - and `pydantic_core` then raises
+        #: `Circular reference detected (depth exceeded)` at about 250 WHILE THE RESPONSE IS
+        #: RENDERING, outside the route's try/except, so the 503 mapping never sees it. Measured:
+        #: 250 served, 252 gave a 500 with `/healthz` still 200. Refused at 32, which is four
+        #: times the deepest thing this project ships.
+        "a value nested past the serialiser's limit": json.dumps(
+            {"rev": 1, "sessions": [{"id": "a", "deep": _nested(40)}]}
+        ),
+        #: A REVISION with no magnitude bound, while the request side is capped at 19 digits. The
+        #: `ETag` is built from it and a header is covered by no body ceiling: measured, a
+        #: 4,000-digit `rev` produced a 4,004-byte `ETag` on the anonymous listing.
+        "a revision of absurd magnitude": json.dumps({"rev": int("9" * 4000), "sessions": []}),
         #: Valid bytes, not valid UTF-8. The BOM is load-bearing: bare UTF-16LE of ASCII is
         #: nothing but ASCII interleaved with NULs, and a NUL is perfectly valid UTF-8 - so
         #: without `\xff\xfe` this decoded cleanly and failed one branch further on as a JSON
@@ -1656,3 +1681,54 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
                     f" snapshot reaches a caller as a traceback: {write.content[:160]!r}"
                 )
                 assert write.json()["detail"]["error"] == "store_unavailable", write.text
+
+
+def test_a_planted_session_past_the_byte_ceiling_fails_the_read_closed(
+    token_config: Config, tmp_path: Path
+) -> None:
+    """The served byte ceiling ENFORCED, not merely asserted in a test.
+
+    `MAX_SERVED_SESSIONS_BYTES` appeared nowhere in `src/` except its own definition, so it
+    bounded what `SessionUpsert` accepts and nothing else: measured, a 5 MB field value planted on
+    the volume produced a **5,000,082-byte anonymous response**, nineteen times the documented
+    ceiling and past `MAX_PAYLOAD_BYTES`. The COUNT cap cannot see it, because the fault is one
+    row's size rather than the number of rows, and the register's ceiling was true only of data
+    written through the API.
+
+    **The snapshot is not corrupt here, and that is what separates this from the sibling test.**
+    It parses, it migrates, every field is a string - so a WRITE legitimately succeeds and only
+    the read overflows. Putting this case in the corrupt-snapshot table asserted 503 on the write
+    and failed, correctly: the store had nothing to refuse.
+
+    Fail closed rather than truncate, the same choice as an oversized library document: a silently
+    shortened listing reads as the whole dataset, which is exactly what `total` and `truncated`
+    exist to prevent.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    (data_dir / STORE_FILENAME).write_text(
+        json.dumps({"rev": 1, "sessions": [{"id": "a", "title": "X" * 5_000_000}]}),
+        encoding="utf-8",
+    )
+    app = create_app(
+        config=replace(token_config, data_dir=data_dir),
+        store=TrainingStore(data_dir),
+        probe=ok_probe,
+        training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=data_dir / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        listing = client.get("/api/v1/sessions")
+        assert listing.status_code == 503, (
+            f"answered {listing.status_code} at {len(listing.content)} bytes, so the documented"
+            " ceiling bounds nothing a planted row can do"
+        )
+        assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
+        assert len(listing.content) <= MAX_SERVED_SESSIONS_BYTES, len(listing.content)
+        #: The refusal says a row bypassed the API, which is the actionable half.
+        assert "not written through this API" in listing.text, listing.text[:200]
+        #: And the WRITE still works, because the snapshot is valid. Asserted so the fail-closed
+        #: read is not mistaken for a store-wide refusal.
+        write = client.request("POST", "/api/v1/sessions", json=VALID_SESSION, headers=AUTH)
+        assert write.status_code == 201, write.text
+        for path in ("/", "/livez", "/ping", "/health"):
+            assert client.get(path).status_code == 200, path

@@ -2,6 +2,76 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.32 (2026-09-03)
+
+**What.** Two majors and two minors. The first major is the axis I did not name when I asked the
+gate what the next one was: **nesting depth**. I asked about field VALUES, drove that axis, found
+it holds, and stopped - and the answer was one axis over.
+
+**A snapshot too deep to SERIALISE, which is a different bound from too deep to PARSE.** The store
+already refused nesting too deep for `json.loads`, at around 200,000. `pydantic_core` gives way at
+about 250, and it gives way **while the response is rendering** - outside every route's
+try/except - so it reached an anonymous caller as a **500 on `GET /api/v1/sessions`** with
+`/healthz` still 200. Measured to the level: 250 served, 252 did not, and a nested list does the
+same. The register listed "nested too deep" among the refused shapes and so read as covering a
+class it covered one end of.
+
+Refused at the load boundary, in the SAME traversal as the surrogate check, because both faults
+fail identically and a second walk is a second thing to keep in step. `unencodable_pointer` is
+`unservable_pointer` now and returns the kind alongside the pointer and the count. **The bound is
+32 on the deepest CONTAINER**, measured against what this project actually ships: the two
+procedure libraries reach 8 and everything else is shallower, so 32 is four times the real worst
+case and an order of magnitude below where the serialiser fails. Asserted from both sides, because
+a bound asserted from one side is a bound nobody can place.
+
+**The second major is prose, and it is the third completeness over-claim in three releases.** The
+test comment asserted "EVERY shape the store refuses ... this list is the enumeration", written one
+release after "ALL FIVE shapes" had been wrong, and it was wrong again by exactly the same
+measurement. **Two consecutive over-claims is enough evidence that a hand-written completeness
+claim about this store is not worth making**, so the wording is scoped to the shapes listed rather
+than to the store, and the register sentence now separates parse-depth from serialise-depth
+instead of implying one covers both.
+
+**A revision with no magnitude bound.** The request side caps `If-Match` at 19 digits; the STORED
+side checked only `int`-ness. The `ETag` is built from it and a header is covered by no body
+ceiling: measured, a planted 4,000-digit `rev` produced a **4,004-byte `ETag`** on the anonymous
+listing. Past 4,300 digits it happened to 503 anyway through CPython's integer-to-string limit
+surfacing as a bare `ValueError` - a bound by accident, which is not the kind this project keeps.
+`MAX_REVISION_DIGITS` moved down to `storage`, where the stored side can reach it, and `app`
+re-exports it: the two sides of one number disagreed for exactly as long as there were two places
+to put it.
+
+**A documented ceiling that bounded nothing.** `MAX_SERVED_SESSIONS_BYTES` appeared nowhere in
+`src/` except its own definition - it was a test assertion, not a runtime control - so it bounded
+what `SessionUpsert` accepts and nothing else. Measured: a 5 MB field value planted on the volume
+produced a **5,000,082-byte anonymous response**, nineteen times the documented ceiling and past
+`MAX_PAYLOAD_BYTES`. The count cap cannot see it, because the fault is one row's size rather than
+the number of rows. Enforced at serve time now, failing closed rather than truncating, for the
+reason an oversized library document does: a silently shortened listing reads as the whole
+dataset, which is what `total` and `truncated` exist to prevent.
+
+**And the first version of that check measured the wrong encoding.** It used `json.dumps`'s default
+`ensure_ascii=True`, which escapes an astral character to twelve ASCII characters rather than four
+bytes, so it over-counted multi-byte content threefold and refused the anonymous-body sweep's own
+legitimate 500-row astral fixture at 699,264 bytes against a wire size of about 235,000. That is
+the code-point-versus-byte fault of V0.26.24 one level along - **measuring a ceiling in a different
+encoding from the one the wire uses** - and a fixture caught it rather than reasoning.
+
+**Mutation: five mutants, five killed.** The depth check removed; the depth bound raised past the
+serialiser; the stored `rev` magnitude unbounded; the serve-time ceiling removed; the ceiling
+measured with the default encoding. One attribution corrected: the ceiling mutant appeared under
+`-x` to die on an unrelated probe test, and re-run without it, it dies on
+`test_a_planted_session_past_the_byte_ceiling_fails_the_read_closed`. A kill attributed to the
+wrong test is not evidence about the right one.
+
+**One thing the gate settled that I had wrong the other way.** I proposed the field-value axis as
+the likely next major. It drove `id`-as-int, `title`-as-list, a missing `id`, and a
+newline-injected `id`: all faithful 200s, all sanitised where they reach a log. `isinstance(entry,
+dict)` is also sufficient - `json.loads` returns an exact `dict` and `migrate` has one caller. So
+two of my three worries were unfounded and the one I did not raise was the real one.
+
+**How it was verified.** Loop green on all seven legs: 1,008 passed, 2 skipped, coverage 97.77%.
+
 ## V0.26.31 (2026-09-02)
 
 **What.** One major, and it is the worst finding of this sequence because it is not a crash: **the
