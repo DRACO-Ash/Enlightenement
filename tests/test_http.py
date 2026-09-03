@@ -24,6 +24,7 @@ from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
     MAX_SERVED_SESSIONS_BYTES,
+    WRITE_LIMIT,
     Limiters,
     ProbeSettings,
     TrainingPaths,
@@ -1880,8 +1881,13 @@ def test_a_control_character_is_refused_at_the_write_boundary(
     `FreeText` from the three `SessionPatch` fields then left the whole suite green at 1,011
     passed - reproduced twice - while `PATCH` accepted NUL, BEL, escape, `U+2028` and `U+00A0`
     with 200. `PATCH` alone is enough to break the served ceiling: `notes` at its 2,000 cap of
-    NUL renders to 12,000 bytes a row, so 25 rows measure 335,264 bytes against 262,144 with the
-    other two fields at their caps in astral characters, and 351,264 with all three in NUL. Same
+    NUL renders to 12,000 bytes a row, so the 25 SERVED rows measure 335,264 bytes against
+    262,144 with the other two fields at their caps in astral characters, and 351,264 with all
+    three in NUL. Both on a planted 500-row snapshot at twelve character ids and twenty character
+    timestamps: **rows WRITTEN moves the figure even though only 25 are served**, because it sets
+    `total`'s digit count and the `truncated` flag, so 26 rows written measures 335,262 and 25
+    measures 335,263. A byte figure without its fixture is not reproducible, which is how six of
+    them went stale here. Same
     shape as the fixture fault this project has now hit twice - one axis bound and reported as
     the whole - one ROUTE along instead of one field along.
     """
@@ -1900,6 +1906,12 @@ def test_a_control_character_is_refused_at_the_write_boundary(
             "POST", "/api/v1/sessions", json={**VALID_SESSION, "id": "patchee"}, headers=AUTH
         )
         assert seeded.status_code == 201, seeded.text
+        #: A refused body 422s in pydantic, BEFORE `_guard_write_rate` runs inside the handler, so
+        #: only the accepted writes spend budget. Counted, and asserted against the real constant,
+        #: because the comment above cited `WRITE_LIMIT` as twenty while no test bound its value:
+        #: raise it and the injected limiter stops being justified, lower it and the default tier
+        #: starts deciding this test's verdict, and either way this assertion says so.
+        spent = 1
         for label, character, refused in (
             ("NUL", "\x00", True),
             ("BEL", "\x07", True),
@@ -1928,3 +1940,10 @@ def test_a_control_character_is_refused_at_the_write_boundary(
                     if refused:
                         #: Generic, and the offending character is never echoed.
                         assert response.json() == {"error": "invalid request"}, response.text
+                    else:
+                        spent += 1
+        assert spent == 19, f"the accepted-write count moved to {spent}; re-check the budget"
+        assert WRITE_LIMIT - spent <= 1, (
+            f"this test spends {spent} writes against a WRITE_LIMIT of {WRITE_LIMIT}, so the"
+            " default tier now has room and the injected limiter is no longer justified"
+        )

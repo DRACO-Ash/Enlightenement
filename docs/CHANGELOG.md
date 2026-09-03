@@ -2,6 +2,80 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.38 (2026-09-03)
+
+**What.** The engineering gate FAILED V0.26.37 with three majors, all of them mine, and all in the
+same class the release existed to close: published figures. Correcting five stale figures produced
+three more wrong claims. Every one is closed here, one by measurement rather than by the retreat
+the gate offered.
+
+**The release that fixed stale figures shipped a sixth.** `_widest_accepted_character`'s docstring
+published 335,262 bytes, which is the SECURITY gate's figure, taken before I had measured it
+myself, while the three other sites said 335,264. Worse, the V0.26.37 audit row asserted "corrected
+in the register and the test docstring" when the test docstring was not corrected. **An audit row
+claiming a fix that was not made is the exact failure this project names as worse than no test at
+all, because the claim is what stops anyone looking.** Corrected to 335,264 with its fixture.
+
+**The two-byte gap I attributed to id text, reconciled by measurement.** V0.26.37 explained the
+difference between the security gate's 335,262 and my 335,264 as "a two byte difference from id
+text". The engineering gate showed that is arithmetically impossible - the listing serves 25 rows,
+so id width moves the figure in multiples of 25 - and asked me either to find the real fixture or
+to record the discrepancy as unexplained. **I found it.** The variable is ROWS WRITTEN, which moves
+the figure even though only 25 rows are ever served, because it sets `total`'s rendered digit count
+and whether `truncated` renders as `true` or `false`. Measured on the planted NUL snapshot at
+twelve character ids: 25 rows written gives 335,263, **26 or 30 gives 335,262**, and 500 gives
+335,264. Both figures were always right; neither carried the variable that separated them. An
+invented reconciliation is worse than an admitted gap, and I published one.
+
+**237,163 named a fixture it does not hold on.** V0.26.37 published it as "the real gated POST
+route with sixty-four character ids", which measures **237,162**. The extra byte appears only at
+exactly 25 rows written, where `truncated` is `false` rather than `true`. And the fixture this
+function's own caller runs - 30 rows written at twelve character ids - measures **235,862, 89.97%,
+headroom 26,282**, which is the one figure never published at all: the number describing the
+fixture actually executing. All four are now published together, each naming rows written, id
+width and write path:
+
+● **235,862, 89.97%, headroom 26,282** - 30 rows written, twelve character ids, the live caller.
+● **237,162, 90.47%, headroom 24,982** - 30 rows written, sixty-four character ids.
+● **237,163, 90.47%, headroom 24,981** - exactly 25 rows written, sixty-four character ids.
+● **235,264, 89.75%** - the planted 500-row snapshot, `_fill_sessions`'s fixture, not this one's.
+
+**A second invented mechanism, withdrawn.** V0.26.37 said the write-path figure "moves by a byte
+or two with the timestamp's microsecond width". Wrong in kind: `datetime.isoformat()` emits six
+microsecond digits or omits `.ffffff` entirely, so a timestamp moves a row by 0 or 7 bytes, 14 per
+row across both stamps and up to 350 across the served 25. The byte that actually separated two of
+these figures was the `truncated` flag. **Twice in one release I explained a difference I had not
+measured.** The rule taken from it: a byte figure gets its fixture, and a DIFFERENCE between two
+byte figures gets its measurement, not an explanation that sounds plausible.
+
+**The vacuity guard could not fire, so it is now a control.** `assert caplog.records` was satisfied
+by `httpx`, which logs a record per request: deleting the `drill.answered` sink outright left the
+test GREEN while its sibling correctly failed. That is the tautology fault of V0.26.37 one file
+along, and V0.26.37's own honest disclosure that the guard was "demonstrated rather than
+mutation-killed" described the symptom without noticing the cause. The arm now filters to the
+`enlightenment.event` logger and names the sink it holds; removing that sink kills it.
+
+**`WRITE_LIMIT` was cited by a comment and bound by nothing.** The boundary test's comment reasoned
+about a `WRITE_LIMIT` of twenty to justify injecting a 200-per-minute budget, while `grep` found
+the constant nowhere else in the suite. The test now counts its own accepted writes and asserts
+both that the count is 19 and that `WRITE_LIMIT - spent <= 1`, so raising the limit fails with "the
+default tier now has room and the injected limiter is no longer justified". Proved: at
+`WRITE_LIMIT = 100` it does exactly that.
+
+**And one sentence that claimed more than its fixture holds.** The withdrawal paragraph cited
+`U+00A0`, `U+200B`, `U+200D`, `U+FEFF` and `U+202E` as characters "this candidate set" refuses
+cheaply; none of the five is in the list twelve lines below. The conclusion survives on the three
+that are (`\n` and `\t` at 2, `U+2028` at 3, against a four-byte winner), and the sentence now
+separates what the exhaustive scan shows from what this fixture holds.
+
+**Verified.** Verification loop green. No production code changed in this release either; the diff
+is two test files, `docs/SECURITY.md` and the version stamps. Mutations: removing the
+`drill.answered` sink now kills the log arm ("no audit record was captured"); `WRITE_LIMIT = 100`
+kills the budget assertion; widening `FREE_TEXT_CONTROLS` to admit NUL still kills the width
+assertion at the derivation. Every figure in this entry was measured against the live code in this
+release, and the four write-path figures were driven through the real gated POST route rather than
+computed.
+
 ## V0.26.37 (2026-09-03)
 
 **What.** The security gate PASSED V0.26.36 and raised three minors, none exploitable and none

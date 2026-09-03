@@ -326,8 +326,18 @@ def test_a_submitted_answer_is_neither_echoed_nor_persisted(
     #: Refuse an empty measurement, the rule this file already applies to the route sweep and the
     #: listing cap: `for record in []` passes, and one of the three sinks this test exists to bind
     #: would be unbound with the test still green.
-    assert caplog.records, "no log record was captured, so the log arm of this test proved nothing"
-    for record in caplog.records:
+    #:
+    #: **Filtered to the audit logger, because `assert caplog.records` was satisfied by `httpx`.**
+    #: The first version of this guard could not fire: `httpx` emits one record per request, so
+    #: deleting the `drill.answered` sink outright left this test green while its sibling
+    #: correctly failed. A guard that a mutation cannot falsify is the tautology fault one file
+    #: along, so the arm now names the sink it binds.
+    audited = [record for record in caplog.records if record.name == "enlightenment.event"]
+    assert audited, (
+        "no audit record was captured, so the log arm of this test proved nothing; the"
+        " `drill.answered` sink is the one it exists to hold"
+    )
+    for record in audited:
         assert marker not in record.getMessage().casefold(), "the answer text reached the log"
 
 
@@ -1422,17 +1432,23 @@ def _widest_accepted_character(field: str) -> str:
     the single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280
     rendered bytes in a row - so `notes` accepting a six-byte character while `title` refused it
     would leave this derivation returning the four-byte emoji and reporting 90% of a ceiling the
-    API could exceed at 335,262 bytes. A run also fixes what "accepts" means:
+    API could exceed at 335,264 bytes on the planted snapshot at twelve character ids. A
+    run also fixes what "accepts" means:
     `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so the old probe
     recorded those as ACCEPTED when a field of them collapses to empty and they can never fill
     anything. Accepted here now means the model KEEPS the run.
 
     **There is no assertion that a refused candidate costs more than the winner, and the earlier
     one was withdrawn as false rather than tightened.** The security gate asked for it strict
-    (`>` rather than `>=`); measured, the premise does not hold in either form. Against this
-    candidate set the boundary refuses `\n` and `\t` at 2 rendered bytes, `U+00A0` at 2, and
-    `U+2028`, `U+200B`, `U+200D`, `U+FEFF` and `U+202E` at 3, all CHEAPER than the four-byte
-    winner, because those refusals are about hygiene and bidi spoofing rather than size. The old
+    (`>` rather than `>=`); measured, the premise does not hold in either form. Over ALL of
+    Unicode, 7,950 code points are refused at strictly under four rendered bytes and 955,086 more
+    at exactly four, so the strict form fails by 963,036 counterexamples. Within THIS candidate
+    list it fails on three: the boundary refuses `\n` and `\t` at 2 rendered bytes and `U+2028`
+    at 3, all CHEAPER than the four-byte winner, because those refusals are about hygiene and
+    bidi spoofing rather than size. An earlier version of this paragraph also cited `U+00A0`,
+    `U+200B`, `U+200D`, `U+FEFF` and `U+202E` as though they were in the list below; they are
+    not, so they belong to the scan and not to this set. Claiming more than the fixture holds is
+    the same fault, one sentence along. The old
     form passed only because the trailing-character probe mis-recorded the cheap ones as accepted.
     A cheap character being refused cannot widen a worst case that is `max` over the accepted set,
     so the assertion never bound anything; what does bind is the width spread of the candidate
@@ -1502,13 +1518,33 @@ def _widest_session_fields() -> dict[str, str]:
     API" - false. `MAX_SERVED_SESSIONS` was already bound symbolically beside it; the field caps
     were not, which is the asymmetry the engineering gate found.
 
-    Measured, each figure with the fixture that produces it, because the bare 237,138 published
-    here before reproduced on neither. Twenty-five rows of astral filler at these caps: **235,264
-    bytes** on the planted snapshot with twelve character ids, 89.75% of the 262,144 ceiling, and
-    **237,163 bytes** driven through the real gated POST route with sixty-four character ids and
-    real ISO timestamps, 90.47% of it, so the headroom is about 24.98 kB. The write-path figure
-    moves by a byte or two with the timestamp's microsecond width. That margin is why deriving
-    matters rather than being tidy - it is one field widening away.
+    Measured, each figure with the fixture that produces it, because a bare 237,138 published
+    here reproduced on nothing and then a bare 237,163 named a fixture it does not hold on. The
+    listing serves `MAX_SERVED_SESSIONS` rows whatever is written, so **ROWS WRITTEN is a
+    variable of the measurement**, not a detail: it decides `total`'s digit count and whether
+    `truncated` renders as `true` or `false`, one byte. All four figures below are astral filler
+    at these caps; the first three are driven through the real gated POST route and the fourth is
+    a planted snapshot, which is stated on each because it is the difference between them:
+
+    ● **235,862 bytes, 89.97%, headroom 26,282**, at 30 rows written and twelve character ids.
+      **This is THIS FUNCTION'S own caller** at
+      `test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree`, so it is the figure
+      that describes the fixture actually running, and it was the one figure never published.
+    ● **237,162 bytes, 90.47%, headroom 24,982**, at 30 rows written and sixty-four character ids,
+      the widest ids the boundary accepts.
+    ● **237,163 bytes, 90.47%, headroom 24,981**, at exactly 25 rows written and sixty-four
+      character ids. The single byte is `truncated: false`, because 25 written is 25 served.
+    ● **235,264 bytes, 89.75%**, on a planted 500-row snapshot at twelve character ids and twenty
+      character timestamps, which is `_fill_sessions`'s fixture rather than this one's.
+
+    The variance mechanism published here before, "a byte or two with the timestamp's microsecond
+    width", was invented rather than measured and is wrong in kind: `datetime.isoformat()` emits
+    six microsecond digits or omits `.ffffff` altogether, so a timestamp moves a row by 0 or 7
+    bytes, 14 per row across both stamps and up to 350 across the served 25. The byte that
+    actually separated two of these figures was the `truncated` flag.
+
+    About 25 kB of headroom on the widest of them is why deriving matters rather than being tidy -
+    that margin is one field widening away.
 
     The FILLER is derived per field for the same reason the LENGTH is: one winner chosen on
     `title` and applied to `notes` binds the wrong field, and `notes` carries 8,000 of the
