@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from conftest import ok_probe
 from enlightenment.app import (
@@ -1340,6 +1341,70 @@ def test_no_anonymous_route_serves_an_authored_value_from_a_load_failure(
         assert "rated band" in manifest.text, manifest.text[:240]
 
 
+def _widest_accepted_character() -> str:
+    """The most expensive character the write boundary ACCEPTS, per code point, on the wire.
+
+    **The lengths were derived and the CHARACTER was hardcoded to an emoji**, which bound one axis
+    of the worst case and reported 66% of it as the whole. `json.dumps` escapes a C0 control as
+    `\\u00XX` even with `ensure_ascii=False`, so `U+0000` cost SIX rendered bytes per code point
+    where an astral character costs four - and `SessionUpsert` accepted it. Measured by the
+    security gate: twenty API-accepted writes at the declared caps rendered to 281,353 bytes
+    against the 262,144 ceiling, and twenty-five rows to 351,327, so the emoji basis under-measured
+    the true worst case by 1.48x.
+
+    That is the same "measured in the wrong unit" class V0.26.33 closed on the `ensure_ascii` axis,
+    one level along - and the reasoning was already in that very commit, in `audit.py`, which
+    derives 6.0 at `U+0000` and names the `isprintable()` filter as load-bearing for its bound. The
+    sibling ceiling did not get it.
+
+    So the filler is CHOSEN BY MEASUREMENT over a candidate set spanning every UTF-8 width, the
+    short-escape characters and the C0 controls, keeping only what the boundary accepts. The
+    assertions pin the winner against every candidate, so a boundary change admitting a more
+    expensive character makes this test choose it rather than quietly keep testing the cheap one.
+    """
+    candidates = [
+        "a",
+        "\u00e9",
+        "\u4e2d",
+        "\U0001f600",
+        "\\",
+        '"',
+        "\n",
+        "\t",
+        "\x00",
+        "\x07",
+        "\u2028",
+    ]
+
+    from enlightenment.models import SessionUpsert
+
+    def rendered(character: str) -> int:
+        return len(json.dumps(character, ensure_ascii=False).encode("utf-8")) - 2
+
+    accepted: list[str] = []
+    for candidate in candidates:
+        try:
+            SessionUpsert(id="probe", title=f"x{candidate}", scenario="s", notes=None)
+        except ValidationError:
+            continue
+        accepted.append(candidate)
+    assert accepted, "the write boundary accepts no character at all"
+    filler = max(accepted, key=rendered)
+    #: Every refused candidate is refused because it costs MORE than the winner, which is the
+    #: property that makes this ceiling honest. If one were refused while being CHEAPER, the
+    #: refusal would be about something other than size and this derivation would bound nothing.
+    for candidate in candidates:
+        if candidate in accepted:
+            assert rendered(candidate) <= rendered(filler), candidate
+        else:
+            assert rendered(candidate) >= rendered(filler), (
+                f"the boundary refuses {candidate!r} at {rendered(candidate)} rendered bytes while"
+                f" accepting {filler!r} at {rendered(filler)}; that refusal is not about size, so"
+                " this derivation no longer bounds the worst case"
+            )
+    return filler
+
+
 def _widest_session_fields() -> dict[str, str]:
     """Every writable session field at its DECLARED maximum, derived from the model.
 
@@ -1355,6 +1420,7 @@ def _widest_session_fields() -> dict[str, str]:
     """
     from enlightenment.models import SessionUpsert
 
+    filler = _widest_accepted_character()
     widest: dict[str, str] = {}
     for name, field in SessionUpsert.model_fields.items():
         if name == "id":
@@ -1368,7 +1434,7 @@ def _widest_session_fields() -> dict[str, str]:
             None,
         )
         assert limit is not None, f"{name} declares no max_length, so this test cannot derive it"
-        widest[name] = "\U0001f600" * limit
+        widest[name] = filler * limit
     assert widest, "SessionUpsert declares no writable field but `id`"
     return widest
 

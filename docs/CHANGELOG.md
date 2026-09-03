@@ -2,6 +2,68 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.35 (2026-09-03)
+
+**What.** One major from the security gate, and unlike the last six in this class **it is reachable
+through the API by an authenticated caller doing nothing unusual**: twenty ordinary writes at the
+declared field caps fail-closed the anonymous session listing, and the refusal blames a write that
+never bypassed the API.
+
+**A control character costs six rendered bytes, and the boundary accepted it.** `json.dumps`
+escapes a C0 control as `\u00XX` even with `ensure_ascii=False`, so one code point renders as SIX
+bytes where an astral character renders as four and a newline as two. The field caps count CODE
+POINTS, so the worst case is set by the most expensive character the boundary accepts - and it
+accepted `U+0000`. Measured: twenty writes at the caps filled with NUL, **every one accepted with
+201**, render to 281,353 bytes against the 262,144 ceiling; twenty-five rows reach 351,327, or
+134%. My own worst-case fixture reported 237,138 bytes, so it under-measured the truth by 1.48x.
+
+**Two consequences, and the second is why this is a major rather than an accepted-actor note.**
+The availability half sits inside the recorded out-of-scope envelope: it needs the team token, and
+it recovers once the rate window resets. The other two halves do not.
+
+● **The refusal message was provably false.** It told the operator "a row was not written through
+  this API" for a fault caused entirely by writes that came through this API. That 503 exists so a
+  screenshot is a complete diagnosis; one that names the wrong CAUSE sends them hunting an
+  out-of-band volume write that never happened. The messages now state the figures and claim
+  nothing about provenance.
+● **My fixture derived the field LENGTHS and hardcoded the CHARACTER.** It bound one axis of the
+  worst case and reported 66% of it as the whole - the same "measured in the wrong unit" class
+  V0.26.33 closed on the `ensure_ascii` axis, one level along. **The reasoning was already in the
+  commit that introduced the fixture:** `audit.py` derives 6.0 at `U+0000` and names the
+  `isprintable()` filter as load-bearing for its own bound. The sibling ceiling did not get it.
+
+**Fixed at the write boundary, not by moving the ceiling.** `title`, `scenario` and `notes` now
+refuse any non-printable character except `\n`, `\r` and `\t`, using the `str.isprintable()` rule
+this project already applies in `audit.py`, `healthcheck.py` and `config.py`. Line breaks and tabs
+stay legitimate - a note with line breaks is real free text and each costs two bytes - so the rule
+is not "no control characters" but "nothing costlier than the astral worst case". **The boundary
+was already inconsistent with itself and only by accident:** `U+2028` was refused because
+`str_strip_whitespace` strips it to empty and `min_length` rejects that, while `U+0000` sailed
+through.
+
+The gate's instruction not to raise the ceiling to about 358 kB or drop the row cap to 18 is taken
+and worth recording: that would make the ceiling a function of an escaping factor rather than of
+content size, which is the coupling the last three releases have been removing. With controls
+refused, 25 rows at the caps measure **235,712 bytes, 89.9%** of the ceiling, so the 25 kB of
+headroom is real for the first time.
+
+**And the fixture chooses its filler by MEASUREMENT now.** It probes a candidate set spanning every
+UTF-8 width, the short-escape characters and the C0 controls, keeps what the boundary accepts, and
+takes the most expensive - then asserts every refused candidate is refused because it costs MORE,
+so a refusal that was not about size would fail rather than silently stop bounding anything.
+
+**Proved rather than argued, because a no-op mutation is not evidence.** Hardcoding the filler back
+to an emoji survives today, since the emoji IS now the worst accepted character. So the property
+was demonstrated directly: widen the boundary to admit `U+0000` and the DERIVED fixture turns red
+(503 against an expected 200, because it picks NUL and the ceiling breaks), while the HARDCODED one
+passes silently. That is the blind spot, shown rather than asserted.
+
+**Mutation: three mutants, two killed and one honest no-op.** The validator removed and the allowed
+set widened to all C0 both die on the new boundary test; the hardcoded filler survives for the
+reason above, and the widened-boundary demonstration is what covers it.
+
+**How it was verified.** Loop green on all seven legs: 1,011 passed, 2 skipped, coverage 97.83%.
+
 ## V0.26.34 (2026-09-03)
 
 **What.** The engineering gate's first look since V0.26.26, across seven releases of real source

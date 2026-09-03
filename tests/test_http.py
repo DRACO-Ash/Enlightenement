@@ -1794,8 +1794,14 @@ def test_a_planted_session_past_the_byte_ceiling_fails_the_read_closed(
         )
         assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
         assert len(listing.content) <= MAX_SERVED_SESSIONS_BYTES, len(listing.content)
-        #: The refusal says a row bypassed the API, which is the actionable half.
-        assert "not written through this API" in listing.text, listing.text[:200]
+        #: The refusal states the FIGURES and claims nothing about how the rows got there. It
+        #: used to say "a row was not written through this API", which was provably false: the
+        #: write boundary accepted C0 control characters at six rendered bytes per code point, so
+        #: twenty legitimate authenticated writes could reach 281,353 bytes. A 503 whose message
+        #: names the wrong cause sends an operator hunting a volume write that never happened.
+        assert str(MAX_SERVED_SESSIONS_BYTES) in listing.text, listing.text[:200]
+        assert "render to" in listing.text, listing.text[:200]
+        assert "through this API" not in listing.text, listing.text[:200]
         #: And the WRITE still works, because the snapshot is valid. Asserted so the fail-closed
         #: read is not mistaken for a store-wide refusal.
         write = client.request("POST", "/api/v1/sessions", json=VALID_SESSION, headers=AUTH)
@@ -1841,5 +1847,56 @@ def test_a_planted_non_json_float_fails_the_read_closed(
         )
         assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
         assert "cannot be serialised" in listing.json()["detail"]["message"], listing.text
+        assert "through this API" not in listing.text, listing.text[:200]
         for path in ("/", "/livez", "/ping", "/health"):
             assert client.get(path).status_code == 200, path
+
+
+def test_a_control_character_is_refused_at_the_write_boundary(
+    token_config: Config, tmp_path: Path
+) -> None:
+    """A C0 control is refused, a line break and a tab are not, and the reason is SIZE.
+
+    `json.dumps` escapes a C0 control as `\\u00XX` even with `ensure_ascii=False`, so one code
+    point renders as SIX bytes where an astral character renders as four and a newline as two. The
+    field caps count CODE POINTS, so the worst case was set by the most expensive character the
+    boundary accepted - and it accepted `U+0000`. Measured by the security gate: twenty writes at
+    the declared caps, every one accepted with 201, rendered to **281,353 bytes** against the
+    262,144 ceiling, and twenty-five rows to **351,327**, or 134% of it. An anonymous route
+    fail-closed on twenty legitimate authenticated writes, while the refusal blamed a write that
+    never bypassed the API.
+
+    **`\n`, `\r` and `\t` stay allowed**, because a note with line breaks is legitimate free text
+    and each renders as two bytes, so keeping them costs nothing. That distinction is the whole
+    point: the rule is not "no control characters" but "nothing that makes a code point cost more
+    than the astral worst case".
+
+    The boundary was already inconsistent with itself before this, and only incidentally:
+    `U+2028` was refused because `str_strip_whitespace` strips it to empty and `min_length`
+    rejects that, while `U+0000` sailed through.
+    """
+    app = create_app(
+        config=token_config,
+        store=TrainingStore(tmp_path / "store"),
+        probe=ok_probe,
+        training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        for label, character, expected in (
+            ("NUL", "\x00", 422),
+            ("BEL", "\x07", 422),
+            ("escape", "\x1b", 422),
+            ("newline", "\n", 201),
+            ("tab", "\t", 201),
+            ("astral", "\U0001f600", 201),
+        ):
+            for field in ("title", "scenario", "notes"):
+                body = {**VALID_SESSION, "id": "probe", field: f"a{character}b"}
+                response = client.request("POST", "/api/v1/sessions", json=body, headers=AUTH)
+                assert response.status_code == expected, (
+                    f"{label} in {field} answered {response.status_code}, expected {expected}:"
+                    f" {response.content[:160]!r}"
+                )
+                if expected == 422:
+                    #: Generic, and the offending character is never echoed.
+                    assert response.json() == {"error": "invalid request"}, response.text

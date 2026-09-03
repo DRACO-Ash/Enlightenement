@@ -712,7 +712,16 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         #:
         #: FAIL CLOSED rather than truncate, the same choice as an oversized library document: a
         #: silently shortened listing reads as the whole dataset, which is the fault `total` and
-        #: `truncated` exist to prevent, and a row this size did not come through the API.
+        #: `truncated` exist to prevent.
+        #:
+        #: **The message states the figures and makes NO claim about how the rows got there.** It
+        #: said "a row was not written through this API", and that was provably false: the write
+        #: boundary accepted C0 control characters, which `json.dumps` escapes as six rendered
+        #: bytes per code point even with `ensure_ascii=False`, so twenty legitimate authenticated
+        #: writes at the declared caps reached 281,353 bytes and twenty-five rows 351,327. A 503
+        #: exists here so a screenshot is a complete diagnosis; one that names the wrong CAUSE
+        #: sends the operator hunting an out-of-band volume write that never happened. The cause is
+        #: closed at `models.py` now, and this message no longer asserts one.
         #:
         #: **MEASURE THE BYTES THIS ROUTE ACTUALLY SENDS, and then send exactly those.** Two
         #: earlier versions measured a re-serialisation of the same object and both drifted from
@@ -740,10 +749,7 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail={
                     "error": "store_unavailable",
-                    "message": (
-                        f"the stored sessions cannot be serialised ({type(exc).__name__});"
-                        " a row was not written through this API"
-                    ),
+                    "message": (f"the stored sessions cannot be serialised ({type(exc).__name__})"),
                 },
             ) from None
         if len(payload) > MAX_SERVED_SESSIONS_BYTES:
@@ -758,7 +764,7 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
                     "error": "store_unavailable",
                     "message": (
                         f"the stored sessions render to {len(payload)} bytes against a ceiling of"
-                        f" {MAX_SERVED_SESSIONS_BYTES}; a row was not written through this API"
+                        f" {MAX_SERVED_SESSIONS_BYTES}"
                     ),
                 },
             )
