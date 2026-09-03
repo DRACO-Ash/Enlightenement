@@ -1874,29 +1874,56 @@ def test_a_control_character_is_refused_at_the_write_boundary(
     The boundary was already inconsistent with itself before this, and only incidentally:
     `U+2028` was refused because `str_strip_whitespace` strips it to empty and `min_length`
     rejects that, while `U+0000` sailed through.
+
+    **Both write routes, and the second one is the reason this docstring grew.** The first
+    version of this test drove `POST` only, while being named for "the write boundary". Deleting
+    `FreeText` from the three `SessionPatch` fields then left the whole suite green at 1,011
+    passed - reproduced twice - while `PATCH` accepted NUL, BEL, escape, `U+2028` and `U+00A0`
+    with 200. `PATCH` alone is enough to break the served ceiling: `notes` at its 2,000 cap of
+    NUL renders to 12,000 bytes a row, so 25 rows reach roughly 332 kB against 262,144. Same
+    shape as the fixture fault this project has now hit twice - one axis bound and reported as
+    the whole - one ROUTE along instead of one field along.
     """
     app = create_app(
         config=token_config,
         store=TrainingStore(tmp_path / "store"),
         probe=ok_probe,
+        #: A budget wide enough that the LIMITER never answers for the boundary. Both routes
+        #: together spend eighteen accepted writes plus the seed, against a `WRITE_LIMIT` of
+        #: twenty, so the default tier would pass today and 429 on the next candidate added.
+        limiters=Limiters(strict=RateLimiter(200, 60.0)),
         training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=tmp_path / "progress.json"),
     )
     with TestClient(app, raise_server_exceptions=False) as client:
-        for label, character, expected in (
-            ("NUL", "\x00", 422),
-            ("BEL", "\x07", 422),
-            ("escape", "\x1b", 422),
-            ("newline", "\n", 201),
-            ("tab", "\t", 201),
-            ("astral", "\U0001f600", 201),
+        seeded = client.request(
+            "POST", "/api/v1/sessions", json={**VALID_SESSION, "id": "patchee"}, headers=AUTH
+        )
+        assert seeded.status_code == 201, seeded.text
+        for label, character, refused in (
+            ("NUL", "\x00", True),
+            ("BEL", "\x07", True),
+            ("escape", "\x1b", True),
+            ("newline", "\n", False),
+            ("tab", "\t", False),
+            ("astral", "\U0001f600", False),
         ):
             for field in ("title", "scenario", "notes"):
-                body = {**VALID_SESSION, "id": "probe", field: f"a{character}b"}
-                response = client.request("POST", "/api/v1/sessions", json=body, headers=AUTH)
-                assert response.status_code == expected, (
-                    f"{label} in {field} answered {response.status_code}, expected {expected}:"
-                    f" {response.content[:160]!r}"
-                )
-                if expected == 422:
-                    #: Generic, and the offending character is never echoed.
-                    assert response.json() == {"error": "invalid request"}, response.text
+                value = f"a{character}b"
+                for method, path, body, accepted in (
+                    (
+                        "POST",
+                        "/api/v1/sessions",
+                        {**VALID_SESSION, "id": "probe", field: value},
+                        201,
+                    ),
+                    ("PATCH", "/api/v1/sessions/patchee", {field: value}, 200),
+                ):
+                    expected = 422 if refused else accepted
+                    response = client.request(method, path, json=body, headers=AUTH)
+                    assert response.status_code == expected, (
+                        f"{label} in {field} on {method} answered {response.status_code},"
+                        f" expected {expected}: {response.content[:160]!r}"
+                    )
+                    if refused:
+                        #: Generic, and the offending character is never echoed.
+                        assert response.json() == {"error": "invalid request"}, response.text

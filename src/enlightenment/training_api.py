@@ -335,7 +335,30 @@ def _within_document_budget(document: dict[str, Any], identifier: str) -> dict[s
 
 
 class DrillAnswer(BaseModel):
-    """One submitted answer. Validated at the boundary, and nothing here is optional by accident."""
+    """One submitted answer. Validated at the boundary, and nothing here is optional by accident.
+
+    A SECOND `DrillAnswer` sat in `models.py` until V0.26.36, unreferenced, carrying an earlier
+    field set (`item_id`, `classification`, `first_action`). It read as load-bearing beside two
+    models that had just been hardened, so wiring it up would have re-opened the escaped-control
+    size class in silence. Deleted; this is the boundary model, and the reasoning it carried is
+    kept here where it applies.
+
+    `response` is free text and that is the product's central design choice, not an oversight: the
+    plan requires production rather than recognition, so there is no option id to validate against
+    a list. What is validated is shape and size.
+
+    **`response` is deliberately NOT `FreeText`.** That rule is a SIZE control for the served
+    session ceiling, where an escaped control costs six rendered bytes against an astral
+    character's four. This field reaches neither a served surface nor the store: the matcher
+    returns only a verdict and the authored `note`/`why_wrong`, and the run row records
+    `classification=outcome.matched` with `first_action=""`, so the operator's own words are never
+    echoed and never persisted. That property is what makes the exemption correct rather than
+    convenient, so it is bound by a test rather than left as a reading of the code.
+
+    `confidence` is an integer step rather than a percentage. Five steps are answerable in under a
+    second, which the 100ms cue-to-feedback budget needs, and a discrete scale stops an operator
+    hedging at 50% on everything to game a proper scoring rule.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

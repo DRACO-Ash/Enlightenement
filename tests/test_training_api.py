@@ -283,6 +283,50 @@ def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data
     assert ANSWER_BODY["response"].casefold() not in emitted, "the answer text reached the log"
 
 
+def test_a_submitted_answer_is_neither_echoed_nor_persisted(
+    client: TestClient, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The property that makes `DrillAnswer.response` exempt from the control-character rule.
+
+    `SessionUpsert` and `SessionPatch` refuse a control character because `json.dumps` escapes one
+    as `\\u00XX` at SIX rendered bytes against an astral character's four, and those fields fill
+    a served byte ceiling. `response` is exempt, and the whole justification is that it reaches
+    neither a served surface nor the store: the matcher returns a verdict plus the AUTHORED
+    `note`/`why_wrong`, and the run row records `classification=outcome.matched` with
+    `first_action=""`.
+
+    That was a reading of the code, and a reading is what a future change breaks in silence -
+    which is the exact shape of fault this release exists to close. So the exemption is bound
+    here instead: a marker planted in a hostile answer must appear in no response body, no
+    `progress.json` and no log line. If someone ever echoes or records the operator's own words,
+    this test goes red and `response` needs `FreeText` before it ships.
+
+    The marker is checked as well as the control characters, because an implementation that
+    SANITISED the answer and then echoed it would pass a search for `\\u0000` while still
+    putting an operator's words on a served surface.
+    """
+    marker = "qqmarkerqq"
+    hostile = f"{marker}\x00\x07\U0001f600"
+    served = client.get("/api/v1/drill/next").json()
+    with caplog.at_level("INFO"):
+        response = client.post(
+            "/api/v1/drill/answer",
+            json={**ANSWER_BODY, "drill_run_id": served["drill_run_id"], "response": hostile},
+        )
+    assert response.status_code == 200, response.text
+    assert marker not in response.text.casefold(), (
+        f"the reveal echoed the operator's own words: {response.text[:240]}"
+    )
+    assert "\\u0000" not in response.text, "an escaped control from the answer reached the wire"
+
+    persisted = (tmp_path / "progress.json").read_text(encoding="utf-8")
+    assert marker not in persisted.casefold(), "the run record stored the operator's own words"
+    assert "\\u0000" not in persisted, "an escaped control from the answer reached the store"
+
+    for record in caplog.records:
+        assert marker not in record.getMessage().casefold(), "the answer text reached the log"
+
+
 # --- content and library -----------------------------------------------------------------
 
 
@@ -1341,8 +1385,8 @@ def test_no_anonymous_route_serves_an_authored_value_from_a_load_failure(
         assert "rated band" in manifest.text, manifest.text[:240]
 
 
-def _widest_accepted_character() -> str:
-    """The most expensive character the write boundary ACCEPTS, per code point, on the wire.
+def _widest_accepted_character(field: str) -> str:
+    """The most expensive character the write boundary accepts IN THIS FIELD, on the wire.
 
     **The lengths were derived and the CHARACTER was hardcoded to an emoji**, which bound one axis
     of the worst case and reported 66% of it as the whole. `json.dumps` escapes a C0 control as
@@ -1358,9 +1402,31 @@ def _widest_accepted_character() -> str:
     sibling ceiling did not get it.
 
     So the filler is CHOSEN BY MEASUREMENT over a candidate set spanning every UTF-8 width, the
-    short-escape characters and the C0 controls, keeping only what the boundary accepts. The
-    assertions pin the winner against every candidate, so a boundary change admitting a more
-    expensive character makes this test choose it rather than quietly keep testing the cheap one.
+    short-escape characters and the C0 controls, keeping only what the boundary accepts. A
+    boundary change admitting a more expensive character makes this test choose it rather than
+    quietly keep testing the cheap one.
+
+    **PER FIELD, and the probe is a RUN rather than one trailing character.** Both corrections
+    came from the same finding. The probe validated `f"x{candidate}"` on `title` alone and then
+    the single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280
+    rendered bytes in a row - so `notes` accepting a six-byte character while `title` refused it
+    would leave this derivation returning the four-byte emoji and reporting 90% of a ceiling the
+    API could exceed at roughly 332 kB. A run also fixes what "accepts" means:
+    `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so the old probe
+    recorded those as ACCEPTED when a field of them collapses to empty and they can never fill
+    anything. Accepted here now means the model KEEPS the run.
+
+    **There is no assertion that a refused candidate costs more than the winner, and the earlier
+    one was withdrawn as false rather than tightened.** The security gate asked for it strict
+    (`>` rather than `>=`); measured, the premise does not hold in either form. Against this
+    candidate set the boundary refuses `\n` and `\t` at 2 rendered bytes, `U+00A0` at 2, and
+    `U+2028`, `U+200B`, `U+200D`, `U+FEFF` and `U+202E` at 3, all CHEAPER than the four-byte
+    winner, because those refusals are about hygiene and bidi spoofing rather than size. The old
+    form passed only because the trailing-character probe mis-recorded the cheap ones as accepted.
+    A cheap character being refused cannot widen a worst case that is `max` over the accepted set,
+    so the assertion never bound anything; what does bind is the width spread of the candidate
+    list, asserted below, which stops anyone deleting the astral member and leaving a cheap filler
+    chosen in silence.
     """
     candidates = [
         "a",
@@ -1381,27 +1447,29 @@ def _widest_accepted_character() -> str:
     def rendered(character: str) -> int:
         return len(json.dumps(character, ensure_ascii=False).encode("utf-8")) - 2
 
+    #: A fact about the LITERAL LIST, not about the boundary: the set must still span every
+    #: UTF-8 width, or the derivation quietly picks a cheap filler and reports a ceiling met.
+    assert {rendered(candidate) for candidate in candidates} >= {1, 2, 3, 4}, (
+        "the candidate set no longer spans one, two, three and four rendered bytes, so the"
+        " widest accepted character cannot be derived from it"
+    )
+
     accepted: list[str] = []
     for candidate in candidates:
+        values: dict[str, str | None] = {"id": "probe", "title": "x", "scenario": "s"}
+        values[field] = candidate * 3
         try:
-            SessionUpsert(id="probe", title=f"x{candidate}", scenario="s", notes=None)
+            model = SessionUpsert.model_validate(values)
         except ValidationError:
             continue
-        accepted.append(candidate)
-    assert accepted, "the write boundary accepts no character at all"
+        #: Accepted means KEPT. `str_strip_whitespace` collapses a field of `\n`, `\t` or
+        #: `U+2028` to empty, so a stripped candidate cannot fill this field at any length.
+        if getattr(model, field) == candidate * 3:
+            accepted.append(candidate)
+    assert accepted, f"the write boundary accepts no character at all in {field}"
     filler = max(accepted, key=rendered)
-    #: Every refused candidate is refused because it costs MORE than the winner, which is the
-    #: property that makes this ceiling honest. If one were refused while being CHEAPER, the
-    #: refusal would be about something other than size and this derivation would bound nothing.
-    for candidate in candidates:
-        if candidate in accepted:
-            assert rendered(candidate) <= rendered(filler), candidate
-        else:
-            assert rendered(candidate) >= rendered(filler), (
-                f"the boundary refuses {candidate!r} at {rendered(candidate)} rendered bytes while"
-                f" accepting {filler!r} at {rendered(filler)}; that refusal is not about size, so"
-                " this derivation no longer bounds the worst case"
-            )
+    for candidate in accepted:
+        assert rendered(candidate) <= rendered(filler), candidate
     return filler
 
 
@@ -1417,14 +1485,20 @@ def _widest_session_fields() -> dict[str, str]:
     Measured at the time of writing: 25 rows of astral filler at these caps render to 237,138
     bytes against a 262,144 ceiling, 90.5% of it, so the headroom is about 25 kB. That is why
     deriving matters rather than being tidy - the margin is one field widening away.
+
+    The FILLER is derived per field for the same reason the LENGTH is: one winner chosen on
+    `title` and applied to `notes` binds the wrong field, and `notes` carries 8,000 of the
+    roughly 9,280 rendered bytes in a row. All three fields choose the same character today.
     """
     from enlightenment.models import SessionUpsert
 
-    filler = _widest_accepted_character()
     widest: dict[str, str] = {}
     for name, field in SessionUpsert.model_fields.items():
         if name == "id":
             continue
+        #: Derived INSIDE the loop, so each field is filled with the worst character THAT FIELD
+        #: accepts rather than the worst character `title` accepts.
+        filler = _widest_accepted_character(name)
         limit = next(
             (
                 item.max_length

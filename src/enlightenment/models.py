@@ -89,24 +89,3 @@ class SessionPatch(BaseModel):
     title: FreeText | None = Field(default=None, min_length=1, max_length=200)
     scenario: FreeText | None = Field(default=None, min_length=1, max_length=120)
     notes: FreeText | None = Field(default=None, max_length=2000)
-
-
-class DrillAnswer(BaseModel):
-    """One produced drill answer.
-
-    Both answer fields are free text and that is the product's central design choice, not an
-    oversight: the plan requires production rather than recognition, so there is no option id to
-    validate against a list. What IS validated is shape and size, because a free-text field that
-    reaches a store read whole on every request is a denial of service with a keyboard.
-
-    ``confidence`` is an integer step rather than a percentage. Five steps are answerable in under
-    a second, which the 100ms cue-to-feedback budget needs, and a discrete scale stops an operator
-    hedging at 50% on everything to game a proper scoring rule.
-    """
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    item_id: str = Field(min_length=1, max_length=64, pattern=SESSION_ID_PATTERN)
-    classification: str = Field(min_length=1, max_length=300)
-    first_action: str = Field(min_length=1, max_length=300)
-    confidence: int = Field(ge=1, le=5)

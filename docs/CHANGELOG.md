@@ -2,6 +2,92 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.36 (2026-09-03)
+
+**What.** One major from the security gate, and it is a fault in the test the LAST release
+shipped: `test_a_control_character_is_refused_at_the_write_boundary` drove `POST` only while being
+named for the write boundary. Both write routes are now on the same table, the worst accepted
+character is derived per field rather than once on `title`, a false assertion is withdrawn rather
+than tightened, a dead duplicate model is deleted, and the exemption that keeps a submitted answer
+out of the control-character rule is bound by a test instead of a reading.
+
+**The mutant that named it.** Delete `FreeText` from the three `SessionPatch` fields and the whole
+suite stays green at 1,011 passed. Reproduced twice, once by the gate and once here. Under that
+mutant `PATCH` accepts NUL, BEL, escape, `U+2028` and `U+00A0` with 200, and `PATCH` alone is
+enough to break the served ceiling: `notes` at its 2,000 cap of NUL renders to 12,000 bytes a row,
+so 25 rows reach roughly 332 kB against 262,144. The route the gate had flagged as the merge path
+was the one the new test did not drive. **Same shape as the fixture fault this project has now hit
+twice, one axis bound and reported as the whole; one ROUTE along instead of one field along.** The
+test now drives both routes over one candidate table, and does it against
+`RateLimiter(200, 60.0)`, because both routes together spend nineteen accepted writes against a
+`WRITE_LIMIT` of twenty: the default tier would have passed today and answered 429 on the next
+candidate anybody added, which is a limiter deciding a boundary test.
+
+**The derivation bound the wrong field.** `_widest_accepted_character` probed acceptance on
+`title` and the single winner then filled every field including `notes`, which carries 8,000 of
+the roughly 9,280 rendered bytes in a row. Mutating `SessionUpsert.notes` alone to plain `str`
+left the derivation returning the four-byte emoji while the API accepted a six-byte character, so
+the fixture would have reported 90% of a ceiling that could be exceeded at roughly 332 kB. The
+filler is now derived inside the field loop; with `notes` unvalidated it returns `\x00` and the
+sweep goes red at 503. The probe is also a RUN rather than one trailing character, which fixes
+what "accepts" means: `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so
+the old probe recorded as ACCEPTED three characters that collapse a whole field to empty and can
+never fill anything.
+
+**A false assertion withdrawn rather than tightened, and the gate asked for the opposite.** The
+old derivation asserted that every REFUSED candidate costs at least as much as the winner, on the
+reasoning that a cheaper refusal would mean the refusal was not about size. The security gate
+asked for it strict, `>` rather than `>=`. Measured, the premise fails in either form: the
+boundary refuses `\n` and `\t` at 2 rendered bytes, `U+00A0` at 2, DEL at 1, and `U+2028`,
+`U+200B`, `U+200D`, `U+FEFF` and `U+202E` at 3, all cheaper than the four-byte winner, because
+those refusals are about hygiene and bidi spoofing rather than size. The old form passed only
+because the trailing-character probe mis-recorded the cheap ones as accepted. A cheap character
+being refused cannot widen a worst case that is `max` over the ACCEPTED set, so the assertion
+never bound anything it claimed to. What replaces it binds a fact about the literal candidate
+list: it must still span one, two, three and four rendered bytes, so nobody can delete the astral
+member and leave a cheap filler chosen in silence.
+
+**A second `DrillAnswer` was sitting in `models.py`, dead.** Unreferenced by anything, carrying an
+earlier field set (`item_id`, `classification`, `first_action`) with no control-character
+validation, beside two models that had just been hardened. Not exploitable, because
+`training_api.py` holds the live boundary model, and precisely the thing that reopens a class
+quietly the day somebody wires it up. Deleted, with the design reasoning it carried moved onto the
+live model where it applies.
+
+**And the exemption it exposed is now bound rather than read.** `DrillAnswer.response` is
+deliberately NOT control-character validated: that rule is a SIZE control for the served session
+ceiling, and this field reaches neither a served surface nor the store. Verified here rather than
+taken from the gate: `Match` carries only a verdict plus the AUTHORED `note` and `why_wrong`, and
+`RunRecord` takes `classification=outcome.matched` with `first_action=""`. That is a reading of
+the code, and a reading is what a later change breaks in silence, which is the exact shape of
+fault this release exists to close. `test_a_submitted_answer_is_neither_echoed_nor_persisted`
+plants a marker in a hostile answer and asserts it reaches no response body, no `progress.json`
+and no log line, so if anyone ever echoes or records an operator's own words the suite goes red
+and `response` needs the validator before it ships.
+
+**The refused classes are documented, because the refusal cannot say them.** A rejected character
+gets one generic `422 {"error": "invalid request"}` that never names it, by the boundary rule this
+project holds everywhere, and OpenAPI is disabled on this build, so an operator hitting that 422
+had nowhere to look. `docs/SECURITY.md` now carries the measured table: accepted is
+`str.isprintable()` plus `\n`, `\r` and `\t`; refused is the rest of Cc, all of Cf, non-ASCII Zs,
+Zl and Zp, with an unpaired surrogate refused earlier still by pydantic's own unicode parse. The
+cost is stated too, since it is real: a non-breaking space pasted from a document, a
+zero-width-joiner emoji sequence and Arabic or Persian joiners are all refused.
+
+**What did NOT change, deliberately.** The 262,144 byte ceiling and `MAX_SERVED_SESSIONS = 25`
+stand. Raising the ceiling to fit an escaping factor would make it a function of how JSON escapes
+rather than of how much content a row holds, which is the gate's reasoning from V0.26.35 and it
+still holds. `DrillAnswer.response` keeps its exemption on the evidence above rather than gaining
+a validator on the strength of consistency.
+
+**Verified.** Verification loop green. Mutation: M2, deleting `FreeText` from `SessionPatch`, now
+dies on the extended boundary test at "NUL in title on PATCH answered 200, expected 422"; M4,
+deleting it from `SessionUpsert.notes` alone, now makes the derivation return `\x00` for `notes`
+and the route sweep fail 503 against 200; M5, echoing the submitted answer in the reveal, and M6,
+plumbing it into the run row, both die on the new non-echo test. Three character-class
+measurements in the new documentation were taken against the live model rather than reasoned from
+Unicode categories.
+
 ## V0.26.35 (2026-09-03)
 
 **What.** One major from the security gate, and unlike the last six in this class **it is reachable
