@@ -2,6 +2,56 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.33 (2026-09-03)
+
+**What.** The security gate returned **PASS** on V0.26.32 with two minors. Both closed, and one of
+its two prescriptions was better than the code I had written, so I took that rather than the
+cheaper one.
+
+**A ceiling measured on a re-serialisation drifted twice, so it now measures the wire itself.**
+V0.26.32 fixed the encoding and still under-counted a planted `NaN` by one byte each, because
+`json.dumps` writes `NaN` (which is not JSON) and pydantic rewrites it to `null` before Starlette
+renders. Measured by the gate: **289,199 bytes served with HTTP 200 against a 262,144 ceiling**,
+10.3% past it. The route now serialises ONCE with `ensure_ascii=False` and `allow_nan=False`,
+refuses on the length of those exact bytes, and returns that exact `Response`. **The basis cannot
+drift because it is the wire**, and the second serialisation is gone with it - there is no longer
+a second thing to keep in step. Verified: `Content-Length` equals the measured length on ASCII,
+astral and mixed bodies, and a stored `NaN` is refused rather than silently rewritten, which is
+right because no float of any form can arrive through this API.
+
+**Two message arms that were unheld, which is a diagnosis fault rather than a fail-closed one.**
+Inverting `kind == "depth"` in `storage.load` left the suite green while the anonymous 503
+misdiagnosed a nesting fault as an encoding one, and `loader.py`'s depth arm was one of eight lines
+the suite never executed, so the content-side message had no driver at all. Both are asserted on
+the sentence now, and the content test is parametrised over a fourth shape to drive it. **A 503
+that names the wrong fault sends an author to the wrong file**, which this project treats as
+load-bearing.
+
+**And the enumeration is DERIVED now, which the gate said is what stops the fourth over-claim.**
+Scoping the prose was the right immediate move and it was still hand-maintained. A helper walks
+`storage.py` for every `raise ValueError` in `migrate` and `load`, takes the longest literal
+fragment of each message, and asserts each one is produced by a fixture in the corrupt-snapshot
+table. **It found two missing drivers the moment it existed**: `'rev' is not an integer` and
+`'sessions' is not a list` both had unit tests and neither had a route-level driver, so the 503 was
+proved for eight of the store's ten refusals and asserted for all ten. A refusal added later with
+no fixture beside it now turns the test red instead of quietly widening the claim.
+
+**Mutation: four mutants, four killed, one only after the test was written.** Both depth arms; the
+ceiling measured on a re-serialisation; and `allow_nan` left on, which **survived its first run** -
+nothing asserted the NaN refusal itself, so the fix was unheld when I made it. Fifth release in a
+row where a survivor was a fault in what I had just written, and the reason each fix is
+mutation-checked rather than argued.
+
+**What the gate settled that I could not have.** Its measurement work is the reason this release is
+narrow: the depth cut is pinned from both sides at 28/29 serving and 30/31/32 refusing; the
+measurement basis is byte-for-byte identical to `Content-Length` for every string, int, bool and
+null shape; the depth bound breaks nothing, since the deepest thing the server loads is 7 and the
+deepest file in the repository is 11; and 32 cannot be turned into a denial - depth 31 with
+4,000-character keys at every level walks in 0.4 ms, because capping depth caps a pointer to 32
+segments.
+
+**How it was verified.** Loop green on all seven legs: 1,010 passed, 2 skipped, coverage 97.82%.
+
 ## V0.26.32 (2026-09-03)
 
 **What.** Two majors and two minors. The first major is the axis I did not name when I asked the

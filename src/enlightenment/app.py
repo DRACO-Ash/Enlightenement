@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -706,20 +707,43 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
         #: FAIL CLOSED rather than truncate, the same choice as an oversized library document: a
         #: silently shortened listing reads as the whole dataset, which is the fault `total` and
         #: `truncated` exist to prevent, and a row this size did not come through the API.
-        #: `ensure_ascii=False`, because that is what `JSONResponse` renders with. The first
-        #: version left the default `True`, which escapes an astral character to twelve ASCII
-        #: characters instead of four bytes - so it over-counted multi-byte content threefold and
-        #: refused the anonymous-body sweep's own legitimate 500-row astral fixture at 699,264
-        #: bytes against a wire size of about 235,000. Measuring a ceiling in a different encoding
-        #: from the one the wire uses is the code-point-versus-byte fault of V0.26.24, one level
-        #: along, and it was caught by a fixture rather than by reasoning.
-        rendered = len(
-            json.dumps(body, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
-        )
-        if rendered > MAX_SERVED_SESSIONS_BYTES:
+        #:
+        #: **MEASURE THE BYTES THIS ROUTE ACTUALLY SENDS, and then send exactly those.** Two
+        #: earlier versions measured a re-serialisation of the same object and both drifted from
+        #: the wire in a different way. The first used `json.dumps`'s default `ensure_ascii=True`,
+        #: which escapes an astral character to twelve ASCII characters rather than four bytes, so
+        #: it over-counted multi-byte content threefold and refused the anonymous-body sweep's own
+        #: legitimate astral fixture. The second fixed the encoding and still under-counted a
+        #: planted `NaN` by one byte each, because pydantic rewrites `NaN` to `null` before
+        #: Starlette renders: measured, a NaN-dense snapshot served 289,199 bytes with HTTP 200
+        #: against this ceiling, 10.3% past it.
+        #:
+        #: A ceiling measured on anything other than the bytes leaving the socket is a ceiling
+        #: that can drift, and it drifted twice. Serialising once and returning that exact
+        #: `Response` removes the second serialisation as well as the basis, so there is no longer
+        #: a second thing to keep in step. `allow_nan=False` refuses the shape rather than
+        #: silently rewriting it, because a stored `NaN` cannot arrive through this API - every
+        #: float form is a 422 - so its presence means the volume was written past the boundary.
+        try:
+            payload = json.dumps(
+                jsonable_encoder(body), separators=(",", ":"), ensure_ascii=False, allow_nan=False
+            ).encode("utf-8")
+        except ValueError as exc:
+            _logger.exception("stored sessions cannot be serialised")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": "store_unavailable",
+                    "message": (
+                        f"the stored sessions cannot be serialised ({type(exc).__name__});"
+                        " a row was not written through this API"
+                    ),
+                },
+            ) from None
+        if len(payload) > MAX_SERVED_SESSIONS_BYTES:
             _logger.error(
                 "session listing is %d bytes against a ceiling of %d",
-                rendered,
+                len(payload),
                 MAX_SERVED_SESSIONS_BYTES,
             )
             raise HTTPException(
@@ -727,12 +751,16 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
                 detail={
                     "error": "store_unavailable",
                     "message": (
-                        f"the stored sessions render to {rendered} bytes against a ceiling of"
+                        f"the stored sessions render to {len(payload)} bytes against a ceiling of"
                         f" {MAX_SERVED_SESSIONS_BYTES}; a row was not written through this API"
                     ),
                 },
             )
-        return body
+        return Response(
+            content=payload,
+            media_type="application/json",
+            headers={"etag": etag},
+        )
 
     @app.post("/api/v1/sessions", status_code=status.HTTP_201_CREATED)
     async def upsert_session(

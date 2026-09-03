@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import gc
 import json
@@ -36,7 +37,8 @@ from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import STORE_FILENAME, ProbeResult, TrainingStore
 from enlightenment.training.drill import MAX_WITHHOLD_REASON
 
-CONTENT_ROOT = Path(__file__).resolve().parents[1] / "content"
+ROOT = Path(__file__).resolve().parents[1]
+CONTENT_ROOT = ROOT / "content"
 
 
 def _nested(levels: int) -> Any:
@@ -1573,6 +1575,7 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
     #: consecutive releases is enough evidence that a hand-written completeness claim about this
     #: store is not worth making, so the wording is now scoped to the list rather than to the
     #: store, and the member shapes have their own parametrised test.
+    refusals: list[str] = []
     corrupt: dict[str, str | bytes] = {
         #: The NEWLINE, the forged object and the SURROGATE are all in the SAME key, and that
         #: matters: the walk reports the pointer of the string it found, so a fixture with the
@@ -1614,6 +1617,11 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
         #: `ETag` is built from it and a header is covered by no body ceiling: measured, a
         #: 4,000-digit `rev` produced a 4,004-byte `ETag` on the anonymous listing.
         "a revision of absurd magnitude": json.dumps({"rev": int("9" * 4000), "sessions": []}),
+        #: The last two shapes, added by the DERIVED check below rather than by anybody noticing.
+        #: Both had unit tests in `test_storage.py` and neither had a route-level driver, so the
+        #: 503 was proved for eight of the store's ten refusals and asserted for all of them.
+        "a revision that is not an integer": '{"rev": "one", "sessions": []}',
+        "a sessions field that is not a list": '{"rev": 1, "sessions": "nope"}',
         #: Valid bytes, not valid UTF-8. The BOM is load-bearing: bare UTF-16LE of ASCII is
         #: nothing but ASCII interleaved with NULs, and a NUL is perfectly valid UTF-8 - so
         #: without `\xff\xfe` this decoded cleanly and failed one branch further on as a JSON
@@ -1643,12 +1651,19 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
                 f" anonymous caller as a traceback: {listing.content[:160]!r}"
             )
             assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
+            refusals.append(listing.json()["detail"]["message"])
             #: The message names the fault and never a stored value.
             assert "s-1" not in listing.text, listing.text[:200]
             #: And no FABRICATED record reaches the wire. This is the assertion the pair-list
             #: shape exists for: a 503 is the point, but a 200 carrying an invented session would
             #: be the worse outcome and a status check alone cannot tell them apart.
             assert "GHOST-ONE" not in listing.text, listing.text[:200]
+            #: The message names the RIGHT FAULT, not merely a fault. Inverting the depth arm in
+            #: `storage.load` left the suite green while the anonymous 503 misdiagnosed a nesting
+            #: fault as an encoding one - fail-closed either way, so a status assertion cannot see
+            #: it, and this project treats a wrong diagnosis as load-bearing.
+            if label == "a value nested past the serialiser's limit":
+                assert "nests deeper than" in listing.json()["detail"]["message"], listing.text
             #: SINGLE LINE and bounded. The pointer carries stored KEY NAMES, and `app.py` logs
             #: this text with `_logger.exception`, whose traceback renders it verbatim - so a key
             #: containing a newline forged a second log line, raw surrogate and all, past the
@@ -1681,6 +1696,61 @@ def test_an_unreadable_snapshot_fails_closed_on_the_anonymous_listing(
                     f" snapshot reaches a caller as a traceback: {write.content[:160]!r}"
                 )
                 assert write.json()["detail"]["error"] == "store_unavailable", write.text
+
+    #: EVERY refusal the store can raise has a fixture above, DERIVED from the source rather than
+    #: promised in a comment. This is the assertion that replaces three broken completeness claims
+    #: - "ALL FIVE shapes", then an enumeration that missed serialise-depth, then wording scoped to
+    #: the list - and it found two missing drivers the moment it existed.
+    for needle in _store_refusal_needles():
+        assert any(needle in message for message in refusals), (
+            f"the store can refuse with {needle!r} and no fixture above drives it, so this test"
+            f" asserts a 503 for a shape nothing proves; refusals seen: {refusals}"
+        )
+
+
+def _store_refusal_needles() -> list[str]:
+    """Every refusal message `storage.migrate` and `storage.load` can raise, read from the SOURCE.
+
+    **Derived, not written down, because the written-down version was wrong three times.** "ALL
+    FIVE shapes the store refuses" missed a `sessions` member that was not an object; the
+    enumeration that replaced it missed nesting too deep to SERIALISE; and the wording that
+    replaced THAT was scoped to the list rather than to the store, which is honest but still
+    hand-maintained. The security gate's judgement, adopted: scoping the prose was the right
+    immediate move and deriving is the one that stops the fourth.
+
+    So this walks the two functions for `raise ValueError` and returns the longest literal fragment
+    of each message. A new refusal added to the store with no fixture beside it turns the test
+    below red, which is a mechanical promise where there was a prose one. It found two gaps the
+    moment it existed: `'rev' is not an integer` and `'sessions' is not a list` both had unit tests
+    and neither had a route-level driver.
+    """
+    source = (ROOT / "src" / "enlightenment" / "storage.py").read_text(encoding="utf-8")
+
+    def literals(node: ast.AST) -> list[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return [node.value]
+        if isinstance(node, ast.JoinedStr):
+            return [
+                value.value
+                for value in node.values
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            ]
+        return []
+
+    needles: list[str] = []
+    for function in ast.walk(ast.parse(source)):
+        if not isinstance(function, ast.FunctionDef) or function.name not in {"migrate", "load"}:
+            continue
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+                continue
+            if getattr(node.exc.func, "id", "") != "ValueError":
+                continue
+            fragments = [part for argument in node.exc.args for part in literals(argument)]
+            assert fragments, f"a ValueError in {function.name} carries no literal to match on"
+            needles.append(max(fragments, key=len))
+    assert len(needles) >= 10, f"the store's refusal sites shrank to {len(needles)}; re-read them"
+    return needles
 
 
 def test_a_planted_session_past_the_byte_ceiling_fails_the_read_closed(
@@ -1730,5 +1800,46 @@ def test_a_planted_session_past_the_byte_ceiling_fails_the_read_closed(
         #: read is not mistaken for a store-wide refusal.
         write = client.request("POST", "/api/v1/sessions", json=VALID_SESSION, headers=AUTH)
         assert write.status_code == 201, write.text
+        for path in ("/", "/livez", "/ping", "/health"):
+            assert client.get(path).status_code == 200, path
+
+
+def test_a_planted_non_json_float_fails_the_read_closed(
+    token_config: Config, tmp_path: Path
+) -> None:
+    """A stored `NaN` is refused rather than silently rewritten, and that is what keeps the
+    byte ceiling exact.
+
+    `json.dumps` writes `NaN` by default, which is not JSON; pydantic rewrites it to `null`
+    before Starlette renders. So a ceiling measured on anything but the bytes actually sent
+    under-counted a planted NaN by one byte each, and the security gate measured the consequence:
+    a NaN-dense snapshot served **289,199 bytes with HTTP 200** against a 262,144 ceiling, 10.3%
+    past it.
+
+    Serialising once with `allow_nan=False` and returning that exact `Response` makes the basis
+    the wire by construction. The refusal is the right answer rather than a nuisance: no float of
+    any form can arrive through this API - `notes=NaN`, `notes=1e400` and `notes=1.5` are all
+    generic 422s - so a stored float means the volume was written past the boundary.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    rows = [{"id": f"s-{index}", "x": float("nan"), "title": "A" * 900} for index in range(25)]
+    (data_dir / STORE_FILENAME).write_text(
+        json.dumps({"rev": 1, "sessions": rows}), encoding="utf-8"
+    )
+    app = create_app(
+        config=replace(token_config, data_dir=data_dir),
+        store=TrainingStore(data_dir),
+        probe=ok_probe,
+        training=TrainingPaths(content_root=CONTENT_ROOT, progress_path=data_dir / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        listing = client.get("/api/v1/sessions")
+        assert listing.status_code == 503, (
+            f"answered {listing.status_code} at {len(listing.content)} bytes; a stored NaN is"
+            " rewritten to null by pydantic, so a ceiling not measured on the wire misses it"
+        )
+        assert listing.json()["detail"]["error"] == "store_unavailable", listing.text
+        assert "cannot be serialised" in listing.json()["detail"]["message"], listing.text
         for path in ("/", "/livez", "/ping", "/health"):
             assert client.get(path).status_code == 200, path

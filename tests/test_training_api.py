@@ -37,6 +37,7 @@ from enlightenment.app import (
 )
 from enlightenment.config import Config
 from enlightenment.content import ContentPackage
+from enlightenment.identifiers import MAX_NESTING_DEPTH
 from enlightenment.ratelimit import RateLimiter
 from enlightenment.storage import MAX_SESSIONS, TrainingStore
 from enlightenment.training.drill import (
@@ -1143,6 +1144,26 @@ def _poison_a_drill_key(root: Path) -> str:
     return "/stimulus/params/SECRET-AUTHORED-KEY"
 
 
+def _poison_with_depth(root: Path) -> str:
+    """A value nested past the serialiser's limit, on the CONTENT side.
+
+    `loader.py`'s depth arm was one of eight lines the suite never executed, so the content-side
+    depth message had no driver at all while the register described it. Fail-closed held either
+    way; what was unheld was the DIAGNOSIS, and this project treats a wrong diagnosis as
+    load-bearing - a 503 naming an encoding fault for a nesting fault sends an author to the
+    wrong file.
+    """
+    path = root / "drills.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document["drills"] if isinstance(document, dict) else document
+    node: Any = 1
+    for _ in range(MAX_NESTING_DEPTH + 4):
+        node = {"d": node}
+    rows[0].setdefault("stimulus", {}).setdefault("params", {})["deep"] = node
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return "/drills/0/stimulus/params/deep"
+
+
 def _poison_a_library_array(root: Path) -> str:
     """A surrogate in an ARRAY-held string, the third branch and the one with no driver at all.
 
@@ -1168,8 +1189,9 @@ def _poison_a_library_array(root: Path) -> str:
         (_poison_a_drill_value, "SECRET-AUTHORED-PROSE"),
         (_poison_a_drill_key, "SECRET-AUTHORED-KEY"),
         (_poison_a_library_array, "SECRET-ARRAY-PROSE"),
+        (_poison_with_depth, "no marker"),
     ],
-    ids=["value", "key", "array"],
+    ids=["value", "key", "array", "depth"],
 )
 def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_a_route(
     token_config: Config,
@@ -1219,11 +1241,15 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
         errors = manifest.json()["errors"]
         assert errors, "the tree loaded with a value that cannot be serialised"
         joined = " ".join(str(error) for error in errors)
-        assert "lone surrogate" in joined, joined[:300]
+        #: The message names the RIGHT FAULT. The depth case is a different refusal with a
+        #: different sentence, and asserting only "a refusal happened" is what left that
+        #: arm unheld while the register described it.
+        expected_fault = "nests deeper than" if poison is _poison_with_depth else "lone surrogate"
+        assert expected_fault in joined, joined[:300]
         assert pointer in joined, f"the error names no JSON pointer for {pointer}: {joined[:400]}"
         #: A KEY is named and a VALUE is not. The key case asserts the pointer above, which
         #: contains its marker by construction; the other two must not leak theirs.
-        if poison is not _poison_a_drill_key:
+        if poison not in {_poison_a_drill_key, _poison_with_depth}:
             assert marker not in joined, (
                 f"the load error quoted the authored value that failed it: {joined[:300]}"
             )
@@ -1255,8 +1281,8 @@ def test_a_lone_surrogate_in_content_fails_the_load_closed_rather_than_crashing_
     package = ContentPackage(root)
     package.load()
     raw = " ".join(str(error) for error in package.result.errors)
-    assert "lone surrogate" in raw, raw[:300]
-    if poison is not _poison_a_drill_key:
+    assert expected_fault in raw, raw[:300]
+    if poison not in {_poison_a_drill_key, _poison_with_depth}:
         assert marker not in raw, f"the loader's own error quoted the authored value: {raw[:300]}"
 
 
