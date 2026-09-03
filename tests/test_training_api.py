@@ -18,6 +18,7 @@ placeholders, which is a materially stronger test of the same rules.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 from collections.abc import Callable
@@ -283,6 +284,23 @@ def test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data
     assert ANSWER_BODY["response"].casefold() not in emitted, "the answer text reached the log"
 
 
+def _event_name(record: logging.LogRecord) -> str | None:
+    """The `event` field of a structured audit line, or `None` if the record is not one.
+
+    `log_event` emits one JSON object per line, so the event NAME is what identifies a sink;
+    the logger name identifies only the module that owns every sink. Same idiom as
+    `test_every_accepted_answer_emits_one_audit_line_carrying_no_performance_data`.
+    """
+    message = record.getMessage()
+    if not message.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(message)
+    except json.JSONDecodeError:
+        return None
+    return parsed.get("event") if isinstance(parsed, dict) else None
+
+
 def test_a_submitted_answer_is_neither_echoed_nor_persisted(
     client: TestClient, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -336,13 +354,30 @@ def test_a_submitted_answer_is_neither_echoed_nor_persisted(
     #: "enlightenment.training_api").info("answer text: %s", payload.response)` survived the
     #: whole suite. The docstring above claims "no log line", not "no audit log line", so the
     #: assertion has to be as wide as the claim while the guard stays narrow enough to bite.
-    audited = [record for record in caplog.records if record.name == "enlightenment.event"]
+    #: The guard binds the `drill.answered` EVENT, not merely its logger. Filtering on
+    #: `record.name == "enlightenment.event"` alone would be satisfied by any second event on
+    #: this route with the sink deleted, so the guard would claim to hold a sink it did not.
+    audited = [
+        record
+        for record in caplog.records
+        if record.name == "enlightenment.event" and _event_name(record) == "drill.answered"
+    ]
     assert audited, (
-        "no audit record was captured, so the log arm of this test proved nothing; the"
-        " `drill.answered` sink is the one it exists to hold"
+        "no `drill.answered` audit record was captured, so the log arm of this test proved"
+        " nothing; that sink is the one it exists to hold"
     )
+    #: **Measured as the DEPLOYED HANDLER writes it, not as `getMessage()` returns it.** Both
+    #: entry points configure `logging.basicConfig(format="%(message)s")`, and
+    #: `logging.Formatter.format` appends `exc_text` and `stack_info` whatever the format string
+    #: says - so a traceback is part of the shipped line while `getMessage()` omits it entirely.
+    #: The V0.26.39 fix widened this loop from the audit records to ALL records and left the unit
+    #: alone, so the same leak walked through the wider arm: raising `RuntimeError(
+    #: payload.response)` and calling `.exception()` still returned 200 and still passed all
+    #: 1,012 tests, with the answer text and its unsanitised control characters in a production
+    #: log line. Widening the set is not widening the measurement.
+    formatter = logging.Formatter("%(message)s")
     for record in caplog.records:
-        assert marker not in record.getMessage().casefold(), (
+        assert marker not in formatter.format(record).casefold(), (
             f"the answer text reached the log on {record.name}"
         )
 
@@ -1433,38 +1468,35 @@ def _widest_accepted_character(field: str) -> str:
     boundary change admitting a more expensive character makes this test choose it rather than
     quietly keep testing the cheap one.
 
-    **PER FIELD, and the probe is a RUN rather than one trailing character.** Both corrections
-    came from the same finding. The probe validated `f"x{candidate}"` on `title` alone and then
-    the single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280
-    rendered bytes in a row - so `notes` accepting a six-byte character while `title` refused it
-    would leave this derivation returning the four-byte emoji and reporting 90% of a ceiling the
-    API could exceed at 335,264 bytes on the planted snapshot at twelve character ids. A run also
-    fixes what "accepts" means: `str_strip_whitespace` removes a lone trailing `\n`, `\t` or
-    `U+2028`, so the old probe
-    recorded those as ACCEPTED when a field of them collapses to empty and they can never fill
-    anything. Accepted here now means the model KEEPS the run.
+    **PER FIELD, and the probe is a RUN rather than one trailing character.** Both corrections came
+    from the same finding. The probe validated `f"x{candidate}"` on `title` alone and then the
+    single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280 rendered
+    bytes in a row - so `notes` accepting a six-byte character while `title` refused it would leave
+    this derivation returning the four-byte emoji and reporting 90% of a ceiling the API could
+    exceed at 335,264 bytes on the planted snapshot at twelve character ids. A run also fixes what
+    "accepts" means: `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so the
+    old probe recorded those as ACCEPTED when a field of them collapses to empty and they can never
+    fill anything. Accepted here now means the model KEEPS the run.
 
-    **There is no assertion that a refused candidate costs more than the winner, and the earlier
-    one was withdrawn as false rather than tightened.** The security gate asked for it strict
-    (`>` rather than `>=`); measured, the premise does not hold in either form. Over ALL of
-    Unicode, 7,950 code points are refused at strictly under four rendered bytes and 955,086 more
-    at exactly four, so the strict form fails by 963,036 counterexamples. **Those two figures are
-    measured against the `FreeText` RULE, not against this function's KEEPS-the-run probe**, and
-    the distinction is not academic here: on the probe's definition the same scan gives 7,954 and
-    963,040, because the space and the three free-text controls strip away and so count as
-    refused. Either basis buries the premise; the rule is the one quoted because it is the
-    boundary's own test. Within THIS candidate
-    list it fails on three: the boundary refuses `\n` and `\t` at 2 rendered bytes and `U+2028`
-    at 3, all CHEAPER than the four-byte winner, because those refusals are about hygiene and
-    bidi spoofing rather than size. An earlier version of this paragraph also cited `U+00A0`,
-    `U+200B`, `U+200D`, `U+FEFF` and `U+202E` as though they were in the list below; they are
-    not, so they belong to the scan and not to this set. Claiming more than the fixture holds is
-    the same fault, one sentence along. The old form passed only because the trailing-character
-    probe mis-recorded the cheap ones as accepted.
-    A cheap character being refused cannot widen a worst case that is `max` over the accepted set,
-    so the assertion never bound anything; what does bind is the width spread of the candidate
-    list, asserted below, which stops anyone deleting the astral member and leaving a cheap filler
-    chosen in silence.
+    **There is no assertion that a refused candidate costs more than the winner, and the earlier one
+    was withdrawn as false rather than tightened.** The security gate asked for it strict (`>`
+    rather than `>=`); measured, the premise does not hold in either form. Over ALL of Unicode,
+    7,950 code points are refused at strictly under four rendered bytes and 955,086 more at exactly
+    four, so the strict form fails by 963,036 counterexamples. **Those two figures are measured
+    against the `FreeText` RULE, not against this function's KEEPS-the-run probe**, and the
+    distinction is not academic here: on the probe's definition the same scan gives 7,954 and
+    963,040, because the space and the three free-text controls strip away and so count as refused.
+    Either basis buries the premise; the rule is the one quoted because it is the boundary's own
+    test. Within THIS candidate list it fails on three: the boundary refuses `\n` and `\t` at 2
+    rendered bytes and `U+2028` at 3, all CHEAPER than the four-byte winner, because those refusals
+    are about hygiene and bidi spoofing rather than size. An earlier version of this paragraph also
+    cited `U+00A0`, `U+200B`, `U+200D`, `U+FEFF` and `U+202E` as though they were in the list below;
+    they are not, so they belong to the scan and not to this set. Claiming more than the fixture
+    holds is the same fault, one sentence along. The old form passed only because the
+    trailing-character probe mis-recorded the cheap ones as accepted. A cheap character being
+    refused cannot widen a worst case that is `max` over the accepted set, so the assertion never
+    bound anything; what does bind is the width spread of the candidate list, asserted below, which
+    stops anyone deleting the astral member and leaving a cheap filler chosen in silence.
     """
     candidates = [
         "a",
@@ -1532,10 +1564,16 @@ def _widest_session_fields() -> dict[str, str]:
     Measured, each figure with the fixture that produces it, because a bare 237,138 published
     here reproduced on nothing and then a bare 237,163 named a fixture it does not hold on. The
     listing serves `MAX_SERVED_SESSIONS` rows whatever is written, so **ROWS WRITTEN is a
-    variable of the measurement**, not a detail: it decides `total`'s digit count and whether
-    `truncated` renders as `true` or `false`, one byte. All four figures below are astral filler
-    at these caps; the first three are driven through the real gated POST route and the fourth is
-    a planted snapshot, which is stated on each because it is the difference between them:
+    variable of the measurement**, not a detail: it decides `total`'s digit count, `rev`'s digit
+    count, and whether `truncated` renders as `true` or `false`, one byte. THREE variables, and
+    an earlier version of this sentence named two - which left the sequence 235,863, 235,862,
+    235,864 unreconcilable from the stated mechanism, so a reader computing it would have
+    concluded a figure was wrong. Measured: 99 rows written gives 235,862 and 100 gives 235,864,
+    the two bytes being one extra digit in `total` AND one in `rev`.
+
+    All four figures below are astral filler at these caps; the first three are driven through the
+    real gated POST route and the fourth is a planted snapshot, which is stated on each because it
+    is the difference between them:
 
     ● **235,862 bytes, 89.97%, headroom 26,282**, at 30 rows written and twelve character ids.
       **This is THIS FUNCTION'S only caller**,

@@ -2,6 +2,82 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.40 (2026-09-03)
+
+**What.** One major from the engineering gate, and it is the SAME LEAK as V0.26.39's, one layer
+along: widening the set of records the log arm checks is not widening the unit each record is
+measured in. Plus five minors, one of which is a false claim about a fix in the V0.26.39 entry
+itself. All verified against the code before being touched.
+
+**`getMessage()` is not the shipped log line.** Both entry points configure
+`logging.basicConfig(level=logging.INFO, format="%(message)s")` - `asgi.py:14` and
+`__main__.py:21` - and `logging.Formatter.format` appends `exc_text` and `stack_info` whatever the
+format string says. So a traceback IS part of the emitted line, while `record.getMessage()` omits
+it entirely. Verified directly: a record carrying `RuntimeError("qqmarkerqq\x00\x07")` in
+`exc_info` gives `False` for the marker through `getMessage()` and `True` through the shipped
+formatter. Reproduced as a live mutant on the answer route:
+
+```python
+try:
+    raise RuntimeError(payload.response)
+except RuntimeError:
+    logging.getLogger("enlightenment.training_api").exception("scoring note")
+```
+
+Still 200, and the whole suite green. **The operator's answer, control characters unsanitised,
+reaches a production log line on the single unauthenticated write route where the flight plan
+forbids personal performance data, and 1,012 tests stay green.** V0.26.39 widened the loop from
+the audit records to every record and left the unit alone, so the identical class of leak walked
+straight through the wider arm. The arm now formats each record with
+`logging.Formatter("%(message)s")`, the deployed configuration, so its unit is the shipped line
+rather than a subset of it. Three mutants die on it now: the plain non-event logger, the
+`exc_info` leak, and deleting the `drill.answered` sink.
+
+**Not a live defect, and stated as such.** `app.py` has a reachable `logger.exception` sink, but
+`DrillError` is caught and converted before it, and no raise site in `score`, `_record` or `match`
+interpolates the response. The suite failed to HOLD the control; the code does not leak today.
+That was established by reading every `DrillError` raise site and the `score` path, not by
+exhaustive taint analysis, so it is recorded as not-live rather than impossible.
+
+**The guard named a sink it did not bind.** Its message said `drill.answered` was "the one it
+exists to hold" while the predicate bound only `record.name == "enlightenment.event"`, which any
+second event on the route would satisfy with the sink deleted. It now filters on the parsed
+`event` field, the idiom already used by the sibling audit test, through a small `_event_name`
+helper.
+
+**A third variable of the measurement, unnamed.** The rows-written mechanism was published as
+`total`'s digit count plus the `truncated` flag. `rev` is served in the body too and its digit
+count tracks rows written as well, so the sequence 235,863 at 25 rows, 235,862 at 30 and 235,864
+at 500 cannot be reconciled from two variables - a reader computing it would have concluded a
+published figure was wrong. Measured here: 99 rows written serves 235,862 and 100 serves 235,864,
+the two bytes being one extra digit in `total` AND one in `rev`. All four published figures do
+reconcile once `rev` is counted, so no figure was wrong; the mechanism was incomplete.
+
+**Two claims in the V0.26.39 entry, corrected in place with markers rather than silently.** The
+600-byte reconciliation is exact only at 500 rows written, where `total` and `rev` match the
+planted snapshot's digits; paired with the headline 235,862 at 30 rows the gap is 598. And "two
+docstring paragraphs left orphan fragments ... reflowed" was not held: the hand edits fixed two
+fragments and created two more, leaving three. Both paragraphs are now rewrapped mechanically to
+the 100-column limit rather than by hand, which is the only way this stops recurring - `ruff
+format` does not reach docstring prose, so hand reflowing is unverified by the loop.
+
+**And a retraction marker inside the V0.26.38 row.** That row still ended "the four write-path
+figures were driven through the real gated POST route" with nothing to warn a reader, and a
+retraction three rows later is not reachable from the false sentence. The row now carries a
+bracketed forward pointer. **This is the discipline going forward: a false claim in a shipped
+audit row gets a bracketed marker in place, naming the release that retracts it, while the
+narrative correction still lives in the later row.** Append-only preserves the trail; an
+unqualified false sentence in the trail defeats its purpose.
+
+**Verified.** Verification loop green. No production code changed; the diff is two test files,
+`docs/SECURITY.md`, `docs/CHANGELOG.md` and the version stamps. Every mutant was run after
+`find -name __pycache__ -prune -exec rm -rf {} +` with `PYTHONDONTWRITEBYTECODE=1`, on the gate's
+own advice after it caught a stale-bytecode contamination in its first sweep: `WRITE_LIMIT = 21`
+and `WRITE_LIMIT = 20` are the same byte length, so a restored file within the same mtime second
+served mutant bytecode against clean source. **The security gate has not seen the four releases
+since `705a4f3` and runs at head next, before packaging, because this class of finding is a
+privacy control on an unauthenticated route rather than a figure in a docstring.**
+
 ## V0.26.39 (2026-09-03)
 
 **What.** The engineering gate FAILED V0.26.38 with four majors. **One is a live control
@@ -39,7 +115,9 @@ fourth is the planted snapshot, as that entry's own bullet says twelve lines ear
 here: the POST route stamps 32-character `isoformat()` timestamps, so it yields 235,863 at 25 rows
 written, 235,862 at 30 and 235,864 at 500, and **cannot produce 235,264 at any row count**. That
 figure needs the planted fixture's twenty-character stamps; the 600-byte gap is exactly 25 served
-rows times two stamps times twelve characters. A provenance claim about how figures were measured,
+rows times two stamps times twelve characters. **[Corrected at V0.26.40: exactly 600 only at
+500 rows written, where `total` and `rev` match the planted snapshot's digits; paired with the
+headline 235,862 at 30 rows the gap is 598.]** A provenance claim about how figures were measured,
 wrong, inside the release about provenance.
 
 **A comment claiming a two-sided binding the assertion does not have.** V0.26.38 said of the new
@@ -57,7 +135,9 @@ against the `FreeText` rule the scan gives 7,950 refused under four rendered byt
 strict-form counterexamples; against the function's KEEPS-the-run probe the same scan gives 7,954
 and 963,040, the difference being the space and the three free-text controls, which strip away.
 Both measured here. And two docstring paragraphs left orphan fragments mid-sentence when reflowed,
-which `ruff format` does not reach; reflowed.
+which `ruff format` does not reach; reflowed. **[Corrected at V0.26.40: the hand edits fixed two
+fragments and created two more, leaving three. Both paragraphs are now rewrapped mechanically to
+the 100-column limit rather than by hand.]**
 
 **What the gate got right about `spent == 19`**, since I had asked whether it was a bare figure of
 the kind this release condemns: it is not, and close to the opposite. It is counted at runtime from
@@ -143,7 +223,9 @@ is two test files, `docs/SECURITY.md` and the version stamps. Mutations: removin
 kills the budget assertion; widening `FREE_TEXT_CONTROLS` to admit NUL still kills the width
 assertion at the derivation. Every figure in this entry was measured against the live code in this
 release, and the four write-path figures were driven through the real gated POST route rather than
-computed.
+computed. **[Retracted at V0.26.39: THREE of the four were; the fourth is the planted
+snapshot named in the bullet above, which the POST route cannot produce at any row count
+because it stamps 32-character timestamps.]**
 
 ## V0.26.37 (2026-09-03)
 
