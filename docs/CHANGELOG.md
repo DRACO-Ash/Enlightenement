@@ -2,6 +2,75 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.39 (2026-09-03)
+
+**What.** The engineering gate FAILED V0.26.38 with four majors. **One is a live control
+regression I introduced while closing a minor**, and the other three are the same
+over-claiming fault the last two releases were about, committed inside the releases correcting
+it. All four verified against the code before being touched, and all four closed.
+
+**The fix that closed a hole opened one.** V0.26.38 narrowed the non-echo test's log arm to the
+`enlightenment.event` logger so its non-empty guard could actually fire. It narrowed the MARKER
+LOOP with it, from `for record in caplog.records` to `for record in audited` - and the docstring
+above claims "no log line", not "no audit log line". Reproduced: adding
+`logging.getLogger("enlightenment.training_api").info("answer text: %s", payload.response)` to
+the answer route **survives the whole suite** at V0.26.38. So an operator's own words could reach
+a log line on any logger but one with the test green, on the single unauthenticated write route,
+where the flight plan forbids personal performance data in a log line. **This is the worst kind of
+finding in this sequence: not a stale figure but a weakened control, introduced by a correction,
+in the release whose subject was corrections.** Both properties were available at once and now
+are: the guard names the audit sink, the assertion stays over every record, and it reports which
+logger leaked. Mutants re-fired - the non-event logger now dies with "the answer text reached the
+log on enlightenment.training_api", and deleting the `drill.answered` sink still dies with "no
+audit record was captured".
+
+**The correction for a wrongly-attributed fixture attributed one wrongly.** V0.26.38 credited
+235,862 bytes to "this function's own caller,
+`test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree`". That sweep does not call
+the derived helper at all: it calls `_fill_sessions`, whose figure is the FOURTH bullet, 235,264.
+The helper's only caller is
+`test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_total`, which writes
+`MAX_SERVED_SESSIONS + 5` rows through the gated POST route. The figure was right and the fixture
+named for it was wrong, which is precisely the fault under correction. Fixed in the docstring and
+in the register, both of which had it.
+
+**"All four write-path figures were driven through the real gated POST route" - three were.** The
+fourth is the planted snapshot, as that entry's own bullet says twelve lines earlier. Measured
+here: the POST route stamps 32-character `isoformat()` timestamps, so it yields 235,863 at 25 rows
+written, 235,862 at 30 and 235,864 at 500, and **cannot produce 235,264 at any row count**. That
+figure needs the planted fixture's twenty-character stamps; the 600-byte gap is exactly 25 served
+rows times two stamps times twelve characters. A provenance claim about how figures were measured,
+wrong, inside the release about provenance.
+
+**A comment claiming a two-sided binding the assertion does not have.** V0.26.38 said of the new
+`WRITE_LIMIT` binding: "raise it and the injected limiter stops being justified, lower it and the
+default tier starts deciding this test's verdict, and either way this assertion says so."
+`WRITE_LIMIT - spent <= 1` with `spent` counted at 19 asserts `WRITE_LIMIT <= 20` and nothing
+else; the gate measured it surviving at 1, 5, 10, 19 and 20 and dying at 21 and above. The second
+half is also impossible: the test injects a 200-per-minute strict tier, so `WRITE_LIMIT` cannot
+decide its verdict at any value. The comment now states the binding as it is, one-sided, and says
+why that is the direction worth holding: only a RAISE makes the injection unnecessary.
+
+**Two minors closed as well.** The two exhaustive-scan figures now name their basis, which matters
+because the paragraph sits inside a function that defines "accepted" differently ten lines below:
+against the `FreeText` rule the scan gives 7,950 refused under four rendered bytes and 963,036
+strict-form counterexamples; against the function's KEEPS-the-run probe the same scan gives 7,954
+and 963,040, the difference being the space and the three free-text controls, which strip away.
+Both measured here. And two docstring paragraphs left orphan fragments mid-sentence when reflowed,
+which `ruff format` does not reach; reflowed.
+
+**What the gate got right about `spent == 19`**, since I had asked whether it was a bare figure of
+the kind this release condemns: it is not, and close to the opposite. It is counted at runtime from
+real status codes, so it re-measures on every run and the literal is a tripwire rather than a
+published claim. The defect was the comment describing what it bound, not the figure.
+
+**Verified.** Verification loop green. No production code changed in this release either; the diff
+is two test files, `docs/SECURITY.md`, `docs/CHANGELOG.md` and the version stamps. **The security
+gate PASSED at `705a4f3` and has not seen the three releases since.** That was defensible while
+they touched no production logic, and it is worth restating that the regression above weakened the
+test of a privacy control on an unauthenticated route, so the corrected form goes to that gate
+before this build is packaged rather than after.
+
 ## V0.26.38 (2026-09-03)
 
 **What.** The engineering gate FAILED V0.26.37 with three majors, all of them mine, and all in the

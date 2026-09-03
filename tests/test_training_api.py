@@ -327,18 +327,24 @@ def test_a_submitted_answer_is_neither_echoed_nor_persisted(
     #: listing cap: `for record in []` passes, and one of the three sinks this test exists to bind
     #: would be unbound with the test still green.
     #:
-    #: **Filtered to the audit logger, because `assert caplog.records` was satisfied by `httpx`.**
-    #: The first version of this guard could not fire: `httpx` emits one record per request, so
-    #: deleting the `drill.answered` sink outright left this test green while its sibling
-    #: correctly failed. A guard that a mutation cannot falsify is the tautology fault one file
-    #: along, so the arm now names the sink it binds.
+    #: **The GUARD names the audit sink; the ASSERTION stays over every record.** Two separate
+    #: properties, and collapsing them into one list cost the second. The first guard was
+    #: `assert caplog.records`, which `httpx` satisfies with one record per request, so deleting
+    #: the `drill.answered` sink left this test green while its sibling correctly failed - a
+    #: guard no mutation can falsify. Narrowing fixed that and then narrowed the marker loop with
+    #: it, so an answer echoed on ANY OTHER logger passed: `logging.getLogger(
+    #: "enlightenment.training_api").info("answer text: %s", payload.response)` survived the
+    #: whole suite. The docstring above claims "no log line", not "no audit log line", so the
+    #: assertion has to be as wide as the claim while the guard stays narrow enough to bite.
     audited = [record for record in caplog.records if record.name == "enlightenment.event"]
     assert audited, (
         "no audit record was captured, so the log arm of this test proved nothing; the"
         " `drill.answered` sink is the one it exists to hold"
     )
-    for record in audited:
-        assert marker not in record.getMessage().casefold(), "the answer text reached the log"
+    for record in caplog.records:
+        assert marker not in record.getMessage().casefold(), (
+            f"the answer text reached the log on {record.name}"
+        )
 
 
 # --- content and library -----------------------------------------------------------------
@@ -1432,9 +1438,9 @@ def _widest_accepted_character(field: str) -> str:
     the single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280
     rendered bytes in a row - so `notes` accepting a six-byte character while `title` refused it
     would leave this derivation returning the four-byte emoji and reporting 90% of a ceiling the
-    API could exceed at 335,264 bytes on the planted snapshot at twelve character ids. A
-    run also fixes what "accepts" means:
-    `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so the old probe
+    API could exceed at 335,264 bytes on the planted snapshot at twelve character ids. A run also
+    fixes what "accepts" means: `str_strip_whitespace` removes a lone trailing `\n`, `\t` or
+    `U+2028`, so the old probe
     recorded those as ACCEPTED when a field of them collapses to empty and they can never fill
     anything. Accepted here now means the model KEEPS the run.
 
@@ -1442,14 +1448,19 @@ def _widest_accepted_character(field: str) -> str:
     one was withdrawn as false rather than tightened.** The security gate asked for it strict
     (`>` rather than `>=`); measured, the premise does not hold in either form. Over ALL of
     Unicode, 7,950 code points are refused at strictly under four rendered bytes and 955,086 more
-    at exactly four, so the strict form fails by 963,036 counterexamples. Within THIS candidate
+    at exactly four, so the strict form fails by 963,036 counterexamples. **Those two figures are
+    measured against the `FreeText` RULE, not against this function's KEEPS-the-run probe**, and
+    the distinction is not academic here: on the probe's definition the same scan gives 7,954 and
+    963,040, because the space and the three free-text controls strip away and so count as
+    refused. Either basis buries the premise; the rule is the one quoted because it is the
+    boundary's own test. Within THIS candidate
     list it fails on three: the boundary refuses `\n` and `\t` at 2 rendered bytes and `U+2028`
     at 3, all CHEAPER than the four-byte winner, because those refusals are about hygiene and
     bidi spoofing rather than size. An earlier version of this paragraph also cited `U+00A0`,
     `U+200B`, `U+200D`, `U+FEFF` and `U+202E` as though they were in the list below; they are
     not, so they belong to the scan and not to this set. Claiming more than the fixture holds is
-    the same fault, one sentence along. The old
-    form passed only because the trailing-character probe mis-recorded the cheap ones as accepted.
+    the same fault, one sentence along. The old form passed only because the trailing-character
+    probe mis-recorded the cheap ones as accepted.
     A cheap character being refused cannot widen a worst case that is `max` over the accepted set,
     so the assertion never bound anything; what does bind is the width spread of the candidate
     list, asserted below, which stops anyone deleting the astral member and leaving a cheap filler
@@ -1527,9 +1538,13 @@ def _widest_session_fields() -> dict[str, str]:
     a planted snapshot, which is stated on each because it is the difference between them:
 
     ● **235,862 bytes, 89.97%, headroom 26,282**, at 30 rows written and twelve character ids.
-      **This is THIS FUNCTION'S own caller** at
-      `test_no_anonymous_route_serves_a_content_sized_body_on_a_hostile_tree`, so it is the figure
-      that describes the fixture actually running, and it was the one figure never published.
+      **This is THIS FUNCTION'S only caller**,
+      `test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_total`, which
+      writes `MAX_SERVED_SESSIONS + 5` rows through the gated POST route. It is the figure that
+      describes the fixture actually running, and it was the one figure never published. An
+      earlier version of this bullet named the hostile-tree sweep instead; that sweep calls
+      `_fill_sessions`, whose figure is the fourth bullet, so the correction for a
+      wrongly-attributed fixture attributed one wrongly.
     ● **237,162 bytes, 90.47%, headroom 24,982**, at 30 rows written and sixty-four character ids,
       the widest ids the boundary accepts.
     ● **237,163 bytes, 90.47%, headroom 24,981**, at exactly 25 rows written and sixty-four

@@ -1907,10 +1907,16 @@ def test_a_control_character_is_refused_at_the_write_boundary(
         )
         assert seeded.status_code == 201, seeded.text
         #: A refused body 422s in pydantic, BEFORE `_guard_write_rate` runs inside the handler, so
-        #: only the accepted writes spend budget. Counted, and asserted against the real constant,
-        #: because the comment above cited `WRITE_LIMIT` as twenty while no test bound its value:
-        #: raise it and the injected limiter stops being justified, lower it and the default tier
-        #: starts deciding this test's verdict, and either way this assertion says so.
+        #: only the accepted writes spend budget. Counted at runtime from the real status codes,
+        #: because the comment above cited `WRITE_LIMIT` as twenty while no test bound its value.
+        #:
+        #: **The binding is ONE-SIDED, and the first version of this comment claimed two.** It
+        #: said "lower it and the default tier starts deciding this test's verdict", which cannot
+        #: happen: the app above injects a 200-per-minute strict tier, so `WRITE_LIMIT` has no
+        #: say here at any value. Measured, the assertion survives at 1, 5, 10, 19 and 20 and
+        #: dies at 21 and above. The ceiling is the direction worth holding anyway, because only
+        #: a RAISE makes the injection unnecessary; a lower limit leaves it needed. Claiming a
+        #: binding the assertion does not have is this release's own thesis turned on itself.
         spent = 1
         for label, character, refused in (
             ("NUL", "\x00", True),
