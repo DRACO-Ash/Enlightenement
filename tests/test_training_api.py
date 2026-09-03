@@ -932,12 +932,7 @@ def test_the_anonymous_session_listing_is_count_capped_and_reports_an_honest_tot
         for index in range(written):
             response = client.post(
                 "/api/v1/sessions",
-                json={
-                    "id": f"session-{index:04d}",
-                    "title": "\U0001f600" * 200,
-                    "scenario": "\U0001f600" * 120,
-                    "notes": "\U0001f600" * 2000,
-                },
+                json={"id": f"session-{index:04d}", **_widest_session_fields()},
                 headers={"x-team-token": token_config.team_token},
             )
             assert response.status_code == 201, (
@@ -1343,6 +1338,39 @@ def test_no_anonymous_route_serves_an_authored_value_from_a_load_failure(
             )
         #: And the diagnosis survives: the KEY and its DOMAIN are what an author needs.
         assert "rated band" in manifest.text, manifest.text[:240]
+
+
+def _widest_session_fields() -> dict[str, str]:
+    """Every writable session field at its DECLARED maximum, derived from the model.
+
+    The lengths were hardcoded as 200, 120 and 2,000, which binds less than the test claims:
+    widening `notes` on `SessionUpsert` would leave this green while the real worst case grew past
+    the served byte ceiling and made the refusal at `app.py` - "a row was not written through this
+    API" - false. `MAX_SERVED_SESSIONS` was already bound symbolically beside it; the field caps
+    were not, which is the asymmetry the engineering gate found.
+
+    Measured at the time of writing: 25 rows of astral filler at these caps render to 237,138
+    bytes against a 262,144 ceiling, 90.5% of it, so the headroom is about 25 kB. That is why
+    deriving matters rather than being tidy - the margin is one field widening away.
+    """
+    from enlightenment.models import SessionUpsert
+
+    widest: dict[str, str] = {}
+    for name, field in SessionUpsert.model_fields.items():
+        if name == "id":
+            continue
+        limit = next(
+            (
+                item.max_length
+                for item in field.metadata
+                if getattr(item, "max_length", None) is not None
+            ),
+            None,
+        )
+        assert limit is not None, f"{name} declares no max_length, so this test cannot derive it"
+        widest[name] = "\U0001f600" * limit
+    assert widest, "SessionUpsert declares no writable field but `id`"
+    return widest
 
 
 def _assert_the_session_listing_is_capped(client: TestClient, stored: int) -> None:

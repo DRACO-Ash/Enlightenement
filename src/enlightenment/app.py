@@ -658,8 +658,8 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
 
     @app.get("/api/v1/sessions")
     async def list_sessions(
-        response: Response, if_none_match: Annotated[str | None, Header()] = None
-    ) -> Any:
+        if_none_match: Annotated[str | None, Header()] = None,
+    ) -> Response:
         try:
             snapshot = await asyncio.to_thread(runtime.store.load)
         except ValueError as exc:
@@ -679,9 +679,15 @@ def _register_session_routes(app: FastAPI, runtime: _Runtime) -> None:
                 detail={"error": "store_unavailable", "message": bounded_reason(str(exc))},
             ) from None
         etag = f'W/"{snapshot["rev"]}"'
-        response.headers["etag"] = etag
+        #: The injected `response: Response` parameter is GONE, with both assignments that used
+        #: it. Every path now returns an explicit `Response`, and FastAPI merges a sub-response's
+        #: headers only on the branch that returns a plain object - so `response.headers["etag"]`
+        #: and `response.status_code = 304` were dead on both paths. Proved rather than reasoned:
+        #: deleting each one individually left all 1,010 tests green while the ETag stayed
+        #: correct, because the explicit `Response` objects below carry it. Dead code that looks
+        #: load-bearing is worse than absent code: a header added on that line later would be
+        #: silently dropped, and a reader would believe line 681 is what sets the ETag.
         if if_none_match and if_none_match.strip() == etag:
-            response.status_code = status.HTTP_304_NOT_MODIFIED
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"etag": etag})
         stored = snapshot["sessions"]
         #: The newest 25, in stored order, so the newest row is LAST: `storage._enforce_cap`

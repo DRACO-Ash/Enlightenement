@@ -787,7 +787,18 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     #: kept "so a future caller cannot reintroduce the crash", and at three sites a future caller
     #: could do exactly that. Holding the function is not holding the call site, which is a
     #: lesson this project has already recorded once for `served_identifier` itself.
-    assert served_identifier("DRL-\ud800") == "DRL-?", served_identifier("DRL-\ud800")
+    #: An unencodable id takes the DIGEST branch however short it is, and this assertion used to
+    #: pin the opposite. It read `== "DRL-?"`, which was the collision itself: the short branch
+    #: measures the REPLACED bytes, so `served_identifier("\ud800")` and `served_identifier("?")`
+    #: both returned `"?"` - two distinct ids as one string, the single fault this function exists
+    #: to prevent, pinned by a test of mine as though it were the contract.
+    unencodable = served_identifier("DRL-\ud800")
+    assert unencodable.startswith("DRL-?"), unencodable
+    assert DIGEST_MARKER in unencodable, unencodable
+    assert served_identifier("DRL-\ud800") != served_identifier("DRL-?"), unencodable
+    #: And two ids differing ONLY in an unencodable character stay distinct, which needs the
+    #: digest to be taken over bytes that preserve the surrogate rather than over the replacement.
+    assert served_identifier("a\ud800") != served_identifier("a\ud801")
     long_surrogate = "D" * 70 + "\ud800"
     shortened_surrogate = served_identifier(long_surrogate)
     assert DIGEST_MARKER in shortened_surrogate, shortened_surrogate
@@ -822,7 +833,10 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     deepest = unservable_pointer(nested(MAX_NESTING_DEPTH + 1))
     assert deepest is not None, "a document past the serialiser depth was not refused"
     assert deepest[2] == "depth", deepest
-    #: Four times the deepest thing this project ships, so no real content is near the bound.
+    #: About 4.6 times the deepest thing this project ships. The two procedure libraries reach
+    #: 7 CONTAINERS under the guard's own convention - root counts as one, scalars are never
+    #: pushed - and the comment beside the constant first said 8 and "four times", which is
+    #: the same quantity counted with scalar leaves included and not what the guard measures.
     assert MAX_NESTING_DEPTH == 32, "the depth bound moved; re-measure the shipped content tree"
     assert len(cut_to_bytes("\ud800" * 100, MAX_CONTENT_STRING).encode("utf-8")) <= (
         MAX_CONTENT_STRING

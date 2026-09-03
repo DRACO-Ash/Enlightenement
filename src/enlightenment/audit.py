@@ -31,13 +31,19 @@ MAX_ACTOR_LENGTH = 64
 #:
 #: **The escaping factor is stated per BYTE, because that is the unit the cap is in and the worst
 #: case is not astral.** A log line renders with `ensure_ascii=True`, and the global maximum is
-#: **3.0 rendered ASCII characters per UTF-8 byte** - brute-forced over all 1,114,112 code points
-#: and attained twice: by an astral character (4 bytes becoming 12) and equally by any 2-byte BMP
-#: character, since `U+00A1` renders as `\u00a1`, 2 bytes becoming 6. A backslash or a quote is
-#: 2.0 and 3-byte CJK is 2.0, so neither is the bound. So 256 bytes is at most 768 rendered
-#: characters. Bounded, and a constant multiple rather than content's choice, which is the
-#: property this cap exists for. The earlier wording gave the same number from the astral case
-#: alone, which covered one of the two characters that attain it.
+#: **3.0 rendered ASCII characters per UTF-8 byte, over the code points that SURVIVE THE STRIP
+#: ABOVE** - brute-forced over all 1,114,112 and attained twice among the printable ones: by an
+#: astral character (4 bytes becoming 12) and equally by any 2-byte BMP character, since `U+00A1`
+#: renders as `\u00a1`, 2 bytes becoming 6. A backslash or a quote is 2.0 and 3-byte CJK is 2.0,
+#: so neither is the bound. So 256 bytes is at most 768 rendered characters.
+#:
+#: **The scoping is the whole claim, and two earlier versions of this comment got it wrong in
+#: opposite directions.** The first gave 3.0 from the astral case alone, covering one of the two
+#: characters that attain it. The second said "over all 1,114,112 code points", which is false:
+#: the true global maximum is **6.0, at `U+0000`**, one byte rendering as `\u0000`. That
+#: character never reaches here because `isprintable()` drops it - so the `isprintable()` filter
+#: is load-bearing for this bound and not merely tidy, and a future change that relaxed it would
+#: double the factor while this figure went on reading as measured.
 MAX_LOG_VALUE_LENGTH = 256
 
 #: Placeholder recorded when no identity could be resolved.

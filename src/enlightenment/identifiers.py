@@ -71,9 +71,14 @@ def utf8(text: str) -> bytes:
 #: session row carrying a 252-deep dict produced exactly that on `GET /api/v1/sessions`; 250 was
 #: fine, 252 was not, and a nested list does the same.
 #:
-#: 32 is four times the deepest thing this project actually ships - the two procedure libraries
-#: reach 8, every other content file and every session row is shallower - and an order of
-#: magnitude below where the serialiser gives way. Refusing at the LOAD boundary rather than at
+#: 32 is about 4.6 times the deepest thing this project actually ships - the two procedure
+#: libraries reach 7 CONTAINERS deep under this guard's own convention (the root counts as one and
+#: scalars are never pushed), every other content file and every session row is shallower, and the
+#: deepest JSON in the repository at all is `schemas/enlightenment.schema.json` at 11, which no
+#: server code reads - and an order of magnitude below where the serialiser gives way. The
+#: convention is stated because the first version of this comment said 8 and "four times": that is
+#: the same quantity counted with scalar leaves included, which is not what the guard measures, and
+#: it contradicted this release's own changelog. Refusing at the LOAD boundary rather than at
 #: the wire is the same rule as the surrogate check beside it: one boundary in one place beats two
 #: copies that drift.
 MAX_NESTING_DEPTH: Final = 32
@@ -245,8 +250,22 @@ def served_identifier(item_id: str) -> str:
     Nothing is deployed, so it costs nothing today; on an existing volume it would reset one item's
     attempt count once before self-healing.
     """
-    if len(utf8(item_id)) <= MAX_CONTENT_STRING:
+    #: An id `utf8` had to REPLACE always takes the digest branch, however short it is. The short
+    #: branch measures the replaced bytes, so `served_identifier("\ud800")` and
+    #: `served_identifier("?")` both returned `"?"` - a collision with no digest to separate them,
+    #: which is the one fault this function exists to prevent. Unreachable today, because
+    #: `content/loader._read_json` and `TrainingStore.load` both refuse a surrogate before it can
+    #: reach here and no percent-decoded URL yields one; the consequence would be merged attempt
+    #: counts rather than a disclosure. Closed anyway: this function's whole promise is that two
+    #: distinct ids never become one string, and "unreachable" is a property of today's callers.
+    if _encodable(item_id) and len(utf8(item_id)) <= MAX_CONTENT_STRING:
         return cut_to_bytes(item_id, MAX_CONTENT_STRING)
-    digest = hashlib.sha256(utf8(item_id)).hexdigest()[:DIGEST_CHARACTERS]
+    #: `surrogatepass` for the DIGEST only, so two ids differing only in an unencodable character
+    #: still digest differently. For every encodable string - which is every id this project ships
+    #: and every id that can reach a wire - it is byte-for-byte identical to plain UTF-8, so the
+    #: persisted shortened form is unchanged and its golden-value test is untouched.
+    digest = hashlib.sha256(item_id.encode("utf-8", errors="surrogatepass")).hexdigest()[
+        :DIGEST_CHARACTERS
+    ]
     keep = MAX_CONTENT_STRING - len(digest) - len(DIGEST_MARKER)
     return f"{cut_to_bytes(item_id, keep)}{DIGEST_MARKER}{digest}"

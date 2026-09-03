@@ -2,6 +2,78 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.34 (2026-09-03)
+
+**What.** The engineering gate's first look since V0.26.26, across seven releases of real source
+change: **PASS**, with five minors. All five closed. **Three were false figures of mine and one was
+a live collision**, so this is not a tidy-up release.
+
+**A collision in the one function whose whole promise is that there are none.**
+`served_identifier("\ud800")` and `served_identifier("?")` both returned `"?"` - two distinct ids
+as one string, with no digest to separate them - because the short branch measures the REPLACED
+bytes and `utf8` had already turned the surrogate into `?`. An unencodable id now takes the digest
+branch however short it is, and the digest is taken over `surrogatepass` bytes so two ids differing
+only in an unencodable character stay distinct. For every encodable string - which is every id this
+project ships and every id that can reach a wire - that is byte-for-byte plain UTF-8, so the
+persisted form is unchanged and its golden-value test is untouched.
+
+**And my own test had pinned the collision as the contract.** It read
+`served_identifier("DRL-\ud800") == "DRL-?"`. Unreachable today, because both boundary gates refuse
+a surrogate before it can reach here, so the consequence would have been merged attempt counts
+rather than a disclosure - but "unreachable" is a property of today's callers, and an assertion
+that pins the fault is worse than no assertion.
+
+**Two figures wrong, both measured wrong in the same way: an unstated scope.**
+● `audit.py` said the maximum escaping factor is "3.0 rendered ASCII characters per UTF-8 byte,
+  brute-forced over all 1,114,112 code points". The true global maximum is **6.0, at `U+0000`**,
+  one byte rendering as `\u0000`. 3.0 is the maximum over the code points that survive the
+  `isprintable()` strip - so **the strip is load-bearing for that bound rather than merely tidy**,
+  and a change that relaxed it would double the factor while the figure went on reading as
+  measured. The derived 768 was right; the basis was not.
+● `identifiers.py` said the procedure libraries "reach 8" and 32 is "four times" it. Under the
+  guard's own convention - root counts as one, scalars are never pushed - they reach **7**, so the
+  multiple is about 4.6. My own V0.26.33 changelog said 7 for the same quantity, so the comment
+  contradicted the release that introduced it.
+
+**A dead parameter that looked load-bearing.** `list_sessions` still took an injected
+`response: Response` and set `response.headers["etag"]` and `response.status_code = 304`. Every
+path now returns an explicit `Response`, and FastAPI merges a sub-response's headers only on the
+branch returning a plain object - so both assignments were dead, proved by deleting each and
+watching all 1,010 tests stay green with the ETag still correct. Gone. **Dead code that looks
+load-bearing is worse than absent code**: a header added on that line later would be silently
+dropped.
+
+**A test that bound less than it claimed.** The worst-case row fixture hardcoded 200, 120 and
+2,000 while binding `MAX_SERVED_SESSIONS` symbolically beside it - so widening a model field would
+have left it green while the real worst case breached the served ceiling and made the refusal
+message ("a row was not written through this API") false. The margin is not comfortable: 25 rows at
+the declared caps render to **237,138 bytes against 262,144, 90.5% of the ceiling**. Derived from
+`SessionUpsert.model_fields` now, and proved: widening `notes` from 2,000 to 4,000 turns the
+listing test red.
+
+**Mutation: four mutants, three killed and one wrong mutation of mine.** The encodable guard
+dropped, the digest taken over replaced bytes, and the ETag header dropped all die. My fourth
+narrowed the fixture's VALUES, which the derivation does not protect against and never claimed to -
+it protects against widening the MODEL, so I mutated the model instead and the test went red. A
+mutation that does not exercise the control is not evidence about it.
+
+**What the gate proved that I had only claimed.** 140 drills at three operators under `5d93261` and
+`cd3bf91`: **420 of 420 byte-identical**, after it corrected its own harness for the per-serve
+nonce and re-ran with a same-commit control. Eighteen mutants of its own, sixteen killed and two
+by-design survivors. A live wire differential of `GET /api/v1/sessions` on both commits showing
+content type, content length, the 304 path, header casing and raw UTF-8 encoding all preserved
+through the `Response` conversion. And `cut_to_bytes`'s prefix property over 400,000 random strings.
+
+**Its answer on whether six releases of this was over-built, recorded because it is the useful
+judgement:** *"the destination is right and you paid for it in the wrong order."* The shape I
+converged on - two boundary gates plus serialise-once-and-measure-the-wire - was available at
+V0.26.27, and what cost six releases was fixing per-value instead of per-boundary. The one
+redundant layer left is `utf8`'s replacement inside the shortening functions, now unreachable given
+both gates; kept because it is cheap and tested, and named here as the piece a simpler version
+would not have.
+
+**How it was verified.** Loop green on all seven legs: 1,010 passed, 2 skipped, coverage 97.82%.
+
 ## V0.26.33 (2026-09-03)
 
 **What.** The security gate returned **PASS** on V0.26.32 with two minors. Both closed, and one of
