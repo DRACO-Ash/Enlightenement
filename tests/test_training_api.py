@@ -323,6 +323,10 @@ def test_a_submitted_answer_is_neither_echoed_nor_persisted(
     assert marker not in persisted.casefold(), "the run record stored the operator's own words"
     assert "\\u0000" not in persisted, "an escaped control from the answer reached the store"
 
+    #: Refuse an empty measurement, the rule this file already applies to the route sweep and the
+    #: listing cap: `for record in []` passes, and one of the three sinks this test exists to bind
+    #: would be unbound with the test still green.
+    assert caplog.records, "no log record was captured, so the log arm of this test proved nothing"
     for record in caplog.records:
         assert marker not in record.getMessage().casefold(), "the answer text reached the log"
 
@@ -573,6 +577,13 @@ DRAWS_EXPECTED = 20
 #: renderers that do emit `expected_text` or `expected_value`. Pinning the value is what kills a
 #: hardcoded total - a range check admits any number over the cap, and a hardcoded 26 survived one.
 WITHHELD_ON_THE_HOSTILE_TREE = 94
+
+#: The GLOBAL widest rendered width, in bytes, of any code point the free-text rule accepts.
+#: Measured over all 1,112,064 Unicode scalar values under `json.dumps(..., ensure_ascii=False)`,
+#: which is what Starlette serialises with: accepted widths are {1: 93, 2: 1825, 3: 53593,
+#: 4: 93490} and nothing accepted renders above four. `ensure_ascii=False` escapes only `"`, `\`
+#: and the C0 controls, and a C0 control is not printable, so four is simply UTF-8's maximum.
+GLOBAL_WIDEST_ACCEPTED_BYTES = 4
 
 #: Every anonymous route this sweep covers, and for the ones it does not, WHY. Asserted as an exact
 #: set: narrowing the discovery filter to a single route previously left the test green, so the
@@ -1411,7 +1422,7 @@ def _widest_accepted_character(field: str) -> str:
     the single winner filled every field, `notes` included, which is 8,000 of the roughly 9,280
     rendered bytes in a row - so `notes` accepting a six-byte character while `title` refused it
     would leave this derivation returning the four-byte emoji and reporting 90% of a ceiling the
-    API could exceed at roughly 332 kB. A run also fixes what "accepts" means:
+    API could exceed at 335,262 bytes. A run also fixes what "accepts" means:
     `str_strip_whitespace` removes a lone trailing `\n`, `\t` or `U+2028`, so the old probe
     recorded those as ACCEPTED when a field of them collapses to empty and they can never fill
     anything. Accepted here now means the model KEEPS the run.
@@ -1468,8 +1479,17 @@ def _widest_accepted_character(field: str) -> str:
             accepted.append(candidate)
     assert accepted, f"the write boundary accepts no character at all in {field}"
     filler = max(accepted, key=rendered)
-    for candidate in accepted:
-        assert rendered(candidate) <= rendered(filler), candidate
+    #: `max` makes "no accepted candidate costs more than the filler" unfalsifiable, so the
+    #: assertion that stood here could not go red under any mutation: dead code inside a control,
+    #: which `app.py` itself condemns. This one bites. Four is the GLOBAL maximum over every code
+    #: point the rule accepts, so the emoji is not merely the widest of eleven candidates but the
+    #: worst case Unicode admits - and a boundary change admitting a six-byte control fails HERE,
+    #: one line from the cause, rather than three layers away as a 503 against a 200.
+    assert rendered(filler) == GLOBAL_WIDEST_ACCEPTED_BYTES, (
+        f"{filler!r} in {field} renders at {rendered(filler)} bytes, not"
+        f" {GLOBAL_WIDEST_ACCEPTED_BYTES}: the write boundary's accepted set has changed, so"
+        " every published byte figure resting on it needs re-measuring"
+    )
     return filler
 
 
@@ -1482,9 +1502,13 @@ def _widest_session_fields() -> dict[str, str]:
     API" - false. `MAX_SERVED_SESSIONS` was already bound symbolically beside it; the field caps
     were not, which is the asymmetry the engineering gate found.
 
-    Measured at the time of writing: 25 rows of astral filler at these caps render to 237,138
-    bytes against a 262,144 ceiling, 90.5% of it, so the headroom is about 25 kB. That is why
-    deriving matters rather than being tidy - the margin is one field widening away.
+    Measured, each figure with the fixture that produces it, because the bare 237,138 published
+    here before reproduced on neither. Twenty-five rows of astral filler at these caps: **235,264
+    bytes** on the planted snapshot with twelve character ids, 89.75% of the 262,144 ceiling, and
+    **237,163 bytes** driven through the real gated POST route with sixty-four character ids and
+    real ISO timestamps, 90.47% of it, so the headroom is about 24.98 kB. The write-path figure
+    moves by a byte or two with the timestamp's microsecond width. That margin is why deriving
+    matters rather than being tidy - it is one field widening away.
 
     The FILLER is derived per field for the same reason the LENGTH is: one winner chosen on
     `title` and applied to `notes` binds the wrong field, and `notes` carries 8,000 of the
@@ -1536,8 +1560,14 @@ def _fill_sessions(store: TrainingStore) -> int:
 
     ASTRAL characters, not ASCII. Every cap in this project is declared in CODE POINTS and every
     ceiling is in BYTES, and a `U+1F600` is one code point and four bytes: the ASCII fill measures
-    61,114 bytes where the same row count measures 235,114. A sweep that only ever poisons with
+    61,264 bytes where the same row count measures 235,264. A sweep that only ever poisons with
     `"X"` certifies the byte ceiling for single-byte content and says nothing about the rest.
+
+    **Both figures carry their FIXTURE now, because both were published without one and both went
+    stale by the same 150 bytes.** They are measured on THIS fixture: a planted snapshot, twelve
+    character `session-NNNN` ids and twenty character timestamps. Change the id width or the
+    timestamp width and the number moves without any control changing, which is how a figure
+    published bare becomes a figure nobody can reproduce.
     """
     rows = [
         {

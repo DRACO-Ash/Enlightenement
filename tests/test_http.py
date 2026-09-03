@@ -1880,7 +1880,8 @@ def test_a_control_character_is_refused_at_the_write_boundary(
     `FreeText` from the three `SessionPatch` fields then left the whole suite green at 1,011
     passed - reproduced twice - while `PATCH` accepted NUL, BEL, escape, `U+2028` and `U+00A0`
     with 200. `PATCH` alone is enough to break the served ceiling: `notes` at its 2,000 cap of
-    NUL renders to 12,000 bytes a row, so 25 rows reach roughly 332 kB against 262,144. Same
+    NUL renders to 12,000 bytes a row, so 25 rows measure 335,264 bytes against 262,144 with the
+    other two fields at their caps in astral characters, and 351,264 with all three in NUL. Same
     shape as the fixture fault this project has now hit twice - one axis bound and reported as
     the whole - one ROUTE along instead of one field along.
     """

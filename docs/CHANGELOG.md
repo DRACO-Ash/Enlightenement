@@ -2,6 +2,83 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.37 (2026-09-03)
+
+**What.** The security gate PASSED V0.26.36 and raised three minors, none exploitable and none
+blocking. All three are closed here, and re-measuring for them found FIVE published byte figures
+that reproduced on nothing.
+
+**A dead assertion inside a control.** `for candidate in accepted: assert rendered(candidate) <=
+rendered(filler)` cannot fail: `filler` is `max(accepted, key=rendered)`, so the assertion is
+unfalsifiable by construction and no mutation could turn it red. Dead code that looks load-bearing
+is worse than absent code, which `app.py` says in as many words about its own probe. Replaced with
+a form that bites: `rendered(filler) == GLOBAL_WIDEST_ACCEPTED_BYTES`, where four is the GLOBAL
+maximum over every code point the rule accepts. Verified here rather than taken from the gate, by
+scanning all 1,112,064 Unicode scalar values: accepted widths are `{1: 93, 2: 1825, 3: 53593, 4:
+93490}` and nothing accepted renders above four, because `ensure_ascii=False` escapes only `"`,
+`\` and the C0 controls and a C0 control is not printable. So the emoji is not the widest of
+eleven candidates, it is the worst case Unicode admits, and a boundary change accepting a six-byte
+control now fails one line from the cause instead of three layers away as a 503 against a 200.
+
+**An arm that could go vacuous.** The new non-echo test walked `caplog.records` and asserted the
+marker absent from each. It sees two records today, so it was not vacuous, but `for record in []`
+passes and one of the three sinks the test exists to bind would have been unbound with the test
+green. `assert caplog.records` added, the rule this file already applies to the route sweep and
+the listing cap. **Reported as demonstrated rather than mutation-killed**, because no SOURCE
+mutant can empty `caplog` while `httpx` logs a record per request: removing the audit line leaves
+one record standing and the guard correctly stays quiet. Shown directly instead - with the record
+list empty the unguarded loop passes having checked nothing, and the guard raises "no log record
+was captured, so the log arm of this test proved nothing". A guard against vacuity is not a fault
+detector and is not claimed as one.
+
+**Five stale published figures, and the reason they went stale is the same each time: a figure
+without its fixture.** Re-measured against the live code:
+
+● `_fill_sessions` published 61,114 bytes for the ASCII fill and 235,114 for the astral one.
+  Measured: **61,264** and **235,264**, both stale by the same 150 bytes, or six bytes a served
+  row. Both figures now name their fixture, a planted snapshot at twelve character `session-NNNN`
+  ids and twenty character timestamps.
+● `_widest_session_fields` published a bare 237,138 bytes at 90.5%, which reproduces on neither
+  fixture in this repository. The astral worst case is **235,264 bytes, 89.75%** on the planted
+  snapshot, and **237,163 bytes, 90.47%, headroom 24,981** driven through the real gated POST
+  route at sixty-four character ids with real ISO timestamps. The write-path figure moves a byte
+  or two with the timestamp's microsecond width, which is exactly why it needs its fixture stated.
+● V0.26.36 estimated "roughly 332 kB" for the NUL case rather than measuring it. Measured:
+  **335,264 bytes** with `notes` at its cap in NUL and the other two fields at their caps in
+  astral characters, and **351,264** with all three in NUL. The gate independently got 335,262 on
+  its own fixture, a two byte difference from id text. Corrected in the register and the test
+  docstring; the V0.26.36 entry keeps its estimate as the historical record.
+
+**"Refused" was doing two jobs in the operator-facing table.** A character reaches a 422 by one of
+two routes and which one depends on WHERE it sits. Inside a value it hits the rule and pydantic
+answers `value_error`. As the whole value it may never reach the rule: `str_strip_whitespace`
+removes Unicode White_Space first, so a `notes` field of nothing but NEL, NBSP, NNBSP, U+2028,
+U+2029, vertical tab, form feed, U+1680, U+3000, U+205F or U+2002 is accepted with 201 and stored
+empty, while the same value in `title` or `scenario` is 422 by `min_length`. The strip set is
+Unicode White_Space rather than `str.isspace()`, which is why U+001C to U+001F are refused by the
+rule while U+0085 and U+00A0 are stripped before it. All fifteen cases measured against the live
+model, three positions each. No security consequence, since empty is the cheapest value there is,
+and recorded because this is the document that answers "why was my paste rejected" and the answer
+differs by position. It is also the distinction the derived fixture now rests on.
+
+**One prescription withdrawn by the gate, and it was mine to argue.** The V0.26.35 minor asking
+for the refused-branch assertion tightened to `>` is withdrawn in full: the gate's own exhaustive
+scan found 7,950 code points refused at strictly less than four rendered bytes and 955,086 more
+refused at exactly four, so the premise fails by 963,036 counterexamples in the strict form. My
+replacement was mutation-proved by the gate in both directions: dropping the astral candidate
+turns the width-spread assertion red, and dropping both leaves a three-byte filler chosen in
+silence.
+
+**Verified.** Verification loop green, 1,012 passed and 2 skipped, coverage 97.82%. The new
+width assertion is mutation-proved: widening `FREE_TEXT_CONTROLS` to admit NUL makes it fail with
+"'\x00' in title renders at 6 bytes, not 4", at the derivation rather than three layers away. The
+fifteen strip-versus-refuse cases behind the new documentation were each measured in three
+positions against the live model. The gate's V0.26.35 major is closed and proved by six
+independent mutants, one per cell of the three-field by two-route matrix, each dying on its own
+coordinates. Its instrumented count of nineteen strict-limiter spends against a `WRITE_LIMIT` of
+twenty confirms the widened budget was needed, and it established structurally that widening can
+only produce a false FAILURE rather than a false pass.
+
 ## V0.26.36 (2026-09-03)
 
 **What.** One major from the security gate, and it is a fault in the test the LAST release
