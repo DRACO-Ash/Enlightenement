@@ -2,6 +2,58 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.42 (2026-09-04)
+
+**What.** No code change. Records the `deploy-gate` verdict on V0.26.41 and corrects one claim in
+V0.26.41's own audit row that was wrong in my favour.
+
+**`deploy-gate`: FAIL on `d4dfb0f`, and it found no defect.** It was briefed not to soften the
+verdict to accommodate the owner's packaging decision, and it did not. Two BLOCKERs, both about
+missing evidence: no `engineering-reviewer` verdict exists for V0.26.37 through V0.26.41, and the
+`security-reviewer` PASS is five releases back. Its own summary is the accurate one: "a statement
+about missing evidence, not about detected defects".
+
+**It verified the load-bearing claim more tightly than I made it, and I had it wrong in my own
+favour.** V0.26.41's row says the ungated span changes nothing "beyond the version stamp and one
+dead-class deletion". Measured: `git diff 705a4f3..d4dfb0f -- src/` is **one file and one line**,
+the version stamp. The `DrillAnswer` deletion landed inside V0.26.36, so it sits INSIDE the
+security PASS rather than after it - `git log -S DrillAnswer 705a4f3..d4dfb0f` returns nothing.
+The span is cleaner than I claimed. **Recorded anyway, with a bracketed marker on the V0.26.41
+row, because a wrong claim in my favour is still a wrong claim and this session has spent five
+releases learning that.** I found this myself before the gate reported, and the gate reproduced it.
+
+**What the gate proved by execution rather than by reading**, which is worth having on the record
+because the container cannot be built here: it ran the shipped launch command and got 200 on all
+six health paths; `/` returned JSON and not a 302; the health paths stayed unauthenticated with a
+32-character token set while an untokened `POST /api/v1/sessions` returned 401; and both
+fail-closed config branches refused to start, on `ALLOWED_ORIGIN='*'` and on a short token. It
+matched the artefact to `HEAD` by per-file SHA-256, scanned the zip for cruft and found none, and
+confirmed `.env.example` carries only commented-out empty keys.
+
+**Three MAJORs stand, none of them a code defect.**
+
+● **The image is unbuilt on this head.** Non-root UID 10001, zero setuid or setgid, absent package
+  manager and single-layer flattening are confirmed by reading `Dockerfile` lines only. The CI
+  `image` job is the binding check and has not run here. Confidence is capped at "construction
+  verified, artefact unproved", which is the honest ceiling.
+● **There is no tested rollback, because nothing has ever shipped.** Recovery on a first delivery
+  is "take the app out of service, never delete the record, the snapshot survives on the add-on
+  volume". That is sound but untested, and it is not a rollback in the gate's sense. **The owner
+  has to accept that explicitly; it is not mine to wave through.**
+● **`PROBE_TIMEOUT_SECONDS = 2.0` must be strictly below the platform probe's `timeoutSeconds`**,
+  which remains `TBC, re-verify` and has been asked for by name. A Kubernetes default of 1 s would
+  make ours longer rather than shorter, and the diagnostic 503 carrying the resolved data
+  directory and the errno would then never render. **This blocks the publish, not the hold.** The
+  property that does hold - the probe cannot hang, because it races a timeout - is verified in
+  code.
+
+**The one MINOR:** V0.26.x versus a consolidating V0.27.0 is still undecided. It does not block,
+because the stamp is internally consistent across all six bound sites and the artefact, but the
+App Store record will carry whichever number is standing at upload.
+
+**Verified.** Verification loop green. Pipeline simulation green. The artefact is rebuilt at
+0.26.42 so the documentation inside the zip matches the zip.
+
 ## V0.26.41 (2026-09-04)
 
 **What.** No code change of any kind. This release records, in the two places an operator will
@@ -20,7 +72,12 @@ binding verdict kept evaporating.
 retrying the gate; package V0.26.36, the last commit carrying both a security PASS and an
 engineering PASS; or stop and hand over. Packaging now was chosen, and the reason it is defensible
 is narrow and worth stating precisely: **V0.26.37 through V0.26.41 change no production code at
-all beyond the version stamp and one dead-class deletion.** Every finding in those five releases
+all beyond the version stamp and one dead-class deletion.** **[Corrected at V0.26.42: the
+dead-class deletion is NOT in that span. `git diff 705a4f3..d4dfb0f -- src/` is one file and
+one line, the version stamp; the `DrillAnswer` deletion landed inside V0.26.36 and so sits
+INSIDE the security PASS rather than after it. Reproduced independently by the `deploy-gate`.
+The span is therefore cleaner than this row claimed, but a wrong claim in my favour is still a
+wrong claim.]** Every finding in those five releases
 was in a TEST or in a published figure. The shipped behaviour of this artefact is the behaviour
 that `security-reviewer` passed at V0.26.36 and that `engineering-reviewer` last examined in the
 same span.

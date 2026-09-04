@@ -19,7 +19,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
 | Content directory | `CONTENT_DIR`, and only that name. `ENLIGHTENMENT_CONTENT_DIR` was read by the loader's own resolver at V0.24.0 and is now dead. An operator who set it got the baked-in tree served over HTTP while the validator checked a different one, so verification leg 2 could pass green against content the server never loads. Set nowhere in the Dockerfile: platform injection wins, as for `PORT` and `DATA_DIR` |
-| Version | 0.26.41, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.26.42, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -156,7 +156,7 @@ the volume.
 ## Pre-submission checklist
 
 - [x] Verification loop green (`sh scripts/verify.sh`), 1,012 passed and 2 skipped, coverage 97.82%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.41`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.42`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
@@ -171,7 +171,8 @@ the volume.
       measures each record with the deployed formatter, and three mutants die on it. **Five
       attempts to gate the V0.26.40 head were each killed by a container restart before the
       reviewer returned**, so V0.26.37 through V0.26.41 carry no engineering verdict. The
-      five releases change NO production code beyond the version stamp, which is why the risk was
+      five releases change NO production code beyond the version stamp - `git diff 705a4f3..HEAD
+      -- src/` is ONE line, and the `deploy-gate` reproduced it, which is why the risk was
       judged acceptable to package against, but the rule this checklist states elsewhere still
       holds: an absent verdict is not a pass. Run the gate on this head before this artefact is published, and treat any finding it returns as blocking.
 - [ ] `security-reviewer` PASS. **The last verdict was PASS on `705a4f3` (V0.26.36)**, after an
@@ -180,14 +181,31 @@ the volume.
       limiter at nineteen spends against a `WRITE_LIMIT` of twenty, and drove eight hostile answer
       submissions plus prototype-pollution probes with no marker reaching any sink. It also
       withdrew its own earlier prescription after reproducing the counter-measurement. **The tick
-      is withheld deliberately.** Five releases have shipped since that verdict and none was security-gated. They change no production code beyond the version stamp and one dead-class
-      deletion, so the PASS is defensible rather than invalidated - but V0.26.39 and V0.26.40 both
+      is withheld deliberately.** Five releases have shipped since that verdict and none was security-gated. They change no production code beyond the version stamp: `git diff 705a4f3..HEAD -- src/` is
+      one file and one line, verified independently by the `deploy-gate`, which also
+      established that the dead `DrillAnswer` deletion landed INSIDE V0.26.36 and is
+      therefore inside this PASS rather than after it. So the PASS is defensible rather than
+      invalidated - but V0.26.39 and V0.26.40 both
       corrected a TEST of a privacy control on an unauthenticated route, and a PASS against an
       ancestor is not evidence about this tree. Run this gate on this head before publishing.
-- [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
-      the application: five undefined submission fields, an unset resource budget, and a container
-      contract that could not be confirmed because the CI `image` job named as its binding check
-      had never run and could not fire on this branch. The owner decisions and the budget are now
-      recorded above, and the trigger is fixed in V0.9.0, so the job can run. Re-run the gate once
-      it has.
+- [ ] `deploy-gate` PASS. **Returned FAIL on `d4dfb0f` (V0.26.41), and it found NO DEFECT.** Two
+      BLOCKERs, both statements about missing evidence rather than about this artefact: no
+      `engineering-reviewer` verdict exists for V0.26.37 through V0.26.41, and the
+      `security-reviewer` PASS is five releases back. Its own words: "It is a statement about
+      missing evidence, not about detected defects." It verified the load-bearing claim more
+      tightly than it was made - `src/` moved by exactly one line since the security PASS - and it
+      probed the shipped launch command live: all six health paths 200, `/` returning JSON and not
+      a 302, health paths still unauthenticated with a token set while an untokened write returned
+      401, and both fail-closed branches refusing to start (`ALLOWED_ORIGIN='*'` and a short
+      token). The submission manifest has no undefined field and the resource envelope sits inside
+      the platform budget. Three MAJORs remain, none a code defect: (1) the image is unbuilt on
+      this head, so non-root UID, zero setuid or setgid, absent package manager and single-layer
+      flattening are confirmed by reading `Dockerfile` lines only and the CI `image` job is the
+      binding check; (2) nothing has ever shipped, so recovery is "take out of service", not
+      "redeploy the previous version" - **the owner must accept that explicitly, because it is not
+      a rollback in the contract's sense**; (3) `PROBE_TIMEOUT_SECONDS = 2.0` must be strictly
+      below the platform probe's `timeoutSeconds`, which is still `TBC, re-verify` - a Kubernetes
+      default of 1 s would make ours longer, not shorter, and the diagnostic 503 would never
+      render. **That third one blocks the publish, not the hold.** The gate called no submission
+      tool and authorised nothing.
 - [ ] Explicit human confirmation to publish
