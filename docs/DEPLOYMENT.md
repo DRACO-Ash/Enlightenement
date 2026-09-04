@@ -19,7 +19,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
 | Content directory | `CONTENT_DIR`, and only that name. `ENLIGHTENMENT_CONTENT_DIR` was read by the loader's own resolver at V0.24.0 and is now dead. An operator who set it got the baked-in tree served over HTTP while the validator checked a different one, so verification leg 2 could pass green against content the server never loads. Set nowhere in the Dockerfile: platform injection wins, as for `PORT` and `DATA_DIR` |
-| Version | 0.26.40, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.26.41, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -156,37 +156,34 @@ the volume.
 ## Pre-submission checklist
 
 - [x] Verification loop green (`sh scripts/verify.sh`), 1,012 passed and 2 skipped, coverage 97.82%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.40`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.26.41`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
 - [ ] Container image built and the policy posture verified (**deferred to CI, not a pass**: a Docker daemon was started successfully in the authoring environment, but the container registry's blob endpoint is denied by that environment's network policy, so no base-image layer can be pulled. The Dockerfile is therefore neither proved nor disproved here. The CI `image` job builds it, asserts the numeric non-root user, asserts zero setuid or setgid paths in the shipped image, asserts no package manager ships, and probes the health paths on 8080. That job is the binding check.)
-- [ ] `engineering-reviewer` PASS. **Last verdict was FAIL, on commit `08a384e`**, with one MAJOR:
-      the fourth defeat of the constant-time detection control in four rounds. `inspect.getsource`
-      reads the location a code object SELF-REPORTS, and `types.CodeType.replace()` writes
-      `co_filename` and `co_firstlineno`, so a forged code object was handed the canonical source
-      while returning `True` unconditionally - and the round-seventeen changelog had cited those two
-      fields as the reason the pin was safe. The control is now the executed BYTECODE compared
-      against `auth.py` compiled from disk. The verdict BEFORE that was FAIL on `03d9788`, with one
-      BLOCKER and five MAJORs. The BLOCKER was an unconditional authentication bypass surviving the
-      whole loop: the AST body pin on `token_ok` read the module's SOURCE, so leaving the canonical
-      `def` untouched, appending a naked wrapper with a break-glass branch, spoofing its
-      `__qualname__` and rebinding the module-level name passed every check with ruff and mypy
-      silent. The pin now follows the code object `auth.token_ok` reaches. The MAJORs were a
-      substitutable `hmac.compare_digest` attribute, two docstrings claiming a closure they did not
-      have, a stale collected count, and this bullet naming the wrong prior FAIL. An earlier PASS at
-      commit `068b1c4` is not evidence about this tree and the tick claiming it has been removed.
-      Every finding is closed in this release; the gate re-runs against this head and the tick goes
-      back only on the verdict itself.
-- [ ] `security-reviewer` PASS. **The verdict was PASS on commit `be19697`**, after a 60-mutant
-      campaign across `src/` and a live black-box run: no BLOCKER, no MAJOR. It confirmed all four
-      new regression tests are the SOLE killer of the control they name, that all nine promoted
-      exemptions are real, and it recomputed every published register figure independently. **The
-      tick is withheld deliberately**: commits since that verdict changed `auth.py`'s regression
-      control and `audit()`'s sanitisation of reflected values, both security boundaries, and the
-      rule this checklist already states for the engineering row applies equally here - a PASS
-      against an ancestor is not evidence about this tree. The tick returns on a verdict against
-      this head.
+- [ ] `engineering-reviewer` PASS. **NO VERDICT EXISTS FOR THIS HEAD, AND THIS BUILD WAS PACKAGED
+      ANYWAY ON AN EXPLICIT OWNER DECISION.** The last verdict was **FAIL on `ae468b0` (V0.26.39)**
+      with one MAJOR: the non-echo test asserted over `record.getMessage()`, which excludes
+      `exc_text`, while both entry points configure `basicConfig(format="%(message)s")` and
+      `logging.Formatter.format` appends `exc_text` and `stack_info` regardless of the format
+      string. An `exc_info` leak of the operator's submitted answer therefore survived all 1,012
+      tests on the one unauthenticated write route. That finding is closed in V0.26.40, which
+      measures each record with the deployed formatter, and three mutants die on it. **Five
+      attempts to gate the V0.26.40 head were each killed by a container restart before the
+      reviewer returned**, so V0.26.37 through V0.26.41 carry no engineering verdict. The
+      five releases change NO production code beyond the version stamp, which is why the risk was
+      judged acceptable to package against, but the rule this checklist states elsewhere still
+      holds: an absent verdict is not a pass. Run the gate on this head before this artefact is published, and treat any finding it returns as blocking.
+- [ ] `security-reviewer` PASS. **The last verdict was PASS on `705a4f3` (V0.26.36)**, after an
+      exhaustive campaign: it swept all 1,112,064 Unicode scalar values against the free-text rule,
+      killed all six cells of the three-field by two-route boundary matrix, instrumented the write
+      limiter at nineteen spends against a `WRITE_LIMIT` of twenty, and drove eight hostile answer
+      submissions plus prototype-pollution probes with no marker reaching any sink. It also
+      withdrew its own earlier prescription after reproducing the counter-measurement. **The tick
+      is withheld deliberately.** Five releases have shipped since that verdict and none was security-gated. They change no production code beyond the version stamp and one dead-class
+      deletion, so the PASS is defensible rather than invalidated - but V0.26.39 and V0.26.40 both
+      corrected a TEST of a privacy control on an unauthenticated route, and a PASS against an
+      ancestor is not evidence about this tree. Run this gate on this head before publishing.
 - [ ] `deploy-gate` PASS. Returned FAIL at V0.8.0 with three blockers, none of them a defect in
       the application: five undefined submission fields, an unset resource budget, and a container
       contract that could not be confirmed because the CI `image` job named as its binding check

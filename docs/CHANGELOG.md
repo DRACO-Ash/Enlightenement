@@ -2,6 +2,48 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.41 (2026-09-04)
+
+**What.** No code change of any kind. This release records, in the two places an operator will
+look, that **this artefact is packaged with the engineering gate's verdict OUTSTANDING**, on an
+explicit owner decision taken after five consecutive gate runs were destroyed by container
+restarts before they could return.
+
+**What actually happened.** The engineering gate returned FAIL on V0.26.39 with one MAJOR, closed
+in V0.26.40. Five attempts to gate the V0.26.40 head were each killed mid-run by a restart of the
+container this session runs in. One restart also rolled the working directory back two commits, to
+V0.26.38; V0.26.39 and V0.26.40 were recovered from the remote, which is the only reason they
+survive. Nothing was lost from the repository and the verification loop is green at head, but the
+binding verdict kept evaporating.
+
+**The owner was given four options and chose to package now.** The alternatives offered were: keep
+retrying the gate; package V0.26.36, the last commit carrying both a security PASS and an
+engineering PASS; or stop and hand over. Packaging now was chosen, and the reason it is defensible
+is narrow and worth stating precisely: **V0.26.37 through V0.26.41 change no production code at
+all beyond the version stamp and one dead-class deletion.** Every finding in those five releases
+was in a TEST or in a published figure. The shipped behaviour of this artefact is the behaviour
+that `security-reviewer` passed at V0.26.36 and that `engineering-reviewer` last examined in the
+same span.
+
+**What that does NOT license, recorded because a caveat nobody reads is not a caveat.** An absent
+verdict is not a pass, and this project's own rule says so in the same checklist. Two of the four
+ungated releases corrected a TEST of a privacy control on an unauthenticated route - the
+`exc_info` path by which an operator's submitted answer could reach a production log line while
+1,012 tests stayed green. That defect was in the test, not the code, and the code was verified not
+to leak by reading every raise site; but "verified by reading" is exactly the standard both gates
+exist to replace. **Both gate rows in `docs/DEPLOYMENT.md` now state the true position rather than
+carrying a stale narrative from an older commit, and neither is ticked.**
+
+**The condition on publishing is unchanged and now written down twice.** `deploy-gate` PASS plus
+explicit human confirmation, per `CLAUDE.md`. This release adds a third: run `engineering-reviewer`
+and `security-reviewer` against this head before the artefact is uploaded, and treat anything
+either returns as blocking. The zip is a build to hold, not a build to publish.
+
+**Verified.** Verification loop green, 1,012 passed and 2 skipped, coverage 97.82%, `pip-audit`
+clean on three lockfiles. Local branch confirmed identical to the pushed remote tip before
+packaging, after the roll-back. Working tree confirmed free of mutant residue and measurement
+harnesses left by any gate run.
+
 ## V0.26.40 (2026-09-03)
 
 **What.** One major from the engineering gate, and it is the SAME LEAK as V0.26.39's, one layer
