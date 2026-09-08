@@ -942,7 +942,10 @@ function renderLibraryCards() {
      * beside the id carries the content's own status instead of an invented figure. */
     card.appendChild(el('p', null, procedure.purpose || 'No purpose recorded for this procedure.'));
     const tags = el('div', 'tags');
-    if (procedure.regime) tags.appendChild(el('span', null, procedure.regime));
+    /* One pill per regime. The route serves a list because the content holds one; joining them
+     * into a string here would put the join back in the interface's hands and it was a Python
+     * repr on screen that made this a list in the first place. */
+    for (const regime of procedure.regime || []) tags.appendChild(el('span', null, regime));
     tags.appendChild(el('span', null,
       `${procedure.steps} ${procedure.steps === 1 ? 'step' : 'steps'}`));
     card.appendChild(tags);

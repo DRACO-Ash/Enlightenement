@@ -54,7 +54,11 @@ from enlightenment.training.drill import (
     MAX_WITHHOLD_REASON,
     TRUNCATION_MARK,
 )
-from enlightenment.training_api import MAX_SERVED_DOCUMENT_BYTES, MAX_SERVED_ERRORS
+from enlightenment.training_api import (
+    MAX_SERVED_DOCUMENT_BYTES,
+    MAX_SERVED_ERRORS,
+    MAX_SERVED_REGIMES,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_ROOT = ROOT / "content"
@@ -530,7 +534,13 @@ def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClie
         assert set(entry) == {"id", "name", "status", "purpose", "regime", "steps"}, sorted(entry)
         assert len(entry["id"]) <= MAX_CONTENT_STRING, entry["id"]
         assert len(entry["name"]) <= MAX_CONTENT_STRING, entry["name"]
-        assert len(entry["regime"]) <= MAX_CONTENT_STRING, entry["regime"]
+        #: A LIST, bounded in count and per entry. It was a string, and `capped` put a
+        #: Python repr of the list on an operator's screen.
+        assert isinstance(entry["regime"], list), entry["regime"]
+        assert len(entry["regime"]) <= MAX_SERVED_REGIMES, entry["regime"]
+        for regime in entry["regime"]:
+            assert isinstance(regime, str), regime
+            assert len(regime) <= MAX_CONTENT_STRING, regime
         assert len(entry["purpose"]) <= MAX_SERVED_PROSE, entry["id"]
         #: A count, not the steps. If this ever becomes a list the index has swallowed the
         #: documents and the size ceiling below is the only thing left holding it.

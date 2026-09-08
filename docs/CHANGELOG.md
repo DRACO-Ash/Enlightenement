@@ -2,6 +2,35 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.1 (2026-09-08)
+
+**What.** A Python repr reached an operator's screen, found by unzipping the V0.27.0 artefact,
+running it standalone and looking at the result.
+
+**`regime` is a LIST in the content and the index served it through `capped`.** `capped`
+stringifies whatever it is handed, so every library card rendered its regimes as
+`['LEO', 'MEO', 'GEO', 'HEO']` - a language's internal representation, on a surface an operator
+reads. Not a crash, not a leak, and exactly the kind of defect a green suite cannot see: the
+value was correctly bounded, correctly escaped and correctly wrong.
+
+**Fixed at the boundary, not in the interface.** The route now serves a list, each entry bounded
+on the string cap and the count bounded by a new `MAX_SERVED_REGIMES` of 10 - the shipped tree's
+widest is five, `PROC-LAUNCH` at LEO, MEO, GEO, HEO and XGEO - because per-entry length and entry
+count are different limits and neither substitutes for the other. The card renders one pill per
+regime. Joining them in the interface would have put the join back in the hands of the layer that
+produced the repr.
+
+**The test now binds the shape**, not only the length: a list, bounded in count, each member a
+string within the cap. The previous assertion measured `len()` of a string that happened to be a
+stringified list, which passed while the screen was wrong.
+
+**How it was caught, because the method is the point.** V0.27.0 was verified by running the
+packaged artefact rather than the working tree, and by looking at every screen. The suite was
+green through all of it. Reading rendered output is not optional polish; it is the only check
+that sees this class at all.
+
+**Verified.** Verification loop green, 1,016 passed and 2 skipped, coverage 97.83%.
+
 ## V0.27.0 (2026-09-08)
 
 **What.** The application, rather than a shell. All four screens redesigned to the 08 September

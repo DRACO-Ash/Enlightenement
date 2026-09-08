@@ -73,6 +73,11 @@ MAX_SERVED_ERRORS: Final = 20
 #: because its discovery filter dropped every parameterised path.
 MAX_SERVED_DOCUMENT_BYTES: Final = 64 * 1024
 
+#: How many orbital regimes one index entry serves. The shipped tree's widest is five
+#: (`PROC-LAUNCH`: LEO, MEO, GEO, HEO, XGEO), so this clears honest content twice over while
+#: bounding the count as well as each entry's length.
+MAX_SERVED_REGIMES: Final = 10
+
 if TYPE_CHECKING:  # pragma: no cover - imported for typing only
     from fastapi import FastAPI
 
@@ -358,7 +363,15 @@ def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
                 "name": capped(procedure.name, MAX_CONTENT_STRING),
                 "status": capped(procedure.status, MAX_CONTENT_STRING),
                 "purpose": capped(extra.get("purpose", ""), MAX_SERVED_PROSE),
-                "regime": capped(extra.get("regime", ""), MAX_CONTENT_STRING),
+                #: A LIST in the content, so a list on the wire. `capped` stringifies whatever
+                #: it is given, which put a Python repr - `['LEO', 'MEO', 'GEO', 'HEO']` - on an
+                #: operator's screen. Each regime is bounded individually and the count is
+                #: capped, because per-entry length and entry count are different limits and
+                #: neither substitutes for the other.
+                "regime": [
+                    capped(entry, MAX_CONTENT_STRING)
+                    for entry in (extra.get("regime") or [])[:MAX_SERVED_REGIMES]
+                ],
                 #: A COUNT, not the steps: the document route serves those, and inlining thirteen
                 #: step lists here is the content-sized body this index exists to avoid.
                 "steps": len(extra.get("steps") or []),
