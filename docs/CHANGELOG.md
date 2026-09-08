@@ -2,6 +2,102 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.26.43 (2026-09-08)
+
+**What.** The design handoff of 08 September, first increment: the palette adopted verbatim, the
+top bar rebuilt with the game layer, and the Session screen added. Three owner decisions taken
+the same day are recorded here rather than inferred, and four places where the handoff and this
+repository disagree are settled with the evidence for each.
+
+**The handoff's premise was false, and that decides the framework question.** It states the target
+repository "contains only `README.md`, so there is no existing environment to conform to", and
+recommends Vite, React and TypeScript with a `.tsx` tree. This repository holds a 42 kB served
+single-page interface, 1,012 tests and a binding CSP. So the recommendation is declined on two
+recorded rules rather than on taste: `CLAUDE.md` says the container is the whole build with **no
+separate bundler output**, and the flight plan says **single-file SPA, no framework, no CDN, all
+assets vendored**. The designs are recreated in the interface that exists, which is what the
+handoff itself asks for one paragraph earlier - "recreate these designs in the target codebase,
+using that codebase's established patterns".
+
+**Palette: adopted verbatim, owner's decision.** Every hex in `:root` is now the handoff's own,
+replacing the `#0B0B0F`/`#00E6FA` scheme this file shipped since the interface was built. Two
+consequences are recorded rather than smoothed over. It disagrees with the navy `#162646` palette
+in `docs/DESIGN-BRIEF.md` and `docs/FLIGHT-PLAN.md`, whose measured WCAG figures were computed
+against a ground this interface no longer uses; both documents are now stale on colour and the
+flight plan's look-and-feel section needs the owner's pen. And it settles the red question that
+`docs/PLOT-REALISM.md` has held open, in the direction the code previously refused.
+
+**Red: two token names, one value, and a test that still means something.** The handoff spends a
+single red on three roles - a missed call, a weak competency, and the most-recent track on a
+waterfall. A binding test says a verdict may not be styled through the recency token and must
+carry a glyph. Collapsing `--recent` into `--bad` would have made that test pass by leaving it
+nothing to find, which the remediation protocol forbids outright, so the two names survive as
+structure while the owner's decision sets both to `#f87171`. The rendering matches the handoff
+exactly; giving recency its own hex again is a one-line change. The reasoning that motivated the
+reservation stays on the record, because it is a training-transfer argument rather than a taste
+one: in the operator's real toolset red means "most recent data" in at least three views.
+
+**Two of the handoff's own tokens shipped below the accessibility floor, and both are fixed.**
+Measured, not assumed: `--ink-ghost #5c7286` on `--surface-4` is **3.80:1** behind 11px seed
+strings, and `--ink-count #4f657a` on `--surface-nav` is **3.16:1** behind a 10.5px counter.
+Neither is large text - that starts at 18.66px bold or 24px regular - so the 3:1 allowance does
+not apply and both fail WCAG 2.2 AA. Lightened on constant hue and saturation to 4.50:1 and
+4.51:1. **The one pair the handoff asked to be verified passes untouched:** `--ink-faint` on
+`--surface-4` measures 4.95:1. Closing these follows the handoff's own instruction rather than
+departing from it, since it lists contrast under "accessibility gaps to close".
+
+**And the palette is now actually enforced, which it never was.** `docs/DESIGN-BRIEF.md` claimed
+its contrast figures were "enforced by tests that read the shipped markup and the canvas palette".
+A grep for every hex in that document over `tests/` returned **nothing**. The claim was the only
+thing holding the palette - the failure this project keeps finding, where the claim is what stops
+anybody looking. `test_every_shipped_ink_meets_the_contrast_floor` parses the tokens out of the
+served `:root` and measures all nineteen text-on-ground pairs, so a token renamed or deleted
+fails it instead of dropping silently out of scope. Reverting either lightened token turns it red.
+
+**Type: the scale adopted, the families impossible.** The handoff asks for Archivo and JetBrains
+Mono from Google Fonts. A content delivery network is forbidden by the flight plan and by
+`font-src 'self'`, neither face is in this repository, and there is no egress to fetch them. So
+the handoff's SCALE is adopted in full - every size, weight and tracking figure, and its
+load-bearing rule that anything a machine produced is mono and anything a human wrote is not -
+on the system stacks. The vendored PHOSPHOR faces (Saira, Azeret Mono) sit in
+`design/phosphor/fonts/`, a directory that deliberately never ships; wiring them means the
+`_UI_FILES` allowlist and a `font-src` review, and that is a separate change.
+
+**No figure from the mockup reaches a shipped surface, and the check found a live defect.** The
+handoff says plainly that its element sets, percentages, ratings and streak counts are "synthetic
+display data chosen to look plausible ... not a content specification", and the never-invent rule
+covers user-facing content. So every count on the new screens is filled from `/api/v1/me` or
+omitted, and the mockup's literals are asserted ABSENT rather than trusted to have been left out.
+On its first run the check caught three carriers, one of them real: **the top bar shipped the
+static label `day streak` before the script replaced it**, so a browser rendered a streak claim
+with no source behind it for as long as the fetch took. The other two were my own comments quoting
+the mockup's numbers to explain why they were not used.
+
+**What is withheld, and why.** The rank tier name, the rank target, the day-streak count and the
+fourteen-day activity strip have no source in the dashboard at all. The game layer is on by the
+owner's decision, so the chip and rank slots keep the handoff's treatment and carry real counts
+under truthful labels; the rank TRACK stays hidden until a rank scale exists, because a bar with
+no defined ceiling is a picture of nothing. The run length in minutes is omitted for the same
+reason. The weakest-axis card chooses over MEASURED axes only and says "not measured yet" when
+none is, because that card's whole purpose is to name a weakness and naming one that does not
+exist would break the never-invent rule on the most prominent card on the screen.
+
+**One handoff instruction declined on a recorded rule.** Its Progress table shows a bare
+competency estimate. The flight plan requires an interval on every axis and calls a bare number a
+claim the data cannot support, and `dashboard` already refuses to emit one. The bar and the colour
+banding are adopted; the interval stays beside the figure.
+
+**Also closed from the handoff's own gap list:** the active navigation item now carries a state,
+in two channels rather than one - a fill and a 2px rule, not colour alone.
+
+**Verified.** Verification loop green, 1,015 passed and 2 skipped, coverage 97.82%, `pip-audit`
+clean on three lockfiles. Both new register rows are cited, which the citation control caught
+before I did: it failed the build until the two controls were named in `docs/SECURITY.md`.
+
+**Not yet built, so not claimed:** the 1a two-column ops-console drill body, the debrief, and the
+Progress and Library screens as specified. Those screens render today in the new palette on their
+existing markup. **The owner chose direction 1a**, and that is the next increment.
+
 ## V0.26.42 (2026-09-04)
 
 **What.** No code change. Records the `deploy-gate` verdict on V0.26.41 and corrects one claim in

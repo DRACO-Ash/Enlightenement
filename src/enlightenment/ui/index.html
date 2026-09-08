@@ -5,149 +5,414 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Enlightenment</title>
 <!-- Inline, so the shell makes no request that can 404. A dot, not a logo. -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230B0B0F'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%2300E6FA'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23070b11'/%3E%3Ccircle cx='8' cy='8' r='3' fill='%2338bdf8'/%3E%3C/svg%3E">
 <!--
   The operator interface. One document, one script, no external request of any kind: the
   response sets default-src 'self' and a test fails the build if any shipped asset carries an
   external URL.
 
-  Type is the system stack here and NOT yet the vendored PHOSPHOR faces. The faces are in
-  design/phosphor/fonts/, that directory deliberately never ships, and moving them into the
-  served interface means adding them to the _UI_FILES allowlist and a font-src review. Recorded
-  rather than quietly skipped: the mockups render in Saira and this renders in the system stack.
+  PALETTE: the design handoff of 08 September, adopted VERBATIM on the owner's decision the
+  same day. Every hex here is the handoff's own. It replaces the #0B0B0F/#00E6FA scheme this
+  file shipped until V0.26.42 and it also disagrees with the navy #162646 palette in
+  docs/DESIGN-BRIEF.md and docs/FLIGHT-PLAN.md, whose measured WCAG figures were computed
+  against a ground this interface no longer uses. Those two documents are now stale on colour
+  and say so; the flight plan's look-and-feel section needs the owner's pen, not mine.
 
-  Colour: red is reserved for RECENCY on plot surfaces and is never used for a verdict. That is
-  the third of the three options in docs/PLOT-REALISM.md and it is provisional until Ash decides.
-  In the real toolset red means "most recent data" in at least three views, so a red verdict here
-  would teach an operator to read the same colour two unrelated ways.
+  RED, and why there are two tokens carrying one value. The handoff spends a single red,
+  --bad #f87171, on three roles at once: a missed call, a weak competency, and the most-recent
+  track on a waterfall. This file keeps --recent as a SEPARATE token from --bad even though the
+  owner's decision sets both to the same hex today. The reason is a binding test: a verdict may
+  not be styled through the recency token, and a verdict must carry a glyph. Collapsing the two
+  names would make that test pass by having nothing left to find, which is the one thing the
+  remediation protocol forbids. So the separation survives as structure, the rendering matches
+  the handoff exactly, and giving recency its own hex again later is a one-line change.
+  The reasoning that motivated the reservation still stands on the record: in the real toolset
+  red means "most recent data" in at least three views, so a red verdict teaches an operator to
+  read one colour two unrelated ways. docs/PLOT-REALISM.md holds the three options; option three
+  is now superseded by the owner's decision, and the glyph is what carries the verdict.
+
+  TYPE: the handoff asks for Archivo and JetBrains Mono from Google Fonts. Both halves of that
+  are unavailable here. A content delivery network is forbidden by the flight plan and by
+  font-src 'self', and neither face exists in this repository, which has no egress to fetch
+  them. So this file takes the handoff's SCALE - every size, weight and tracking figure, and its
+  load-bearing rule that anything a machine produced is mono and anything a human wrote is not -
+  and applies it to the system stacks. The vendored PHOSPHOR faces (Saira, Azeret Mono) are in
+  design/phosphor/fonts/, a directory that deliberately never ships; wiring them means adding
+  them to the _UI_FILES allowlist and a font-src review. Recorded rather than quietly skipped.
+
+  FIGURES: the handoff's numbers are its own synthetic display data and are NOT reproduced. The
+  never-invent rule applies to a shipped surface, so every count, rating and estimate on these
+  screens comes from the API or is absent. Where the handoff shows a bare competency estimate,
+  this keeps the interval beside it: the flight plan requires an interval and calls a bare
+  number a claim the data cannot support.
 -->
 <style>
   :root {
-    --ground: #0B0B0F; --panel: #14141B; --inset: #101017;
-    --grid: #24242E; --grid2: #3C3C4A;
-    --ink: #F2F1F6; --ink2: #C8C6D2; --ink3: #8E8B99; --ink4: #5A5866;
-    --sig: #00E6FA;        /* signal, structure, the data you were given */
-    --you: #FFBB55;        /* the operator's own act */
-    --cue: #DBB5FF;        /* a cue, a thing to notice */
-    --ok: #6BE39A;
-    /* Recency ramp. Red lives HERE and nowhere else. */
-    --recent: #FF6B6B; --older: #5B7FCF; --oldest: #E8EDF5;
+    /* Ground and surfaces */
+    --bg: #070b11; --bg-glow: #0e2233;
+    --surface: #0c141d; --surface-2: #0b131c; --surface-3: #0e1a25; --surface-4: #0a1119;
+    --surface-nav: #08101a; --surface-hover: #101a24; --surface-row-hi: #101c26;
+    /* Lines */
+    --border: #17232f; --border-hair: #131e29; --border-nav: #16232f;
+    --border-strong: #1d3446; --border-accent: #24485e;
+    /* Accent */
+    --accent: #38bdf8; --accent-hi: #7dd3fc; --accent-deep: #0e7490;
+    --accent-wash: #0e2a3a; --accent-border: #1d4f6b; --accent-hover-border: #2c5a75;
+    --on-accent: #06202e;
+    /* Status */
+    --warn: #fbbf24; --warn-dim: #a98b4b; --warn-bg: #12100a; --warn-bg-2: #17120a;
+    --warn-border: #3d2f14; --warn-text: #d8cfb8;
+    --good: #34d399; --good-bg: #103028; --good-border: #1f6b52;
+    --bad: #f87171;
+    /* Data. --recent is the recency ramp's newest stop and is NOT the verdict red; see the
+     * note above for why it keeps its own name while sharing the value. */
+    --recent: #f87171; --data-mid: #60a5fa; --older: #60a5fa; --oldest: #e7eef6;
+    --track: #14202b; --bar-1: #1d3446; --bar-2: #26596f; --bar-3: #2e7f9c;
+    /* Ink */
+    --ink: #e7eef6; --ink-2: #d8cfb8; --ink-soft: #a9c4d8; --ink-muted: #92a9bf;
+    --ink-dim: #9fc0d6; --ink-meta: #8ba3ba; --ink-label: #7e97ad; --ink-faint: #6d859b;
+    /* Two tokens lightened from the handoff's own values, on hue and saturation held
+     * constant, because both FAILED the 4.5:1 normal-text floor at the sizes they are
+     * used at. Measured here, not assumed: --ink-ghost #5c7286 on --surface-4 is 3.80:1
+     * behind 11px seed strings, and --ink-count #4f657a on --surface-nav is 3.16:1
+     * behind a 10.5px counter. Neither is large text (that starts at 18.66px bold or
+     * 24px regular), so the large-text 3:1 allowance does not apply. The handoff lists
+     * contrast under ACCESSIBILITY GAPS TO CLOSE and asks for exactly this check, so
+     * closing them follows its instruction rather than departing from it. The one pair
+     * it named, --ink-faint on --surface-4, measures 4.95:1 and passes untouched. */
+    --ink-ghost: #667e95; --ink-nav: #8ba3ba; --ink-count: #627e98;
+    /* Families. The handoff's split, on the stacks this build can actually ship. */
     --display: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
     --data: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    /* Radii, from the handoff */
+    --r-hero: 16px; --r-card: 14px; --r-input: 10px; --r-pill: 8px; --r-chip: 999px;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--ground); color: var(--ink);
-    font-family: var(--display); font-size: 16px; line-height: 1.5;
+    margin: 0; color: var(--ink); background: var(--bg);
+    background-image: radial-gradient(1200px 600px at 12% -10%, var(--bg-glow) 0%, var(--bg) 60%);
+    background-repeat: no-repeat;
+    font-family: var(--display); font-size: 16px; line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
+  ::selection { background: var(--accent); color: #061018; }
+  p { text-wrap: pretty; }
+
+  /* ---------------------------------------------------------------- top bar */
   .rail {
-    display: flex; align-items: center; gap: 22px; padding: 12px 24px;
-    border-bottom: 1px solid var(--grid); background: var(--panel);
-    font-family: var(--data); font-size: 0.72rem; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--ink3); flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 22px; padding: 14px 28px;
+    background: rgba(7, 11, 17, .82); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-nav); flex-wrap: wrap;
   }
-  .rail .mark { color: var(--ink); font-weight: 700; letter-spacing: 0.3em; }
+  .rail .mark {
+    font-family: var(--data); font-size: 13px; font-weight: 700; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--ink); white-space: nowrap;
+  }
+  #nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  #nav button {
+    background: none; border: 0; border-radius: 7px; padding: 7px 14px; cursor: pointer;
+    font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    color: var(--ink-nav); white-space: nowrap; transition: all .15s;
+  }
+  #nav button:hover { color: var(--ink); background: var(--surface-hover); }
+  /* The prototype marks no active item and the handoff calls that a known gap, not a
+   * decision. Both channels are used: fill AND a rule, so it does not rest on colour. */
+  #nav button[aria-current="page"] {
+    color: var(--ink); background: var(--surface-hover);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
   .rail .push { flex: 1 1 auto; }
-  .rail button {
-    background: none; border: 1px solid transparent; color: var(--ink3);
-    font: inherit; letter-spacing: inherit; text-transform: inherit;
-    padding: 4px 8px; cursor: pointer; border-radius: 2px;
+  .streak {
+    display: flex; align-items: baseline; gap: 7px; white-space: nowrap;
+    background: var(--warn-bg-2); border: 1px solid var(--warn-border);
+    border-radius: var(--r-chip); padding: 5px 12px;
   }
-  .rail button[aria-current="page"] { color: var(--you); border-color: var(--you); }
-  .rail button:focus-visible, main :focus-visible { outline: 2px solid var(--sig); outline-offset: 2px; }
-  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 64px; }
-  h1 { font-size: 1.7rem; margin: 0 0 6px; line-height: 1.15; }
-  h2 { font-size: 1.15rem; margin: 28px 0 10px; }
+  .streak .n { font-family: var(--data); font-size: 14px; font-weight: 700; color: var(--warn); }
+  .streak .u {
+    font-family: var(--data); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--warn-dim);
+  }
+  .rank { min-width: 200px; flex-shrink: 0; }
+  .rank .row {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); white-space: nowrap;
+  }
+  .rank .row b { font-weight: 400; color: var(--accent); }
+  .rank .track {
+    margin-top: 5px; height: 5px; border-radius: var(--r-chip); background: var(--track);
+    overflow: hidden;
+  }
+  .rank .fill {
+    height: 100%; border-radius: var(--r-chip);
+    background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+  }
+  #rail-status {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-count); white-space: nowrap;
+  }
+
+  /* ---------------------------------------------------------------- shell */
+  main { max-width: 1180px; margin: 0 auto; padding: 34px 28px 80px; }
   .kicker {
-    font-family: var(--data); font-size: 0.68rem; letter-spacing: 0.2em;
-    text-transform: uppercase; color: var(--ink3); margin: 0;
+    margin: 0 0 12px; font-family: var(--data); font-size: 11.5px; letter-spacing: .22em;
+    text-transform: uppercase; color: var(--accent);
   }
-  .note { color: var(--ink3); font-size: 0.92rem; max-width: 70ch; }
-  .scope { border: 1px solid var(--grid); border-radius: 3px; background: var(--inset); margin: 16px 0; }
-  .scope-head {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
-    padding: 10px 14px; border-bottom: 1px solid var(--grid);
-    font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--ink3);
-  }
-  .scope-head b { color: var(--ink2); font-weight: 600; }
-  .scope-head > span:last-child { margin-left: auto; }
-  .panels { display: grid; gap: 14px; padding: 14px; }
-  .panels.multi { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-  .panel-title {
-    font-family: var(--data); font-size: 0.64rem; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--ink3); margin: 0 0 4px;
-  }
-  .panel-note { font-size: 0.82rem; color: var(--ink4); margin: 4px 0 0; }
-  .legend, .keyrow {
-    display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 14px;
-    border-top: 1px solid var(--grid); font-family: var(--data); font-size: 0.68rem;
-    color: var(--ink3);
-  }
-  .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle; }
-  .foot { padding: 8px 14px; border-top: 1px solid var(--grid); font-family: var(--data); font-size: 0.64rem; color: var(--ink4); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
-  th { font-family: var(--data); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); font-weight: 500; }
-  td.r, th.r { text-align: right; font-family: var(--data); font-variant-numeric: tabular-nums; }
-  td.em { color: var(--you); }
-  .tablewrap { overflow-x: auto; padding: 0 14px 14px; }
-  form { margin: 18px 0 0; }
-  label { display: block; font-family: var(--data); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink3); margin: 16px 0 6px; }
-  input[type=text] {
-    width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--grid2);
-    color: var(--you); font: inherit; padding: 6px 0;
-  }
-  input[type=text]:focus { border-bottom-color: var(--you); outline: none; }
-  .steps { display: flex; gap: 8px; flex-wrap: wrap; }
-  .steps button {
-    flex: 1 1 90px; background: transparent; border: 1px solid var(--grid2);
-    color: var(--ink2); font-family: var(--data); font-size: 0.68rem; padding: 8px 4px;
-    border-radius: 2px; cursor: pointer;
-  }
-  .steps button[aria-pressed=true] { border-color: var(--you); color: var(--you); }
-  .act {
-    margin-top: 22px; display: inline-flex; align-items: center; gap: 10px;
-    background: var(--you); color: #16130B; border: 0; border-radius: 2px;
-    font-family: var(--display); font-weight: 700; font-size: 0.98rem;
-    padding: 12px 22px; cursor: pointer;
-  }
-  .act.ghost { background: transparent; color: var(--ink2); border: 1px solid var(--grid2); }
-  .act[disabled] { opacity: 0.45; cursor: default; }
-  .verdict { border: 1px solid var(--grid2); border-left-width: 3px; border-radius: 2px; padding: 14px 16px; margin: 20px 0; }
-  .verdict.accept { border-left-color: var(--ok); }
-  .verdict.partial { border-left-color: var(--you); }
-  .verdict.reject, .verdict.none { border-left-color: var(--cue); }
-  .verdict .glyph { font-family: var(--data); font-size: 1.1rem; margin-right: 8px; }
-  .verdict h3 { margin: 0 0 6px; font-size: 1.05rem; }
-  .meter { display: flex; align-items: center; gap: 10px; font-family: var(--data); font-size: 0.72rem; }
-  .meter .t { flex: 1 1 auto; height: 4px; background: var(--grid); border-radius: 2px; overflow: hidden; }
-  .meter .t i { display: block; height: 100%; background: currentColor; }
-  .banner {
-    border: 1px solid var(--cue); border-left-width: 3px; border-radius: 2px;
-    padding: 12px 16px; margin: 18px 0; color: var(--ink2); font-size: 0.9rem;
+  h1 { margin: 0 0 10px; font-size: 44px; font-weight: 700; letter-spacing: -.02em; line-height: 1.04; }
+  h2 { margin: 0 0 10px; font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+  .sub { margin: 0 0 26px; max-width: 620px; font-size: 16px; color: var(--ink-soft); }
+  .note { margin: 8px 0 0; font-size: 13px; color: var(--ink-faint); }
+  .label {
+    display: block; margin: 0 0 8px; font-family: var(--data); font-size: 11px;
+    letter-spacing: .2em; text-transform: uppercase; color: var(--ink-label);
   }
   .hidden { display: none !important; }
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  .banner {
+    margin: 0 0 20px; padding: 12px 16px; border-radius: var(--r-input);
+    border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-text);
+    font-size: 14px;
+  }
+  section { animation: riseIn .32s ease both; }
+  @keyframes riseIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+    padding: 22px;
+  }
+  .act, .act2 {
+    font-family: var(--display); font-size: 14px; font-weight: 600; border-radius: var(--r-input);
+    padding: 14px 24px; cursor: pointer; white-space: nowrap; transition: all .15s;
+  }
+  .act {
+    background: var(--accent); border: 1px solid var(--accent); color: var(--on-accent);
+    box-shadow: 0 8px 24px rgba(56, 189, 248, .22);
+  }
+  .act:hover { background: var(--accent-hi); border-color: var(--accent-hi);
+    box-shadow: 0 12px 30px rgba(56, 189, 248, .32); transform: translateY(-1px); }
+  .act2 { background: none; border: 1px solid var(--border-accent); color: var(--ink-dim); }
+  .act2:hover { color: var(--ink); border-color: var(--accent-hover-border); }
+  #nav button:focus-visible, main :focus-visible, .rail :focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+
+  /* ---------------------------------------------------------------- session */
+  .split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; }
+  .hero {
+    position: relative; overflow: hidden; padding: 30px; border-radius: var(--r-hero);
+    border: 1px solid var(--accent-border);
+    background: linear-gradient(135deg, #123448 0%, #0b1a26 100%);
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(135deg, rgba(56, 189, 248, .12), transparent 55%);
+  }
+  .hero > * { position: relative; }
+  .hero .count { display: flex; align-items: baseline; gap: 14px; margin: 4px 0 12px; }
+  .hero .count b { font-size: 56px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+  .hero .count span { font-size: 16px; color: var(--ink-soft); }
+  .hero p { max-width: 420px; font-size: 14.5px; color: var(--ink-soft); }
+  .hero .buttons { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+  .stack { display: grid; gap: 20px; align-content: start; }
+  .bar { height: 6px; border-radius: var(--r-chip); background: var(--track); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: var(--r-chip); background: var(--warn); }
+  .card h3 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
+  .card .body { font-size: 13.5px; color: var(--ink-meta); }
+  .days { display: flex; align-items: flex-end; gap: 5px; height: 54px; margin-top: 14px; }
+  .days i { flex: 1 1 0; border-radius: 3px; background: var(--bar-1); }
+  .covers {
+    margin-top: 26px; display: grid; gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden;
+  }
+  .covers .row {
+    display: grid; grid-template-columns: 34px minmax(0, 1fr) 130px 110px; gap: 18px;
+    align-items: center; padding: 16px 20px; background: var(--surface);
+  }
+  .covers .idx { font-family: var(--data); font-size: 12.5px; color: var(--accent); }
+  .covers .name { font-size: 15px; font-weight: 600; }
+  .covers .cues { font-family: var(--data); font-size: 12.5px; color: var(--ink-meta); }
+  .covers .status {
+    font-family: var(--data); font-size: 12.5px; text-align: right; white-space: nowrap;
+  }
+  .s-strong { color: var(--good); } .s-accent { color: var(--accent); }
+  .s-shaky { color: var(--warn); } .s-missed { color: var(--bad); }
+
+  /* ---------------------------------------------------------------- drill, tables, plots */
+  .steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .steps button {
+    display: grid; gap: 2px; padding: 10px 6px; cursor: pointer; border-radius: var(--r-pill);
+    background: none; border: 1px solid var(--border-accent); color: var(--ink-dim);
+    font-family: var(--data); font-size: 11.5px; transition: all .12s;
+  }
+  .steps button:hover { color: var(--ink); }
+  .steps button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent-hi); }
+  input[type="text"], input[type="search"] {
+    width: 100%; padding: 14px 16px; border-radius: var(--r-input); font-size: 16px;
+    background: var(--surface-2); border: 1px solid var(--border-accent); color: var(--ink);
+    font-family: var(--display);
+  }
+  input[type="text"]:focus, input[type="search"]:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56, 189, 248, .14);
+  }
+  input::placeholder { color: var(--ink-ghost); }
+  form label { display: block; margin: 22px 0 8px; font-family: var(--data); font-size: 11px;
+    letter-spacing: .2em; text-transform: uppercase; color: var(--ink-label); }
+  #answer-form { margin-top: 26px; max-width: 620px; }
+  #submit { margin-top: 22px; width: 100%; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 12px 20px; text-align: left; font-size: 14px; }
+  th {
+    background: var(--surface-3); font-family: var(--data); font-weight: 400; font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap;
+  }
+  td { border-top: 1px solid var(--border-hair); color: var(--ink); }
+  td.r, th.r { text-align: right; font-family: var(--data); font-size: 12.5px; }
+  .seed {
+    padding: 10px 20px; background: var(--surface-4); border-top: 1px solid var(--border-hair);
+    font-family: var(--data); font-size: 11px; color: var(--ink-ghost);
+  }
+  /* ---------------------------------------------------------------- stimulus panels */
+  .scope {
+    margin: 22px 0; border: 1px solid var(--border); border-radius: var(--r-card);
+    background: var(--surface); overflow: hidden;
+  }
+  .scope-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+    padding: 13px 20px; background: var(--surface-3); border-bottom: 1px solid var(--border-hair);
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .scope-head b { color: var(--ink); font-weight: 700; }
+  .scope-head > span:last-child { margin-left: auto; }
+  .panels { display: grid; gap: 16px; padding: 18px 20px; }
+  .panels.multi { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .panel-title {
+    margin: 0 0 6px; font-family: var(--data); font-size: 11px; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--ink-label);
+  }
+  .panel-note { margin: 6px 0 0; font-size: 13px; color: var(--ink-faint); }
+  .legend, .keyrow {
+    display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 20px;
+    border-top: 1px solid var(--border-hair); font-family: var(--data); font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .legend span, .keyrow span { white-space: nowrap; }
+  .legend i {
+    display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle;
+  }
+  .foot {
+    padding: 10px 20px; background: var(--surface-4); border-top: 1px solid var(--border-hair);
+    font-family: var(--data); font-size: 11px; color: var(--ink-ghost);
+  }
+  .scope .tablewrap { border: 0; border-radius: 0; }
+  td.em { color: var(--warn); font-weight: 700; }
+
+  /* ---------------------------------------------------------------- the reveal */
+  /* The verdict carries a GLYPH and a left rule, never colour alone: the script supplies
+   * VERDICT_GLYPH and a test binds it. Red here is --bad, the owner's palette decision of
+   * 08 September; it is deliberately NOT --recent, which belongs to the plot recency ramp. */
+  .verdict {
+    margin: 24px 0; padding: 18px 20px; border: 1px solid var(--border); border-left-width: 3px;
+    border-radius: 0 var(--r-card) var(--r-card) 0; background: var(--surface-2);
+  }
+  .verdict.accept { border-left-color: var(--good); background: var(--good-bg); }
+  .verdict.partial { border-left-color: var(--warn); background: var(--warn-bg); }
+  .verdict.reject, .verdict.none { border-left-color: var(--bad); }
+  .verdict.unscorable { border-left-color: var(--ink-faint); }
+  .verdict .glyph { margin-right: 10px; font-family: var(--data); font-size: 17px; }
+  .verdict h3 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+  .verdict.accept h3 { color: var(--good); }
+  .verdict.partial h3 { color: var(--warn); }
+  .verdict.reject h3, .verdict.none h3 { color: var(--bad); }
+  .meter {
+    display: flex; align-items: center; gap: 12px; margin: 10px 0 0;
+    font-family: var(--data); font-size: 11.5px;
+  }
+  .meter .t {
+    flex: 1 1 auto; height: 5px; border-radius: var(--r-chip); background: var(--track);
+    overflow: hidden;
+  }
+  .meter .t i { display: block; height: 100%; border-radius: var(--r-chip); background: currentColor; }
+  .act.ghost { background: none; border: 1px solid var(--border-accent); color: var(--ink-dim);
+    box-shadow: none; }
+  .act.ghost:hover { color: var(--ink); border-color: var(--accent-hover-border);
+    background: none; box-shadow: none; }
+  .act[disabled] { opacity: .45; cursor: default; transform: none; box-shadow: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001s !important; transition-duration: .001s !important; }
+  }
+  @media (max-width: 900px) {
+    .split { grid-template-columns: minmax(0, 1fr); }
+    h1 { font-size: 34px; }
+    .covers .row { grid-template-columns: 28px minmax(0, 1fr); }
+    .covers .cues, .covers .status { grid-column: 2; text-align: left; }
+  }
 </style>
 </head>
 <body>
 <div class="rail">
   <span class="mark">Enlightenment</span>
   <nav id="nav" aria-label="Surfaces">
-    <button type="button" data-view="drill" aria-current="page">Drill</button>
+    <button type="button" data-view="session" aria-current="page">Session</button>
+    <button type="button" data-view="drill">Drill</button>
     <button type="button" data-view="progress">Progress</button>
     <button type="button" data-view="library">Library</button>
   </nav>
   <span class="push"></span>
+  <!-- The game layer. Owner decision of 08 September: on by default, as prototyped. Every
+       figure in it is filled from /api/v1/me; nothing here is a literal. -->
+  <div id="game-layer" class="hidden">
+    <div class="streak" id="streak-chip">
+      <span class="n" id="streak-n">—</span><span class="u" id="streak-unit">loading</span>
+    </div>
+  </div>
+  <div class="rank hidden" id="rank-block">
+    <div class="row"><span id="rank-name">—</span><b id="rank-progress">—</b></div>
+    <div class="track"><i class="fill" id="rank-fill" style="width:0%"></i></div>
+  </div>
   <span id="rail-status">loading</span>
 </div>
 
 <main>
   <div id="banner" class="banner hidden" role="status"></div>
 
-  <section id="view-drill">
+  <section id="view-session">
+    <p class="kicker" id="session-kicker">Session</p>
+    <h1 id="session-title">What you are drilling</h1>
+    <p class="sub" id="session-sub"></p>
+    <div class="split">
+      <div class="hero">
+        <span class="label">The run</span>
+        <div class="count"><b id="run-count">—</b><span id="run-length"></span></div>
+        <p id="run-blurb"></p>
+        <div class="buttons">
+          <button type="button" class="act" id="start-run">Start the run →</button>
+          <button type="button" class="act2" data-view="library">Read the procedures</button>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <span class="label">Weakest right now</span>
+          <h3 id="weak-name">—</h3>
+          <p class="body" id="weak-body"></p>
+          <div class="bar" style="margin-top:14px"><i id="weak-bar" style="width:0%"></i></div>
+        </div>
+        <div class="card">
+          <span class="label">Recorded so far</span>
+          <h3 id="recorded-n">—</h3>
+          <p class="body" id="recorded-body"></p>
+          <div class="days" id="day-bars" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+    <span class="label" style="margin-top:26px">What the run covers</span>
+    <div class="covers" id="covers"></div>
+    <p class="note" id="session-note"></p>
+  </section>
+
+  <section id="view-drill" class="hidden">
     <p class="kicker" id="drill-kicker">Drill</p>
     <h1 id="drill-prompt">Loading a drill…</h1>
     <p class="note" id="drill-meta"></p>
@@ -156,7 +421,7 @@
     <form id="answer-form" class="hidden">
       <label for="response" id="response-label">Your call</label>
       <input type="text" id="response" name="response" autocomplete="off" maxlength="300"
-             aria-describedby="response-help">
+             placeholder="type the call" aria-describedby="response-help">
       <p class="note" id="response-help">No list. You produce the answer, which is the only thing that builds recall.</p>
       <label for="confidence-group">How sure are you</label>
       <div class="steps" id="confidence-group" role="group" aria-label="Confidence"></div>
@@ -170,14 +435,15 @@
   <section id="view-progress" class="hidden">
     <p class="kicker">Progress</p>
     <h1>Where you stand</h1>
+    <p class="sub">Eight competencies, each estimated from your own calls rather than from how many drills you finished.</p>
     <p class="note" id="progress-identity"></p>
     <div id="progress-body"></div>
   </section>
 
   <section id="view-library" class="hidden">
     <p class="kicker">Library</p>
-    <h1>Procedures</h1>
-    <p class="note">Read freely. The library is never gated and never scored.</p>
+    <h1>The procedures behind the drills</h1>
+    <p class="sub">Read them cold, or come here from a call you got wrong. Read freely: the library is never gated and never scored.</p>
     <div id="library-body"></div>
   </section>
 </main>

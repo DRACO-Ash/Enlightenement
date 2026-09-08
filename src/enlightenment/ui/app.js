@@ -728,9 +728,128 @@ async function loadLibrary() {
   }
 }
 
+/* ---------------------------------------------------------------- session and game layer */
+
+/* The competency estimate bands the handoff specifies, top of range first so the first match
+ * wins. Colour is never the only carrier: every band also renders its word. */
+const BANDS = [
+  { floor: 0.70, cls: 's-strong', word: 'strong' },
+  { floor: 0.50, cls: 's-accent', word: 'fair' },
+  { floor: 0.36, cls: 's-shaky', word: 'shaky' },
+  { floor: 0, cls: 's-missed', word: 'weak' },
+];
+
+function band(estimate) {
+  return BANDS.find((entry) => estimate >= entry.floor) || BANDS[BANDS.length - 1];
+}
+
+/* Which competency is weakest, over the MEASURED ones only. An axis with no attempts has no
+ * figure at all, so it cannot be the weakest: calling it that would report an absence as a
+ * finding, which is the fault `measured` exists to prevent. */
+function weakest(competencies) {
+  const measured = competencies.filter((c) => c.measured && typeof c.estimate === 'number');
+  if (!measured.length) return null;
+  return measured.reduce((worst, c) => (c.estimate < worst.estimate ? c : worst), measured[0]);
+}
+
+/* The game layer, on by owner decision of 08 September. It renders ONLY what the API supports.
+ * Withheld deliberately, because no source exists and the never-invent rule covers a shipped
+ * surface: the day-streak count, the rank tier name, the rank target,
+ * and the fourteen-day activity bars. The handoff's figures for all four are its own synthetic
+ * display data. The chip and rank slots keep the handoff's treatment and carry real numbers
+ * under truthful labels instead; the rank TRACK stays hidden until a rank scale exists, because
+ * a bar with no defined ceiling is a picture of nothing. */
+function fillGameLayer(me) {
+  const chip = document.getElementById('game-layer');
+  const rank = document.getElementById('rank-block');
+  document.getElementById('streak-n').textContent = String(me.runs_total);
+  document.getElementById('streak-unit').textContent = me.runs_total === 1 ? 'answer recorded' : 'answers recorded';
+  chip.classList.remove('hidden');
+  document.getElementById('rank-name').textContent = 'drill rating';
+  document.getElementById('rank-progress').textContent = String(me.drill_rating);
+  rank.classList.remove('hidden');
+}
+
+async function loadSession() {
+  banner('');
+  try {
+    const me = await api('/api/v1/me');
+    fillGameLayer(me);
+
+    /* No session NUMBER exists in the API and the mockup's is synthetic, so the kicker carries
+     * the content hash instead: it is the one provenance string that makes a run reproducible,
+     * which is what a session id would have been for. */
+    document.getElementById('session-kicker').textContent =
+      `Session · content ${me.content_hash.slice(0, 8)}`;
+
+    const weak = weakest(me.competencies);
+    document.getElementById('session-title').textContent = weak
+      ? `Today you are drilling ${weak.name.toLowerCase()}`
+      : 'Today you are drilling from a clean sheet';
+    document.getElementById('session-sub').textContent = weak
+      ? 'The run leads with your weakest measured axis. Cues you have missed come back sooner and harder.'
+      : 'Nothing is measured yet, so the first run establishes a baseline rather than correcting one.';
+
+    /* `due_now` is a real count. The mockup's run length in minutes is not derivable from this
+     * payload, so it is omitted rather than guessed. */
+    document.getElementById('run-count').textContent = String(me.due_now);
+    document.getElementById('run-length').textContent =
+      me.due_now === 1 ? 'cue due now' : 'cues due now';
+    document.getElementById('run-blurb').textContent =
+      'Spaced repetition decides the order. An item you got right moves further out; one you'
+      + ' missed comes back inside a day.';
+
+    if (weak) {
+      document.getElementById('weak-name').textContent = weak.name;
+      const low = Math.round(weak.interval[0] * 100);
+      const high = Math.round(weak.interval[1] * 100);
+      document.getElementById('weak-body').textContent =
+        `Estimated ${Math.round(weak.estimate * 100)} out of 100, interval ${low} to ${high},`
+        + ` over ${weak.attempts} ${weak.attempts === 1 ? 'call' : 'calls'}.`;
+      const bar = document.getElementById('weak-bar');
+      bar.style.width = `${Math.round(weak.estimate * 100)}%`;
+      bar.style.background = `var(--${band(weak.estimate).cls === 's-strong' ? 'good' : band(weak.estimate).cls === 's-accent' ? 'accent' : band(weak.estimate).cls === 's-shaky' ? 'warn' : 'bad'})`;
+    } else {
+      document.getElementById('weak-name').textContent = 'Not measured yet';
+      document.getElementById('weak-body').textContent =
+        'No axis has an attempt against it, so there is no weakest. A figure here before the'
+        + ' first call would be a claim the data cannot support.';
+    }
+
+    document.getElementById('recorded-n').textContent = String(me.runs_total);
+    document.getElementById('recorded-body').textContent =
+      `${me.runs_total} ${me.runs_total === 1 ? 'answer' : 'answers'} recorded, drill rating`
+      + ` ${me.drill_rating}. The fourteen-day activity strip the mockup shows needs per-day`
+      + ' history the dashboard does not expose yet, so it is left out rather than drawn from'
+      + ' nothing.';
+
+    const covers = document.getElementById('covers');
+    clear(covers);
+    me.competencies.forEach((competency, index) => {
+      const row = el('div', 'row');
+      row.appendChild(el('span', 'idx', String(index + 1).padStart(2, '0')));
+      row.appendChild(el('span', 'name', competency.name || competency.competency_id));
+      row.appendChild(el('span', 'cues',
+        `${competency.attempts} ${competency.attempts === 1 ? 'call' : 'calls'}`));
+      if (competency.measured) {
+        const entry = band(competency.estimate);
+        row.appendChild(el('span', `status ${entry.cls}`,
+          `${entry.word} · ${Math.round(competency.estimate * 100)}`));
+      } else {
+        row.appendChild(el('span', 'status', 'not measured'));
+      }
+      covers.appendChild(row);
+    });
+
+    document.getElementById('session-note').textContent = me.identity;
+  } catch (error) {
+    banner('The session could not be loaded.');
+  }
+}
+
 /* ---------------------------------------------------------------- shell */
 
-const VIEWS = { drill: loadDrill, progress: loadProgress, library: loadLibrary };
+const VIEWS = { session: loadSession, drill: loadDrill, progress: loadProgress, library: loadLibrary };
 
 function show(name) {
   for (const view of Object.keys(VIEWS)) {
@@ -749,6 +868,12 @@ function boot() {
   for (const button of document.querySelectorAll('#nav button')) {
     button.addEventListener('click', () => show(button.dataset.view));
   }
+  /* Any control carrying data-view navigates, so the session hero's secondary button and the
+   * nav share one path rather than two that can drift. */
+  for (const button of document.querySelectorAll('main [data-view]')) {
+    button.addEventListener('click', () => show(button.dataset.view));
+  }
+  document.getElementById('start-run').addEventListener('click', () => show('drill'));
   api('/api/v1/content/manifest').then((manifest) => {
     document.getElementById('rail-status').textContent =
       manifest.ok ? `${manifest.counts.drills} drills · ${manifest.content_hash.slice(0, 8)}` : 'content fault';
@@ -756,7 +881,7 @@ function boot() {
   }).catch(() => {
     document.getElementById('rail-status').textContent = 'offline';
   });
-  show('drill');
+  show('session');
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

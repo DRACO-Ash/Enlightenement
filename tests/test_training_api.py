@@ -507,6 +507,139 @@ def test_the_interface_never_writes_an_untrusted_value_as_markup(client: TestCli
     assert "createElementNS" in script
 
 
+def _tokens(document: str) -> dict[str, str]:
+    """Every `--name: #hex` declared in the shipped `:root`, parsed from the document itself.
+
+    Read from the markup rather than duplicated in the test, so a token renamed or removed
+    fails here instead of being silently skipped.
+    """
+    root = document[document.index(":root {") : document.index("* { box-sizing")]
+    return dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})", root))
+
+
+def _relative_luminance(colour: str) -> float:
+    channels = []
+    for offset in (1, 3, 5):
+        value = int(colour[offset : offset + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast(foreground: str, background: str) -> float:
+    first = _relative_luminance(foreground)
+    second = _relative_luminance(background)
+    return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+
+
+#: Every ink the interface renders text in, against the ground it is rendered on. The floor is
+#: the WCAG 2.2 AA normal-text one, 4.5:1, and it applies because none of these is large text:
+#: large starts at 18.66px bold or 24px regular and the smallest of these is a 10.5px counter.
+INK_ON_GROUND = (
+    ("ink", "bg"),
+    ("ink", "surface"),
+    ("ink-soft", "bg"),
+    ("ink-muted", "bg"),
+    ("ink-dim", "bg"),
+    ("ink-meta", "surface"),
+    ("ink-label", "surface"),
+    ("ink-faint", "surface-3"),
+    ("ink-faint", "surface-4"),
+    ("ink-ghost", "surface-4"),
+    ("ink-count", "surface-nav"),
+    ("accent", "bg"),
+    ("accent-hi", "accent-wash"),
+    ("warn", "warn-bg-2"),
+    ("warn-dim", "warn-bg-2"),
+    ("warn-text", "warn-bg"),
+    ("good", "good-bg"),
+    ("bad", "surface-2"),
+    ("on-accent", "accent"),
+)
+
+CONTRAST_FLOOR = 4.5
+
+
+def test_every_shipped_ink_meets_the_contrast_floor(client: TestClient) -> None:
+    """The palette is MEASURED against the shipped markup, which was never true before.
+
+    `docs/DESIGN-BRIEF.md` claimed its contrast figures were "enforced by tests that read the
+    shipped markup and the canvas palette". No test asserted any hex: a grep for every value in
+    that document over `tests/` returned nothing. So the claim was the only thing holding the
+    palette, which is the failure mode this project keeps finding - the claim is what stops
+    anybody looking.
+
+    Adopting the design handoff of 08 September made it worth closing, because two of its own
+    tokens failed this floor at the sizes they are used at: `--ink-ghost` on `--surface-4`
+    measured 3.80:1 behind 11px seed strings and `--ink-count` on `--surface-nav` measured
+    3.16:1 behind a 10.5px counter. Both were lightened on constant hue and saturation. The one
+    pair the handoff asked to be checked, `--ink-faint` on `--surface-4`, measured 4.95:1 and
+    was left alone.
+    """
+    document = client.get("/ui").text
+    tokens = _tokens(document)
+    failures = []
+    for ink, ground in INK_ON_GROUND:
+        assert ink in tokens, f"--{ink} is no longer declared, so this floor holds nothing"
+        assert ground in tokens, f"--{ground} is no longer declared"
+        ratio = _contrast(tokens[ink], tokens[ground])
+        if ratio < CONTRAST_FLOOR:
+            failures.append(f"--{ink} on --{ground} is {ratio:.2f}:1")
+    assert not failures, (
+        "the shipped palette renders text below the WCAG 2.2 AA normal-text floor of"
+        f" {CONTRAST_FLOOR}:1: {failures}"
+    )
+
+
+def test_the_interface_carries_no_synthetic_figure_from_the_mockup(client: TestClient) -> None:
+    """The handoff's numbers are its own display data and must not reach a shipped surface.
+
+    The never-invent rule in `CLAUDE.md` covers user-facing content, and the handoff says plainly
+    that its element sets, percentages, ratings and streak counts are "synthetic display data
+    chosen to look plausible ... not a content specification". So every figure on these screens
+    comes from the API or is absent, and the mockup's literals are asserted absent rather than
+    trusted to have been left out.
+
+    The rank tier, the rank target, the day streak and the fourteen-day activity strip have no
+    source in `/api/v1/me` at all, so they are withheld: the top bar's chip and rank slot keep
+    the handoff's treatment but carry real counts under truthful labels.
+    """
+    document = client.get("/ui").text
+    script = client.get("/ui/app.js").text
+    shipped = f"{document}\n{script}"
+    for literal, what in (
+        ("Session 087", "the mockup's session number"),
+        ("1146", "the mockup's drill rating"),
+        ("1300", "the mockup's rank target"),
+        ("Operator III", "the mockup's rank tier"),
+        ("22 points overconfident", "the mockup's calibration claim"),
+        ("day streak", "a streak label with no source behind it"),
+        ("about 9 minutes", "the mockup's run length"),
+    ):
+        assert literal not in shipped, f"{what} reached the shipped interface: {literal!r}"
+
+
+def test_the_session_screen_reports_absence_rather_than_inventing_a_figure(
+    client: TestClient,
+) -> None:
+    """A fresh operator has no measured axis, and the session screen must say so.
+
+    The weakest-axis card is the one place a zero could be dressed up as a finding. `dashboard`
+    already separates "not measured" from "measured at zero"; this holds the interface to the
+    same distinction, because the card's whole purpose is to name a weakness and naming one that
+    does not exist is the never-invent rule broken on the most prominent card on the screen.
+    """
+    script = client.get("/ui/app.js").text
+    weakest = script[script.index("function weakest(") : script.index("function fillGameLayer(")]
+    assert "c.measured" in weakest, (
+        "the weakest axis is chosen without checking `measured`, so an axis with no attempts"
+        " can be reported as the operator's weakest"
+    )
+    assert "Not measured yet" in script, "the no-data branch of the weakest card is gone"
+    assert "claim the data cannot support" in script, (
+        "the reason the empty state exists is no longer stated where the next reader will be"
+    )
+
+
 def test_the_interface_honours_an_inverted_axis(client: TestClient) -> None:
     """A magnitude axis runs brighter upward, and a client that ignored the flag would invert
     the signature it is teaching. The flag is honoured in the renderer, not merely received."""
