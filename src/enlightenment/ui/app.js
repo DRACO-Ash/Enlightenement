@@ -47,6 +47,13 @@ const state = {
   confidence: 0,
   servedAt: 0,
   busy: false,
+  /* The game layer: streak chip, rank slot, debrief stat cards. ON by the owner's decision of
+   * 08 September, as prototyped, and a flag rather than a hardcoded truth so it can be turned
+   * off without unpicking three screens. The flight plan's audience section argues the other
+   * way - operators "motivated by competence and mission readiness, not by trivia or streaks" -
+   * so the flag is where that disagreement lives until one document gives. */
+  showGameLayer: true,
+  library: { procedures: [], query: '', status: 'all' },
 };
 
 function el(tag, className, text) {
@@ -502,22 +509,79 @@ function drawStimulus(stimulus) {
 
 /* ---------------------------------------------------------------- the drill loop */
 
+/* A RADIO GROUP, which the handoff lists as a gap to close. Five buttons carrying `aria-pressed`
+ * announce themselves as five independent toggles, and this control is single-select: that is a
+ * screen reader being told something untrue about the form. `radio` roles plus one tab stop and
+ * arrow-key movement is what the pattern actually is. */
 function renderConfidence() {
   const group = document.getElementById('confidence-group');
   clear(group);
-  for (const option of CONFIDENCE) {
+  CONFIDENCE.forEach((option, index) => {
     const button = el('button', null, null);
     button.type = 'button';
-    button.setAttribute('aria-pressed', String(state.confidence === option.step));
+    button.setAttribute('role', 'radio');
+    const chosen = state.confidence === option.step;
+    button.setAttribute('aria-checked', String(chosen));
+    /* One tab stop for the whole group: the checked option, or the first when none is. */
+    button.tabIndex = chosen || (state.confidence === 0 && index === 0) ? 0 : -1;
     button.appendChild(el('span', null, option.label));
-    button.appendChild(document.createTextNode(' '));
     button.appendChild(el('span', null, `${option.probability}`));
     button.addEventListener('click', () => {
       state.confidence = option.step;
       renderConfidence();
+      document.querySelector('#confidence-group [aria-checked="true"]').focus();
+    });
+    button.addEventListener('keydown', (event) => {
+      const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      const next = (index + step + CONFIDENCE.length) % CONFIDENCE.length;
+      state.confidence = CONFIDENCE[next].step;
+      renderConfidence();
+      document.querySelector('#confidence-group [aria-checked="true"]').focus();
     });
     group.appendChild(button);
-  }
+  });
+}
+
+/* ---------------------------------------------------------------- the countdown */
+
+/* The cue's own target, counted down by the CLIENT for display only. The score's elapsed time is
+ * measured server-side from `served_at` and this number never reaches it - the same reason
+ * `elapsed_ms` is accepted on the submission and then discarded. So a paused tab, a slow frame or
+ * a hostile clock changes what the operator sees and cannot change what they are awarded. */
+const countdown = { timer: 0, left: 0, target: 0 };
+
+function stopCountdown() {
+  if (countdown.timer) window.clearInterval(countdown.timer);
+  countdown.timer = 0;
+}
+
+function paintCountdown() {
+  const host = document.getElementById('countdown');
+  const fill = document.getElementById('countdown-fill');
+  const readout = document.getElementById('countdown-n');
+  const remaining = Math.max(0, countdown.left);
+  fill.style.width = countdown.target > 0
+    ? `${Math.max(0, Math.min(100, (remaining / countdown.target) * 100))}%`
+    : '0%';
+  /* Never colour alone: past the target the WORD changes as well as the hue. */
+  readout.textContent = remaining > 0 ? `${remaining}s` : 'over';
+  host.classList.toggle('out', remaining === 0);
+}
+
+function startCountdown(seconds) {
+  stopCountdown();
+  countdown.target = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : 0;
+  countdown.left = countdown.target;
+  paintCountdown();
+  if (!countdown.target) return;
+  countdown.timer = window.setInterval(() => {
+    countdown.left -= 1;
+    paintCountdown();
+    if (countdown.left <= 0) stopCountdown();
+  }, 1000);
 }
 
 const RESPONSE_LABELS = {
@@ -546,14 +610,24 @@ async function loadDrill() {
   releasePlotRefits();
   clear(document.getElementById('stimuli'));
   try {
+    document.getElementById('ops').classList.remove('hidden');
     const drill = await api('/api/v1/drill/next');
     state.drill = drill;
     state.confidence = 0;
     state.servedAt = Date.now();
-    document.getElementById('drill-kicker').textContent = `${drill.item_id} · ${drill.cue_id || 'no cue'}`;
+    /* The id row, built from the served identifiers rather than composed as one string, so the
+     * divider is a rule between two facts instead of a punctuation mark inside one. */
+    const idrow = document.getElementById('drill-kicker');
+    clear(idrow);
+    idrow.appendChild(el('b', null, drill.item_id));
+    idrow.appendChild(el('span', null, drill.cue_id || 'no cue'));
+    idrow.appendChild(el('span', 'div'));
+    idrow.appendChild(el('span', null, `rated ${drill.elo}`));
+    idrow.appendChild(el('span', null, `target ${drill.time_target_s}s`));
     document.getElementById('drill-prompt').textContent = drill.prompt;
     document.getElementById('drill-meta').textContent =
-      `Rated ${drill.elo}. Target ${drill.time_target_s} seconds. Content ${drill.content_hash.slice(0, 12)}.`;
+      `Content ${drill.content_hash.slice(0, 12)}.`;
+    startCountdown(drill.time_target_s);
     const host = document.getElementById('stimuli');
     for (const stimulus of drill.stimulus) host.appendChild(drawStimulus(stimulus));
     document.getElementById('response-label').textContent =
@@ -563,6 +637,7 @@ async function loadDrill() {
     document.getElementById('answer-form').classList.remove('hidden');
     document.getElementById('response').focus();
   } catch (error) {
+    stopCountdown();
     banner(error.message);
     document.getElementById('drill-prompt').textContent = 'No drill available.';
   }
@@ -570,26 +645,98 @@ async function loadDrill() {
 
 const VERDICT_GLYPH = { accept: '▲', partial: '◆', reject: '▼', none: '○', unscorable: '○' };
 
+const VERDICT_WORD = {
+  accept: 'called it',
+  partial: 'right, and imprecise',
+  reject: 'a named wrong answer',
+  none: 'not a recognised answer',
+  unscorable: 'could not be scored',
+};
+
+const VERDICT_HEADING = {
+  accept: 'Right call.',
+  partial: 'Right, and imprecise.',
+  reject: 'That is a named wrong answer.',
+  none: 'Not a recognised answer.',
+  unscorable: 'This item could not be scored.',
+};
+
+/* One stat card. `delta` is optional and decides the arrow class, so a rating that moved down is
+ * not painted as a gain. */
+function statCard(key, value, detail, direction) {
+  const card = el('div', 's');
+  card.appendChild(el('div', 'k', key));
+  card.appendChild(el('div', 'v', value));
+  if (detail) card.appendChild(el('div', `d${direction ? ` ${direction}` : ''}`, detail));
+  return card;
+}
+
+/* The debrief. Replaces the drill body once a call is committed.
+ *
+ * The three stat cards are gated on `showGameLayer` per the handoff, and all three carry REAL
+ * fields off the scored payload: the rating and its delta, the calibration verdict with its
+ * Brier score, and when the cue comes back. The handoff's third card is a streak, which has no
+ * source in this API, so the slot carries the spacing interval instead - a figure an operator
+ * can act on rather than one invented to fill a card. */
 function renderReveal(result) {
   const host = document.getElementById('reveal');
   clear(host);
+  stopCountdown();
 
+  const sheet = el('div', 'debrief');
+
+  const called = el('div', 'called');
+  called.appendChild(el('span', `ring ${result.matched}`, VERDICT_GLYPH[result.matched] || '○'));
+  called.appendChild(el('span', `what ${result.matched}`,
+    `${VERDICT_WORD[result.matched] || 'scored'} · ${result.item_id}`));
+  sheet.appendChild(called);
+
+  /* The verdict block keeps its class contract and its glyph: a verdict never rests on colour,
+   * and it is never styled through the recency token. */
   const verdict = el('div', `verdict ${result.matched}`);
   const heading = el('h3');
   heading.appendChild(el('span', 'glyph', VERDICT_GLYPH[result.matched] || '○'));
-  heading.appendChild(document.createTextNode(
-    result.matched === 'accept' ? 'Correct.'
-      : result.matched === 'partial' ? 'Right, and imprecise.'
-      : result.matched === 'reject' ? 'That is a named wrong answer.'
-      : result.matched === 'unscorable' ? 'This item could not be scored.'
-      : 'Not a recognised answer.'));
+  heading.appendChild(document.createTextNode(VERDICT_HEADING[result.matched] || 'Scored.'));
   verdict.appendChild(heading);
   if (result.why_wrong) verdict.appendChild(el('p', null, result.why_wrong));
-  if (result.note) verdict.appendChild(el('p', null, result.note));
   if (result.explain) verdict.appendChild(el('p', null, result.explain));
-  host.appendChild(verdict);
+  sheet.appendChild(verdict);
 
-  host.appendChild(el('h2', null, 'Where the score went'));
+  if (state.showGameLayer) {
+    const stats = el('div', 'stats');
+    const delta = result.rating_delta;
+    stats.appendChild(statCard(
+      'rating',
+      result.rating_after === null ? 'unchanged' : String(result.rating_after),
+      delta === null || delta === 0 ? 'no change' : `${delta > 0 ? '+' : ''}${delta}`,
+      delta === null || delta === 0 ? '' : delta > 0 ? 'up' : 'down',
+    ));
+    stats.appendChild(statCard(
+      'calibration',
+      result.brier === null ? 'not scored' : result.brier.toFixed(3),
+      result.calibration,
+      '',
+    ));
+    stats.appendChild(statCard(
+      'back in',
+      result.next_due_in_days === 1 ? '1 day' : `${result.next_due_in_days} days`,
+      'spacing interval',
+      '',
+    ));
+    sheet.appendChild(stats);
+  }
+
+  /* The operator-habit panel. Its text is the AUTHORED coaching line off the scored payload, not
+   * a phrase composed here: a habit this interface made up would be a claim about a person. */
+  const habit = result.note;
+  if (habit) {
+    const panel = el('div', 'habit');
+    panel.appendChild(el('div', 'k', 'operator / habit'));
+    panel.appendChild(el('div', 't', habit));
+    sheet.appendChild(panel);
+  }
+
+  sheet.appendChild(el('h2', null, 'Where the score went'));
   const table = el('table');
   const head = el('thead');
   const headRow = el('tr');
@@ -609,23 +756,36 @@ function renderReveal(result) {
   const totalRow = el('tr');
   totalRow.appendChild(el('td', null, 'Total'));
   totalRow.appendChild(el('td', 'r em', result.total.toFixed(2)));
-  totalRow.appendChild(el('td', null, `Rating ${result.rating_before} to ${result.rating_after}. Due again in ${result.next_due_in_days} day${result.next_due_in_days === 1 ? '' : 's'}.`));
+  totalRow.appendChild(el('td', null,
+    `Rating ${result.rating_before} to ${result.rating_after}.`));
   body.appendChild(totalRow);
   table.appendChild(body);
   const wrap = el('div', 'tablewrap');
   wrap.appendChild(table);
-  host.appendChild(wrap);
+  sheet.appendChild(wrap);
 
-  host.appendChild(el('p', 'note', `Calibration: ${result.calibration}. Brier ${result.brier.toFixed(3)}.`));
   if (result.unimplemented_rules && result.unimplemented_rules.length) {
-    host.appendChild(el('p', 'panel-note',
+    sheet.appendChild(el('p', 'panel-note',
       `${result.unimplemented_rules.length} rule(s) in this rubric have no predicate yet and were not evaluated: ${result.unimplemented_rules.join(', ')}.`));
   }
+  if (result.unimplemented_aggregation && result.unimplemented_aggregation.length) {
+    sheet.appendChild(el('p', 'panel-note',
+      `Aggregation the rubric asks for and this evaluator does not apply: ${result.unimplemented_aggregation.join(', ')}.`));
+  }
 
-  const next = el('button', 'act', 'Next drill');
+  const buttons = el('div', 'buttons');
+  const next = el('button', 'act', 'Next cue →');
   next.type = 'button';
   next.addEventListener('click', loadDrill);
-  host.appendChild(next);
+  buttons.appendChild(next);
+  const read = el('button', 'act2', 'Show the procedure');
+  read.type = 'button';
+  read.addEventListener('click', () => show('library'));
+  buttons.appendChild(read);
+  sheet.appendChild(buttons);
+
+  host.appendChild(sheet);
+  document.getElementById('ops').classList.add('hidden');
   host.classList.remove('hidden');
   next.focus();
 }
@@ -665,64 +825,187 @@ async function submitAnswer(event) {
 
 /* ---------------------------------------------------------------- other surfaces */
 
+/* A banded estimate bar plus its figure, sharing one colour band and always carrying the WORD.
+ * The handoff bands by colour alone; the flight plan forbids status by colour alone, so the band
+ * name rides along with the number. */
+function estimateCell(competency) {
+  const cell = el('div', 'est');
+  if (!competency.measured) {
+    cell.appendChild(el('span', 'fig', 'not measured'));
+    return cell;
+  }
+  const entry = band(competency.estimate);
+  const suffix = entry.cls.replace('s-', '');
+  const track = el('div', `bar b-${suffix === 'strong' ? 'good' : suffix === 'accent' ? 'accent' : suffix === 'shaky' ? 'shaky' : 'bad'}`);
+  const fill = el('i');
+  fill.style.width = `${Math.round(competency.estimate * 100)}%`;
+  track.appendChild(fill);
+  cell.appendChild(track);
+  /* The INTERVAL rides with the figure, always. The flight plan calls a bare estimate a claim
+   * the data cannot support, and the handoff's own Progress table shows one; this keeps both the
+   * handoff's bar and the plan's interval. */
+  const low = Math.round(competency.interval[0] * 100);
+  const high = Math.round(competency.interval[1] * 100);
+  cell.appendChild(el('span',
+    `fig f-${suffix === 'strong' ? 'good' : suffix === 'accent' ? 'accent' : suffix === 'shaky' ? 'shaky' : 'bad'}`,
+    `${Math.round(competency.estimate * 100)} (${low}\u2013${high})`));
+  return cell;
+}
+
 async function loadProgress() {
+  const cards = document.getElementById('progress-cards');
   const host = document.getElementById('progress-body');
+  clear(cards);
   clear(host);
   try {
     const me = await api('/api/v1/me');
-    document.getElementById('progress-identity').textContent = me.identity;
-    const table = el('table');
-    const head = el('thead');
-    const headRow = el('tr');
-    for (const label of ['Competency', 'Attempts', 'Estimate', 'Interval']) {
-      headRow.appendChild(el('th', label === 'Competency' ? null : 'r', label));
-    }
-    head.appendChild(headRow);
-    table.appendChild(head);
-    const body = el('tbody');
+    fillGameLayer(me);
+
+    const measured = me.competencies.filter((c) => c.measured);
+    const weak = weakest(me.competencies);
+    cards.appendChild(statCard('drill rating', String(me.drill_rating),
+      `${me.runs_total} ${me.runs_total === 1 ? 'answer' : 'answers'} recorded`, ''));
+    cards.appendChild(statCard('measured axes', `${measured.length} of ${me.competencies.length}`,
+      measured.length ? 'estimated from your own calls' : 'nothing measured yet', ''));
+    cards.appendChild(statCard('weakest',
+      weak ? `${Math.round(weak.estimate * 100)}` : 'none yet',
+      weak ? weak.name : 'no axis has an attempt', ''));
+    cards.appendChild(statCard('due now', String(me.due_now),
+      me.due_now === 1 ? 'one cue scheduled' : 'cues scheduled', ''));
+    for (const card of cards.children) card.classList.add('s');
+
+    const grid = el('div', 'grid-rows');
+    const header = el('div', 'hd');
+    header.appendChild(el('span', null, 'Competency'));
+    header.appendChild(el('span', null, 'Estimate and interval'));
+    header.appendChild(el('span', 'at', 'Calls'));
+    header.appendChild(el('span', 'nx', 'Mean brier'));
+    grid.appendChild(header);
     for (const competency of me.competencies) {
-      const tr = el('tr');
-      tr.appendChild(el('td', null, competency.name || competency.competency_id));
-      tr.appendChild(el('td', 'r', String(competency.attempts)));
-      /* "Not measured" and "measured at zero" are different statements and are rendered
-       * differently. A bare estimate never appears: the interval is part of the value. */
-      tr.appendChild(el('td', 'r', competency.measured ? `${Math.round(competency.estimate * 100)}%` : 'not measured'));
-      tr.appendChild(el('td', 'r', competency.interval
-        ? `${Math.round(competency.interval[0] * 100)} to ${Math.round(competency.interval[1] * 100)}`
-        : '—'));
-      body.appendChild(tr);
+      const row = el('div', 'rw');
+      row.appendChild(el('span', 'nm', competency.name || competency.competency_id));
+      row.appendChild(estimateCell(competency));
+      row.appendChild(el('span', 'at', String(competency.attempts)));
+      row.appendChild(el('span', 'nx',
+        competency.mean_brier === null ? '\u2014' : competency.mean_brier.toFixed(3)));
+      grid.appendChild(row);
     }
-    table.appendChild(body);
-    const wrap = el('div', 'tablewrap');
-    wrap.appendChild(table);
-    host.appendChild(wrap);
-    host.appendChild(el('p', 'note',
-      `Drill rating ${me.drill_rating}. ${me.runs_total} answers recorded. ${me.due_now} items due now.`));
+    host.appendChild(grid);
+    document.getElementById('progress-identity').textContent = me.identity;
+  } catch (error) {
+    banner(error.message);
+  }
+}
+
+/* The status chips. Derived from the statuses the CONTENT actually declares rather than the
+ * handoff's `Protect / Defend / Reporting`, which are its own invention: a filter offering a
+ * category the library does not contain is a control that can only ever return nothing. */
+function renderLibraryChips() {
+  const host = document.getElementById('library-chips');
+  clear(host);
+  const statuses = ['all', ...new Set(
+    state.library.procedures.map((p) => p.status).filter(Boolean).sort(),
+  )];
+  for (const status of statuses) {
+    const chip = el('button', null, status);
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', String(state.library.status === status));
+    chip.addEventListener('click', () => {
+      state.library.status = status;
+      renderLibraryChips();
+      renderLibraryCards();
+    });
+    host.appendChild(chip);
+  }
+}
+
+function renderLibraryCards() {
+  const grid = document.getElementById('library-grid');
+  clear(grid);
+  const query = state.library.query.trim().toLowerCase();
+  const shown = state.library.procedures.filter((procedure) => {
+    if (state.library.status !== 'all' && procedure.status !== state.library.status) return false;
+    if (!query) return true;
+    return `${procedure.id} ${procedure.name} ${procedure.purpose || ''}`.toLowerCase().includes(query);
+  });
+  for (const procedure of shown) {
+    /* A BUTTON, not a div with a click handler: it is keyboard reachable and announces itself. */
+    const card = el('button', 'proc');
+    card.type = 'button';
+    const top = el('div', 'top');
+    top.appendChild(el('span', 'pid', procedure.id));
+    top.appendChild(el('span', 'mast', procedure.status || 'status unstated'));
+    card.appendChild(top);
+    card.appendChild(el('h3', null, procedure.name || procedure.id));
+    /* The AUTHORED purpose, which is what the card is for. No mastery percentage: the handoff
+     * shows one per card and nothing in this API measures mastery per procedure, so the slot
+     * beside the id carries the content's own status instead of an invented figure. */
+    card.appendChild(el('p', null, procedure.purpose || 'No purpose recorded for this procedure.'));
+    const tags = el('div', 'tags');
+    if (procedure.regime) tags.appendChild(el('span', null, procedure.regime));
+    tags.appendChild(el('span', null,
+      `${procedure.steps} ${procedure.steps === 1 ? 'step' : 'steps'}`));
+    card.appendChild(tags);
+    card.addEventListener('click', () => openProcedure(procedure.id));
+    grid.appendChild(card);
+  }
+  if (!shown.length) {
+    const empty = el('button', 'proc empty');
+    empty.type = 'button';
+    empty.disabled = true;
+    empty.appendChild(el('span', 'pid', 'nothing matches'));
+    empty.appendChild(el('h3', null, query ? `No procedure matches \u201c${state.library.query}\u201d` : 'No procedure in this status'));
+    empty.appendChild(el('p', null, 'Clear the search or pick another status.'));
+    grid.appendChild(empty);
+  }
+}
+
+/* One procedure, in full, fetched on demand from the route that serves the document. Rendered
+ * as TEXT through `el`, never as markup: every value here is authored content and
+ * `test_the_interface_never_writes_an_untrusted_value_as_markup` binds that. */
+async function openProcedure(procedureId) {
+  const host = document.getElementById('library-body');
+  clear(host);
+  try {
+    const document_ = await api(`/api/v1/content/procedure/${encodeURIComponent(procedureId)}`);
+    const procedure = document_.procedure;
+    const scope = el('div', 'scope');
+    const head = el('div', 'scope-head');
+    head.appendChild(el('b', null, procedure.name || procedure.id));
+    head.appendChild(el('span', null, procedure.id));
+    head.appendChild(el('span', null, procedure.status || 'status unstated'));
+    scope.appendChild(head);
+    const panels = el('div', 'panels');
+    for (const [key, value] of Object.entries(procedure)) {
+      if (['id', 'name', 'status'].includes(key)) continue;
+      const panel = el('div', null);
+      panel.appendChild(el('p', 'panel-title', key.replace(/_/g, ' ')));
+      panel.appendChild(el('p', null, typeof value === 'string' ? value : JSON.stringify(value, null, 1)));
+      panels.appendChild(panel);
+    }
+    scope.appendChild(panels);
+    host.appendChild(scope);
+    host.scrollIntoView({ block: 'nearest' });
   } catch (error) {
     banner(error.message);
   }
 }
 
 async function loadLibrary() {
-  const host = document.getElementById('library-body');
-  clear(host);
+  clear(document.getElementById('library-body'));
   try {
-    const manifest = await api('/api/v1/content/manifest');
-    const scope = el('div', 'scope');
-    const head = el('div', 'scope-head');
-    head.appendChild(el('span', null, 'Loaded content'));
-    head.appendChild(el('span', null, `hash ${manifest.content_hash.slice(0, 16)}`));
-    scope.appendChild(head);
-    const list = el('div', 'legend');
-    for (const [kind, count] of Object.entries(manifest.counts)) {
-      list.appendChild(el('span', null, `${kind}: ${count}`));
+    const index = await api('/api/v1/content/procedures');
+    state.library.procedures = index.procedures;
+    const search = document.getElementById('library-search');
+    if (!search.dataset.wired) {
+      search.addEventListener('input', () => {
+        state.library.query = search.value;
+        renderLibraryCards();
+      });
+      search.dataset.wired = 'yes';
     }
-    scope.appendChild(list);
-    scope.appendChild(el('div', 'foot', `Thresholds from ${manifest.thresholds_source}.`));
-    host.appendChild(scope);
-    if (!manifest.scored_scenarios_ready) {
-      host.appendChild(el('p', 'banner', manifest.why_not_ready));
-    }
+    renderLibraryChips();
+    renderLibraryCards();
   } catch (error) {
     banner(error.message);
   }
@@ -762,6 +1045,7 @@ function weakest(competencies) {
 function fillGameLayer(me) {
   const chip = document.getElementById('game-layer');
   const rank = document.getElementById('rank-block');
+  if (!state.showGameLayer) return;
   document.getElementById('streak-n').textContent = String(me.runs_total);
   document.getElementById('streak-unit').textContent = me.runs_total === 1 ? 'answer recorded' : 'answers recorded';
   chip.classList.remove('hidden');

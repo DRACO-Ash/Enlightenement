@@ -14,11 +14,13 @@ from __future__ import annotations
 from enlightenment.training.drill import (
     DEMONSTRATION_OPERATOR,
     DRILL_RUBRIC_ID,
+    MAX_SERVED_PROSE,
     DrillError,
     DrillLoop,
     ScoredDrill,
     ServedDrill,
     bounded_reason,
+    capped,
 )
 from enlightenment.training.progress import (
     AxisProgress,
@@ -46,6 +48,7 @@ __all__ = [
     "CONFIDENT_AT",
     "DEMONSTRATION_OPERATOR",
     "DRILL_RUBRIC_ID",
+    "MAX_SERVED_PROSE",
     "UNSURE_AT",
     "AxisProgress",
     "CueSchedule",
@@ -61,6 +64,7 @@ __all__ = [
     "bounded_reason",
     "brier_score",
     "calibration_verdict",
+    "capped",
     "confidence_probability",
     "expected_score",
     "explain_score",

@@ -197,7 +197,10 @@
   }
 
   /* ---------------------------------------------------------------- session */
-  .split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; }
+  .split {
+    display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px;
+    align-items: start;
+  }
   .hero {
     position: relative; overflow: hidden; padding: 30px; border-radius: var(--r-hero);
     border: 1px solid var(--accent-border);
@@ -272,6 +275,162 @@
     padding: 10px 20px; background: var(--surface-4); border-top: 1px solid var(--border-hair);
     font-family: var(--data); font-size: 11px; color: var(--ink-ghost);
   }
+  /* ---------------------------------------------------------------- drill, direction 1a */
+  /* Two columns divided by a hairline, the ops console. The left column is evidence, the right
+   * rail is the act: countdown, question, answer, confidence, commit. Nothing else. */
+  .ops {
+    display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, .85fr);
+    border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden;
+    background: var(--surface);
+  }
+  .ops-left { padding: 28px; min-width: 0; }
+  .ops-rail {
+    padding: 28px; background: var(--surface-nav); border-left: 1px solid var(--border-nav);
+  }
+  .idrow {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 18px;
+    font-family: var(--data); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .idrow b { color: var(--ink); font-weight: 700; }
+  .idrow .div { width: 1px; height: 12px; background: var(--border-accent); }
+  .countdown { display: flex; align-items: center; gap: 12px; margin: 0 0 22px; }
+  .countdown .ct {
+    flex: 1 1 auto; height: 4px; border-radius: var(--r-chip); background: var(--surface-hover);
+    overflow: hidden;
+  }
+  .countdown .ct i {
+    display: block; height: 100%; border-radius: var(--r-chip); width: 100%;
+    background: linear-gradient(90deg, var(--accent-deep), var(--accent));
+    transition: width .9s linear;
+  }
+  .countdown .n {
+    min-width: 34px; text-align: right; font-family: var(--data); font-size: 13px;
+    font-weight: 700; color: var(--accent-hi);
+  }
+  .countdown.out .n { color: var(--warn); }
+  .ask { margin: 0 0 12px; font-size: 27px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; }
+
+  /* ---------------------------------------------------------------- the debrief */
+  .debrief { max-width: 820px; margin: 0 auto; padding: 40px 0 20px; }
+  .called { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; }
+  .called .ring {
+    display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-chip);
+    flex-shrink: 0; font-family: var(--data); font-size: 15px;
+  }
+  .called .ring.accept { background: var(--good-bg); border: 1px solid var(--good-border); color: var(--good); }
+  .called .ring.partial { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn); }
+  .called .ring.reject, .called .ring.none { background: var(--surface-2); border: 1px solid var(--bad); color: var(--bad); }
+  .called .ring.unscorable { background: var(--surface-2); border: 1px solid var(--border-accent); color: var(--ink-faint); }
+  .called .what {
+    font-family: var(--data); font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+  }
+  .called .what.accept { color: var(--good); } .called .what.partial { color: var(--warn); }
+  .called .what.reject, .called .what.none { color: var(--bad); }
+  .called .what.unscorable { color: var(--ink-faint); }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }
+  .stats .s {
+    padding: 18px; border: 1px solid var(--border); border-radius: var(--r-card);
+    background: var(--surface);
+  }
+  .stats .s .k {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-label);
+  }
+  .stats .s .v { margin-top: 6px; font-size: 22px; font-weight: 700; }
+  .stats .s .d {
+    margin-top: 4px; font-family: var(--data); font-size: 12px; color: var(--ink-meta);
+    line-height: 1.45;
+  }
+  .stats { align-items: start; }
+  .stats .s .d.up { color: var(--good); } .stats .s .d.down { color: var(--bad); }
+  .habit {
+    display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 16px; margin: 22px 0;
+    padding: 16px 18px; background: var(--warn-bg); border-left: 3px solid var(--warn);
+    border-radius: 0 12px 12px 0;
+  }
+  .habit .k {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--warn-dim);
+  }
+  .habit .t { color: var(--warn-text); font-size: 14.5px; }
+  .debrief .buttons { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
+
+  /* ---------------------------------------------------------------- progress */
+  .cards4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 26px; }
+  .cards4 .s { padding: 20px; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface); }
+  .cards4 .k {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-label);
+  }
+  .cards4 .v { margin: 8px 0 2px; font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+  .cards4 .v.warn { color: var(--warn); } .cards4 .v.good { color: var(--good); }
+  .cards4 .n { font-size: 13px; color: var(--ink-meta); }
+  .grid-rows {
+    display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: var(--r-card); overflow: hidden;
+  }
+  .grid-rows .hd, .grid-rows .rw {
+    display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 92px 120px; gap: 20px;
+    align-items: center; padding: 17px 22px; background: var(--surface);
+  }
+  .grid-rows .hd {
+    background: var(--surface-3); font-family: var(--data); font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .grid-rows .nm { font-size: 15px; font-weight: 600; min-width: 0; }
+  .grid-rows .est { display: flex; align-items: center; gap: 12px; }
+  .grid-rows .est .bar { flex: 1 1 auto; }
+  .grid-rows .est .fig {
+    font-family: var(--data); font-size: 12.5px; font-weight: 700; min-width: 62px;
+    text-align: right; white-space: nowrap;
+  }
+  .grid-rows .at, .grid-rows .nx {
+    font-family: var(--data); font-size: 12.5px; text-align: right; color: var(--ink-meta);
+    white-space: nowrap;
+  }
+  .grid-rows .nx.due { color: var(--warn); }
+  .b-good > i { background: var(--good); } .b-accent > i { background: var(--accent); }
+  .b-shaky > i { background: var(--warn); } .b-bad > i { background: var(--bad); }
+  .f-good { color: var(--good); } .f-accent { color: var(--accent); }
+  .f-shaky { color: var(--warn); } .f-bad { color: var(--bad); }
+
+  /* ---------------------------------------------------------------- library */
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+  .filters input[type="search"] { flex: 1 1 280px; min-width: 280px; border-color: var(--border-strong); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips button {
+    padding: 9px 16px; border-radius: var(--r-chip); cursor: pointer; white-space: nowrap;
+    background: none; border: 1px solid var(--border-accent); color: var(--ink-dim);
+    font-family: var(--display); font-size: 13px; font-weight: 600; transition: all .12s;
+  }
+  .chips button:hover { color: var(--ink); }
+  .chips button[aria-pressed="true"] {
+    background: var(--accent-wash); border-color: var(--accent); color: var(--accent-hi);
+  }
+  .cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .proc {
+    display: block; width: 100%; text-align: left; padding: 24px; border-radius: var(--r-card);
+    background: var(--surface); border: 1px solid var(--border); cursor: pointer;
+    font-family: var(--display); color: var(--ink); transition: all .18s;
+  }
+  .proc:hover { border-color: var(--accent-hover-border); transform: translateY(-2px); }
+  .proc .top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+  .proc .pid {
+    font-family: var(--data); font-size: 12px; color: var(--accent); white-space: nowrap;
+    letter-spacing: .06em;
+  }
+  .proc .mast { margin-left: auto; font-family: var(--data); font-size: 12px; white-space: nowrap; }
+  .proc h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+  .proc p { margin: 0; font-size: 13.5px; color: var(--ink-meta); }
+  .proc .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+  .proc .tags span {
+    padding: 3px 8px; border-radius: 5px; background: var(--surface-row-hi);
+    font-family: var(--data); font-size: 10.5px; color: var(--ink-faint); white-space: nowrap;
+  }
+  .proc.empty { border-style: dashed; border-color: var(--border-accent); cursor: default; }
+  .proc.empty:hover { transform: none; border-color: var(--border-accent); }
+
   /* ---------------------------------------------------------------- stimulus panels */
   .scope {
     margin: 22px 0; border: 1px solid var(--border); border-radius: var(--r-card);
@@ -413,21 +572,37 @@
   </section>
 
   <section id="view-drill" class="hidden">
-    <p class="kicker" id="drill-kicker">Drill</p>
-    <h1 id="drill-prompt">Loading a drill…</h1>
-    <p class="note" id="drill-meta"></p>
-    <div id="stimuli"></div>
+    <div class="ops" id="ops">
+      <div class="ops-left">
+        <p class="idrow" id="drill-kicker"></p>
+        <div id="stimuli"></div>
+      </div>
+      <aside class="ops-rail">
+        <div class="countdown" id="countdown">
+          <span class="label" style="margin:0">Time</span>
+          <div class="ct"><i id="countdown-fill"></i></div>
+          <!-- A numeric readout, polite rather than assertive, and never the only cue: the
+               label goes amber and the word changes when the target has passed. -->
+          <span class="n" id="countdown-n" role="timer" aria-live="polite">—</span>
+        </div>
+        <h1 class="ask" id="drill-prompt">Loading a drill…</h1>
+        <p class="note" id="drill-meta"></p>
 
-    <form id="answer-form" class="hidden">
-      <label for="response" id="response-label">Your call</label>
-      <input type="text" id="response" name="response" autocomplete="off" maxlength="300"
-             placeholder="type the call" aria-describedby="response-help">
-      <p class="note" id="response-help">No list. You produce the answer, which is the only thing that builds recall.</p>
-      <label for="confidence-group">How sure are you</label>
-      <div class="steps" id="confidence-group" role="group" aria-label="Confidence"></div>
-      <p class="note">Scored by a proper rule. Overclaiming costs more than admitting doubt, so say what you actually believe.</p>
-      <button type="submit" class="act" id="submit">Call it</button>
-    </form>
+        <form id="answer-form" class="hidden">
+          <label for="response" id="response-label">Your call</label>
+          <input type="text" id="response" name="response" autocomplete="off" maxlength="300"
+                 placeholder="type the call" aria-describedby="response-help">
+          <p class="note" id="response-help">No list. You produce the answer, which is the only thing that builds recall.</p>
+          <!-- A radio group, not five buttons: the handoff names that as a gap to close, and a
+               single-select control that announces itself as five independent toggles is a
+               screen-reader telling the operator something untrue about the form. -->
+          <span class="label" style="margin-top:22px" id="confidence-label">How sure are you</span>
+          <div class="steps" id="confidence-group" role="radiogroup" aria-labelledby="confidence-label"></div>
+          <p class="note">Scored by a proper rule. Overclaiming costs more than admitting doubt, so say what you actually believe.</p>
+          <button type="submit" class="act" id="submit">Call it</button>
+        </form>
+      </aside>
+    </div>
 
     <div id="reveal" class="hidden" aria-live="polite"></div>
   </section>
@@ -435,17 +610,25 @@
   <section id="view-progress" class="hidden">
     <p class="kicker">Progress</p>
     <h1>Where you stand</h1>
-    <p class="sub">Eight competencies, each estimated from your own calls rather than from how many drills you finished.</p>
-    <p class="note" id="progress-identity"></p>
+    <p class="sub">Every competency is estimated from your own calls rather than from how many drills you finished.</p>
+    <div class="cards4" id="progress-cards"></div>
     <div id="progress-body"></div>
+    <p class="note" id="progress-identity"></p>
   </section>
 
   <section id="view-library" class="hidden">
     <p class="kicker">Library</p>
     <h1>The procedures behind the drills</h1>
-    <p class="sub">Read them cold, or come here from a call you got wrong. Read freely: the library is never gated and never scored.</p>
+    <p class="sub">Read them cold, or come here from a call you got wrong. The library is never gated and never scored.</p>
+    <div class="filters">
+      <input type="search" id="library-search" placeholder="Search the procedures"
+             aria-label="Search the procedures" autocomplete="off">
+      <div class="chips" id="library-chips" role="group" aria-label="Filter by status"></div>
+    </div>
+    <div class="cardgrid" id="library-grid"></div>
     <div id="library-body"></div>
   </section>
+
 </main>
 
 <script src="/ui/app.js" defer></script>

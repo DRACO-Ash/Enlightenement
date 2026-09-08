@@ -2,6 +2,86 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.0 (2026-09-08)
+
+**What.** The application, rather than a shell. All four screens redesigned to the 08 September
+handoff in its palette, the 1a ops console built as the owner chose, the debrief built, and the
+whole thing driven end to end in a real browser rather than declared working. A minor bump
+because this is the release that makes the interface the product.
+
+**Driven, not asserted.** The app was started and driven in Chromium: every screen visited, a
+real cue answered through to the debrief, a procedure opened. Captured from that run - Session,
+Drill, Progress, Library and the debrief render; the drill id row reads `DRL-0005 · CUE-026 ·
+RATED 1250 · TARGET 20S` off the served payload; the countdown starts at 20s; one stimulus panel
+draws; exactly one confidence radio is checked; the debrief shows its verdict, its glyph and
+three stat cards; the library lists thirteen procedures with three status chips and opens a
+document. **No console error, no page error, no failed request.** A green suite says the code is
+consistent with itself; this says the product works.
+
+**Direction 1a, the ops console.** Two columns divided by a hairline. Left: the id row built from
+the served identifiers, then the stimulus panels - which are already real charts driven by
+observation data, not the hand-placed marks the handoff prototyped. Right rail: the countdown,
+the question at 27px, the answer field, the confidence control, and `Call it` full width.
+
+**The countdown counts for the OPERATOR and never for the score.** It runs client-side from the
+cue's own `time_target_s`. The award is computed server-side from `served_at`, which is why
+`elapsed_ms` is accepted on the submission and then discarded, so a paused tab, a slow frame or a
+hostile clock changes what the operator sees and cannot change what they are given. Past the
+target the readout says `over` as well as turning amber, because status never rests on colour.
+
+**The confidence control is a radio group now.** Five buttons carrying `aria-pressed` announce
+themselves as five independent toggles when the control is single-select: a screen reader being
+told something untrue about the form. It is `radiogroup` with one tab stop and arrow-key
+movement. The handoff lists this as a gap to close.
+
+**The debrief.** Verdict ring with its glyph, the authored explanation, three stat cards, the
+score decomposition, and the rubric's own disclosure of rules it could not evaluate. All three
+cards carry REAL fields: the rating and its signed delta, the Brier score with the calibration
+verdict beside it, and when the cue returns. **The handoff's third card is a streak, which has no
+source in this API**, so the slot carries the spacing interval - a figure an operator can act on
+rather than one invented to fill a card. The operator-habit panel takes the authored coaching
+line and nothing else; a habit this interface composed would be a claim about a person.
+
+**Progress and Library, to spec and driven by the API.** Four summary cards over a banded
+competency grid, with the interval riding beside every estimate because the flight plan calls a
+bare number a claim the data cannot support. The library gets a working search and status chips
+**derived from the statuses the content actually declares** rather than the handoff's
+`Protect / Defend / Reporting`, which are its own invention: a filter offering a category the
+library does not contain is a control that can only ever return nothing.
+
+**One new route, and the controls made me declare it.** The library screen needed a list of
+procedures and none existed, so it shipped a filler line on every card.
+`GET /api/v1/content/procedures` serves identifiers, a bounded purpose and a step COUNT -
+**5,226 bytes** against the 64 kB library ceiling - with the step lists left on the per-procedure
+route behind the document budget, because inlining thirteen documents is exactly the
+content-sized-body fault this register has closed eleven times. Adding it failed the build in
+four places until it was named to the read-route review and the anonymous size sweep, which is
+those controls working rather than obstructing.
+
+**Complexity was fixed, not raised.** The new route tipped `_register_library` to 11 against
+ruff's cap of 10. The index builder is now a module-level helper. Extracting the body is the fix;
+raising the cap would have been the suppression.
+
+**Four visual defects found by looking at it and corrected.** The verdict line was stated twice,
+as a heading and again inside the verdict block. The calibration card overflowed to four lines
+because the API returns prose there, so the Brier score is the figure and the prose is the detail.
+The habit panel duplicated text already on screen, so it takes `note` alone while the verdict
+block keeps `why_wrong` and `explain`. And the session hero stretched to the height of two
+stacked cards beside it.
+
+**Version.** V0.27.0 rather than V0.26.44, taking the consolidating option that has been open
+since V0.26.35. The interface is a different product from the one V0.26.x shipped and the
+App Store record should say so.
+
+**Verified.** Verification loop green, 1,016 passed and 2 skipped, coverage 97.83%, `pip-audit`
+clean on three lockfiles. Driven in a browser as above.
+
+**Still true and still recorded:** no `engineering-reviewer` or `security-reviewer` verdict exists
+for anything since V0.26.36, and this release changes production code substantially - a new
+anonymous route and a rewritten interface - so the argument that carried V0.26.41's packaging
+decision no longer applies. Both gates need to run against this head, and `docs/DEPLOYMENT.md`
+says so on both rows.
+
 ## V0.26.43 (2026-09-08)
 
 **What.** The design handoff of 08 September, first increment: the palette adopted verbatim, the

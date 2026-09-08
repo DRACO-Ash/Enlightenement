@@ -49,6 +49,7 @@ from enlightenment.training.drill import (
     MAX_SERVED_DUE_ITEMS,
     MAX_SERVED_PARAMS,
     MAX_SERVED_PROMPT,
+    MAX_SERVED_PROSE,
     MAX_SERVED_WITHHELD,
     MAX_WITHHOLD_REASON,
     TRUNCATION_MARK,
@@ -507,6 +508,36 @@ def test_the_interface_never_writes_an_untrusted_value_as_markup(client: TestCli
     assert "createElementNS" in script
 
 
+def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClient) -> None:
+    """A NEW anonymous route, so it is bounded per entry and it does not carry the documents.
+
+    The library screen needed a list and no route served one. An index is the cheap way to give
+    it one and also the easy way to reintroduce the fault this project has closed eleven times:
+    inline the thirteen procedures and the index becomes a content-sized body on an anonymous
+    route. So the index carries identifiers, a bounded purpose and a step COUNT, and the step
+    lists stay on the per-procedure route behind the document budget.
+
+    Bounded per entry as well as in total, for the reason the sibling routes give: an anonymous
+    route that echoes an authored string echoes whatever length the author gave it, and
+    `content/models.py` sets no maximum on any of them.
+    """
+    body = client.get("/api/v1/content/procedures")
+    assert body.status_code == 200, body.text
+    payload = body.json()
+    assert payload["count"] == len(payload["procedures"])
+    assert payload["procedures"], "the index is empty, so this test measures nothing"
+    for entry in payload["procedures"]:
+        assert set(entry) == {"id", "name", "status", "purpose", "regime", "steps"}, sorted(entry)
+        assert len(entry["id"]) <= MAX_CONTENT_STRING, entry["id"]
+        assert len(entry["name"]) <= MAX_CONTENT_STRING, entry["name"]
+        assert len(entry["regime"]) <= MAX_CONTENT_STRING, entry["regime"]
+        assert len(entry["purpose"]) <= MAX_SERVED_PROSE, entry["id"]
+        #: A count, not the steps. If this ever becomes a list the index has swallowed the
+        #: documents and the size ceiling below is the only thing left holding it.
+        assert isinstance(entry["steps"], int), entry["id"]
+    assert len(body.content) <= MAX_ANONYMOUS_LIBRARY_BYTES, len(body.content)
+
+
 def _tokens(document: str) -> dict[str, str]:
     """Every `--name: #hex` declared in the shipped `:root`, parsed from the document itself.
 
@@ -797,6 +828,11 @@ ANONYMOUS_ROUTES_SWEPT = {
     "GET /api/v1/content/manifest": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
     "GET /api/v1/diagnostics": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
     "GET /api/v1/me": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,
+    #: The procedure INDEX, swept on the library budget like the documents it points at.
+    #: It is bounded per entry as well - `served_identifier` on the id, `capped` on the
+    #: prose - because an index over thirteen procedures with unbounded names is the same
+    #: content-sized body as the documents, one indirection along.
+    "GET /api/v1/content/procedures": MAX_ANONYMOUS_LIBRARY_BYTES,
     "GET /api/v1/content/procedure/{procedure_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
     "GET /api/v1/content/product/{product_id}": MAX_ANONYMOUS_LIBRARY_BYTES,
     "GET /api/v1/drill/next": MAX_ANONYMOUS_DIAGNOSTIC_BYTES,

@@ -42,13 +42,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from enlightenment.audit import log_event
 from enlightenment.content import CONTENT_DIR_VARIABLE, ContentPackage
-from enlightenment.identifiers import served_identifier, utf8
+from enlightenment.identifiers import MAX_CONTENT_STRING, served_identifier, utf8
 from enlightenment.scoring import MAX_ANSWER_LENGTH
 from enlightenment.training import (
     DEMONSTRATION_OPERATOR,
+    MAX_SERVED_PROSE,
     DrillError,
     DrillLoop,
     bounded_reason,
+    capped,
 )
 
 #: How many content errors either anonymous route serves. A NAMED constant across both, because
@@ -285,6 +287,26 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             ),
         }
 
+    @app.get("/api/v1/content/procedures")
+    async def procedure_index() -> dict[str, Any]:
+        """The procedures an operator may read, as an index rather than in full.
+
+        The library screen needs a LIST and no route served one, so it had nothing to render from.
+        Deliberately not the documents: the per-procedure route below already serves those under
+        the same document budget, and an index that inlined thirteen full procedures would be a
+        content-sized body on an anonymous route, which is the class this project has closed
+        eleven times.
+
+        Every field is bounded on the way out, by the conventions the sibling routes already use:
+        `served_identifier` for an id, because two ids differing past the cap would otherwise
+        merge into one entry the interface then keys on, and `capped` for prose, because a name is
+        operator-facing text and a silent cut reads as the name somebody chose.
+        """
+        if not content.result.ok:
+            raise _content_unavailable(content.result.errors)
+        index = _procedure_index(content)
+        return _within_document_budget({"procedures": index, "count": len(index)}, "index")
+
     @app.get("/api/v1/content/procedure/{procedure_id}")
     async def procedure_detail(procedure_id: str) -> dict[str, Any]:
         """One procedure, in full. The library is a reference, so nothing here is withheld."""
@@ -313,6 +335,36 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             {"product": found.model_dump(mode="json"), "layout": content.layout(product_id)},
             product_id,
         )
+
+
+def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
+    """The library list: identifiers, a bounded purpose, and a step COUNT.
+
+    A module-level helper rather than a loop inside the registrar, because the registrar was at
+    ruff's complexity cap and one more route tipped it. Extracting the body is the fix; raising
+    the cap would be the suppression.
+
+    `purpose` and `regime` are AUTHORED prose and an authored term, so both are bounded on the
+    way out - prose on the prose cap, the term on the string cap - for the reason the sibling
+    routes give: an anonymous route that echoes an authored string echoes whatever length the
+    author gave it, and `content/models.py` sets no maximum on any of them.
+    """
+    index: list[dict[str, Any]] = []
+    for procedure in content.procedures:
+        extra = procedure.model_extra or {}
+        index.append(
+            {
+                "id": served_identifier(procedure.id),
+                "name": capped(procedure.name, MAX_CONTENT_STRING),
+                "status": capped(procedure.status, MAX_CONTENT_STRING),
+                "purpose": capped(extra.get("purpose", ""), MAX_SERVED_PROSE),
+                "regime": capped(extra.get("regime", ""), MAX_CONTENT_STRING),
+                #: A COUNT, not the steps: the document route serves those, and inlining thirteen
+                #: step lists here is the content-sized body this index exists to avoid.
+                "steps": len(extra.get("steps") or []),
+            }
+        )
+    return index
 
 
 def _within_document_budget(document: dict[str, Any], identifier: str) -> dict[str, Any]:

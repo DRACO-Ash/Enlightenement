@@ -379,6 +379,7 @@ REVIEWED_READ_ROUTES: dict[str, tuple[str, bool]] = {
     "/ui/": ("unauthenticated", False),
     "/ui/{filename}": ("unauthenticated", False),
     "/api/v1/content/manifest": ("unauthenticated", False),
+    "/api/v1/content/procedures": ("unauthenticated", False),
     "/api/v1/content/procedure/{procedure_id}": ("unauthenticated", False),
     "/api/v1/content/product/{product_id}": ("unauthenticated", False),
     "/api/v1/drill/next": ("unauthenticated", False),
