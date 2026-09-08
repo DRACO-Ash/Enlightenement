@@ -942,10 +942,16 @@ function renderLibraryCards() {
      * beside the id carries the content's own status instead of an invented figure. */
     card.appendChild(el('p', null, procedure.purpose || 'No purpose recorded for this procedure.'));
     const tags = el('div', 'tags');
-    /* One pill per regime. The route serves a list because the content holds one; joining them
-     * into a string here would put the join back in the interface's hands and it was a Python
-     * repr on screen that made this a list in the first place. */
-    for (const regime of procedure.regime || []) tags.appendChild(el('span', null, regime));
+    /* One pill per regime, and a non-array is a RENDERING FAULT rather than something to
+     * iterate. `for...of` over a string yields characters, so a string-shaped payload split
+     * into one pill per letter on the client exactly as it did on the server. The boundary
+     * refuses that shape now; this is the second line of defence, and it says so on screen
+     * rather than drawing something plausible. */
+    if (Array.isArray(procedure.regime)) {
+      for (const regime of procedure.regime) tags.appendChild(el('span', null, regime));
+    } else if (procedure.regime !== undefined && procedure.regime !== null) {
+      tags.appendChild(el('span', null, 'regime unreadable, TBC re-verify'));
+    }
     tags.appendChild(el('span', null,
       `${procedure.steps} ${procedure.steps === 1 ? 'step' : 'steps'}`));
     card.appendChild(tags);

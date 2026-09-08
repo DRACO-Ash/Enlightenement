@@ -342,6 +342,64 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
         )
 
 
+def _content_shape_fault(procedure_id: str, field: str, value: Any) -> HTTPException:
+    """503 naming the procedure and the field whose SHAPE is wrong, never a 500.
+
+    The TYPE is the diagnosis and the value is not served: an authored value has no declared
+    maximum, and this module already refuses to echo one unbounded. A type name is bounded by
+    construction and is what an author needs to find the record.
+    """
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "content_unavailable",
+            "message": (
+                f"The procedure index cannot be served: {field} on"
+                f" {served_identifier(procedure_id)} is a {type(value).__name__}, and the"
+                " schema declares it otherwise. One malformed record is a content fault, not a"
+                " server fault."
+            ),
+        },
+    )
+
+
+def _authored_text(value: Any, limit: int, *, procedure_id: str, field: str) -> str:
+    """Authored prose, bounded - or a content fault if it is not prose at all.
+
+    **This exists because `capped` stringifies whatever it is handed.** `capped(value: Any)` calls
+    `str()`, which never fails, so a list-shaped `purpose` served
+    `"['a purpose in two', 'parts']"` to an operator: correctly bounded, correctly escaped and
+    correctly wrong. V0.27.1 fixed exactly that fault on `regime` and left it standing on
+    `purpose` one line above, which is why this is a TYPE gate at the boundary rather than a
+    third field-by-field repair. A number is accepted and rendered, because an authored numeric
+    is a legitimate scalar; a container is not.
+    """
+    if value is None:
+        return ""
+    #: `str` ONLY. An earlier draft admitted `int` and `float` as "legitimate scalars", which let
+    #: `purpose: 7` render as the text "7" on a library card. The schema declares every field
+    #: this gate guards as a string, so a number here is a shape fault like any other container,
+    #: and the gate is named for text.
+    if isinstance(value, str):
+        return capped(value, limit)
+    raise _content_shape_fault(procedure_id, field, value)
+
+
+def _authored_sequence(value: Any, *, procedure_id: str, field: str) -> list[Any]:
+    """An authored list, or a content fault.
+
+    A bare string is REFUSED rather than iterated: slicing a string yields characters, so a
+    string-shaped `regime` rendered ten one-letter pills, and a mapping or a number raised
+    `KeyError: slice(...)` or `TypeError` out of the slice and reached the caller as an
+    undiagnosed 500 - one malformed record killing the index for every procedure.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    raise _content_shape_fault(procedure_id, field, value)
+
+
 def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
     """The library list: identifiers, a bounded purpose, and a step COUNT.
 
@@ -357,24 +415,39 @@ def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
     index: list[dict[str, Any]] = []
     for procedure in content.procedures:
         extra = procedure.model_extra or {}
+        identifier = procedure.id
+        regimes = _authored_sequence(extra.get("regime"), procedure_id=identifier, field="regime")
+        #: A COUNT, not the steps: the document route serves those, and inlining thirteen step
+        #: lists here is the content-sized body this index exists to avoid. It is a count OF A
+        #: LIST, checked: `len()` over a mapping counted its keys and over a string counted its
+        #: characters, and both answered 200 with a plausible number in place of a step count.
+        steps = _authored_sequence(extra.get("steps"), procedure_id=identifier, field="steps")
         index.append(
             {
-                "id": served_identifier(procedure.id),
-                "name": capped(procedure.name, MAX_CONTENT_STRING),
-                "status": capped(procedure.status, MAX_CONTENT_STRING),
-                "purpose": capped(extra.get("purpose", ""), MAX_SERVED_PROSE),
-                #: A LIST in the content, so a list on the wire. `capped` stringifies whatever
-                #: it is given, which put a Python repr - `['LEO', 'MEO', 'GEO', 'HEO']` - on an
-                #: operator's screen. Each regime is bounded individually and the count is
-                #: capped, because per-entry length and entry count are different limits and
-                #: neither substitutes for the other.
+                "id": served_identifier(identifier),
+                "name": _authored_text(
+                    procedure.name, MAX_CONTENT_STRING, procedure_id=identifier, field="name"
+                ),
+                "status": _authored_text(
+                    procedure.status, MAX_CONTENT_STRING, procedure_id=identifier, field="status"
+                ),
+                "purpose": _authored_text(
+                    extra.get("purpose"),
+                    MAX_SERVED_PROSE,
+                    procedure_id=identifier,
+                    field="purpose",
+                ),
+                #: Each regime bounded individually and the count capped, because per-entry
+                #: length and entry count are different limits and neither substitutes for the
+                #: other. Each ENTRY goes through the text gate too: a list of lists would
+                #: otherwise put a repr inside a pill.
                 "regime": [
-                    capped(entry, MAX_CONTENT_STRING)
-                    for entry in (extra.get("regime") or [])[:MAX_SERVED_REGIMES]
+                    _authored_text(
+                        entry, MAX_CONTENT_STRING, procedure_id=identifier, field="regime"
+                    )
+                    for entry in regimes[:MAX_SERVED_REGIMES]
                 ],
-                #: A COUNT, not the steps: the document route serves those, and inlining thirteen
-                #: step lists here is the content-sized body this index exists to avoid.
-                "steps": len(extra.get("steps") or []),
+                "steps": len(steps),
             }
         )
     return index

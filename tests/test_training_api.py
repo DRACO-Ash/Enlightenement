@@ -512,6 +512,131 @@ def test_the_interface_never_writes_an_untrusted_value_as_markup(client: TestCli
     assert "createElementNS" in script
 
 
+#: Re-authored SHAPES for one served field at a time, with what the route must answer. The
+#: hostile tree beside this one stretches string LEAVES and preserves every container by
+#: construction, so it certifies length and entry count and is structurally blind to type. That
+#: blindness is not hypothetical: it is why four fields rendered a wrong value and two answered
+#: an undiagnosed 500 under a green 1,016-test suite.
+#: The fields the INDEX gate guards. These are `model_extra` fields, so the content model
+#: declares no type for them and nothing refuses them before this route does.
+SHAPE_FAULTS = (
+    ("purpose", ["a purpose in two", "parts"]),
+    ("purpose", {"text": "mapping purpose"}),
+    ("purpose", 7),
+    ("regime", "LEOMEOGEOHEO"),
+    ("regime", {"primary": "GEO"}),
+    ("regime", 7),
+    ("steps", {"a": 1, "b": 2, "c": 3}),
+    ("steps", "seven steps in prose"),
+)
+
+#: `name` and `status` are DECLARED `str` on the model, so a container there fails validation at
+#: LOAD and the whole tree is refused before any route runs. A different control, a different
+#: message, and the right answer either way - recorded so the difference is deliberate rather
+#: than a gap somebody has to rediscover.
+DECLARED_FIELD_FAULTS = (
+    ("name", ["a", "name"]),
+    ("status", {"state": "active"}),
+)
+
+
+@pytest.mark.parametrize(("field", "value"), SHAPE_FAULTS)
+def test_a_misshapen_content_field_is_a_diagnosed_503_and_never_a_500(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    """The class V0.27.1 fixed on ONE field, closed at the boundary for all of them.
+
+    `capped(value: Any, ...)` calls `str()`, which never fails, so a container-shaped authored
+    field was served as a Python repr: `"['a purpose in two', 'parts']"` on a library card,
+    correctly bounded, correctly escaped and correctly wrong. V0.27.1 repaired `regime` and left
+    `purpose` exposed one line above it, and the repair itself introduced a worse fault - slicing
+    a mapping raises `KeyError: slice(None, 10, None)` and slicing a number raises `TypeError`,
+    so ONE malformed record answered 500 with a 26-byte body and killed the index for all
+    thirteen procedures.
+
+    The schema requires the right shapes and `tools/validate_content.py` runs as loop leg 2, so
+    this is authoring-time guarded - but the loader performs no schema validation at load, which
+    makes the guard advisory rather than binding. A route whose contract says a content fault is
+    a 503 naming the fault must not answer 500 because an author typed a mapping.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    path = root / "procedures" / "procedures-core.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document if isinstance(document, list) else document["procedures"]
+    rows[0][field] = value
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=Config(
+            port=8080,
+            host="127.0.0.1",
+            data_dir=tmp_path / "data",
+            team_token="",
+            allowed_origin="",
+            build_id="test",
+        ),
+        store=TrainingStore(tmp_path / "data"),
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/v1/content/procedures")
+    assert response.status_code == 503, (
+        f"{field}={value!r} answered {response.status_code}; a misshapen authored field is a"
+        " content fault and this route's contract says a content fault is a diagnosed 503"
+    )
+    detail = response.json()["detail"]
+    assert detail["error"] == "content_unavailable", detail
+    #: The field and the TYPE are named, because that is what an author needs to find the record.
+    assert field in detail["message"], detail["message"]
+    assert type(value).__name__ in detail["message"], detail["message"]
+    #: The VALUE is never echoed: an authored value has no declared maximum.
+    assert "parts" not in detail["message"], detail["message"]
+
+
+@pytest.mark.parametrize(("field", "value"), DECLARED_FIELD_FAULTS)
+def test_a_misshapen_declared_field_is_refused_at_load_not_by_the_route(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    """A declared field of the wrong shape never reaches the route, and that is correct.
+
+    `Procedure.name` and `Procedure.status` are declared `str`, so pydantic refuses the tree at
+    LOAD and every content route answers the loader's 503. The index gate beside this test only
+    ever sees `model_extra` fields, for which the model declares nothing. Asserted rather than
+    assumed, because "the route validates it" and "the model validates it" are different claims
+    and the first one is false here.
+    """
+    root = tmp_path / "content"
+    shutil.copytree(CONTENT_ROOT, root)
+    path = root / "procedures" / "procedures-core.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    rows = document if isinstance(document, list) else document["procedures"]
+    rows[0][field] = value
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    app = create_app(
+        config=Config(
+            port=8080,
+            host="127.0.0.1",
+            data_dir=tmp_path / "data",
+            team_token="",
+            allowed_origin="",
+            build_id="test",
+        ),
+        store=TrainingStore(tmp_path / "data"),
+        probe=ok_probe,
+        training=TrainingPaths(content_root=root, progress_path=tmp_path / "progress.json"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/v1/content/procedures")
+        health = client.get("/livez")
+    assert response.status_code == 503, response.status_code
+    assert response.json()["detail"]["error"] == "content_unavailable", response.text
+    #: The container is fine and the content is not, so liveness stays green.
+    assert health.status_code == 200, health.status_code
+
+
 def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClient) -> None:
     """A NEW anonymous route, so it is bounded per entry and it does not carry the documents.
 

@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.2 (2026-09-08)
+
+**What.** The deploy-gate found a real defect in the code V0.27.1 added, and it is the class
+V0.27.1 exists to fix, alive on the fields V0.27.1 did not touch. Every finding reproduced before
+anything was changed.
+
+**V0.27.1's repair introduced a worse fault than the one it fixed.** `regime` became a list and
+the route sliced it: `(extra.get("regime") or [])[:MAX_SERVED_REGIMES]`. A mapping raises
+`KeyError: slice(None, 10, None)` and a number raises `TypeError`, so ONE malformed record
+answered **HTTP 500 with a 26-byte body and killed the index for all thirteen procedures** - on a
+route whose own module contract says a content fault is a 503 naming the fault. Reproduced here
+before touching it.
+
+**And the repr class was still standing one line above the line that was fixed.** `purpose` went
+straight to `capped`, which calls `str()` and never fails, so a list-shaped purpose served
+`"['a purpose in two', 'parts']"` and a mapping served `"{'text': 'mapping purpose'}"` to an
+operator. A string-shaped `regime` rendered ten one-letter pills. A mapping-shaped `steps` served
+its key count and a string-shaped one its character count, both 200, both plausible, both wrong.
+**Fixing one field and calling the class closed is what produced this.**
+
+**Closed as a TYPE gate at the boundary, not a third field-by-field repair.** `_authored_text`
+accepts `str` and nothing else; `_authored_sequence` accepts `list` and nothing else; anything
+else raises the 503 the contract promises, naming the field and the TYPE. The value is never
+echoed, because an authored value has no declared maximum and this module already refuses to
+serve one unbounded.
+
+**My own first draft of that gate was wrong too, and the new test caught it.** `_authored_text`
+admitted `int` and `float` as "legitimate scalars", which let `purpose: 7` render as the text "7"
+on a card. The schema declares every field this gate guards as a string, so a number there is a
+shape fault like any other container. The gate is named for text and now takes only text.
+
+**The hostile-tree sweep is structurally blind to shape, and that is why none of this was
+caught.** Its `stretch` replaces string LEAVES and preserves every container by construction, so
+it certifies per-entry length and entry count and cannot express a type fault. A shape-hostile
+table now sits beside the length-hostile tree: eight re-authored shapes across `purpose`,
+`regime` and `steps`, each asserted to answer a diagnosed 503 rather than a 500 or a wrong 200.
+
+**`name` and `status` are a different control, asserted separately.** Both are DECLARED `str` on
+the content model, so a container there is refused at LOAD by pydantic and never reaches the
+route. Recorded with its own test because "the route validates it" and "the model validates it"
+are different claims, and the first is false for those two fields.
+
+**The client carries the same guard.** `for...of` over a string yields characters, so a
+string-shaped payload split into one pill per letter on the client exactly as it did on the
+server. A non-array `regime` now renders the unknown marker instead of being iterated.
+
+**Scope of the exposure, stated honestly.** `schemas/enlightenment.schema.json` requires the
+right shapes and `tools/validate_content.py` runs as verification leg 2, so this was
+authoring-time guarded. But the loader performs no schema validation at load - `jsonschema`
+appears nowhere in `content/loader.py` - so the guard was advisory rather than binding, and the
+shipped tree serves 200 with correct data throughout. This was a latent fault, not a live one.
+
+**Verified.** Verification loop green, 1,026 passed and 2 skipped, coverage 97.74%.
+
+**Still absent, and now less defensible than ever:** no `engineering-reviewer` or
+`security-reviewer` verdict since V0.26.36. The deploy-gate's own words are worth keeping - the
+missing reviews are "exactly the case the two reviewer gates exist for, and this run demonstrates
+the point rather than merely asserting it". A gate probing for fifteen minutes found what 1,016
+tests did not.
+
 ## V0.27.1 (2026-09-08)
 
 **What.** A Python repr reached an operator's screen, found by unzipping the V0.27.0 artefact,
