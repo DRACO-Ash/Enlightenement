@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.3 (2026-09-09)
+
+**What.** The App Store's own test job failed with 21 failures, 999 passes and 97.74% coverage.
+Every failure was in `tests/test_appstore_contract.py` and every one shared a single root cause:
+**the environment discriminator that decides "this tree is the upload artefact" was written as
+the ABSENCE of `.git`, and the platform imports the uploaded zip into its own git repository.**
+So `.git` was present, `tools/` and `design/` were not, and twenty-one tests asserted on files
+that another test in the same file proves must never ship.
+
+**The doctrine was right and the proxy was wrong.** A check that cannot run in an environment
+must SKIP with a written reason, never fail, and the discriminator was deliberately narrow so a
+skip could not fire too easily: not "the file is missing" but "the directory is gone AND there is
+no checkout". The second half was only ever a PROXY for "not a repository", and it broke the
+moment the artefact became one. **This project already knew that fact and then built a guard on
+its opposite.** The V0.23.1 row of this file, dated 2026-08-24, records "the App Store creates a
+GitLab repository, so `.git` is present" about a different test that guarded on `.git` being
+absent. `_udl_tool_or_skip` was written five days later, in V0.23.16, on the assumption that
+absent `.git` means "not a repository". One test was fixed, the class was left standing, and the
+written correction sat eight hundred lines away in the same document - the same failure mode
+V0.27.2 was about.
+
+**Closed by asking the question POSITIVELY, of the tree itself.** `ARTEFACT_ABSENT_DIRECTORIES`
+names the five top-level directories this repository tracks that the upload allowlist in
+`scripts/package-appstore.sh` leaves out - `.claude`, `design`, `schemas`, `spec`, `tools` - and
+`_is_upload_artefact()` is true when every one of them is missing at once. A repository cannot
+look like that by accident. Delete any single one and the other four remain, so the guarded tests
+still fail loudly, which is the whole reason the discriminator is narrow.
+
+**A fourth site was failing too, and only luck kept it off the red list.**
+`test_the_characteriser_is_tracked_in_the_repository` guards on the same absent `.git`, then on
+the `git` binary. The platform's test container has no `git`, so it skipped rather than failed -
+but in a checkout OF the artefact with git present, `git ls-files --error-unmatch
+tools/udl_characterise.py` answers correctly that a file the artefact must not carry is not
+tracked, and reports the artefact working as designed as a failure. Reproduced: 22 failures
+locally against 21 in the pipeline, the extra one being exactly this test. Now on the artefact
+signature like the other three.
+
+**The signature is a literal, so it is bound to both of the things it claims to be.** It has to
+be a literal: the artefact has no `git` to ask and the platform's container has no `git` binary
+either, so it cannot be computed where it is used. A remembered list rots, and a rotted signature
+widens silently, which turns a control into a skip.
+`test_the_artefact_signature_is_bound_to_the_allowlist_and_the_index` derives the excluded set
+from `git ls-files` minus the packaging allowlist and asserts equality with the tuple, so adding
+a top-level directory or editing one allowlist line fails in a checkout. It also asserts all five
+are on disk, because deleting all five in one commit is the only way to forge the signature in a
+repository, and that is the test that goes red when somebody does.
+`test_the_artefact_signature_needs_every_directory_absent` drives the narrowness property over
+synthetic trees: five repositories each missing one signature directory, none classified as the
+artefact, plus the artefact both unpacked and committed, both classified as one.
+
+**Verified in the environment that produced the failure, not only in the loop.** The V0.27.2
+artefact was unpacked, `git init` and committed to reproduce the platform exactly: 22 failed, 165
+passed with the shipped suite; 167 passed, 25 skipped with the fix, nothing failed. Then four of
+the five signature directories were recreated with `tools/` still absent, and all four guarded
+tests failed loudly again, which is the property the old discriminator claimed and this one has
+to keep. Loop green at head: 1028 passed, 2 skipped, coverage 97.74%.
+
+**Not done, and stated plainly.** Neither binding gate has run against the V0.27.x series. The
+engineering and security rows in `docs/DEPLOYMENT.md` carry that.
+
 ## V0.27.2 (2026-09-08)
 
 **What.** The deploy-gate found a real defect in the code V0.27.1 added, and it is the class
@@ -3378,7 +3438,11 @@ carries: a check that cannot run in an environment SKIPS with a written reason, 
 discriminator is deliberately narrow, because a skip that fires too easily is how a deleted
 control goes unnoticed: not "the file is missing" but "the whole `tools` directory is gone AND
 there is no checkout", which together describe an unpacked artefact and nothing else. Delete the
-tool in a repository and `.git` is still there, so the tests fail loudly. Plus the converse,
+tool in a repository and `.git` is still there, so the tests fail loudly.
+[**Retracted in V0.27.3**: "an unpacked artefact and nothing else" was false when written. The
+App Store imports the uploaded zip into its own git repository, which V0.23.1 had already
+recorded five days earlier, so the platform's test job is a checkout OF the artefact and this
+discriminator failed twenty-one tests there.] Plus the converse,
 `test_the_characteriser_is_tracked_in_the_repository`, read from `git ls-files` so an untracked
 stray copy does not satisfy it.
 
@@ -5929,7 +5993,10 @@ skipped while the suite reported green.
 
 The new "no prebuilt binaries" repository check used `git ls-files`, and asserted the call
 succeeded. The platform runs the suite against the EXTRACTED ARCHIVE, where there is no `.git`,
-so it failed in the pipeline simulation. Falling back to a tree walk then failed differently and
+so it failed in the pipeline simulation.
+[**Retracted in V0.27.3**: the PIPELINE SIMULATION runs against an extracted archive with no
+`.git`, and that is what caught this. The PLATFORM does not - it imports the zip into its own
+git repository, so `.git` is present there.] Falling back to a tree walk then failed differently and
 worse: 28 offenders, every one a `__pycache__/*.pyc` written by pytest seconds earlier. A test
 about what the upload contains, failing on its own side effect.
 

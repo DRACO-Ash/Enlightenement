@@ -62,6 +62,34 @@ DOCKER_INSTRUCTIONS = _instructions(DOCKERFILE)
 PLATFORM_MANAGED_ABSENCES = ("sonar-project.properties",)
 
 
+#: Every top-level DIRECTORY this repository tracks that the upload allowlist in
+#: `scripts/package-appstore.sh` leaves out. All of them absent AT ONCE is the positive signature
+#: of "this tree is the upload artefact, not a repository", and it is what the environment skips
+#: below discriminate on. `test_the_artefact_signature_is_bound_to_the_allowlist_and_the_index`
+#: binds this tuple to git's own index and to the allowlist, so a directory added or an allowlist
+#: line edited fails in a checkout rather than quietly widening the signature.
+ARTEFACT_ABSENT_DIRECTORIES = (".claude", "design", "schemas", "spec", "tools")
+
+
+def _is_upload_artefact(root: Path = ROOT) -> bool:
+    """True when this tree is the unpacked upload, so an excluded file cannot be asserted about.
+
+    The discriminator used to be "the excluded directory is gone AND there is no `.git`", which
+    described the unpacked zip and nothing else - until the App Store imported the uploaded zip
+    into ITS OWN git repository and ran this suite from a checkout of the artefact. Measured, in
+    project 1420: `.git` present, `tools/` and `design/` absent, twenty-one tests red on files
+    that another test in this file proves must not ship. Absence of `.git` was only ever a PROXY
+    for "not a repository", and the proxy broke the moment the artefact became one.
+
+    So the question is now asked positively, of the tree itself. Five directories, every one of
+    them tracked here and every one of them outside the upload allowlist, all missing together.
+    A repository cannot look like that by accident: delete any single one and the other four
+    remain, so the guarded tests still FAIL, loudly, which is the behaviour that matters. Delete
+    all five and the converse test fails instead, because it asserts they are on disk.
+    """
+    return not any((root / name).exists() for name in ARTEFACT_ABSENT_DIRECTORIES)
+
+
 def _require_local_file(name: str) -> Path:
     """Return the path, or skip when the platform checkout does not carry the file."""
     path = ROOT / name
@@ -3720,17 +3748,18 @@ def _udl_tool_or_skip() -> Path:
     DIFFERENT reason, so it gets its own discriminator rather than being folded into that tuple.
 
     The discriminator is deliberately narrow, because a skip that fires too easily is how a
-    deleted control goes unnoticed. It is not "the file is missing". It is "the whole `tools`
-    directory is gone AND there is no checkout", which together describe an unpacked artefact
-    and nothing else. Delete the tool in a repository and `.git` is still there, so these tests
-    FAIL, loudly, which is the behaviour that matters.
+    deleted control goes unnoticed. It is not "the file is missing", and it is no longer "the
+    directory is gone AND there is no checkout" either: see `_is_upload_artefact`, which the
+    App Store's own test job disproved by running this suite from a git checkout OF the artefact.
+    Delete the tool in a repository and the signature is not satisfied, so these tests FAIL,
+    loudly, which is the behaviour that matters.
     """
     if UDL_TOOL.is_file():
         return UDL_TOOL
-    if not (ROOT / "tools").exists() and not (ROOT / ".git").exists():
+    if _is_upload_artefact():
         pytest.skip(
-            "tools/ is absent and so is .git, which is the unpacked upload artefact. The"
-            " characteriser is excluded from the artefact on purpose"
+            f"none of {list(ARTEFACT_ABSENT_DIRECTORIES)} is present, which is the upload"
+            " artefact. The characteriser is excluded from it on purpose"
             " (test_the_workstation_tools_never_reach_the_upload_or_the_image asserts both"
             " exclusions), so it is not assertable here. It runs locally and in the CI test job."
         )
@@ -3744,15 +3773,23 @@ def test_the_characteriser_is_tracked_in_the_repository() -> None:
     nineteen tests skip rather than fail anywhere the artefact is what runs. Reading it from
     `git ls-files` rather than the filesystem means an untracked stray copy does not satisfy it.
 
-    The checkout guard comes BEFORE the binary guard, and the order is the point. The pipeline
+    The artefact guard comes BEFORE the binary guard, and the order is the point. The pipeline
     simulation masks `git` with a stub that exits 127 rather than removing it, so `shutil.which`
-    finds something and `_git_or_skip` does not fire; the artefact has no `.git` at all, which is
-    the honest reason this question cannot be asked there.
+    finds something and `_git_or_skip` does not fire; the honest reason this question cannot be
+    asked there is that the tree is the artefact, not a repository of it.
+
+    It is the artefact signature and not `.git` absence, for the reason `_is_upload_artefact`
+    records: the App Store imports the uploaded zip into its own repository, where `.git` exists
+    and `git ls-files --error-unmatch tools/udl_characterise.py` would answer, correctly, that a
+    file the artefact must not carry is not tracked. That is the artefact working as designed,
+    reported as a failure. Only the absence of a `git` binary in the platform's container kept
+    this test off the red list, which is luck, not a control.
     """
-    if not (ROOT / ".git").exists():
+    if _is_upload_artefact():
         pytest.skip(
-            "there is no checkout here, which is the unpacked artefact. Whether a file is tracked"
-            " in a repository is not a question that can be asked from outside the repository."
+            f"none of {list(ARTEFACT_ABSENT_DIRECTORIES)} is present, which is the upload"
+            " artefact. Whether a file is tracked in THIS project's repository is not a question"
+            " the artefact can answer, whether or not it has been committed somewhere."
         )
     tracked = subprocess.run(  # noqa: S603 - a resolved binary and a fixed, in-repo path
         [
@@ -3771,6 +3808,87 @@ def test_the_characteriser_is_tracked_in_the_repository() -> None:
         "tools/udl_characterise.py is not tracked in this repository, so the artefact-side skip"
         f" in _udl_tool_or_skip would hide its absence: {tracked.stderr.strip()}"
     )
+
+
+def test_the_artefact_signature_is_bound_to_the_allowlist_and_the_index() -> None:
+    """`ARTEFACT_ABSENT_DIRECTORIES` is derived, not remembered: bind it to both its sources.
+
+    The signature is a hardcoded literal because the artefact has no `git` to ask and the
+    platform's test container has no `git` binary either, so it cannot be computed where it is
+    used. A remembered list rots: add a top-level directory and the signature silently stops
+    being "every excluded directory", which is exactly the widening that turns a control into a
+    skip. So the literal is checked against the two things it claims to be, here, in a checkout:
+    git's index, and the allowlist in the packaging script.
+
+    It also asserts the five are on disk. That is the other half of the guard - deleting all five
+    in one commit is the only way to forge the signature in a repository, and this is the test
+    that goes red when somebody does.
+    """
+    if _is_upload_artefact():
+        pytest.skip(
+            f"none of {list(ARTEFACT_ABSENT_DIRECTORIES)} is present, which is the upload"
+            " artefact. What this project's repository tracks is not a question it can answer."
+        )
+    listed = subprocess.run(  # noqa: S603 - a resolved binary and a fixed, in-repo path
+        [_git_or_skip(), "-C", str(ROOT), "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tracked_directories = {
+        line.split("/", 1)[0] for line in listed.stdout.splitlines() if "/" in line
+    }
+    assert tracked_directories, "git listed no tracked file, so this test proves nothing"
+
+    script = (ROOT / "scripts" / "package-appstore.sh").read_text(encoding="utf-8")
+    directory_loop = re.search(r"^for dir in (.+); do$", script, re.MULTILINE)
+    assert directory_loop is not None, "the packaging script's directory allowlist moved"
+    staged = set(directory_loop.group(1).split())
+
+    excluded = tracked_directories - staged
+    assert set(ARTEFACT_ABSENT_DIRECTORIES) == excluded, (
+        "the artefact signature no longer names every tracked top-level directory the upload"
+        f" leaves out. Signature: {sorted(ARTEFACT_ABSENT_DIRECTORIES)}. Excluded by the"
+        f" allowlist: {sorted(excluded)}. Update the tuple, or the environment skips widen"
+        " without anybody choosing that."
+    )
+    absent = [name for name in ARTEFACT_ABSENT_DIRECTORIES if not (ROOT / name).is_dir()]
+    assert not absent, (
+        f"{absent} is tracked and excluded from the upload, and is not on disk in this checkout."
+        " Every directory in the signature must be present here, or a checkout can be mistaken"
+        " for the artefact and the guarded tests skip instead of failing."
+    )
+
+
+def test_the_artefact_signature_needs_every_directory_absent(tmp_path: Path) -> None:
+    """A repository with ONE control deleted is not an artefact, and must not be read as one.
+
+    This is the property the old `.git`-absence discriminator claimed and the new one has to
+    keep. Driven over synthetic trees rather than the live root, because the interesting cases
+    are the ones this checkout is not: a repository missing one signature directory, and an
+    artefact that HAS been committed somewhere - which is the App Store's own test job, and the
+    case that made twenty-one tests red.
+    """
+    for missing in ARTEFACT_ABSENT_DIRECTORIES:
+        tree = tmp_path / f"repository-without-{missing.lstrip('.')}"
+        (tree / ".git").mkdir(parents=True)
+        for name in ARTEFACT_ABSENT_DIRECTORIES:
+            if name != missing:
+                (tree / name).mkdir()
+        assert not _is_upload_artefact(tree), (
+            f"a repository with only {missing} deleted was read as the upload artefact, so every"
+            " test guarding an excluded file would skip rather than report the deletion"
+        )
+
+    for label, has_git in (("unpacked", False), ("committed", True)):
+        tree = tmp_path / f"artefact-{label}"
+        (tree / "src").mkdir(parents=True)
+        if has_git:
+            (tree / ".git").mkdir()
+        assert _is_upload_artefact(tree), (
+            f"the {label} artefact was not recognised as one, so tests would assert on files the"
+            " upload allowlist excludes on purpose"
+        )
 
 
 def test_the_workstation_tools_never_reach_the_upload_or_the_image() -> None:
@@ -3808,11 +3926,12 @@ def test_the_vendored_typeface_digests_match_the_files_on_disk() -> None:
     # The same discriminator as `_udl_tool_or_skip`, for the same reason and a different
     # directory: `design/` is excluded from the upload on purpose, asserted two definitions
     # above, so inside the unpacked artefact there is nothing here to recompute. Narrow on
-    # purpose - delete `design/` in a REPOSITORY and `.git` is still there, so this fails.
-    if not (ROOT / "design").exists() and not (ROOT / ".git").exists():
+    # purpose - delete `design/` in a REPOSITORY and the other four signature directories are
+    # still there, so this fails rather than skips.
+    if _is_upload_artefact():
         pytest.skip(
-            "design/ is absent and so is .git, which is the unpacked upload artefact. The"
-            " typefaces are excluded from the artefact on purpose"
+            f"none of {list(ARTEFACT_ABSENT_DIRECTORIES)} is present, which is the upload"
+            " artefact. The typefaces are excluded from it on purpose"
             " (test_the_design_directory_never_reaches_the_upload_or_the_image asserts both"
             " exclusions), so there is nothing here to recompute."
         )
@@ -3855,9 +3974,9 @@ def test_the_content_validator_runs_as_a_verification_leg() -> None:
     )
     # The loop text and the ruff exclusion both ship. The validator itself does NOT: `tools/` is
     # excluded from the upload on purpose, so inside the unpacked artefact there is no file to
-    # stat. Same narrow discriminator as `_udl_tool_or_skip`: `tools/` gone AND no checkout is an
-    # artefact and nothing else, and deleting the validator in a repository still fails here.
-    if (ROOT / "tools").exists() or (ROOT / ".git").exists():
+    # stat. Same discriminator as `_udl_tool_or_skip`, and deleting the validator - or the whole
+    # of `tools/` - in a repository still fails here rather than skipping.
+    if not _is_upload_artefact():
         assert (ROOT / "tools" / "validate_content.py").is_file(), (
             "the content validator is cited by two register rows and is not on disk"
         )

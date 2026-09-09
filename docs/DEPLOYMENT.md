@@ -19,7 +19,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
 | Content directory | `CONTENT_DIR`, and only that name. `ENLIGHTENMENT_CONTENT_DIR` was read by the loader's own resolver at V0.24.0 and is now dead. An operator who set it got the baked-in tree served over HTTP while the validator checked a different one, so verification leg 2 could pass green against content the server never loads. Set nowhere in the Dockerfile: platform injection wins, as for `PORT` and `DATA_DIR` |
-| Version | 0.27.2, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.27.3, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -156,7 +156,7 @@ the volume.
 ## Pre-submission checklist
 
 - [x] Verification loop green (`sh scripts/verify.sh`), 1,026 passed and 2 skipped, coverage 97.74%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.27.2`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.27.3`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
@@ -175,6 +175,13 @@ the volume.
       -- src/` is ONE line, and the `deploy-gate` reproduced it, which is why the risk was
       judged acceptable to package against, but the rule this checklist states elsewhere still
       holds: an absent verdict is not a pass. Run the gate on this head before this artefact is published, and treat any finding it returns as blocking.
+      **The "no production code moved" argument above is DEAD at this head, and stated plainly
+      rather than left to be inferred.** It described V0.26.37 to V0.26.41. Since then V0.27.0 to
+      V0.27.3 have shipped the interface, a new UNAUTHENTICATED route
+      (`GET /api/v1/content/procedures`), a type gate at the content boundary and this release's
+      test-environment discriminator: `git diff 705a4f3..HEAD -- src/` is now 5 files, 1,185
+      insertions and 176 deletions. No engineering verdict exists for any of it. The risk
+      judgement recorded above does not carry forward and must not be read as if it did.
 - [ ] `security-reviewer` PASS. **The last verdict was PASS on `705a4f3` (V0.26.36)**, after an
       exhaustive campaign: it swept all 1,112,064 Unicode scalar values against the free-text rule,
       killed all six cells of the three-field by two-route boundary matrix, instrumented the write
@@ -188,6 +195,11 @@ the volume.
       invalidated - but V0.26.39 and V0.26.40 both
       corrected a TEST of a privacy control on an unauthenticated route, and a PASS against an
       ancestor is not evidence about this tree. Run this gate on this head before publishing.
+      **The one-line claim above is DEAD at this head.** It was true of V0.26.41. V0.27.0 to
+      V0.27.3 add a new unauthenticated read route serving authored content, a type gate that
+      decides whether a malformed record answers 503 or 500, and 1,185 inserted lines across five
+      files. That is squarely in this gate's scope and has never been security-gated. The PASS on
+      `705a4f3` says nothing about it.
 - [ ] `deploy-gate` PASS. **Returned FAIL on `d4dfb0f` (V0.26.41), and it found NO DEFECT.** Two
       BLOCKERs, both statements about missing evidence rather than about this artefact: no
       `engineering-reviewer` verdict exists for V0.26.37 through V0.26.41, and the
