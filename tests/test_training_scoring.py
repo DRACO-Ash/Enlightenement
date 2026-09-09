@@ -27,6 +27,7 @@ from enlightenment.training.scoring import (
     calibration_verdict,
     confidence_probability,
     expected_score,
+    explain_score,
     next_interval_days,
     update_ratings,
 )
@@ -144,3 +145,35 @@ def test_the_spacing_ladder_only_ever_grows_and_is_bounded() -> None:
     """An interval that shrank with a longer streak would re-teach what is already known."""
     assert list(SPACING_DAYS) == sorted(SPACING_DAYS)
     assert next_interval_days(streak=999, correct=True) == SPACING_DAYS[-1]
+
+
+def test_the_classification_line_names_the_look_alike_it_landed_on() -> None:
+    """Three outcomes, and the middle one is the one that teaches.
+
+    `explain_score` had no test at all, which is why the evidence for its first rule could sit as
+    a conditional inside a conditional inside a keyword argument and nobody read it. The middle
+    branch is the point of a discrimination item: an operator who called the look-alike needs to
+    be told WHICH look-alike, not that nothing matched.
+    """
+    common = {"action_match": None, "probability": 0.5, "expert_cue": ""}
+
+    named, _ = explain_score(classification_match="BREAKUP", confused_with=None, **common)
+    assert "'BREAKUP'" in named[0].evidence
+    assert named[0].fired is True
+    assert named[0].awarded == 45.0
+
+    #: `confused_with` is IGNORED when the answer was right. A correct call that happens to carry
+    #: a look-alike name must not be reported as a confusion.
+    right_anyway, _ = explain_score(
+        classification_match="BREAKUP", confused_with="SEPARATION", **common
+    )
+    assert "look-alike" not in right_anyway[0].evidence
+
+    confused, _ = explain_score(classification_match=None, confused_with="SEPARATION", **common)
+    assert "'SEPARATION'" in confused[0].evidence
+    assert "look-alike" in confused[0].evidence
+    assert confused[0].fired is False
+    assert confused[0].awarded == 0.0
+
+    nothing, _ = explain_score(classification_match=None, confused_with=None, **common)
+    assert nothing[0].evidence == "answer matched no accepted classification for this item"

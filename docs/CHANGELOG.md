@@ -2,6 +2,77 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.6 (2026-09-09)
+
+**What.** The test stage passed. The CODE QUALITY gate then failed on two counts: **line coverage
+77.1% against a required 80%, and 52 new issues against a maximum of nought** - 49 code smells and
+3 bugs. Both are closed here. Every one of the 52 is fixed on its merits; no rule was disabled and
+no file was dropped from analysis.
+
+**The coverage figure was a measurement fault, and it needed the owner's decision.** `sonar.sources`
+is forced to `src`, the interface added in V0.27.0 puts 1,181 lines of JavaScript inside it, and the
+platform's generated pipeline runs `pip install` and `pytest` and nothing else - so a JavaScript
+coverage report cannot exist where the gate reads. Sonar counted roughly 826 executable lines as
+uncovered and scored 77.1% while the Python figure was 97.74%. The only mechanism that answers this
+inside the platform's fixed pipeline is `sonar.coverage.exclusions`, which is a suppression by this
+project's own rule, so it was **taken to the owner and approved rather than applied quietly**. It
+changes the coverage DENOMINATOR only: the files stay fully analysed and every JavaScript violation
+still counts against the zero-issue half of the same gate, which is why forty of the fixes below are
+in `app.js`. The alternative considered and rejected was committing a locally generated LCOV report
+the platform never regenerates, which goes stale in silence. Bound by
+`test_every_coverage_exclusion_is_declared_and_no_path_leaves_the_analysis`, which pins the set,
+requires a written reason beside the key, and asserts `sonar.exclusions` is ABSENT - the wider
+suppression wearing the same clothes.
+
+**Three bugs, and all three were real.**
+● `tests/test_drill_loop.py` asserted `served_identifier(ascii_text) == served_identifier(ascii_text)`.
+  True of every function that answers twice the same, and the persisted-format compatibility claim
+  above it rested on it. Now built independently from the digest and the marker.
+● `products.py` decided `drift_visible` with `drift_rate != 0.0` and `rate_clamped` with
+  `drift_rate != reported_rate`: exact equality on floats, answering whether two computations landed
+  on the same bit pattern. `_drift_rate` now returns a `DrawnRate` carrying `clamped` and `slopes`,
+  decided where the clamp's limit is in scope. No tolerance figure was invented, because none is
+  measured: the only zero this function can produce is an authored zero.
+● `app.js` sorted the library's status chips with a bare `.sort()`. Now `localeCompare`.
+
+**Eight functions over the cognitive-complexity cap, split by what they actually do.** `sizePlotText`
+into five named steps; `drawGroup` into a per-glyph mark builder; `drawTable` into a row builder and
+a cell formatter; `renderReveal` into seven section builders; `loadSession` into five painters;
+the waterfall `render` into a `_Neighbourhood` scene and a track builder; `ProgressStore.load` into
+three field rebuilders; `match_numeric` into an expected-value resolver. **Every split is
+behaviour-preserving and the ORDER of draws from the seeded stream is unchanged**, which is the
+property that matters for the waterfall: the determinism gate asserts one seed yields one identical
+log, and a reordered draw would change every waterfall this library ships while every assertion
+about it stayed true.
+
+**And the rest, each on its merits rather than to satisfy a rule.** Twelve nested ternaries became
+statements, two four-deep colour chains became two maps - which exposed that the CSS class for the
+middle band is `shaky` while the CSS variable is `--warn`, a difference that was buried in the third
+arm of a chain. Four literals written out three and four times became named constants, including the
+throttle message that three sites spelled separately. `Award.award` became `Award.awarded`, matching
+`ScoreLine.awarded`; the SERVED key stays `award`, because that is the content's own vocabulary in
+`rubrics.json`. Fourteen `a && a.b` chains became `a?.b`, and the axis-range pair became `??`, which
+is exactly what its three-part test was reaching for. One catch swallowed its error and showed a
+fixed sentence instead - the only handler in the file that told the operator less than it knew - and
+now surfaces the message like every other. `role="status"` became `<output>` and `role="group"`
+became a `<fieldset>` with an off-screen `<legend>`, which is a better accessible name than the
+`aria-label` it replaces.
+
+**`explain_score` had no test at all, and that is why its evidence string could sit as a conditional
+inside a conditional inside a keyword argument.** Extracting it left new uncovered lines, which is
+not something to ship, so it now has one: the middle branch is the point of a discrimination item,
+because an operator told "nothing matched" learns less than one told which look-alike they called.
+Coverage on `training/scoring.py` moved 81% to 94% as a result.
+
+**Verified beyond the loop, in a browser, because the tests cannot see a layout.** Loop green at
+head: 1,032 passed, 2 skipped, 97.77%. Then the server was run and all four screens driven in
+Chromium: no page error and no console error anywhere, the banner is an `<output>` and still hides,
+the chips are a `<fieldset>` whose legend computes to `inset(50%)` at 1px, thirteen library cards
+render their regime tags as pills, and a drill was answered through to a debrief with three stat
+cards, the rating delta in the down colour and the score decomposition intact.
+
+**Not done, and unchanged.** Neither binding gate has run against the V0.27.x series.
+
 ## V0.27.5 (2026-09-09)
 
 **What.** V0.27.4's own row overstated its evidence, and running the corrected simulation against

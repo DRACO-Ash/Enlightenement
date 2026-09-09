@@ -184,6 +184,24 @@ class ScoreLine:
     evidence: str
 
 
+def _classification_evidence(match: str | None, confused_with: str | None) -> str:
+    """Why the classification rule fired, or did not, in terms an operator can act on.
+
+    Three outcomes, and naming the LOOK-ALIKE is the one that teaches: an item that discriminates
+    against a confusable event should say which one the answer landed on. Written as a conditional
+    inside a conditional inside a keyword argument, which put the most useful of the three
+    sentences in the least readable position.
+    """
+    if match is not None:
+        return f"answer matched the accepted classification {match!r}"
+    if confused_with:
+        return (
+            f"answer matched {confused_with!r}, which is the look-alike this item"
+            " discriminates against"
+        )
+    return "answer matched no accepted classification for this item"
+
+
 def explain_score(
     *,
     classification_match: str | None,
@@ -207,16 +225,7 @@ def explain_score(
             awarded=45.0 if correct else 0.0,
             available=45.0,
             fired=correct,
-            evidence=(
-                f"answer matched the accepted classification {classification_match!r}"
-                if correct
-                else (
-                    f"answer matched {confused_with!r}, which is the look-alike this item"
-                    " discriminates against"
-                    if confused_with
-                    else "answer matched no accepted classification for this item"
-                )
-            ),
+            evidence=_classification_evidence(classification_match, confused_with),
         ),
         ScoreLine(
             rule="first-action-named",

@@ -84,14 +84,14 @@ function releasePlotRefits() {
 }
 
 function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  while (node.firstChild) node.firstChild.remove();
 }
 
 async function api(path, options) {
-  const response = await fetch(path, Object.assign({ headers: { 'accept': 'application/json' } }, options));
+  const response = await fetch(path, { headers: { 'accept': 'application/json' }, ...options });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = body && body.detail;
+    const detail = body?.detail;
     const message = (detail && (detail.message || detail.error)) || 'The request failed.';
     throw new Error(message);
   }
@@ -154,8 +154,10 @@ function extent(values) {
 
 function axisRange(axis, values) {
   const [low, high] = extent(values);
-  const min = axis && axis.minimum !== null && axis.minimum !== undefined ? axis.minimum : low;
-  const max = axis && axis.maximum !== null && axis.maximum !== undefined ? axis.maximum : high;
+  /* `??` is the whole of the old three-part test: it falls through for null AND undefined and
+   * keeps a legitimate 0, which is the case the long form existed to protect. */
+  const min = axis?.minimum ?? low;
+  const max = axis?.maximum ?? high;
   return min === max ? [min - 1, max + 1] : [min, max];
 }
 
@@ -185,7 +187,7 @@ function drawPanel(panel) {
     style: 'display:block',
   });
 
-  const supplied = (panel.y && panel.y.ticks) || [];
+  const supplied = panel.y?.ticks || [];
   const widest = supplied.reduce((most, [, text]) => Math.max(most, String(text).length), 0);
   const padLeft = Math.max(PAD.left, widest * AXIS_FONT_PX * TICK_ADVANCE_EM + TICK_GUTTER);
   const plotW = PLOT_WIDTH - padLeft - PAD.right;
@@ -194,7 +196,7 @@ function drawPanel(panel) {
   /* The inverted flag, honoured. Not a preference: a magnitude axis runs brighter upward. */
   const sy = (value) => {
     const t = (value - y0) / (y1 - y0);
-    return panel.y && panel.y.inverted
+    return panel.y?.inverted
       ? PAD.top + t * plotH
       : PAD.top + plotH - t * plotH;
   };
@@ -208,7 +210,7 @@ function drawPanel(panel) {
     ? suppliedTicks.map(([value, text]) => ({ y: sy(value), text }))
     : Array.from({ length: 5 }, (unused, i) => {
         const y = PAD.top + (i / 4) * plotH;
-        const value = panel.y && panel.y.inverted
+        const value = panel.y?.inverted
           ? y0 + (i / 4) * (y1 - y0)
           : y1 - (i / 4) * (y1 - y0);
         return { y, text: formatTick(value) };
@@ -263,7 +265,7 @@ function drawPanel(panel) {
   /* The axis says WHY it is inverted. This read "inverted, brighter upward" for every inverted
    * axis, which is true of a magnitude axis and nonsense on a timeline - and it was rendered on
    * every waterfall the product has ever drawn. */
-  const inversionNote = panel.y && panel.y.inverted
+  const inversionNote = panel.y?.inverted
     ? ` · inverted: ${(panel.y.inversion_note || 'see the panel note')}`
     : '';
   const yCaption = el('p', 'panel-note', `Vertical: ${axisCaption(panel.y)}${inversionNote}`);
@@ -288,66 +290,97 @@ function sizePlotText(frame) {
    * Widening changes the scale, which changes the size, so it iterates - bounded, because a
    * bounded loop that gives up slightly small beats an unbounded one that hangs the frame. */
   for (let pass = 0; pass < TEXT_FIT_PASSES; pass += 1) {
-    const box = frame.getBoundingClientRect();
-    const viewBox = frame.viewBox && frame.viewBox.baseVal;
-    if (!box.width || !viewBox || !viewBox.width) return;
-    const scale = box.width / viewBox.width;
-    if (!Number.isFinite(scale) || scale <= 0) return;
-    const size = Math.max(AXIS_FONT_PX / scale, AXIS_FONT_PX / 3);
-    for (const text of frame.querySelectorAll('text')) {
-      text.setAttribute('font-size', size.toFixed(2));
-    }
-
-    /* The horizontal labels sit BELOW the axis at offsets that must scale with the text, or they
-     * collide with the caption: at a 31-unit font the fixed 20 and 36 unit offsets overlap, which
-     * a screenshot at 430px showed plainly while every number was inside the box. Positioned from
-     * the size actually applied, and chosen to land on the original 240 and 256 at 13 units so the
-     * nominal design is unchanged. */
-    const axisY = PLOT_HEIGHT - PAD.bottom;
-    for (const tick of frame.querySelectorAll('[data-role="x-tick"]')) {
-      tick.setAttribute('y', (axisY + size * X_TICK_OFFSET_EM).toFixed(1));
-    }
-    for (const caption of frame.querySelectorAll('[data-role="x-caption"]')) {
-      caption.setAttribute('y', (axisY + size * X_CAPTION_OFFSET_EM).toFixed(1));
-    }
-
-    /* Expand on every side the text actually needs, not just the left: the same fixed-gutter
-     * fault applies to each edge, and only the left one had been found. */
-    let minX = viewBox.x;
-    let minY = viewBox.y;
-    let maxX = viewBox.x + viewBox.width;
-    let maxY = viewBox.y + viewBox.height;
-    for (const text of frame.querySelectorAll('text')) {
-      /* getBBox is guarded because it is not universally safe on an unrendered subtree: measured
-       * in Chromium it returns zeros inside a display:none container, and other engines throw
-       * rather than returning. A throw here would escape the requestAnimationFrame callback. The
-       * degraded path is the nominal build-time gutter, which is correct at full width. */
-      let bounds;
-      try {
-        bounds = text.getBBox();
-      } catch (unmeasurable) {
-        return;
-      }
-      if (!bounds.width && !bounds.height) continue;
-      minX = Math.min(minX, bounds.x);
-      minY = Math.min(minY, bounds.y);
-      maxX = Math.max(maxX, bounds.x + bounds.width);
-      maxY = Math.max(maxY, bounds.y + bounds.height);
-    }
-    const grew = minX < viewBox.x - TEXT_FIT_TOLERANCE
-      || minY < viewBox.y - TEXT_FIT_TOLERANCE
-      || maxX > viewBox.x + viewBox.width + TEXT_FIT_TOLERANCE
-      || maxY > viewBox.y + viewBox.height + TEXT_FIT_TOLERANCE;
-    if (!grew) return;
-    const x0 = Math.min(minX, viewBox.x) - TEXT_FIT_PAD;
-    const y0 = Math.min(minY, viewBox.y) - TEXT_FIT_PAD;
-    const x1 = Math.max(maxX, viewBox.x + viewBox.width) + TEXT_FIT_PAD;
-    const y1 = Math.max(maxY, viewBox.y + viewBox.height) + TEXT_FIT_PAD;
-    frame.setAttribute(
-      'viewBox',
-      `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`,
-    );
+    const viewBox = frame.viewBox?.baseVal;
+    const size = fittedTextSize(frame, viewBox);
+    if (!size) return;
+    applyTextSize(frame, size);
+    const extent = measuredTextExtent(frame, viewBox);
+    if (!extent) return;
+    if (!overflows(viewBox, extent)) return;
+    widenViewBox(frame, viewBox, extent);
   }
+}
+
+/* The font size this scale needs, in viewBox units, or 0 when the frame cannot be measured yet.
+ * Zero is never a legitimate size - the floor is a third of the nominal - so one return value
+ * carries both answers without ambiguity. */
+function fittedTextSize(frame, viewBox) {
+  const box = frame.getBoundingClientRect();
+  if (!box.width || !viewBox?.width) return 0;
+  const scale = box.width / viewBox.width;
+  if (!Number.isFinite(scale) || scale <= 0) return 0;
+  return Math.max(AXIS_FONT_PX / scale, AXIS_FONT_PX / 3);
+}
+
+/* Apply the size, and move the labels whose offsets have to scale with it.
+ *
+ * The horizontal labels sit BELOW the axis at offsets that must scale with the text, or they
+ * collide with the caption: at a 31-unit font the fixed 20 and 36 unit offsets overlap, which
+ * a screenshot at 430px showed plainly while every number was inside the box. Positioned from
+ * the size actually applied, and chosen to land on the original 240 and 256 at 13 units so the
+ * nominal design is unchanged. */
+function applyTextSize(frame, size) {
+  for (const text of frame.querySelectorAll('text')) {
+    text.setAttribute('font-size', size.toFixed(2));
+  }
+  const axisY = PLOT_HEIGHT - PAD.bottom;
+  for (const tick of frame.querySelectorAll('[data-role="x-tick"]')) {
+    tick.setAttribute('y', (axisY + size * X_TICK_OFFSET_EM).toFixed(1));
+  }
+  for (const caption of frame.querySelectorAll('[data-role="x-caption"]')) {
+    caption.setAttribute('y', (axisY + size * X_CAPTION_OFFSET_EM).toFixed(1));
+  }
+}
+
+/* The union of every label's box with the viewBox, or null when a box cannot be measured.
+ *
+ * Expanded on every side the text actually needs, not just the left: the same fixed-gutter
+ * fault applies to each edge, and only the left one had been found. */
+function measuredTextExtent(frame, viewBox) {
+  let minX = viewBox.x;
+  let minY = viewBox.y;
+  let maxX = viewBox.x + viewBox.width;
+  let maxY = viewBox.y + viewBox.height;
+  for (const text of frame.querySelectorAll('text')) {
+    /* getBBox is guarded because it is not universally safe on an unrendered subtree: measured
+     * in Chromium it returns zeros inside a display:none container, and other engines throw
+     * rather than returning. A throw here would escape the requestAnimationFrame callback. The
+     * degraded path is the nominal build-time gutter, which is correct at full width. */
+    let bounds;
+    try {
+      bounds = text.getBBox();
+    } catch {
+      /* No binding: nothing here reads the error, and an unread name is a reader wondering what
+       * was meant to happen to it. The reason for swallowing it is the comment above. */
+      return null;
+    }
+    if (!bounds.width && !bounds.height) continue;
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/* Whether the measured text has left the box by more than the tolerance, on any side. */
+function overflows(viewBox, extent) {
+  return extent.minX < viewBox.x - TEXT_FIT_TOLERANCE
+    || extent.minY < viewBox.y - TEXT_FIT_TOLERANCE
+    || extent.maxX > viewBox.x + viewBox.width + TEXT_FIT_TOLERANCE
+    || extent.maxY > viewBox.y + viewBox.height + TEXT_FIT_TOLERANCE;
+}
+
+/* Widen the canvas to contain the text. Geometry is untouched: it simply starts further out. */
+function widenViewBox(frame, viewBox, extent) {
+  const x0 = Math.min(extent.minX, viewBox.x) - TEXT_FIT_PAD;
+  const y0 = Math.min(extent.minY, viewBox.y) - TEXT_FIT_PAD;
+  const x1 = Math.max(extent.maxX, viewBox.x + viewBox.width) + TEXT_FIT_PAD;
+  const y1 = Math.max(extent.maxY, viewBox.y + viewBox.height) + TEXT_FIT_PAD;
+  frame.setAttribute(
+    'viewBox',
+    `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`,
+  );
 }
 
 function axisCaption(axis) {
@@ -369,30 +402,36 @@ function drawGroup(frame, group, sx, sy) {
     drawPath(frame, group, sx, sy, colour);
     return;
   }
-  /* A plus-cross scatter, not a polyline. A connecting line asserts continuity between
-   * observations that are not continuous, and it hides the pass structure. */
   const size = group.glyph === 'dot' ? 3 : 2.6;
+  /* Decided once. The same comparison sat inside the loop and was re-answered for every
+   * observation, which on a waterfall is several hundred times per group. */
+  const usesRamp = group.ramp?.length === group.x.length;
   for (let i = 0; i < group.x.length; i += 1) {
     const x = sx(group.x[i]);
     const y = sy(group.y[i]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const stroke = group.ramp && group.ramp.length === group.x.length ? ramp(group.ramp[i]) : colour;
-    if (group.glyph === 'dot' || group.glyph === 'square') {
-      frame.appendChild(svg(group.glyph === 'dot' ? 'circle' : 'rect',
-        group.glyph === 'dot'
-          ? { cx: x, cy: y, r: size, fill: stroke }
-          : { x: x - size, y: y - size, width: size * 2, height: size * 2, fill: 'none', stroke, 'stroke-width': 1.3 }));
-      continue;
-    }
-    if (group.glyph === 'bar') {
-      frame.appendChild(svg('rect', { x, y: y - 4, width: 3, height: 8, fill: stroke }));
-      continue;
-    }
-    frame.appendChild(svg('path', {
-      d: `M${x - size} ${y}H${x + size}M${x} ${y - size}V${y + size}`,
-      stroke, 'stroke-width': 1.1, 'stroke-linecap': 'round',
-    }));
+    frame.appendChild(scatterMark(group.glyph, x, y, size, usesRamp ? ramp(group.ramp[i]) : colour));
   }
+}
+
+/* One scatter mark, by glyph. A chain of `continue`s with a node type and its attributes each
+ * chosen by their own nested ternary stood in the loop above; each glyph now builds its own node
+ * and the loop only places it. */
+function scatterMark(glyph, x, y, size, stroke) {
+  if (glyph === 'dot') return svg('circle', { cx: x, cy: y, r: size, fill: stroke });
+  if (glyph === 'square') {
+    return svg('rect', {
+      x: x - size, y: y - size, width: size * 2, height: size * 2,
+      fill: 'none', stroke, 'stroke-width': 1.3,
+    });
+  }
+  if (glyph === 'bar') return svg('rect', { x, y: y - 4, width: 3, height: 8, fill: stroke });
+  /* The default is a plus-cross scatter, not a polyline. A connecting line asserts continuity
+   * between observations that are not continuous, and it hides the pass structure. */
+  return svg('path', {
+    d: `M${x - size} ${y}H${x + size}M${x} ${y - size}V${y + size}`,
+    stroke, 'stroke-width': 1.1, 'stroke-linecap': 'round',
+  });
 }
 
 function drawPath(frame, group, sx, sy, colour) {
@@ -412,6 +451,15 @@ function drawPath(frame, group, sx, sy, colour) {
   }));
 }
 
+/* A cell's display text. Absence is an em dash, a boolean reads as a word, everything else is
+ * its own string. Lifted out of a ternary nested inside a ternary: three outcomes read down the
+ * page beat three outcomes read inside out. */
+function cellText(raw) {
+  if (raw === null || raw === undefined) return '—';
+  if (typeof raw === 'boolean') return raw ? 'yes' : 'no';
+  return String(raw);
+}
+
 function drawTable(stimulus) {
   const wrap = el('div', 'tablewrap');
   const table = el('table');
@@ -424,20 +472,22 @@ function drawTable(stimulus) {
   head.appendChild(headRow);
   table.appendChild(head);
   const body = el('tbody');
-  for (const row of stimulus.rows) {
-    const tr = el('tr');
-    for (const column of stimulus.columns) {
-      const raw = row[column.key];
-      const value = raw === null || raw === undefined ? '—'
-        : (typeof raw === 'boolean' ? (raw ? 'yes' : 'no') : String(raw));
-      const classes = [column.align === 'right' ? 'r' : '', column.emphasis ? 'em' : ''].filter(Boolean).join(' ');
-      tr.appendChild(el('td', classes || null, value));
-    }
-    body.appendChild(tr);
-  }
+  for (const row of stimulus.rows) body.appendChild(tableRow(stimulus.columns, row));
   table.appendChild(body);
   wrap.appendChild(table);
   return wrap;
+}
+
+/* One data row. Lifted out so the table builder is two flat loops rather than a loop inside a
+ * loop with the cell's own decisions inlined at the bottom of it. */
+function tableRow(columns, row) {
+  const tr = el('tr');
+  for (const column of columns) {
+    const classes = [column.align === 'right' ? 'r' : '', column.emphasis ? 'em' : '']
+      .filter(Boolean).join(' ');
+    tr.appendChild(el('td', classes || null, cellText(row[column.key])));
+  }
+  return tr;
 }
 
 function ramped(stimulus) {
@@ -489,15 +539,15 @@ function drawStimulus(stimulus) {
   head.appendChild(el('span', null, stimulus.product_id));
   scope.appendChild(head);
 
-  if (stimulus.panels && stimulus.panels.length) {
+  if (stimulus.panels?.length) {
     const panels = el('div', stimulus.panels.length > 1 ? 'panels multi' : 'panels');
     for (const panel of stimulus.panels) panels.appendChild(drawPanel(panel));
     scope.appendChild(panels);
   }
-  if (stimulus.columns && stimulus.columns.length) {
+  if (stimulus.columns?.length) {
     scope.appendChild(drawTable(stimulus));
   }
-  if (stimulus.legend && stimulus.legend.length) {
+  if (stimulus.legend?.length) {
     scope.appendChild(buildLegend(stimulus));
   }
   if (stimulus.reads_as) {
@@ -513,6 +563,18 @@ function drawStimulus(stimulus) {
  * announce themselves as five independent toggles, and this control is single-select: that is a
  * screen reader being told something untrue about the form. `radio` roles plus one tab stop and
  * arrow-key movement is what the pattern actually is. */
+/* Which way an arrow key moves the confidence selection: forward, back, or not an arrow at all.
+ * The caller treats 0 as "not mine" and returns, so a named function keeps the three answers
+ * apart. Both axes are accepted because the group reads as a row and is laid out as one. */
+const NEXT_KEYS = ['ArrowRight', 'ArrowDown'];
+const PREVIOUS_KEYS = ['ArrowLeft', 'ArrowUp'];
+
+function arrowStep(key) {
+  if (NEXT_KEYS.includes(key)) return 1;
+  if (PREVIOUS_KEYS.includes(key)) return -1;
+  return 0;
+}
+
 function renderConfidence() {
   const group = document.getElementById('confidence-group');
   clear(group);
@@ -532,8 +594,7 @@ function renderConfidence() {
       document.querySelector('#confidence-group [aria-checked="true"]').focus();
     });
     button.addEventListener('keydown', (event) => {
-      const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
-        : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+      const step = arrowStep(event.key);
       if (!step) return;
       event.preventDefault();
       const next = (index + step + CONFIDENCE.length) % CONFIDENCE.length;
@@ -667,7 +728,12 @@ function statCard(key, value, detail, direction) {
   const card = el('div', 's');
   card.appendChild(el('div', 'k', key));
   card.appendChild(el('div', 'v', value));
-  if (detail) card.appendChild(el('div', `d${direction ? ` ${direction}` : ''}`, detail));
+  if (detail) {
+    /* Built as a statement rather than a template inside a template: the class is `d` with an
+     * optional direction, and the nested form made a two-word string look like arithmetic. */
+    const detailClass = direction ? `d ${direction}` : 'd';
+    card.appendChild(el('div', detailClass, detail));
+  }
   return card;
 }
 
@@ -684,15 +750,35 @@ function renderReveal(result) {
   stopCountdown();
 
   const sheet = el('div', 'debrief');
+  sheet.appendChild(calledRing(result));
+  sheet.appendChild(verdictBlock(result));
+  if (state.showGameLayer) sheet.appendChild(statsRow(result));
+  const habit = habitPanel(result);
+  if (habit) sheet.appendChild(habit);
+  sheet.appendChild(el('h2', null, 'Where the score went'));
+  sheet.appendChild(scoreTable(result));
+  for (const note of disclosureNotes(result)) sheet.appendChild(note);
+  const buttons = revealButtons();
+  sheet.appendChild(buttons.node);
 
+  host.appendChild(sheet);
+  document.getElementById('ops').classList.add('hidden');
+  host.classList.remove('hidden');
+  buttons.focusTarget.focus();
+}
+
+/* What the operator called, and what it was. */
+function calledRing(result) {
   const called = el('div', 'called');
   called.appendChild(el('span', `ring ${result.matched}`, VERDICT_GLYPH[result.matched] || '○'));
   called.appendChild(el('span', `what ${result.matched}`,
     `${VERDICT_WORD[result.matched] || 'scored'} · ${result.item_id}`));
-  sheet.appendChild(called);
+  return called;
+}
 
-  /* The verdict block keeps its class contract and its glyph: a verdict never rests on colour,
-   * and it is never styled through the recency token. */
+/* The verdict block keeps its class contract and its glyph: a verdict never rests on colour,
+ * and it is never styled through the recency token. */
+function verdictBlock(result) {
   const verdict = el('div', `verdict ${result.matched}`);
   const heading = el('h3');
   heading.appendChild(el('span', 'glyph', VERDICT_GLYPH[result.matched] || '○'));
@@ -700,43 +786,53 @@ function renderReveal(result) {
   verdict.appendChild(heading);
   if (result.why_wrong) verdict.appendChild(el('p', null, result.why_wrong));
   if (result.explain) verdict.appendChild(el('p', null, result.explain));
-  sheet.appendChild(verdict);
+  return verdict;
+}
 
-  if (state.showGameLayer) {
-    const stats = el('div', 'stats');
-    const delta = result.rating_delta;
-    stats.appendChild(statCard(
-      'rating',
-      result.rating_after === null ? 'unchanged' : String(result.rating_after),
-      delta === null || delta === 0 ? 'no change' : `${delta > 0 ? '+' : ''}${delta}`,
-      delta === null || delta === 0 ? '' : delta > 0 ? 'up' : 'down',
-    ));
-    stats.appendChild(statCard(
-      'calibration',
-      result.brier === null ? 'not scored' : result.brier.toFixed(3),
-      result.calibration,
-      '',
-    ));
-    stats.appendChild(statCard(
-      'back in',
-      result.next_due_in_days === 1 ? '1 day' : `${result.next_due_in_days} days`,
-      'spacing interval',
-      '',
-    ));
-    sheet.appendChild(stats);
-  }
+/* The three game-layer cards, all carrying REAL fields off the scored payload. */
+function statsRow(result) {
+  const stats = el('div', 'stats');
+  const delta = result.rating_delta;
+  /* One decision, made once, read twice. The rating moved or it did not; a nested ternary in
+   * each argument asked the same question twice and answered it in two different shapes. */
+  const moved = delta !== null && delta !== 0;
+  let direction = '';
+  if (moved) direction = delta > 0 ? 'up' : 'down';
+  const sign = moved && delta > 0 ? '+' : '';
+  stats.appendChild(statCard(
+    'rating',
+    result.rating_after === null ? 'unchanged' : String(result.rating_after),
+    moved ? `${sign}${delta}` : 'no change',
+    direction,
+  ));
+  stats.appendChild(statCard(
+    'calibration',
+    result.brier === null ? 'not scored' : result.brier.toFixed(3),
+    result.calibration,
+    '',
+  ));
+  stats.appendChild(statCard(
+    'back in',
+    result.next_due_in_days === 1 ? '1 day' : `${result.next_due_in_days} days`,
+    'spacing interval',
+    '',
+  ));
+  return stats;
+}
 
-  /* The operator-habit panel. Its text is the AUTHORED coaching line off the scored payload, not
-   * a phrase composed here: a habit this interface made up would be a claim about a person. */
-  const habit = result.note;
-  if (habit) {
-    const panel = el('div', 'habit');
-    panel.appendChild(el('div', 'k', 'operator / habit'));
-    panel.appendChild(el('div', 't', habit));
-    sheet.appendChild(panel);
-  }
+/* The operator-habit panel, or null when the payload carries no coaching line. Its text is the
+ * AUTHORED line off the scored payload, not a phrase composed here: a habit this interface made
+ * up would be a claim about a person. */
+function habitPanel(result) {
+  if (!result.note) return null;
+  const panel = el('div', 'habit');
+  panel.appendChild(el('div', 'k', 'operator / habit'));
+  panel.appendChild(el('div', 't', result.note));
+  return panel;
+}
 
-  sheet.appendChild(el('h2', null, 'Where the score went'));
+/* Rule by rule, with the total and the rating move on the last row. */
+function scoreTable(result) {
   const table = el('table');
   const head = el('thead');
   const headRow = el('tr');
@@ -762,17 +858,27 @@ function renderReveal(result) {
   table.appendChild(body);
   const wrap = el('div', 'tablewrap');
   wrap.appendChild(table);
-  sheet.appendChild(wrap);
+  return wrap;
+}
 
-  if (result.unimplemented_rules && result.unimplemented_rules.length) {
-    sheet.appendChild(el('p', 'panel-note',
+/* What the rubric asked for and this evaluator did not do. Disclosed rather than omitted: a
+ * score that silently skipped a rule reads as a complete score. */
+function disclosureNotes(result) {
+  const notes = [];
+  if (result.unimplemented_rules?.length) {
+    notes.push(el('p', 'panel-note',
       `${result.unimplemented_rules.length} rule(s) in this rubric have no predicate yet and were not evaluated: ${result.unimplemented_rules.join(', ')}.`));
   }
-  if (result.unimplemented_aggregation && result.unimplemented_aggregation.length) {
-    sheet.appendChild(el('p', 'panel-note',
+  if (result.unimplemented_aggregation?.length) {
+    notes.push(el('p', 'panel-note',
       `Aggregation the rubric asks for and this evaluator does not apply: ${result.unimplemented_aggregation.join(', ')}.`));
   }
+  return notes;
+}
 
+/* The two ways out of the debrief. The node and the button that takes focus are returned
+ * together, because the caller focuses after the sheet is in the document. */
+function revealButtons() {
   const buttons = el('div', 'buttons');
   const next = el('button', 'act', 'Next cue →');
   next.type = 'button';
@@ -782,12 +888,7 @@ function renderReveal(result) {
   read.type = 'button';
   read.addEventListener('click', () => show('library'));
   buttons.appendChild(read);
-  sheet.appendChild(buttons);
-
-  host.appendChild(sheet);
-  document.getElementById('ops').classList.add('hidden');
-  host.classList.remove('hidden');
-  next.focus();
+  return { node: buttons, focusTarget: next };
 }
 
 async function submitAnswer(event) {
@@ -834,9 +935,8 @@ function estimateCell(competency) {
     cell.appendChild(el('span', 'fig', 'not measured'));
     return cell;
   }
-  const entry = band(competency.estimate);
-  const suffix = entry.cls.replace('s-', '');
-  const track = el('div', `bar b-${suffix === 'strong' ? 'good' : suffix === 'accent' ? 'accent' : suffix === 'shaky' ? 'shaky' : 'bad'}`);
+  const tone = BAND_CLASS_TONE[bandSuffix(competency.estimate)] || 'bad';
+  const track = el('div', `bar b-${tone}`);
   const fill = el('i');
   fill.style.width = `${Math.round(competency.estimate * 100)}%`;
   track.appendChild(fill);
@@ -846,8 +946,7 @@ function estimateCell(competency) {
    * handoff's bar and the plan's interval. */
   const low = Math.round(competency.interval[0] * 100);
   const high = Math.round(competency.interval[1] * 100);
-  cell.appendChild(el('span',
-    `fig f-${suffix === 'strong' ? 'good' : suffix === 'accent' ? 'accent' : suffix === 'shaky' ? 'shaky' : 'bad'}`,
+  cell.appendChild(el('span', `fig f-${tone}`,
     `${Math.round(competency.estimate * 100)} (${low}\u2013${high})`));
   return cell;
 }
@@ -903,8 +1002,11 @@ async function loadProgress() {
 function renderLibraryChips() {
   const host = document.getElementById('library-chips');
   clear(host);
+  /* The group's name, rebuilt with the chips because they are rebuilt from the content's own
+   * statuses on every filter change. A fieldset takes its accessible name from its legend. */
+  host.appendChild(el('legend', 'offscreen', 'Filter by status'));
   const statuses = ['all', ...new Set(
-    state.library.procedures.map((p) => p.status).filter(Boolean).sort(),
+    state.library.procedures.map((p) => p.status).filter(Boolean).sort((a, b) => a.localeCompare(b)),
   )];
   for (const status of statuses) {
     const chip = el('button', null, status);
@@ -988,7 +1090,7 @@ async function openProcedure(procedureId) {
     for (const [key, value] of Object.entries(procedure)) {
       if (['id', 'name', 'status'].includes(key)) continue;
       const panel = el('div', null);
-      panel.appendChild(el('p', 'panel-title', key.replace(/_/g, ' ')));
+      panel.appendChild(el('p', 'panel-title', key.replaceAll('_', ' ')));
       panel.appendChild(el('p', null, typeof value === 'string' ? value : JSON.stringify(value, null, 1)));
       panels.appendChild(panel);
     }
@@ -1031,8 +1133,20 @@ const BANDS = [
   { floor: 0, cls: 's-missed', word: 'weak' },
 ];
 
+/* A band's tone, in the two vocabularies that need it. Four-deep ternary chains stood here
+ * three times over, and two of them disagreed: the CSS CLASS for the middle band is `shaky`
+ * while the CSS VARIABLE is `--warn`. Two maps make that difference visible rather than burying
+ * it in the third arm of a chain nobody reads to the end. `|| 'bad'` keeps the chains' own
+ * fallback, so an unrecognised band still paints. */
+const BAND_CLASS_TONE = { strong: 'good', accent: 'accent', shaky: 'shaky', missed: 'bad' };
+const BAND_VARIABLE = { strong: 'good', accent: 'accent', shaky: 'warn', missed: 'bad' };
+
+function bandSuffix(estimate) {
+  return band(estimate).cls.replace('s-', '');
+}
+
 function band(estimate) {
-  return BANDS.find((entry) => estimate >= entry.floor) || BANDS[BANDS.length - 1];
+  return BANDS.find((entry) => estimate >= entry.floor) || BANDS.at(-1);
 }
 
 /* Which competency is weakest, over the MEASURED ones only. An axis with no attempts has no
@@ -1068,76 +1182,103 @@ async function loadSession() {
   try {
     const me = await api('/api/v1/me');
     fillGameLayer(me);
-
-    /* No session NUMBER exists in the API and the mockup's is synthetic, so the kicker carries
-     * the content hash instead: it is the one provenance string that makes a run reproducible,
-     * which is what a session id would have been for. */
-    document.getElementById('session-kicker').textContent =
-      `Session · content ${me.content_hash.slice(0, 8)}`;
-
     const weak = weakest(me.competencies);
-    document.getElementById('session-title').textContent = weak
-      ? `Today you are drilling ${weak.name.toLowerCase()}`
-      : 'Today you are drilling from a clean sheet';
-    document.getElementById('session-sub').textContent = weak
-      ? 'The run leads with your weakest measured axis. Cues you have missed come back sooner and harder.'
-      : 'Nothing is measured yet, so the first run establishes a baseline rather than correcting one.';
-
-    /* `due_now` is a real count. The mockup's run length in minutes is not derivable from this
-     * payload, so it is omitted rather than guessed. */
-    document.getElementById('run-count').textContent = String(me.due_now);
-    document.getElementById('run-length').textContent =
-      me.due_now === 1 ? 'cue due now' : 'cues due now';
-    document.getElementById('run-blurb').textContent =
-      'Spaced repetition decides the order. An item you got right moves further out; one you'
-      + ' missed comes back inside a day.';
-
-    if (weak) {
-      document.getElementById('weak-name').textContent = weak.name;
-      const low = Math.round(weak.interval[0] * 100);
-      const high = Math.round(weak.interval[1] * 100);
-      document.getElementById('weak-body').textContent =
-        `Estimated ${Math.round(weak.estimate * 100)} out of 100, interval ${low} to ${high},`
-        + ` over ${weak.attempts} ${weak.attempts === 1 ? 'call' : 'calls'}.`;
-      const bar = document.getElementById('weak-bar');
-      bar.style.width = `${Math.round(weak.estimate * 100)}%`;
-      bar.style.background = `var(--${band(weak.estimate).cls === 's-strong' ? 'good' : band(weak.estimate).cls === 's-accent' ? 'accent' : band(weak.estimate).cls === 's-shaky' ? 'warn' : 'bad'})`;
-    } else {
-      document.getElementById('weak-name').textContent = 'Not measured yet';
-      document.getElementById('weak-body').textContent =
-        'No axis has an attempt against it, so there is no weakest. A figure here before the'
-        + ' first call would be a claim the data cannot support.';
-    }
-
-    document.getElementById('recorded-n').textContent = String(me.runs_total);
-    document.getElementById('recorded-body').textContent =
-      `${me.runs_total} ${me.runs_total === 1 ? 'answer' : 'answers'} recorded, drill rating`
-      + ` ${me.drill_rating}. The fourteen-day activity strip the mockup shows needs per-day`
-      + ' history the dashboard does not expose yet, so it is left out rather than drawn from'
-      + ' nothing.';
-
-    const covers = document.getElementById('covers');
-    clear(covers);
-    me.competencies.forEach((competency, index) => {
-      const row = el('div', 'row');
-      row.appendChild(el('span', 'idx', String(index + 1).padStart(2, '0')));
-      row.appendChild(el('span', 'name', competency.name || competency.competency_id));
-      row.appendChild(el('span', 'cues',
-        `${competency.attempts} ${competency.attempts === 1 ? 'call' : 'calls'}`));
-      if (competency.measured) {
-        const entry = band(competency.estimate);
-        row.appendChild(el('span', `status ${entry.cls}`,
-          `${entry.word} · ${Math.round(competency.estimate * 100)}`));
-      } else {
-        row.appendChild(el('span', 'status', 'not measured'));
-      }
-      covers.appendChild(row);
-    });
-
+    paintSessionHeader(me, weak);
+    paintRunCard(me);
+    paintWeakestCard(weak);
+    paintRecordedCard(me);
+    paintCovers(me.competencies);
     document.getElementById('session-note').textContent = me.identity;
   } catch (error) {
-    banner('The session could not be loaded.');
+    /* The caught error was discarded and a fixed sentence shown in its place, which is the one
+     * handler in this file that told the operator less than it knew. Every other catch here
+     * surfaces `error.message`, and that message is already the server's sanitised `detail`
+     * rather than an internal one. The framing is kept because "the session" names what failed. */
+    banner(`The session could not be loaded. ${error.message}`);
   }
+}
+
+/* The kicker, the title and the standfirst.
+ *
+ * No session NUMBER exists in the API and the mockup's is synthetic, so the kicker carries the
+ * content hash instead: it is the one provenance string that makes a run reproducible, which is
+ * what a session id would have been for. */
+function paintSessionHeader(me, weak) {
+  document.getElementById('session-kicker').textContent =
+    `Session · content ${me.content_hash.slice(0, 8)}`;
+  document.getElementById('session-title').textContent = weak
+    ? `Today you are drilling ${weak.name.toLowerCase()}`
+    : 'Today you are drilling from a clean sheet';
+  document.getElementById('session-sub').textContent = weak
+    ? 'The run leads with your weakest measured axis. Cues you have missed come back sooner and harder.'
+    : 'Nothing is measured yet, so the first run establishes a baseline rather than correcting one.';
+}
+
+/* `due_now` is a real count. The mockup's run length in minutes is not derivable from this
+ * payload, so it is omitted rather than guessed. */
+function paintRunCard(me) {
+  document.getElementById('run-count').textContent = String(me.due_now);
+  document.getElementById('run-length').textContent =
+    me.due_now === 1 ? 'cue due now' : 'cues due now';
+  document.getElementById('run-blurb').textContent =
+    'Spaced repetition decides the order. An item you got right moves further out; one you'
+    + ' missed comes back inside a day.';
+}
+
+/* The weakest axis, or the honest absence of one. */
+function paintWeakestCard(weak) {
+  if (!weak) {
+    document.getElementById('weak-name').textContent = 'Not measured yet';
+    document.getElementById('weak-body').textContent =
+      'No axis has an attempt against it, so there is no weakest. A figure here before the'
+      + ' first call would be a claim the data cannot support.';
+    return;
+  }
+  document.getElementById('weak-name').textContent = weak.name;
+  const low = Math.round(weak.interval[0] * 100);
+  const high = Math.round(weak.interval[1] * 100);
+  document.getElementById('weak-body').textContent =
+    `Estimated ${Math.round(weak.estimate * 100)} out of 100, interval ${low} to ${high},`
+    + ` over ${weak.attempts} ${weak.attempts === 1 ? 'call' : 'calls'}.`;
+  const bar = document.getElementById('weak-bar');
+  bar.style.width = `${Math.round(weak.estimate * 100)}%`;
+  bar.style.background = `var(--${BAND_VARIABLE[bandSuffix(weak.estimate)] || 'bad'})`;
+}
+
+/* What has actually been recorded, and what the mockup shows that this payload cannot support. */
+function paintRecordedCard(me) {
+  document.getElementById('recorded-n').textContent = String(me.runs_total);
+  document.getElementById('recorded-body').textContent =
+    `${me.runs_total} ${me.runs_total === 1 ? 'answer' : 'answers'} recorded, drill rating`
+    + ` ${me.drill_rating}. The fourteen-day activity strip the mockup shows needs per-day`
+    + ' history the dashboard does not expose yet, so it is left out rather than drawn from'
+    + ' nothing.';
+}
+
+function paintCovers(competencies) {
+  const covers = document.getElementById('covers');
+  clear(covers);
+  competencies.forEach((competency, index) => {
+    covers.appendChild(competencyRow(competency, index));
+  });
+}
+
+/* One competency row. The status carries the band WORD beside the figure, because the flight
+ * plan forbids status by colour alone, and reads "not measured" rather than a zero. */
+function competencyRow(competency, index) {
+  const row = el('div', 'row');
+  row.appendChild(el('span', 'idx', String(index + 1).padStart(2, '0')));
+  row.appendChild(el('span', 'name', competency.name || competency.competency_id));
+  row.appendChild(el('span', 'cues',
+    `${competency.attempts} ${competency.attempts === 1 ? 'call' : 'calls'}`));
+  if (!competency.measured) {
+    row.appendChild(el('span', 'status', 'not measured'));
+    return row;
+  }
+  const entry = band(competency.estimate);
+  row.appendChild(el('span', `status ${entry.cls}`,
+    `${entry.word} · ${Math.round(competency.estimate * 100)}`));
+  return row;
 }
 
 /* ---------------------------------------------------------------- shell */

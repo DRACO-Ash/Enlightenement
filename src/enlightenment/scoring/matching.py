@@ -158,6 +158,30 @@ def _numeric(text: str) -> float | None:
     return float(found.group(0)) if found else None
 
 
+def _expected_value(answer: Answer, derived: dict[str, Any]) -> float | None:
+    """The number to score against: the authored one, or the generator's where content defers.
+
+    The sentinel is not an answer and is never treated as one. Where the content says the
+    expected value is computed from the params, the generator that composed the stimulus is the
+    only thing that knows it; if it supplied nothing, this returns None and the caller REFUSES
+    the item rather than scoring against a value nobody computed.
+
+    The first candidate decides, sentinel or number, which is what the loop inside the caller
+    did with two `break`s. Lifted out so the resolution and the scoring are two readable things
+    rather than one function carrying both.
+    """
+    if answer.value is not None:
+        return answer.value
+    for candidate in answer.accept:
+        if candidate == COMPUTED_SENTINEL:
+            supplied = derived.get("expected_value")
+            return None if supplied is None else float(supplied)
+        numeric_candidate = _numeric(candidate)
+        if numeric_candidate is not None:
+            return numeric_candidate
+    return None
+
+
 def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Match:
     """Match a numeric estimate, resolving `computed_from_params` against the generator's output.
 
@@ -167,17 +191,7 @@ def match_numeric(response: str, answer: Answer, derived: dict[str, Any]) -> Mat
     guessed at. An item scored against a value nobody computed is worse than an item not served.
     """
     given = _numeric(response)
-    expected: float | None = answer.value
-    if expected is None:
-        for candidate in answer.accept:
-            if candidate == COMPUTED_SENTINEL:
-                supplied = derived.get("expected_value")
-                expected = None if supplied is None else float(supplied)
-                break
-            numeric_candidate = _numeric(candidate)
-            if numeric_candidate is not None:
-                expected = numeric_candidate
-                break
+    expected = _expected_value(answer, derived)
     if expected is None:
         return Match(UNSCORABLE, 0.0, note=UNSCORABLE_NOTE)
     if given is None:

@@ -169,6 +169,52 @@ class OperatorProgress:
         return self.schedule.setdefault(item_id, CueSchedule())
 
 
+def _stored_mapping(blob: Any) -> dict[Any, Any]:
+    """A stored sub-object, or an empty one. A list, a string or a null degrades to nothing."""
+    return blob if isinstance(blob, dict) else {}
+
+
+def _rebuilt_axes(blob: Any) -> dict[str, AxisProgress]:
+    """Per-axis counters, rebuilt field by field so a broken row costs only that row."""
+    axes: dict[str, AxisProgress] = {}
+    for name, values in _stored_mapping(blob).items():
+        if isinstance(values, dict):
+            axes[str(name)] = AxisProgress(
+                attempts=int(values.get("attempts", 0) or 0),
+                correct=int(values.get("correct", 0) or 0),
+                brier_total=float(values.get("brier_total", 0.0) or 0.0),
+            )
+    return axes
+
+
+def _rebuilt_schedule(blob: Any) -> dict[str, CueSchedule]:
+    """Per-cue spacing state, on the same terms as the axes above."""
+    schedule: dict[str, CueSchedule] = {}
+    for name, values in _stored_mapping(blob).items():
+        if isinstance(values, dict):
+            schedule[str(name)] = CueSchedule(
+                streak=int(values.get("streak", 0) or 0),
+                due_at=str(values.get("due_at", "") or ""),
+            )
+    return schedule
+
+
+def _rebuilt_runs(blob: Any) -> list[RunRecord]:
+    """The run history, skipping any row whose shape this version cannot construct."""
+    runs: list[RunRecord] = []
+    rows = blob if isinstance(blob, list) else []
+    for values in rows:
+        if not isinstance(values, dict):
+            continue
+        try:
+            runs.append(RunRecord(**values))
+        except TypeError:
+            # A run written by an older or newer shape is skipped, not fatal. Losing one
+            # history row is a smaller cost than refusing to serve the dashboard.
+            continue
+    return runs
+
+
 class ProgressStore:
     """One JSON file, read whole and written atomically.
 
@@ -222,27 +268,9 @@ class ProgressStore:
             operator_id=operator_id,
             rating=rating if isinstance(rating, int) else DEFAULT_OPERATOR_RATING,
         )
-        for name, values in (blob.get("axes") or {}).items():
-            if isinstance(values, dict):
-                progress.axes[str(name)] = AxisProgress(
-                    attempts=int(values.get("attempts", 0) or 0),
-                    correct=int(values.get("correct", 0) or 0),
-                    brier_total=float(values.get("brier_total", 0.0) or 0.0),
-                )
-        for name, values in (blob.get("schedule") or {}).items():
-            if isinstance(values, dict):
-                progress.schedule[str(name)] = CueSchedule(
-                    streak=int(values.get("streak", 0) or 0),
-                    due_at=str(values.get("due_at", "") or ""),
-                )
-        for values in blob.get("runs") or []:
-            if isinstance(values, dict):
-                try:
-                    progress.runs.append(RunRecord(**values))
-                except TypeError:
-                    # A run written by an older or newer shape is skipped, not fatal. Losing one
-                    # history row is a smaller cost than refusing to serve the dashboard.
-                    continue
+        progress.axes.update(_rebuilt_axes(blob.get("axes")))
+        progress.schedule.update(_rebuilt_schedule(blob.get("schedule")))
+        progress.runs.extend(_rebuilt_runs(blob.get("runs")))
         return progress
 
     def save(self, progress: OperatorProgress) -> None:

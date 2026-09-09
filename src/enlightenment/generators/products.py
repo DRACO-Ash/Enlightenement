@@ -28,8 +28,9 @@ the first questions the job requires.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from enlightenment.generators.base import (
     Axis,
@@ -74,6 +75,14 @@ PROVISIONAL_DROP_RATE: Final = 0.72
 
 #: A coin flip, named so the comparison is not a bare literal. Drift direction is arbitrary.
 EVEN_ODDS: Final = 0.5
+
+#: Labels a panel, its legend and a derived key all have to agree on. Each was written out three
+#: or four times, which is how a legend comes to name something the panel does not draw: the three
+#: RPO views and their legend row all say "Relative track", and `natural_element` and the element
+#: table both say "Right ascension". One spelling, one place.
+TRACK_LABEL: Final = "Relative track"
+MINIMUM_DISTANCE_LABEL: Final = "Minimum distance"
+RIGHT_ASCENSION_LABEL: Final = "Right ascension"
 
 #: How often a co-orbital row reports a sustained close approach as possible. PROVISIONAL.
 PROVISIONAL_SUSTAINED_RATE: Final = 0.6
@@ -355,9 +364,30 @@ def _longitude_bounds(params: dict[str, Any]) -> tuple[float, float]:
     return (-DEFAULT_LONGITUDE_HALF_WIDTH_DEG, DEFAULT_LONGITUDE_HALF_WIDTH_DEG)
 
 
+class DrawnRate(NamedTuple):
+    """The rate to draw, the rate to report, and the two facts only the clamp itself knows.
+
+    `clamped` and `slopes` were both re-derived by the caller from the two floats, as
+    `drift_rate != reported_rate` and `drift_rate != 0.0`. Exact equality on a float answers a
+    question nobody asked: whether two computations landed on the identical bit pattern. The
+    facts are decided here, where the clamp's limit is in scope, and carried rather than guessed.
+    """
+
+    drawn: float
+    reported: float
+    #: The drawn track is not the reported figure. Decided from the limit, not from comparing
+    #: the two results, which is the same test one layer removed and a float equality besides.
+    clamped: bool
+    #: A non-zero rate was drawn, so the track visibly slopes. An INEQUALITY on the magnitude,
+    #: deliberately: it is true for every non-zero float and false only for a signed zero, which
+    #: is the predicate the `drift_visible` key claims. No tolerance figure is invented here,
+    #: because none is measured - the only zero this function can produce is an authored zero.
+    slopes: bool
+
+
 def _drift_rate(
     authored: Any, bounds: tuple[float, float], days: float, stream: SeededRandom
-) -> tuple[float, float]:
+) -> DrawnRate:
     """The rate to DRAW and the rate to REPORT, which are not always the same number.
 
     DRL-0005 authors `derived_rate_deg_day: -22900000`, the real ASTRA 1M artefact from the
@@ -374,9 +404,79 @@ def _drift_rate(
         reported = float(authored)
         span = abs(bounds[1] - bounds[0]) or DEFAULT_LONGITUDE_HALF_WIDTH_DEG
         limit = span * DRIFT_EXCURSION_FACTOR / max(days, 1.0)
-        return (max(-limit, min(limit, reported)), reported)
+        drawn = max(-limit, min(limit, reported))
+        return DrawnRate(drawn, reported, abs(reported) > limit, abs(drawn) > 0.0)
+    #: The seeded branch never draws zero: the magnitude is drawn from [0.25, 0.9) and only the
+    #: sign is random. Stated rather than re-tested, and `slopes` is still computed from the
+    #: value so the claim cannot drift away from the arithmetic above it.
     drawn = stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
-    return (drawn, drawn)
+    return DrawnRate(drawn, drawn, False, abs(drawn) > 0.0)
+
+
+class _Neighbourhood(NamedTuple):
+    """What one waterfall's tracks are drawn from.
+
+    Gathered into a scene rather than passed as ten separate arguments, which is over this
+    project's cap and, more to the point, is a parameter list no caller can get right by reading
+    it. Every field is settled before any track is drawn.
+    """
+
+    neighbours: int
+    drifters: int
+    centre: float
+    bounds: tuple[float, float]
+    times: Sequence[float]
+    #: The collection gap, as (start, end) in days. Equal bounds mean continuous collection.
+    gap: tuple[float, float]
+    days: float
+    drift_rate: float
+    drift_start: float
+
+
+def _waterfall_tracks(scene: _Neighbourhood, stream: SeededRandom) -> list[Marks]:
+    """One track per object in the neighbourhood, drifting or held.
+
+    Lifted out of `render`, which carried this loop inside a loop with two drop conditions and
+    then built the whole stimulus around it. The extraction is behaviour-preserving and the
+    ORDER of draws from `stream` is unchanged, which is the property that matters here: the
+    determinism gate asserts that one seed yields one identical event log, and a reordered draw
+    would change every waterfall this library ships while every assertion about it stayed true.
+    """
+    gap_start, gap_end = scene.gap
+    marks: list[Marks] = []
+    for index in range(scene.neighbours):
+        held = scene.centre + stream.uniform(scene.bounds[0], scene.bounds[1])
+        drifting = index < scene.drifters
+        xs: list[float] = []
+        ys: list[float] = []
+        for when in scene.times:
+            if gap_start <= when <= gap_end:
+                continue
+            if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
+                continue
+            elapsed = max(when - scene.drift_start, 0.0)
+            longitude = held + (scene.drift_rate * elapsed if drifting else 0.0)
+            xs.append(
+                longitude
+                + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
+            )
+            ys.append(when)
+        marks.append(
+            Marks(
+                label=("Drifting object" if drifting else "Held longitude"),
+                role=("object-drift" if drifting else "object-held"),
+                x=tuple(xs),
+                y=tuple(ys),
+                #: **Recency, and it was backwards.** `ramp(0)` is the most recent stop, and
+                #: this passed `y / days`, so the window START - the OLDEST observation in the
+                #: plot - was drawn in the most-recent colour while the newest end was drawn
+                #: as oldest. The geometry said newest at the bottom and the colour said
+                #: newest at the top, on the same panel, in a product where red-for-recency
+                #: is the convention an operator reads first. Age, normalised.
+                ramp=tuple(_recency(y, scene.days) for y in ys),
+            )
+        )
+    return marks
 
 
 def _waterfall_gap(params: dict[str, Any], days: float) -> tuple[float, float]:
@@ -758,45 +858,25 @@ class WaterfallGenerator:
             raise ContentParameterError(f"newest_at must be one of {sorted(NEWEST_AT_VALUES)}")
         newest_at_bottom = newest_at == "bottom"
 
-        marks: list[Marks] = []
         times = _geo_pass_times(days, stream)
-        gap_start, gap_end = _waterfall_gap(params, days)
-        drift_rate, reported_rate = _drift_rate(
-            params.get("derived_rate_deg_day"), bounds, days, stream
+        gap = _waterfall_gap(params, days)
+        rates = _drift_rate(params.get("derived_rate_deg_day"), bounds, days, stream)
+        drift_rate, reported_rate = rates.drawn, rates.reported
+        marks = _waterfall_tracks(
+            _Neighbourhood(
+                neighbours=neighbours,
+                drifters=drifters,
+                centre=centre,
+                bounds=bounds,
+                times=times,
+                gap=gap,
+                days=days,
+                drift_rate=rates.drawn,
+                drift_start=drift_start,
+            ),
+            stream,
         )
-        for index in range(neighbours):
-            held = centre + stream.uniform(bounds[0], bounds[1])
-            drifting = index < drifters
-            rate = drift_rate
-            xs: list[float] = []
-            ys: list[float] = []
-            for when in times:
-                if gap_start <= when <= gap_end:
-                    continue
-                if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
-                    continue
-                elapsed = max(when - drift_start, 0.0)
-                longitude = held + (rate * elapsed if drifting else 0.0)
-                xs.append(
-                    longitude
-                    + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
-                )
-                ys.append(when)
-            marks.append(
-                Marks(
-                    label=("Drifting object" if drifting else "Held longitude"),
-                    role=("object-drift" if drifting else "object-held"),
-                    x=tuple(xs),
-                    y=tuple(ys),
-                    #: **Recency, and it was backwards.** `ramp(0)` is the most recent stop, and
-                    #: this passed `y / days`, so the window START - the OLDEST observation in the
-                    #: plot - was drawn in the most-recent colour while the newest end was drawn
-                    #: as oldest. The geometry said newest at the bottom and the colour said
-                    #: newest at the top, on the same panel, in a product where red-for-recency
-                    #: is the convention an operator reads first. Age, normalised.
-                    ramp=tuple(_recency(y, days) for y in ys),
-                )
-            )
+        gap_start, gap_end = gap
         #: The vertical axis is a TIMELINE, so it is labelled with timestamps. "0.003" and "4.99"
         #: are the internals of the plot; an operator reads a date, correlates it against a pass
         #: schedule and a provider post, and says when something happened. Numbers cannot be
@@ -866,7 +946,7 @@ class WaterfallGenerator:
                         f" {drift_rate:+.2f}°/day so the panel can show it",
                     ),
                 )
-                if drift_rate != reported_rate
+                if rates.clamped
                 else ()
             ),
             legend=(("Held longitude", "object-held"), ("Drifting object", "object-drift")),
@@ -889,10 +969,10 @@ class WaterfallGenerator:
                 #: window and put the onset at its end, so nothing drifted while the item's key
                 #: said the object had stopped station-keeping. A fact nobody could assert on is
                 #: how that survived.
-                "drift_visible": bool(drifters) and drift_start < days and drift_rate != 0.0,
+                "drift_visible": bool(drifters) and drift_start < days and rates.slopes,
                 "drawn_rate_deg_day": drift_rate,
                 "reported_rate_deg_day": reported_rate,
-                "rate_clamped": drift_rate != reported_rate,
+                "rate_clamped": rates.clamped,
                 #: The direction the renderer actually drew. DRL-0030 asks the operator to find
                 #: the drifter and state its direction with `computed_from_params` as the key, so
                 #: the answer is a fact about the surface. Longitude increases eastward.
@@ -1110,12 +1190,12 @@ class TricGenerator:
                 Axis("In-track", "km"),
                 Axis("Cross-track", "km"),
                 marks=(
-                    Marks("Relative track", "track", along, cross, glyph="line", ramp=ramp),
+                    Marks(TRACK_LABEL, "track", along, cross, glyph="line", ramp=ramp),
                     Marks(
                         "Reference state change", "state-change", change_x, change_y, glyph="square"
                     ),
                     Marks(
-                        "Minimum distance",
+                        MINIMUM_DISTANCE_LABEL,
                         "minimum",
                         (along[minimum_at],),
                         (cross[minimum_at],),
@@ -1127,13 +1207,13 @@ class TricGenerator:
                 "Radial over in-track",
                 Axis("In-track", "km"),
                 Axis("Radial", "km"),
-                marks=(Marks("Relative track", "track", along, radial, glyph="line", ramp=ramp),),
+                marks=(Marks(TRACK_LABEL, "track", along, radial, glyph="line", ramp=ramp),),
             ),
             Panel(
                 "Radial over cross-track",
                 Axis("Cross-track", "km"),
                 Axis("Radial", "km"),
-                marks=(Marks("Relative track", "track", cross, radial, glyph="line", ramp=ramp),),
+                marks=(Marks(TRACK_LABEL, "track", cross, radial, glyph="line", ramp=ramp),),
             ),
             Panel(
                 "Distance",
@@ -1149,7 +1229,7 @@ class TricGenerator:
                         ramp=ramp,
                     ),
                     Marks(
-                        "Minimum distance",
+                        MINIMUM_DISTANCE_LABEL,
                         "minimum",
                         (minimum_at * step_s / 3600.0,),
                         (distance[minimum_at],),
@@ -1175,7 +1255,7 @@ class TricGenerator:
             Panel(
                 "Right ascension delta",
                 Axis("Time", "hours"),
-                Axis("Right ascension", "degrees"),
+                Axis(RIGHT_ASCENSION_LABEL, "degrees"),
                 steps=(
                     Marks(
                         "Fitted right ascension",
@@ -1198,9 +1278,9 @@ class TricGenerator:
                 ("Panel scales", "independent"),
             ),
             legend=(
-                ("Relative track, time gradient", "track"),
+                (f"{TRACK_LABEL}, time gradient", "track"),
                 ("Reference state change", "state-change"),
-                ("Minimum distance", "minimum"),
+                (MINIMUM_DISTANCE_LABEL, "minimum"),
             ),
             footer=f"seed {seed:#x} · {samples} samples · {revolutions:g} revolutions",
             reads_as=(
@@ -1275,7 +1355,7 @@ class DcTableGenerator:
             ("Semi-major axis", "km", GEO_SEMI_MAJOR_AXIS_KM, altitude_delta_km),
             ("Eccentricity", "", 0.000418, 0.000019),
             ("Inclination", "deg", 2.4471, inclination_delta),
-            ("Right ascension", "deg", 40.02, nodal_deg),
+            (RIGHT_ASCENSION_LABEL, "deg", 40.02, nodal_deg),
             ("Argument of perigee", "deg", 271.4, 0.38),
             ("Mean anomaly", "deg", 88.7, 0.11),
             ("Period", "s", 86164.09, period_delta_s),
@@ -1289,7 +1369,7 @@ class DcTableGenerator:
                 "initial": round(initial, 6),
                 "final": round(initial + delta, 6),
                 "delta": round(delta, 6),
-                "natural": name == "Right ascension",
+                "natural": name == RIGHT_ASCENSION_LABEL,
             }
             for name, unit, initial, delta in elements
         )
@@ -1319,7 +1399,7 @@ class DcTableGenerator:
                 "nodal_regression_deg": nodal_deg,
                 "period_delta_s": period_delta_s,
                 "manoeuvre_in": "in-plane",
-                "natural_element": "Right ascension",
+                "natural_element": RIGHT_ASCENSION_LABEL,
                 "altitude_delta_km": altitude_delta_km,
                 "expected_value": drift_deg_day,
                 "expected_text": ("west",) if drift_deg_day < 0 else ("east",),

@@ -147,7 +147,7 @@ def test_every_score_names_the_rule_and_its_award_comes_from_the_content(
         rule = by_id[award.rule_id]
         assert award.competency_id == rule.competency_id
         assert award.explain == rule.explain
-    assert evaluation.total == pytest.approx(sum(a.award for a in evaluation.awards))
+    assert evaluation.total == pytest.approx(sum(a.awarded for a in evaluation.awards))
 
 
 def test_a_rule_with_no_predicate_is_reported_rather_than_silently_scoring_zero(
@@ -246,8 +246,10 @@ def test_partial_credit_scales_the_rule_award_by_the_item_s_own_fraction(
         rubric, Facts(matched="partial", correct=False, partial_credit=0.4)
     )
     award = next(a for a in evaluation.awards if a.rule_id == "D-PARTIAL")
-    assert award.award == pytest.approx(rule.award * 0.4 / FULL_CREDIT)
-    assert award.award == pytest.approx(0.2), "a half-credit answer no longer earns half the award"
+    assert award.awarded == pytest.approx(rule.award * 0.4 / FULL_CREDIT)
+    assert award.awarded == pytest.approx(0.2), (
+        "a half-credit answer no longer earns half the award"
+    )
 
 
 def test_the_speed_cap_in_the_content_actually_caps(package: ContentPackage) -> None:

@@ -93,6 +93,11 @@ READINESS_PATHS = ("/healthz", "/readyz")
 #: Paths exempt from rate limiting. The platform probes these; a 429 would read as unhealthy.
 UNLIMITED_PATHS = frozenset(LIVENESS_PATHS + READINESS_PATHS + ("/",))
 
+#: What a throttled caller is told, in the one place it is decided. The same sentence was written
+#: out at three sites - the coarse middleware and both fine-grained guards - which is three places
+#: to change if the wording ever should, and three chances for two of them to disagree.
+RATE_LIMITED_MESSAGE = "rate limit exceeded"
+
 #: Hard probe timeout. **`TBC, re-verify`: the claim that this is strictly shorter than the
 #: platform's own probe timeout has no figure in this repository to rest on** - the App Store
 #: publishes no `timeoutSeconds` in `docs/DEPLOYMENT.md` or anywhere else here, and a Kubernetes
@@ -440,7 +445,8 @@ def _install_rate_limit(app: FastAPI, runtime: _Runtime) -> None:
         limited = request.url.path not in UNLIMITED_PATHS
         if limited and not runtime.coarse.allow(_client_key(request)):
             return JSONResponse(
-                {"error": "rate limit exceeded"}, status_code=status.HTTP_429_TOO_MANY_REQUESTS
+                {"error": RATE_LIMITED_MESSAGE},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         return await call_next(request)
 
@@ -627,7 +633,7 @@ def _guard_write_rate(runtime: _Runtime, request: Request) -> None:
     """
     if not runtime.strict.allow(_client_key(request)):
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="rate limit exceeded"
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=RATE_LIMITED_MESSAGE
         )
 
 
@@ -642,7 +648,7 @@ def _guard_drill_rate(runtime: _Runtime, request: Request) -> None:
     """
     if not runtime.drill.allow(_client_key(request)):
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="rate limit exceeded"
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=RATE_LIMITED_MESSAGE
         )
 
 

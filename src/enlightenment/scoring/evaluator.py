@@ -79,7 +79,11 @@ class Award:
     """
 
     rule_id: str
-    award: float
+    #: Named `awarded`, not `award`, because a field that repeats its own class's name reads as
+    #: `Award.award` at every use and says nothing. It matches `ScoreLine.awarded` in the drill
+    #: scorer, which is the same quantity one layer along. The SERVED key stays `award`: it is
+    #: the content's own vocabulary in `rubrics.json` and the interface reads it by that name.
+    awarded: float
     competency_id: str
     explain: str
 
@@ -106,7 +110,7 @@ class Evaluation:
         return tuple(
             {
                 "rule_id": a.rule_id,
-                "award": a.award,
+                "award": a.awarded,
                 "competency_id": a.competency_id,
                 "explain": a.explain,
             }
@@ -119,7 +123,7 @@ class Evaluation:
             "score_components": [
                 {
                     "rule_id": a.rule_id,
-                    "award": a.award,
+                    "award": a.awarded,
                     "competency_id": a.competency_id,
                     "explain": a.explain,
                 }
@@ -215,7 +219,7 @@ class RubricEvaluator:
                 continue
             if predicate(facts):
                 awards.append(self._award(rule, facts, aggregation))
-        total = sum(a.award for a in awards)
+        total = sum(a.awarded for a in awards)
         return Evaluation(
             tuple(awards), total, tuple(unimplemented), _unimplemented_aggregation(aggregation)
         )

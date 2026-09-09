@@ -22,6 +22,7 @@ from enlightenment.content import ContentPackage
 from enlightenment.generators import build_registry
 from enlightenment.generators.base import rng
 from enlightenment.identifiers import (
+    DIGEST_CHARACTERS,
     DIGEST_MARKER,
     MAX_NESTING_DEPTH,
     cut_to_bytes,
@@ -858,8 +859,18 @@ def test_every_content_bound_is_measured_in_bytes_not_code_points() -> None:
     #: A cut never leaves a broken code point behind: the tail is dropped, not replaced.
     assert "\ufffd" not in shortened + marked + reason, "a cut split a code point"
 
-    #: ASCII is unaffected in every one of them, which is the compatibility claim.
-    assert served_identifier(ascii_text) == served_identifier(ascii_text)
+    #: ASCII is unaffected in every one of them, which is the compatibility claim: on ASCII a
+    #: byte cut and a code-point cut are the same cut, so the shortened form is the plain prefix,
+    #: the marker and the digest, with nothing replaced and nothing reserved that is not used.
+    #: This line read `served_identifier(ascii_text) == served_identifier(ascii_text)`, which is
+    #: true of every function that returns the same answer twice and was therefore evidence of
+    #: nothing at all - the persisted-format claim above it rested on it. Built independently now,
+    #: so the expectation cannot move with the implementation.
+    ascii_keep = MAX_CONTENT_STRING - DIGEST_CHARACTERS - len(DIGEST_MARKER)
+    ascii_digest = hashlib.sha256(ascii_text.encode("utf-8")).hexdigest()[:DIGEST_CHARACTERS]
+    assert served_identifier(ascii_text) == (
+        f"{ascii_text[:ascii_keep]}{DIGEST_MARKER}{ascii_digest}"
+    )
     assert len(served_identifier(ascii_text)) == MAX_CONTENT_STRING
     assert len(capped(ascii_text, MAX_CONTENT_STRING)) == MAX_CONTENT_STRING
 

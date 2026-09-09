@@ -357,6 +357,50 @@ def test_sonar_configuration_scopes_sources_tests_and_the_coverage_report() -> N
     assert settings.get("sonar.python.coverage.reportPaths") == "coverage.xml"
 
 
+#: Every path excluded from the COVERAGE metric, and nothing else may be. Each one is a
+#: suppression, so each is named here and argued for in `sonar-project.properties` beside the key.
+DECLARED_COVERAGE_EXCLUSIONS = ("src/enlightenment/asgi.py", "src/enlightenment/ui/**")
+
+
+def test_every_coverage_exclusion_is_declared_and_no_path_leaves_the_analysis() -> None:
+    """An exclusion is the one change to this gate that makes a number better by measuring less.
+
+    So it is bound in three ways. The set must match the literal above, so adding a path is a
+    visible edit to a test rather than a quiet edit to a properties file. Each path must be named
+    in a comment, so the reason travels with the suppression. And `sonar.exclusions` must be
+    ABSENT: excluding a file from analysis drops it out of the zero-issue half of the same gate
+    too, which is a far wider suppression wearing the same clothes.
+
+    `src/enlightenment/ui/**` was added at V0.27.6 after the platform scored the project 77.1%
+    against a Python figure of 97.74%: `sonar.sources` is forced to `src`, the interface is
+    1,181 lines of JavaScript inside it, and the platform's generated pipeline runs `pip install`
+    and `pytest` only, so no JavaScript coverage report can exist where the gate reads. Taken to
+    the owner and approved, not applied quietly.
+    """
+    raw = _require_local_file("sonar-project.properties").read_text(encoding="utf-8")
+    settings = _properties(_require_local_file("sonar-project.properties"))
+
+    assert "sonar.exclusions" not in settings, (
+        "sonar.exclusions removes a file from ANALYSIS, so its violations stop counting against"
+        " the zero-issue half of the quality gate. Only sonar.coverage.exclusions is permitted"
+        " here, and only with a written reason."
+    )
+    declared = [entry for entry in settings["sonar.coverage.exclusions"].split(",") if entry]
+    assert declared == list(DECLARED_COVERAGE_EXCLUSIONS), (
+        "the coverage exclusions changed without this test changing with them:"
+        f" {declared} against {list(DECLARED_COVERAGE_EXCLUSIONS)}"
+    )
+    #: The comment block above the key, which is where the reasons live. Read from the raw file
+    #: rather than the parsed settings, because a parser's whole job is to throw comments away.
+    reasons = raw.split("sonar.coverage.exclusions=")[0]
+    for entry in declared:
+        subject = entry.removesuffix("/**")
+        assert subject in reasons, (
+            f"{entry} is excluded from the coverage metric and no comment above the key explains"
+            " why. A suppression with no written reason is one nobody can review."
+        )
+
+
 def test_a_bare_pytest_run_still_emits_the_cobertura_report_the_gate_reads() -> None:
     """Only the xml report writes the file Sonar consumes; a bare run would score 0%.
 
@@ -964,6 +1008,13 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_a_miss_returns_the_cue_to_the_front_of_the_spacing_ladder",
         "test_the_spacing_ladder_only_ever_grows_and_is_bounded",
         "test_the_calibration_verdict_names_the_costly_case_in_words",
+        # Same class, added in V0.27.6 with `explain_score`'s first test. What it holds is that a
+        # discrimination item names the look-alike the answer landed on, which is TEACHING
+        # quality: an operator told "nothing matched" learns less than one told which confusable
+        # they called. Nothing reaches a control from it - the evidence string is composed from
+        # the item's own accepted names, never from the operator's text - so a register row for it
+        # would dilute a document that promises access controls.
+        "test_the_classification_line_names_the_look_alike_it_landed_on",
         # --- test_training.py and test_training_api.py. Both suites ARE swept: the answer-key
         # boundary, the interface policy, the markup sinks, the scoring limiter, the progress
         # file's mode and the edge redaction check all carry register rows. The names below are
