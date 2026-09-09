@@ -2008,6 +2008,35 @@ def test_the_simulation_installs_exactly_what_the_platform_installs() -> None:
         )
 
 
+def test_the_simulation_reproduces_the_platforms_checkout_state() -> None:
+    """The platform's test job runs from a git CHECKOUT of the artefact, so the simulation must.
+
+    This is the control that failed. For fifteen releases the simulation unpacked the zip into a
+    plain directory with no `.git`, and the platform imports the zip into its own repository, so
+    the one environment difference that mattered was the one the simulation could not express.
+    Twenty-one tests went red on the platform against a green simulation.
+
+    Both halves are asserted because both are load-bearing and they pull in opposite directions:
+    `.git` PRESENT is what makes the tree a repository, and the `git` BINARY absent is what the
+    platform's `python:3.12-slim` container actually gives the suite. A simulation with `.git` and
+    a working `git` is a different environment again, and would have hidden the fourth failure.
+    """
+    lines = _live_lines(ROOT / "scripts" / "simulate-pipeline.sh")
+    simulation = "\n".join(lines)
+    assert "git init" in simulation, (
+        "the simulation no longer makes the unpacked artefact a git checkout, so it cannot"
+        " reproduce the platform's test job. See _is_upload_artefact: absence of .git was once"
+        " read as 'this is the artefact', and the platform disproved it."
+    )
+    masked = [line for line in lines if "for absent in" in line]
+    assert masked, "the simulation no longer masks the tools a stock python image lacks"
+    tools = [line.split("for absent in", 1)[1].split(";")[0].split() for line in masked]
+    assert all("git" in names for names in tools), (
+        "the simulation must still mask the git BINARY as absent for the test stage: the"
+        f" platform's container has none. Masked: {tools}"
+    )
+
+
 def test_every_lock_file_is_audited_by_the_loop() -> None:
     """Three lock files now exist, so all three must be scanned. The runtime one is the
     only one that ships, and it would be the easy one to forget."""

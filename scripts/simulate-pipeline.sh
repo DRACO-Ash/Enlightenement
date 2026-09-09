@@ -24,6 +24,20 @@ unzip -q "$ZIP" -d "$SIM"
 # The platform commits its own pipeline file into the checkout.
 printf 'stages: [test]\n' > "$SIM/.gitlab-ci.yml"
 
+# And it commits the whole artefact: the platform's test job runs from a git CHECKOUT of the
+# uploaded zip, not from an extracted directory. This simulation ran without `.git` for
+# fifteen releases and so could not see the difference, which is exactly how a discriminator
+# written as "no .git means this is the artefact" reached the platform and failed twenty-one
+# tests there. `git init` is enough: the state that matters is `.git` being PRESENT while the
+# excluded directories are absent, which no other environment produces. Done before the mask
+# below, so the test stage still runs with `git` absent - the platform's container has no git
+# binary, and both halves of that combination are load-bearing.
+if ! command -v git >/dev/null 2>&1; then
+  echo "FAIL: git is not installed, so the platform's checkout state cannot be reproduced." >&2
+  exit 1
+fi
+git init --quiet "$SIM"
+
 # Use the PINNED interpreter, not whatever `python3` happens to be. A simulation on the
 # wrong runtime proves nothing about the platform's build.
 PINNED="python$(cat .python-version)"

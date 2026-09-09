@@ -2,6 +2,34 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.4 (2026-09-09)
+
+**What.** V0.27.3 fixed the twenty-one failures. This fixes the reason nobody saw them coming:
+**the pipeline simulation could not express the platform's checkout state.** It unpacked the zip
+into a plain directory with no `.git`, and the platform imports the zip into its own git
+repository, so for fifteen releases the one environment difference that mattered was the one the
+simulation was structurally unable to reproduce. It went green. The platform went red.
+
+**One line, and both halves of it are load-bearing.** `git init --quiet "$SIM"` runs after the
+unpack and BEFORE the tool mask, so the test stage sees `.git` present and the `git` BINARY
+absent - which is exactly what a stock `python:3.12-slim` container gives the suite, measured
+from the platform's own log, where the fourth affected test skipped on the missing binary rather
+than failing. A simulation with `.git` and a working `git` is a third environment again and would
+have hidden that test. The dependency is guarded with a named failure rather than a bare
+non-zero, matching the pinned-interpreter check above it.
+
+**Bound by `test_the_simulation_reproduces_the_platforms_checkout_state`,** which asserts both
+halves: `git init` present, and `git` still in the mask list. A fidelity property with no test is
+a property that survives until somebody tidies one line, and this one has already cost a red
+pipeline once.
+
+**Verified.** Loop green at head, and the simulation re-run against the 0.27.4 zip in its new
+checkout form.
+
+**Not done, and unchanged from V0.27.3.** Neither binding gate has run against the V0.27.x
+series. `docs/DEPLOYMENT.md` carries that in both gate rows, along with the fact that the "no
+production code moved since the last verdict" argument is dead at this head.
+
 ## V0.27.3 (2026-09-09)
 
 **What.** The App Store's own test job failed with 21 failures, 999 passes and 97.74% coverage.
