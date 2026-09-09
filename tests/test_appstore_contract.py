@@ -111,12 +111,30 @@ def _git_or_skip() -> str:
     not protect against this - `subprocess.run` raises before there is any exit code to inspect,
     so the fallback branch those tests already had was unreachable. The guard has to be the
     binary's presence, not the command's result.
+
+    PRESENCE is necessary and not sufficient, and the pipeline simulation is the proof. It masks
+    the tools a stock python image lacks by writing STUBS that exit 127, so `shutil.which` finds
+    a `git` that cannot answer anything. Before V0.27.4 that was invisible, because the simulated
+    tree had no `.git` and every git-using test skipped a step earlier; giving the simulation the
+    platform's real checkout state made a resolvable-but-dead git reachable. Measured: 22 failures
+    in the simulation against the platform's 21, the extra one a stub's exit 127 read as "the file
+    is not tracked". A guard that cannot tell "git said no" from "git is not git" reports the
+    wrong fault, so this now proves the binary RUNS.
     """
     binary = shutil.which("git")
     if binary is None:
         pytest.skip(
             "git is absent, which is the platform test container. The assertion this guards is"
             " answered by the artefact-walking branch or by the local run."
+        )
+    probe = subprocess.run(  # noqa: S603 - the binary shutil.which just resolved
+        [binary, "--version"], capture_output=True, text=True, check=False
+    )
+    if probe.returncode != 0:
+        pytest.skip(
+            f"{binary} resolves but cannot run: `git --version` exited {probe.returncode}"
+            f" ({probe.stderr.strip() or 'no diagnostic'}). That is the pipeline simulation's"
+            " mask, and a git that cannot answer is not evidence about this repository."
         )
     return binary
 
@@ -2034,6 +2052,38 @@ def test_the_simulation_reproduces_the_platforms_checkout_state() -> None:
     assert all("git" in names for names in tools), (
         "the simulation must still mask the git BINARY as absent for the test stage: the"
         f" platform's container has none. Masked: {tools}"
+    )
+
+
+def test_a_resolvable_git_that_cannot_run_is_treated_as_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`shutil.which` finding something is not the same as git working, and a stub proves it.
+
+    The pipeline simulation masks absent tools with stubs that exit 127. `_git_or_skip` guarded on
+    presence alone, so a stub satisfied it and the exit code then read as a real answer: 22
+    failures in the simulation against the platform's 21, the extra one "the file is not tracked"
+    when what actually happened was that git did not run. Driven with a stub of the same shape,
+    because the condition is not hypothetical - it is one of this project's own environments.
+    """
+    if os.name == "nt":  # pragma: no cover - this suite's CI is Linux
+        pytest.skip("the shell stub this drives is not executable on Windows")
+    stub = tmp_path / "git"
+    stub.write_text('#!/bin/sh\necho "git: not found" >&2\nexit 127\n', encoding="utf-8")
+    stub.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda name: str(stub) if name == "git" else None)
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        _git_or_skip()
+    assert "cannot run" in str(skipped.value), (
+        f"a dead git must skip with a diagnosis naming the cause: {skipped.value}"
+    )
+
+    working = tmp_path / "working-git"
+    working.write_text('#!/bin/sh\necho "git version 0.0.0-stub"\nexit 0\n', encoding="utf-8")
+    working.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda name: str(working) if name == "git" else None)
+    assert _git_or_skip() == str(working), (
+        "the probe must not reject a git that answers; it would skip every git-backed control"
     )
 
 

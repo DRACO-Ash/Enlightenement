@@ -2,6 +2,41 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.5 (2026-09-09)
+
+**What.** V0.27.4's own row overstated its evidence, and running the corrected simulation against
+the PRE-FIX artefact is what caught it. The mask does not remove `git`; it writes a stub that
+exits 127. `shutil.which` resolves that stub, so the simulation and the platform are not the same
+environment for any test that shells out to git, and the numbers say so: **22 failures in the
+simulation against the platform's 21.**
+
+**The extra failure is a guard reporting the wrong fault.** `_git_or_skip` proved PRESENCE, which
+its own docstring argued for and which was the right correction to the fault before it - a
+`check=False` fallback that could never run because `subprocess.run` raises first. Presence is
+necessary and it is not sufficient. `git ls-files --error-unmatch tools/udl_characterise.py`
+against the stub returned 127, and the assertion read that as "the file is not tracked". A guard
+that cannot tell "git said no" from "git is not git" attributes a broken environment to the code
+under test.
+
+**Closed by proving the binary RUNS.** `_git_or_skip` now probes `git --version` and skips with
+the exit code and stderr in the message when it fails, so the diagnosis names the environment
+instead of blaming the repository.
+`test_a_resolvable_git_that_cannot_run_is_treated_as_absent` drives both directions with stubs of
+the same shape the simulation writes: a 127 stub must skip with a diagnosis naming the cause, and
+a working stub must be returned rather than rejected - the second half matters, because a probe
+that is too strict skips every git-backed control in this file and would be worse than the fault.
+
+**Why it was invisible until now.** Before V0.27.4 the simulated tree had no `.git`, so every
+git-using test skipped a step earlier and a dead git was never reached. Giving the simulation the
+platform's real checkout state made the stub reachable for the first time. That is the second
+defect this one change has surfaced, which is what a fidelity fix is for.
+
+**Verified.** Loop green at head. The pre-fix artefact reproduced in the corrected simulation form
+at 22 failures, the extra one identified by name and its assertion message read rather than
+assumed.
+
+**Not done, and unchanged.** Neither binding gate has run against the V0.27.x series.
+
 ## V0.27.4 (2026-09-09)
 
 **What.** V0.27.3 fixed the twenty-one failures. This fixes the reason nobody saw them coming:
@@ -14,7 +49,12 @@ simulation was structurally unable to reproduce. It went green. The platform wen
 unpack and BEFORE the tool mask, so the test stage sees `.git` present and the `git` BINARY
 absent - which is exactly what a stock `python:3.12-slim` container gives the suite, measured
 from the platform's own log, where the fourth affected test skipped on the missing binary rather
-than failing. A simulation with `.git` and a working `git` is a third environment again and would
+than failing.
+[**Corrected in V0.27.5**: "the `git` BINARY absent" overstates what the mask does. It writes a
+STUB that exits 127, so `shutil.which` resolves it and the simulation is not equivalent to the
+platform here. Measured against the pre-fix artefact: 22 failures in the simulation against the
+platform's 21, the extra one being exactly that fourth test, which skipped on the platform and
+failed on a stub's exit code in the simulation. V0.27.5 closes the gap in `_git_or_skip`.] A simulation with `.git` and a working `git` is a third environment again and would
 have hidden that test. The dependency is guarded with a named failure rather than a bare
 non-zero, matching the pinned-interpreter check above it.
 
