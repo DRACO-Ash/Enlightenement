@@ -566,12 +566,12 @@ function drawStimulus(stimulus) {
 /* Which way an arrow key moves the confidence selection: forward, back, or not an arrow at all.
  * The caller treats 0 as "not mine" and returns, so a named function keeps the three answers
  * apart. Both axes are accepted because the group reads as a row and is laid out as one. */
-const NEXT_KEYS = ['ArrowRight', 'ArrowDown'];
-const PREVIOUS_KEYS = ['ArrowLeft', 'ArrowUp'];
+const NEXT_KEYS = new Set(['ArrowRight', 'ArrowDown']);
+const PREVIOUS_KEYS = new Set(['ArrowLeft', 'ArrowUp']);
 
 function arrowStep(key) {
-  if (NEXT_KEYS.includes(key)) return 1;
-  if (PREVIOUS_KEYS.includes(key)) return -1;
+  if (NEXT_KEYS.has(key)) return 1;
+  if (PREVIOUS_KEYS.has(key)) return -1;
   return 0;
 }
 

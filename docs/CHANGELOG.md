@@ -2,6 +2,63 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.7 (2026-09-09)
+
+**What.** The quality gate went from 52 issues to 3, and those 3 are closed here. The coverage
+half did NOT move, and that is the finding: **77.1% became 76.5%, so the exclusion V0.27.6 added
+had no effect on the platform's metric.**
+
+**Measured rather than assumed, because a guess here costs an upload.** `coverage.xml` reports
+3,005 of 3,057 Python lines covered, which is 98.30% on its own. A reported 76.5% therefore
+implies a denominator near 3,928 and roughly 871 non-Python lines still being counted. At V0.27.5
+the same arithmetic gives about 826. The difference is the V0.27.6 refactor making `app.js`
+longer, from 1,181 lines to 1,322 - so the interface is unchanged in the metric and the only
+thing that moved was its size. `src/enlightenment/ui/**` either did not match or was not read.
+
+**Which of the two cannot be determined from here, and that is stated rather than papered over.**
+The Foundations skills assert twice that a committed `sonar-project.properties` is respected for
+coverage exclusions; nothing measurable in this repository confirms it, and the platform generates
+its own scanner invocation. So the exclusion is now written in **every form that could match** -
+base-relative, base-relative with a file part, any-depth, and by extension - because one upload
+that settles it beats four that each test a single guess. The extension patterns are exact in
+effect rather than merely broad: `src` holds exactly one `.js` file and exactly one `.html` file,
+and both are this interface. All six patterns are named in the file, and the binding test now
+requires each PATTERN verbatim in the comment: matching a stripped stem had let one spelling stand
+as the written reason for three others, which is a check reporting on something adjacent to what
+it claims.
+
+**If the metric still does not move, the property is being overridden and no pattern will help.**
+The remaining levers are then the owner's - relocate the interface out of `src` so the forced
+`sonar.sources=src` never reaches it, or ask the platform team for a project-side exclusion. This
+release takes neither unilaterally.
+
+**The suite's own properties reader was wrong about line continuations, and the exclusion test is
+the only reason anyone found out.** A properties file may end a line with a backslash to carry the
+value on. Written across six lines, `sonar.coverage.exclusions` parsed as the single value `\`,
+so a test that claims to pin six patterns pinned one character. `_properties` now joins a
+continuation, still reads the line after one, and refuses a file that ends mid-value; both
+directions are driven by a test, because the failure was silent and the correct behaviour is too.
+The file itself stays on ONE line regardless: whether the platform reads it at all is the open
+question above, and a second unverified assumption about how it parses would make the next failure
+impossible to attribute.
+
+**The three code smells, all in code V0.27.6 introduced.** `_waterfall_tracks` came out at
+cognitive complexity 16 against a cap of 15, so the per-object sample loop is now
+`_waterfall_samples`: the two drop conditions and the drift arithmetic sat two loops deep. The two
+arrow-key lists became `Set`s with `.has()`.
+
+**The determinism claim is now proved rather than argued.** Every generator extraction since
+V0.27.5 - `DrawnRate`, `_Neighbourhood`, `_waterfall_tracks`, and now `_waterfall_samples` - was
+asserted to preserve the order of draws from the seeded stream. Checked directly: a SHA-256 over
+the marks, ramps, derived keys, header and footer of five waterfalls, including the clamped absurd
+rate, the collection-gap case and the inverted axis, is **byte-identical at V0.27.5, V0.27.6 and
+this head** - `848951e0eb22428c`. That is the property the determinism gate rests on, and it was
+worth measuring rather than reasoning about.
+
+**Verified.** Loop green at head. Pipeline simulation green.
+
+**Not done, and unchanged.** Neither binding gate has run against the V0.27.x series.
+
 ## V0.27.6 (2026-09-09)
 
 **What.** The test stage passed. The CODE QUALITY gate then failed on two counts: **line coverage

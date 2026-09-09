@@ -433,6 +433,38 @@ class _Neighbourhood(NamedTuple):
     drift_start: float
 
 
+def _waterfall_samples(
+    scene: _Neighbourhood, held: float, *, drifting: bool, stream: SeededRandom
+) -> tuple[list[float], list[float]]:
+    """One object's observations: longitude against time, with the gap and the drop-outs applied.
+
+    Split from the track builder rather than nested inside it. The two `continue`s and the drift
+    arithmetic sat two loops deep, which is one level past what this project's cap allows and,
+    more usefully, one level past where a reader can hold the three conditions at once.
+
+    **The order of draws from `stream` is unchanged**, which is the property that matters: the
+    determinism gate asserts one seed yields one identical event log, so a reordered draw would
+    change every waterfall this library ships while every assertion about it stayed true. Each
+    sample still spends exactly one drop-out draw and, if it survives, one jitter draw, in that
+    order, for every time in the window.
+    """
+    gap_start, gap_end = scene.gap
+    xs: list[float] = []
+    ys: list[float] = []
+    for when in scene.times:
+        if gap_start <= when <= gap_end:
+            continue
+        if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
+            continue
+        elapsed = max(when - scene.drift_start, 0.0)
+        longitude = held + (scene.drift_rate * elapsed if drifting else 0.0)
+        xs.append(
+            longitude + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
+        )
+        ys.append(when)
+    return xs, ys
+
+
 def _waterfall_tracks(scene: _Neighbourhood, stream: SeededRandom) -> list[Marks]:
     """One track per object in the neighbourhood, drifting or held.
 
@@ -442,25 +474,11 @@ def _waterfall_tracks(scene: _Neighbourhood, stream: SeededRandom) -> list[Marks
     determinism gate asserts that one seed yields one identical event log, and a reordered draw
     would change every waterfall this library ships while every assertion about it stayed true.
     """
-    gap_start, gap_end = scene.gap
     marks: list[Marks] = []
     for index in range(scene.neighbours):
         held = scene.centre + stream.uniform(scene.bounds[0], scene.bounds[1])
         drifting = index < scene.drifters
-        xs: list[float] = []
-        ys: list[float] = []
-        for when in scene.times:
-            if gap_start <= when <= gap_end:
-                continue
-            if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
-                continue
-            elapsed = max(when - scene.drift_start, 0.0)
-            longitude = held + (scene.drift_rate * elapsed if drifting else 0.0)
-            xs.append(
-                longitude
-                + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
-            )
-            ys.append(when)
+        xs, ys = _waterfall_samples(scene, held, drifting=drifting, stream=stream)
         marks.append(
             Marks(
                 label=("Drifting object" if drifting else "Held longitude"),

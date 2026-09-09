@@ -145,14 +145,38 @@ def _properties(path: Path) -> dict[str, str]:
     Reading the raw text let `# DISABLED: sonar.python.coverage.reportPaths=coverage.xml`
     satisfy the assertion that the coverage path is configured, while SonarQube read no report
     and scored 0%. A settings file is parsed, never grepped.
+
+    A LINE CONTINUATION is a value, not a line. A properties file may end a line with a
+    backslash to carry the value on, and this reader took the backslash itself as the whole
+    value: written across six lines, `sonar.coverage.exclusions` parsed as `\\` and the test
+    that pins the exclusion list read one entry where there were six. Caught by that test
+    failing rather than by anyone reading the parser, which is the only reason it is not still
+    true - a reader that silently truncates the thing it is asked to check is worse than no
+    reader, because the check still reports green.
     """
     settings: dict[str, str] = {}
+    pending: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
+        if pending:
+            #: Mid-value. A comment marker here is part of the value, not a comment.
+            continued = stripped.endswith("\\")
+            pending.append(stripped.removesuffix("\\").strip())
+            if continued:
+                continue
+            joined = "".join(pending)
+            pending = []
+            key, _, value = joined.partition("=")
+            settings[key.strip()] = value.strip()
+            continue
         if not stripped or stripped.startswith(("#", "!")) or "=" not in stripped:
+            continue
+        if stripped.endswith("\\"):
+            pending.append(stripped.removesuffix("\\").strip())
             continue
         key, _, value = stripped.partition("=")
         settings[key.strip()] = value.strip()
+    assert not pending, f"{path.name} ends mid-value: a continuation with nothing after it"
     return settings
 
 
@@ -359,7 +383,48 @@ def test_sonar_configuration_scopes_sources_tests_and_the_coverage_report() -> N
 
 #: Every path excluded from the COVERAGE metric, and nothing else may be. Each one is a
 #: suppression, so each is named here and argued for in `sonar-project.properties` beside the key.
-DECLARED_COVERAGE_EXCLUSIONS = ("src/enlightenment/asgi.py", "src/enlightenment/ui/**")
+DECLARED_COVERAGE_EXCLUSIONS = (
+    "src/enlightenment/asgi.py",
+    #: Four spellings of one directory. V0.27.6 declared the first alone and the platform's
+    #: metric did not move, so every form that could match is declared rather than guessed at
+    #: one upload per guess. The reasoning, and the arithmetic that proved the metric did not
+    #: move, are beside the key in `sonar-project.properties`.
+    "src/enlightenment/ui/**",
+    "src/enlightenment/ui/**/*",
+    "**/ui/**",
+    "**/*.js",
+    "**/*.html",
+)
+
+
+def test_the_properties_reader_joins_a_continued_value_rather_than_truncating_it(
+    tmp_path: Path,
+) -> None:
+    """A backslash at the end of a line carries the value on. The reader took it AS the value.
+
+    Found by the exclusion test failing, not by anyone reading the parser: a six-line
+    `sonar.coverage.exclusions` parsed as the single entry `\\`, so a check that claims to pin
+    six patterns pinned one character. Both directions are driven here, because the failure mode
+    was silent and the correct behaviour has to be as well.
+    """
+    settings = tmp_path / "sonar-project.properties"
+    settings.write_text(
+        "# a comment\nplain=one\ncontinued=first,\\\n  second,\\\n  third\nafter=last\n",
+        encoding="utf-8",
+    )
+    parsed = _properties(settings)
+    assert parsed["plain"] == "one"
+    assert parsed["continued"] == "first,second,third", (
+        f"a continued value was not joined: {parsed['continued']!r}"
+    )
+    #: The line AFTER a continuation is still read as its own setting. An off-by-one here would
+    #: swallow it silently, which is how the original fault stayed invisible.
+    assert parsed["after"] == "last"
+
+    dangling = tmp_path / "dangling.properties"
+    dangling.write_text("key=value,\\\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="ends mid-value"):
+        _properties(dangling)
 
 
 def test_every_coverage_exclusion_is_declared_and_no_path_leaves_the_analysis() -> None:
@@ -394,10 +459,13 @@ def test_every_coverage_exclusion_is_declared_and_no_path_leaves_the_analysis() 
     #: rather than the parsed settings, because a parser's whole job is to throw comments away.
     reasons = raw.split("sonar.coverage.exclusions=")[0]
     for entry in declared:
-        subject = entry.removesuffix("/**")
-        assert subject in reasons, (
-            f"{entry} is excluded from the coverage metric and no comment above the key explains"
-            " why. A suppression with no written reason is one nobody can review."
+        #: The PATTERN itself, verbatim, not a stem of it. Matching a stripped stem let
+        #: `src/enlightenment/ui/**` stand as the reason for three other spellings of the same
+        #: directory, which is the shape of a check that reports on something adjacent to what
+        #: it claims. A pattern nobody wrote down is a pattern nobody chose.
+        assert entry in reasons, (
+            f"{entry} is excluded from the coverage metric and no comment above the key names"
+            " that pattern. A suppression with no written reason is one nobody can review."
         )
 
 
