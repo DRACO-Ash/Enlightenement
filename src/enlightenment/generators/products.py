@@ -236,6 +236,13 @@ MAX_NEIGHBOURHOOD_TRACKS: Final = 40
 #: and the box has to stay readable, and 2.5 bought the first at the cost of the second.
 DRIFT_EXCURSION_FACTOR: Final = 1.2
 
+#: How much of the room between a held object and its station-keeping bound the residual may
+#: spend across the whole window. Half, so a scaled track ends unambiguously INSIDE the box
+#: rather than arriving exactly on it - a residual that walks precisely to the bound is itself a
+#: claim, that the object is about to leave, and the item did not author one. At every shipped
+#: span the scale is 1.0 and this is inert; it only bites past about twenty days.
+HELD_RESIDUAL_ROOM_FRACTION: Final = 0.5
+
 #: Where a drift starts when the content says only THAT it starts, as a fraction of the window.
 DEFAULT_DRIFT_ONSET_FRACTION: Final = 0.35
 DEFAULT_LONGITUDE_HALF_WIDTH_DEG: Final = 3.0
@@ -555,6 +562,27 @@ def _waterfall_samples(
     order, for every time in the window.
     """
     gap_start, gap_end = scene.gap
+    #: **The residual is SCALED to the room remaining, not clamped against the wall.**
+    #: `residual * when` is unbounded in the window length: measured at the longest authorable
+    #: span, 60 days, a held track ran from -3.775° to +1.707° under a header reading
+    #: "-3.0° to +3.0° of the primary", so the product asserted a station-keeping box its own
+    #: marks had left. No shipped item authors a span past seven days - but `MAX_SPAN_DAYS` is 60
+    #: and the span is content-supplied, and a bound on a content-supplied quantity belongs where
+    #: the value reaches the range rather than where somebody notices.
+    #:
+    #: A CLAMP was the first fix and was worse than it looked. It held the track inside the box
+    #: and, at 60 days, parked one of fourteen held tracks at exactly +3.0° for 755 of its 1,703
+    #: samples: a perfectly straight vertical line at the box edge, which is the ruler this
+    #: release exists to remove, at the one place an operator reads "is it leaving the box".
+    #: Scaling keeps the track NEARLY vertical at any span, which is the property wanted, instead
+    #: of walking it into a wall and calling the wall a station-keeping residual.
+    #:
+    #: `held` is drawn from inside `bounds`, so the room in the direction of travel is never
+    #: negative, and at every shipped span the scale is 1.0 and nothing changes.
+    room = (scene.bounds[1] - held) if residual > 0 else (held - scene.bounds[0])
+    travel = abs(residual) * scene.days
+    usable = room * HELD_RESIDUAL_ROOM_FRACTION
+    held_rate = residual * min(1.0, usable / travel) if travel > 0.0 else 0.0
     xs: list[float] = []
     ys: list[float] = []
     for when in scene.times:
@@ -570,14 +598,7 @@ def _waterfall_samples(
         if drifting:
             longitude = held + scene.drift_rate * max(when - scene.drift_start, 0.0)
         else:
-            #: Clamped into the box the HEADER states. `residual * when` is unbounded in the
-            #: window length: measured at the longest authorable span, 60 days, a held track ran
-            #: from -3.775 to +1.707 under a header reading "-3.0° to +3.0° of the primary", so
-            #: the product asserted a station-keeping box its own marks left. No shipped item
-            #: authors a span past 7 days, where the residual stays well inside - but
-            #: `MAX_SPAN_DAYS` is 60 and the span is content-supplied, and a bound on a
-            #: content-supplied quantity belongs at the point it reaches a range.
-            longitude = min(max(held + residual * when, scene.bounds[0]), scene.bounds[1])
+            longitude = held + held_rate * when
         xs.append(
             longitude + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
         )
@@ -1200,8 +1221,15 @@ class WaterfallGenerator:
                 #: UNSCORABLE, which is the fail-closed answer this project requires of a control
                 #: it cannot satisfy - refusing to score is honest, scoring against a direction
                 #: nothing drew is not.
+                #: Guarded on `slopes` as WELL as on the count, which closes the class rather
+                #: than the one instance. `drifting: true` with an authored rate of exactly zero
+                #: gives `drifter_count: 1`, `drift_visible: False` and still published a
+                #: direction. That predates V0.27.10 and no shipped item authors an exact zero,
+                #: which is precisely why it would have waited for one to be written.
                 "expected_text": (
-                    (("east",) if drift_rate > 0 else ("west",)) if drawn_drifters else ()
+                    (("east",) if drift_rate > 0 else ("west",))
+                    if drawn_drifters and rates.slopes
+                    else ()
                 ),
             },
         )

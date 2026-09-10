@@ -2,6 +2,58 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.12 (2026-09-10)
+
+**What.** The engineering gate returned PASS on V0.27.11 with four MINOR findings left standing.
+All four are closed, and one of them is a correction to something I wrote in the V0.27.11 row.
+
+**The correction first, because it is the one that matters.** V0.27.11's row states that the
+surviving mutation - drawing the station-keeping residual only for the objects that use it - was
+unbindable, in the words "no assertion this suite can make would distinguish it from the current
+code". That is false. The gate produced an assertion. A claim of impossibility is exactly what
+stops the next reader looking, which is a rule this project has written down, and I broke it in
+the same paragraph where I was congratulating myself for disclosing the gap.
+
+**And the gate's own assertion for it was not right either.** Its version renders the same seed at
+two drifter counts and compares the held tracks, which passes under the mutant AT THIS SEED by
+arithmetic luck: shifting the stream by one changes which observations survive the drop-out, the
+survivor count moved by exactly one the other way, and the object landed on the stream position it
+would have reached anyway. Measured under the mutant at drifters 1 against 2: object 1 entered at
+draw 1059 and 1058 and both left at 1545, so every later track came out identical and the suite
+stayed green. So the test asserts the PROPERTY at the boundary where it is claimed - the stream
+position at which each object begins drawing its samples, which must not depend on the drifter
+count. One integer per object, no value pinned, and it kills the mutant at the seed that defeated
+the other version.
+
+**The other three.**
+● The direction key was guarded on the drifter COUNT and not on whether anything slopes, so
+  `drifting: true` with an authored rate of exactly zero gave `drifter_count: 1`,
+  `drift_visible: False` and still published `("west",)`. This predates V0.27.10 and no shipped
+  item authors an exact zero, which is precisely why it would have waited for someone to write
+  one. Guarded on `slopes` as well, which closes the class rather than the instance.
+● **The V0.27.11 clamp was worse than it looked, and it was my fix rather than the gate's.** It
+  held the track inside the box and, at the 60-day ceiling, parked one of fourteen held tracks at
+  exactly the bound for 755 of its 1,703 samples: a perfectly straight vertical line at the box
+  edge, which is the ruler V0.27.10 removed, at the one place an operator reads "is it leaving the
+  box". The residual is now SCALED to the room remaining and spends at most half of it, so the
+  track stays nearly vertical at any span and ends unambiguously inside the box rather than
+  arriving exactly on it - a residual that walks precisely to the bound is itself a claim, that
+  the object is about to leave, and no item authored one. At every shipped span the scale is 1.0
+  and the change is inert.
+● The box test did not filter marks by role. With `drifting: 0` every mark is held, so it was
+  correct - and if the default drifter count or the parameter spelling ever changed it would
+  silently have begun asserting that DRIFTERS stay inside the box, the opposite invariant, under a
+  message reading "a held track reaches". Filtered, with the track count asserted.
+
+**How verified.** Each of the four is bound by an assertion that fails against the previous
+behaviour, checked by mutating the source in place and re-running: removing the scaling and
+restoring the clamp fails the box test on the edge-run bound; drawing the residual only where it
+is used fails the new stream-position test; unguarding the direction restores `("west",)` on a
+panel with no visible drift. The box test's edge-run check measures only tracks that START in open
+box, because `held` is drawn uniformly across the box and one of fourteen landing on an edge is
+ordinary rather than evidence of how it was drawn - the clamp's signature is a track that starts
+in open box and ends pinned. Verification loop PASS on all eight legs.
+
 ## V0.27.11 (2026-09-10)
 
 **What.** The `engineering-reviewer` gate returned FAIL on V0.27.10 with one MAJOR and five
@@ -59,8 +111,14 @@ legend and header assertions on the interface side. Four probe cases were render
 confirm each branch: the shipped item, a whole-day gap, no gap authored, and a 60-day held-only
 span. The gate also recorded one mutation that SURVIVED against V0.27.10 - drawing the residual
 only for held objects, which leaves the draw-order rationale unbound - and that is noted rather
-than closed, because the rationale is a property of the stream's call order that no assertion
-this suite can make would distinguish from the current code.
+than closed.
+
+[Corrected at V0.27.12. This paragraph went on to say the rationale was "a property of the
+stream's call order that no assertion this suite can make would distinguish from the current
+code". That was false and it is closed at V0.27.12 by a test that asserts the stream POSITION at
+which each object begins drawing. A claim of impossibility is what stops the next reader looking,
+which is a rule this project has written down, and it was broken in the same paragraph that was
+disclosing the gap.]
 
 ## V0.27.10 (2026-09-10)
 

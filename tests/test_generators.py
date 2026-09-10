@@ -25,8 +25,10 @@ import pytest
 
 from enlightenment.content import PRODUCT_RENDERERS, ContentPackage
 from enlightenment.generators import board_for, build_registry, compose
+from enlightenment.generators import products as products_module
 from enlightenment.generators.products import (
     DEFAULT_LONGITUDE_HALF_WIDTH_DEG,
+    DEFAULT_NEIGHBOURS,
     GEO_PERIOD_S,
     MAX_FRAGMENTS,
     MAX_INTERVALS,
@@ -44,6 +46,7 @@ from enlightenment.generators.products import (
     PROVISIONAL_LONGITUDE_SIGMA,
     TIME_TICKS,
 )
+from enlightenment.scenario.determinism import SeededRandom
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT = ROOT / "content"
@@ -64,6 +67,17 @@ RESOLVED_COMPUTED_ITEMS = 2
 
 #: The figure DRL-0005 authors, which is the real ASTRA 1M artefact from the flight plan.
 ABSURD_RATE_DEG_DAY = -22900000
+
+#: Consecutive samples a held track may sit on its station-keeping bound before it is a straight
+#: line against the wall rather than a residual. Three, measured: the shipped spans put 1.06% of
+#: held samples within a jitter amplitude of the bound with a longest run of three, which reads as
+#: scatter. A clamp against the bound produced a run of 755 at the 60-day ceiling.
+MAX_SAMPLES_ON_THE_BOX_EDGE = 3
+
+#: How far from a bound, in jitter amplitudes, a track has to START before its ending position
+#: says anything about how it was drawn. `held` is uniform across the box, so a track landing on
+#: an edge is ordinary; a track that starts in open box and ends pinned is the clamp.
+EDGE_START_MARGIN = 8
 
 #: How much wider a drifter's longitude sweep must be than a station-kept object's jitter before
 #: the drift counts as drawn. The item's key says the object has STOPPED station-keeping, so the
@@ -1160,13 +1174,45 @@ def test_a_held_track_stays_inside_the_box_its_own_header_states() -> None:
     header = dict(stimulus.header)
     assert f"{-half_width:+.1f}° to {half_width:+.1f}°" in header["Window"], header["Window"]
 
-    held = [x for m in stimulus.panels[0].marks for x in m.x]
+    #: Filtered by ROLE, and the count asserted. Unfiltered it was correct only because
+    #: `drifting: 0` leaves every mark held: if the default drifter count or the parameter
+    #: spelling ever changed, it would silently begin asserting that DRIFTERS stay inside the
+    #: box - the opposite invariant - under a message reading "a held track reaches".
+    tracks = [m for m in stimulus.panels[0].marks if m.role == "object-held"]
+    assert len(tracks) == DEFAULT_NEIGHBOURS, [m.role for m in stimulus.panels[0].marks]
+    held = [x for m in tracks for x in m.x]
     assert held, "no held track was drawn, so this asserts nothing"
-    #: The jitter is measurement scatter drawn THROUGH the clamped longitude, so it may sit
-    #: outside the box by its own amplitude. The object's position may not.
+    #: The jitter is measurement scatter drawn THROUGH the object's longitude, so a sample may
+    #: sit outside the box by its own amplitude - a real observation of an object inside its box
+    #: can be reported outside it. The object's position may not.
     tolerance = half_width + PROVISIONAL_LONGITUDE_SIGMA
     assert min(held) >= -tolerance, f"a held track reaches {min(held):.3f}°"
     assert max(held) <= tolerance, f"a held track reaches {max(held):.3f}°"
+
+    #: And it must not be pinned AGAINST the box either, which is what the first fix did: a
+    #: clamp parked one of fourteen tracks at exactly the bound for 755 of its 1,703 samples, a
+    #: perfectly straight vertical line at the box edge - the ruler this release removed, at the
+    #: one place an operator reads "is it leaving the box". The residual is scaled to the room
+    #: remaining instead, so no track spends a long run on the wall.
+    #: A track that STARTS near a bound legitimately sits near it - `held` is drawn uniformly
+    #: across the box, so one of fourteen landing within a jitter amplitude of an edge is
+    #: ordinary and says nothing about how it is drawn. The signature of a clamp is a track that
+    #: starts in open box and ENDS pinned, so those are the tracks measured.
+    measured = 0
+    longest_run = 0
+    for track in tracks:
+        if half_width - abs(track.x[0]) < EDGE_START_MARGIN * PROVISIONAL_LONGITUDE_SIGMA:
+            continue
+        measured += 1
+        run = 0
+        for value in track.x:
+            run = run + 1 if abs(abs(value) - half_width) < PROVISIONAL_LONGITUDE_SIGMA else 0
+            longest_run = max(longest_run, run)
+    assert measured >= 2, f"only {measured} of {len(tracks)} tracks started in open box"
+    assert longest_run <= MAX_SAMPLES_ON_THE_BOX_EDGE, (
+        f"a held track sits on the box edge for {longest_run} consecutive samples, so it is drawn"
+        " as a straight line against the wall rather than as a station-keeping residual"
+    )
 
 
 def test_an_epoch_gap_that_cannot_explain_the_figure_is_not_presented_as_an_artefact() -> None:
@@ -1207,6 +1253,52 @@ def test_an_epoch_gap_that_cannot_explain_the_figure_is_not_presented_as_an_arte
     )
     assert "Elset 1 epoch" not in dict(unexplained.header), (
         "the product still offers an epoch pair as evidence for an artefact it is not presenting"
+    )
+
+
+def test_an_objects_draws_do_not_depend_on_how_many_of_its_neighbours_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The residual is drawn for EVERY object, used only for the held ones, and this is why.
+
+    `_waterfall_tracks` claims each object spends the same draws from the stream whatever its
+    neighbours do, so a drifter count does not shift the surface of the objects behind it. The
+    engineering gate mutated the code to draw the residual only where it is used, and the whole
+    suite stayed green: the rationale was written down and held by nothing.
+
+    **I then recorded the mutation as unbindable, which was wrong, and the gate's own assertion
+    for it was not right either.** Its version rendered the same seed at two drifter counts and
+    compared the held tracks, and that passes under the mutant at this seed by COINCIDENCE:
+    shifting the stream by one changes which observations survive the drop-out, the survivor
+    count moved by exactly one the other way, and object 1 ended on the same stream position it
+    would have anyway. Measured - mutant, drifters 1 against 2: object 1 entered at draw 1059
+    and 1058 and both left at 1545, so every later track came out identical. A test that holds by
+    arithmetic luck at one seed is the class of test this project keeps finding in its own suite.
+
+    So it asserts the property itself, at the boundary where it is stated: the stream POSITION at
+    which each object begins drawing its samples, which must not depend on the drifter count. One
+    integer per object, no value pinned, and it separates the two at the seed above.
+    """
+    positions: dict[int, list[int]] = {}
+    real = products_module._waterfall_samples
+
+    def recording(
+        scene: object, held: float, residual: float, *, drifting: bool, stream: SeededRandom
+    ) -> tuple[list[float], list[float]]:
+        positions[len(positions)] = [stream.draws]
+        return real(scene, held, residual, drifting=drifting, stream=stream)  # type: ignore[arg-type]
+
+    entered: list[tuple[int, ...]] = []
+    for drifters in (1, 2):
+        positions.clear()
+        monkeypatch.setattr(products_module, "_waterfall_samples", recording)
+        compose(build_registry(), "waterfall", {"days": 7, "drifting": drifters}, SEED)
+        entered.append(tuple(value[0] for value in positions.values()))
+
+    assert len(entered[0]) == len(entered[1]) == DEFAULT_NEIGHBOURS, entered
+    assert entered[0] == entered[1], (
+        "an object began drawing at a different point in the stream when a NEIGHBOUR started"
+        f" drifting, so its surface depends on its neighbours: {entered[0]} against {entered[1]}"
     )
 
 
