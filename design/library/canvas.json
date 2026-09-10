@@ -1,0 +1,31 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1104, "h": 3080, "title": "Procedure — the flow", "print": "flow" },
+    { "file": "Index.dc.html", "x": 1224, "y": 0, "w": 1180, "h": 1180, "title": "Library index" },
+    { "file": "Markers.dc.html", "x": 1224, "y": 1300, "w": 1000, "h": 1320, "title": "Marker vocabulary" }
+  ],
+  "annotations": [
+    {
+      "id": "the-problem",
+      "x": 0,
+      "y": -150,
+      "w": 520,
+      "text": "The problem: openProcedure() dumped every JSON field as prose, so a 21-step procedure arrived as one wall of text with the exclusions and the reporting rules buried at the bottom.\n\nAll of this is real PROC-MNV content. Nothing is invented."
+    },
+    {
+      "id": "read-order",
+      "x": 1224,
+      "y": -150,
+      "w": 480,
+      "text": "Read the marker sheet first (bottom right), then the flow (left). The index is how you arrive.\n\nEvery marker: glyph + word + colour. Never colour alone."
+    },
+    {
+      "id": "honest-flow",
+      "x": 1224,
+      "y": 2680,
+      "w": 480,
+      "text": "The one refusal: the content orders decision points but does not pin them to a step number, so the diamonds keep their own track rather than being placed on the spine at a position nobody authored."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

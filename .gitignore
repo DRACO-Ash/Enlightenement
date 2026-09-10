@@ -29,6 +29,11 @@ venv/
 # carries them into the App Store artefact.
 .claude/worktrees/
 
+# The seeded design canvas: 2.5 MB of generated output with the Claude Design editor baked
+# into it, regenerable from the `.dc.html` artboards and `canvas.json` beside it. Build output
+# by any reading, and this repository has a contract test against tracking build output.
+design/library/procedure-library.html
+
 # Packaging output
 dist/
 build/

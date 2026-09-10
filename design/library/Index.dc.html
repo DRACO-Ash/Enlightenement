@@ -1,0 +1,257 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body {
+      margin: 0;
+      background: #070b11;
+      color: #e7eef6;
+      font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { color: #7dd3fc; }
+    .lab {
+      font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: #7e97ad;
+    }
+    .mono { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace; }
+    .card {
+      border: 1px solid #17232f; border-radius: 14px; background: #0c141d;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .stat { display: flex; align-items: center; gap: 5px; }
+    .statn { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; color: #e7eef6; }
+    .statl { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: #7e97ad; }
+  </style>
+</helmet>
+
+<div style="padding: 40px 48px 48px">
+
+  <div class="lab" style="color: #38bdf8">Library</div>
+  <h1 style="margin: 8px 0 0; font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -.015em">The procedures behind the drills</h1>
+  <p style="margin: 12px 0 0; color: #a9c4d8; font-size: 15px; max-width: 640px; text-wrap: pretty">Read them cold, or come here from a call you got wrong. Never gated, never scored.</p>
+
+  <!-- filter bar -->
+  <div style="margin-top: 26px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+    <div style="flex: 1 1 340px; min-width: 260px; display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid #17232f; background: #0b131c; border-radius: 10px">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#7e97ad" stroke-width="1.8" stroke-linecap="round"><circle cx="8.8" cy="8.8" r="5.6"/><path d="M13 13l4 4"/></svg>
+      <span style="color: #667e95">Search the procedures</span>
+    </div>
+    <div style="display: flex; gap: 6px">
+      <span class="mono" style="font-size: 11px; padding: 7px 14px; border-radius: 999px; background: #0e2a3a; border: 1px solid #2c5a75; color: #7dd3fc">all 13</span>
+      <span class="mono" style="font-size: 11px; padding: 7px 14px; border-radius: 999px; background: #0b131c; border: 1px solid #17232f; color: #92a9bf">active 12</span>
+      <span class="mono" style="font-size: 11px; padding: 7px 14px; border-radius: 999px; background: #0b131c; border: 1px solid #17232f; color: #92a9bf">draft 1</span>
+    </div>
+    <div style="display: flex; gap: 6px; margin-left: auto">
+      <span class="mono" style="font-size: 11px; padding: 7px 12px; border-radius: 8px; background: #0e2a3a; border: 1px solid #2c5a75; color: #7dd3fc">Cards</span>
+      <span class="mono" style="font-size: 11px; padding: 7px 12px; border-radius: 8px; background: #0b131c; border: 1px solid #17232f; color: #92a9bf">Table</span>
+    </div>
+  </div>
+
+  <!-- grid -->
+  <div style="margin-top: 22px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px">
+
+    <!-- MNV -->
+    <div class="card" style="border-color: #24485e">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-MNV</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #34d399"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #34d399">active</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Manoeuvre detection and characterisation</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Detect that an object has departed from its orbital state, establish whether the departure is real, characterise the burn.</p>
+      </div>
+      <!-- flow preview strip -->
+      <div style="margin: 15px 18px 0; display: flex; align-items: center; gap: 3px">
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #0e7490"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; background: #0e7490"></span>
+      </div>
+      <div style="margin-top: 14px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">8</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">3</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #fbbf24">6</span><span class="statl">stops</span></span>
+        <span class="stat" style="margin-left: auto"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#0e7490" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11"/><path d="M10 6l4 4-4 4"/></svg><span class="statl" style="color: #38bdf8">1 onward</span></span>
+      </div>
+      <div style="padding: 10px 18px 14px; display: flex; gap: 5px; flex-wrap: wrap">
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">LEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">MEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">GEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">HEO</span>
+      </div>
+    </div>
+
+    <!-- LAUNCH : the heavyweight -->
+    <div class="card">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-LAUNCH</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #34d399"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #34d399">active</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Launch processing</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Anticipate where a launch will place its objects, warn before it happens, acquire and identify what results.</p>
+      </div>
+      <div style="margin: 15px 18px 0; display: flex; align-items: center; gap: 2px">
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 9px; height: 9px; border-radius: 2px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span style="width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 3px; height: 1px; background: #1d3446"></span>
+        <span class="mono" style="font-size: 9.5px; color: #627e98; padding-left: 3px">+13</span>
+      </div>
+      <div style="margin-top: 14px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">21</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">5</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #fbbf24">2</span><span class="statl">stops</span></span>
+        <span class="stat" style="margin-left: auto"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#0e7490" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11"/><path d="M10 6l4 4-4 4"/></svg><span class="statl" style="color: #38bdf8">1 onward</span></span>
+      </div>
+      <div style="padding: 10px 18px 14px; display: flex; gap: 5px; flex-wrap: wrap">
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">LEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">MEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">GEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">HEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">XGEO</span>
+      </div>
+    </div>
+
+    <!-- SEP : most onward links -->
+    <div class="card">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-SEP</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #34d399"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #34d399">active</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Separation processing</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Process the intentional release of a new object from an existing orbiting object, and what it is doing.</p>
+      </div>
+      <div style="margin: 15px 18px 0; display: flex; align-items: center; gap: 3px">
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #0e7490"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; background: #0e7490"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; border: 1px solid #24485e; background: #0e1a25"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #1d3446"></span>
+        <span style="width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid #7dd3fc"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #0e7490"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; background: #0e7490"></span>
+        <span style="flex: 0 0 4px; height: 1px; background: #0e7490"></span>
+        <span style="width: 12px; height: 12px; border-radius: 3px; background: #0e7490"></span>
+      </div>
+      <div style="margin-top: 14px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">9</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">3</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #fbbf24">6</span><span class="statl">stops</span></span>
+        <span class="stat" style="margin-left: auto"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#0e7490" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11"/><path d="M10 6l4 4-4 4"/></svg><span class="statl" style="color: #38bdf8">4 onward</span></span>
+      </div>
+      <div style="padding: 10px 18px 14px; display: flex; gap: 5px; flex-wrap: wrap">
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">LEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">MEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">GEO</span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf">HEO</span>
+      </div>
+    </div>
+
+    <!-- PHOT -->
+    <div class="card">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-PHOT</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #34d399"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #34d399">active</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Photometric change processing</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Assess a change in brightness signature, establish whether it is real rather than an artefact of collection.</p>
+      </div>
+      <div style="margin-top: 15px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">16</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">4</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #fbbf24">9</span><span class="statl">stops</span></span>
+        <span class="stat" style="margin-left: auto"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#0e7490" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11"/><path d="M10 6l4 4-4 4"/></svg><span class="statl" style="color: #38bdf8">4 onward</span></span>
+      </div>
+    </div>
+
+    <!-- CRM : no stops, ANY regime -->
+    <div class="card">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-CRM</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #34d399"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #34d399">active</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Changeover, crew resource management and handover</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Transfer the operating picture, open events, tasking state and outstanding obligations without loss.</p>
+      </div>
+      <div style="margin-top: 15px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">18</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">3</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #627e98">0</span><span class="statl">stops</span></span>
+        <span class="mono" style="font-size: 9.5px; padding: 3px 7px; border: 1px solid #17232f; border-radius: 5px; color: #92a9bf; margin-left: auto">ANY</span>
+      </div>
+    </div>
+
+    <!-- FP : the draft -->
+    <div class="card" style="border-style: dashed; border-color: #3d2f14">
+      <div style="padding: 16px 18px 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px">
+          <span class="mono" style="font-size: 11px; letter-spacing: .1em; color: #38bdf8">PROC-FP</span>
+          <span style="display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 999px; background: #fbbf24"></span><span class="mono" style="font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: #fbbf24">draft</span></span>
+        </div>
+        <h3 style="margin: 10px 0 0; font-size: 18px; line-height: 1.28; font-weight: 700">Force package processing</h3>
+        <p style="margin: 9px 0 0; color: #a9c4d8; font-size: 13px; line-height: 1.5; text-wrap: pretty">Handle two or more objects acting together against a localised target set as one event.</p>
+      </div>
+      <div style="margin-top: 15px; padding: 12px 18px; border-top: 1px solid #131e29; background: #0a1119; display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+        <span class="stat"><span class="statn">11</span><span class="statl">steps</span></span>
+        <span class="stat"><span class="statn" style="color: #7dd3fc">3</span><span class="statl">decisions</span></span>
+        <span class="stat"><span class="statn" style="color: #fbbf24">4</span><span class="statl">stops</span></span>
+        <span class="stat" style="margin-left: auto"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#0e7490" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11"/><path d="M10 6l4 4-4 4"/></svg><span class="statl" style="color: #38bdf8">2 onward</span></span>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="margin-top: 22px; display: flex; align-items: center; gap: 10px">
+    <span class="mono" style="font-size: 11px; color: #627e98">Showing 6 of 13 · 145 steps and 40 decisions across the library</span>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
