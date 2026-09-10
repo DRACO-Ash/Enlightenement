@@ -98,6 +98,20 @@ READINESS_PATHS = ("/healthz", "/readyz")
 #: Paths exempt from rate limiting. The platform probes these; a 429 would read as unhealthy.
 UNLIMITED_PATHS = frozenset(LIVENESS_PATHS + READINESS_PATHS + ("/",))
 
+#: The exempt paths that can actually serve markup, which is exactly one. The branch-aware
+#: exemption added at V0.27.13 tested the `Accept` header on ALL SIX, and the security gate
+#: measured the consequence: `/livez`, `/ping`, `/health`, `/healthz` and `/readyz` with
+#: `Accept: text/html` all returned 429 once a bucket was spent. Those five serve "ok" or the
+#: readiness JSON whatever the header says, so the metering bought nothing and contradicted both
+#: the rationale above it and CLAUDE.md's rule that the liveness paths are always 200.
+#:
+#: The audience harmed is an operator opening `/healthz` in a browser to read the 503 and its
+#: errno - precisely when a shared-gateway bucket is most likely to be spent, and `_client_key`
+#: records that many callers can share one address. The kubelet was never affected, because it
+#: sends no `text/html`, so this failed closed rather than causing restarts. Still a fault: the
+#: fix for an over-broad exemption was an over-broad correction.
+MARKUP_CAPABLE_PATHS = frozenset({"/"})
+
 #: What a throttled caller is told, in the one place it is decided. The same sentence was written
 #: out at three sites - the coarse middleware and both fine-grained guards - which is three places
 #: to change if the wording ever should, and three chances for two of them to disagree.
@@ -459,8 +473,8 @@ def _install_rate_limit(app: FastAPI, runtime: _Runtime) -> None:
         #: five probe paths and `/` with no header, `*/*`, `application/json` or `text/plain`
         #: take the JSON branch, so a limiter on the markup branch can never 429 a kubelet. Only
         #: a caller that NAMES `text/html` - a browser - is metered.
-        limited = request.url.path not in UNLIMITED_PATHS or wants_markup(
-            request.headers.get("accept")
+        limited = request.url.path not in UNLIMITED_PATHS or (
+            request.url.path in MARKUP_CAPABLE_PATHS and wants_markup(request.headers.get("accept"))
         )
         if limited and not runtime.coarse.allow(_client_key(request)):
             return JSONResponse(

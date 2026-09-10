@@ -130,12 +130,20 @@ _UI_FILES: Final[dict[str, str]] = {
 
 
 def resolve_ui_file() -> Path:
-    """The single-file SPA. Read from disk per request rather than cached in memory.
+    """Where the single-file interface lives. **Read once per process, not per request.**
 
-    Per-request read, deliberately: the file is small, the platform serves ten concurrent
-    operators, and hot-editing the interface without a restart is worth more here than saving a
-    few microseconds. If that ever stops being true it becomes a cached read with an mtime check,
-    not a build step.
+    This docstring said the opposite until V0.27.14 - "read from disk per request rather than
+    cached in memory", "per-request read, deliberately", and that a cache would arrive "with an
+    mtime check, not a build step". V0.27.13 made it a cached read with NO mtime check and left
+    all three sentences standing, on the function whose return value IS the cache key. A reader
+    deciding whether hot-editing works in a local checkout would have read this and been wrong,
+    which is the only audience the paragraph had.
+
+    So, plainly: `_ui_text` holds the file for the life of the process, and **hot-editing the
+    interface now requires a restart.** No environment variable overrides this path, unlike
+    `resolve_content_root` which reads `CONTENT_DIR` - so nothing attacker-influenced can ever
+    become a cache key, which the security gate verified with 296 distinct requests producing one
+    key.
     """
     return _UI_DIRECTORY / "index.html"
 
@@ -245,8 +253,18 @@ async def _ui_text(path: Path, *, event: str, message: str) -> str:
     file for the life of the process - and it needs no lifespan release to get right.
 
     Only SUCCESS is cached, so the 503 branch stays reachable and a missing file is re-attempted
-    rather than remembered as missing. A concurrent race reads twice and stores the same string,
-    which costs one syscall and nothing else.
+    rather than remembered as missing.
+
+    **On the cold-start race, and the claim here was wrong.** This said "a concurrent race reads
+    twice and stores the same string, which costs one syscall and nothing else". The security
+    gate measured it: 200 concurrent cold misses performed 200 reads, and 64 performed 64. The
+    `await` sits between the miss check and the store, so every request arriving before the first
+    read completes misses and starts its own - redundant reads are bounded by the CONCURRENCY at
+    cold start, not by two. That is the identical shape `app.py` already documents and fixed for
+    the probe cache, at 17,400 concurrent requests producing 228 real probes, reintroduced one
+    module away under a docstring asserting the property it lacked. It is left as it is rather
+    than given the single-flight treatment: once per process, bounded by concurrency, and now
+    metered - the claim was the fault, not the syscalls.
     """
     cached = _UI_CACHE.get(str(path))
     if cached is not None:

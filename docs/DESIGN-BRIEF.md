@@ -166,7 +166,7 @@ operators actually use. It also raises a colour collision that has to be settled
 palette is final: red means "most recent data" throughout the real toolset, and PHOSPHOR uses
 red for "your call was wrong".
 
-**Read `docs/PLOT-REALISM.md` before designing a plot.** Ash supplied five screenshots of live KBR
+**Read `docs/PLOT-REALISM.md` before designing a plot.** The owner supplied five screenshots of live KBR
 Space Domain Awareness tooling on 29 August, and judged against them these three surfaces are not
 realistic in a structural way: real products are dense gappy multi-source scatter that encode a
 second variable in colour, and ours are clean evenly sampled single-series polylines that encode

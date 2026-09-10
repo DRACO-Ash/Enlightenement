@@ -185,8 +185,15 @@ def test_the_markup_branch_at_the_root_is_rate_limited_and_the_probe_branch_is_n
         response = client.get("/", headers=headers)
         assert response.status_code == 200, accept
         assert response.json()["status"] == "ok", accept
+    #: **And the five probe paths stay 200 even under `Accept: text/html`**, which the first
+    #: version of the branch test broke: it read the header on all six exempt paths, and the
+    #: five that cannot serve markup began returning 429 once a bucket was spent. They serve
+    #: "ok" or the readiness JSON whatever the header says, so metering them bought nothing and
+    #: cost an operator the 503-plus-errno diagnosis in a browser at the exact moment they need
+    #: it. Both header cases asserted, because the fault was visible only in one.
     for path in ("/livez", "/ping", "/health", "/healthz", "/readyz"):
         assert client.get(path).status_code == 200, path
+        assert client.get(path, headers={"accept": "text/html"}).status_code == 200, path
 
 
 def test_a_missing_interface_file_fails_closed_and_is_not_remembered_as_missing(

@@ -2,6 +2,79 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.14 (2026-09-10)
+
+**What.** The security gate returned PASS on V0.27.13 with three MINOR findings and one
+informational note, and - more importantly - **it withdrew half of its own MAJOR on re-review.**
+All of it is closed, including two figures I had published as measured.
+
+**The withdrawal, first, because it is a correction to the record and not a new fix.** V0.27.13's
+row states that the interface file read starved the store's thread-pool work and took a legitimate
+listing from 0.95 ms to 81.99 ms, 85.9 times slower. The gate re-measured with the limiter lifted
+and isolated the cause: flooding `/livez` - plain text, no filesystem, no store, no executor -
+reproduces 65.4x of that, and cold cache against warm is 85.7x against 82.0x, inside the noise. So
+the degradation was 64 concurrent coroutines saturating a single-threaded event loop in an
+in-process harness, not the default executor. The file read was never the load-bearing cause.
+
+That matters twice over. The figure is corrected in place in the V0.27.13 row and in
+`docs/SECURITY.md`, with a bracketed marker rather than an edit, because it is what V0.27.13 was
+written against. And the framing changes: **the cache is a performance optimisation on immutable
+image contents, not a security control.** Declining the dedicated executor was still right, for
+the reason given at the time; but the control that was actually missing was the rate limiter, and
+calling the cache a boundary would put one where there is none. The gate's own words on its
+measurement method: all of it was in-process ASGI, which is what led it to over-attribute.
+
+**The three MINOR findings, and the first is a fault I introduced one release ago.**
+● **The branch-aware exemption was over-broad and it cost an operator the diagnosis.** V0.27.13
+  tested the `Accept` header on all six exempt paths, and only `/` can serve markup. Measured by
+  the gate, after a bucket was spent: `/livez`, `/ping`, `/health`, `/healthz` and `/readyz` with
+  `Accept: text/html` all returned 429. Those five serve "ok" or the readiness JSON whatever the
+  header says, so the metering bought nothing and contradicted both `UNLIMITED_PATHS`' own
+  rationale and CLAUDE.md's rule that the liveness paths are always 200. The audience harmed is an
+  operator opening `/healthz` in a browser to read the 503 and its errno - precisely when a
+  shared-gateway bucket is most likely spent, and `_client_key` records that many callers share
+  one address. The kubelet was never affected, because it sends no `text/html`, so this failed
+  closed rather than causing restarts. Named `MARKUP_CAPABLE_PATHS`, which is one path, and the
+  test now asserts all five probe paths under BOTH header cases because the fault was visible
+  only in one. **The fix for an over-broad exemption was an over-broad correction.**
+● `_ui_text` claimed "a concurrent race reads twice and stores the same string, which costs one
+  syscall and nothing else". Measured: 200 concurrent cold misses performed 200 reads, and 64
+  performed 64. The `await` sits between the miss check and the store, so redundant reads are
+  bounded by the CONCURRENCY at cold start, not by two. That is the identical shape `app.py`
+  already documents and fixed for the probe cache - 17,400 concurrent requests producing 228 real
+  probes - reintroduced one module away under a docstring asserting the property it lacked. Left
+  as it is rather than given single-flight treatment, and the claim corrected: once per process,
+  bounded by concurrency, and now metered. The claim was the fault, not the syscalls.
+● `resolve_ui_file` - the function whose return value IS the cache key - still said "read from
+  disk per request rather than cached in memory", "per-request read, deliberately", and that a
+  cache would arrive "with an mtime check, not a build step". V0.27.13 made it a cached read with
+  no mtime check and left all three sentences standing. A reader deciding whether hot-editing
+  works in a local checkout would have read this and been wrong, which is the only audience the
+  paragraph had. Rewritten to say plainly that hot-editing now requires a restart.
+● The informational note: `docs/DESIGN-BRIEF.md` retained the operational-custody attribution
+  removed from `docs/PLOT-REALISM.md`. The gate did not ask for a change; changed anyway, because
+  an identical disclosure half-fixed across two shipping documents is worse than either option.
+
+**What the gate could not break, recorded because a negative result is evidence.** 53 spellings
+against the `q=0` parser, zero divergences, including `q=-0`, `q=0e0`, `q=.0`, `q=+0`,
+`q=00000.00000`, tab-separated `q\t=\t0` and a 20 kB pathological header at 0.79 ms. 296 requests
+with 296 distinct `/ui/{filename}` values produced exactly ONE cache key, because the allowlist
+404s before `_ui_text` is reached and `resolve_ui_file` takes no environment override. The air-gap
+headers are identical warm and cold across all three interface routes. And the metering fix is
+mutation-tested in BOTH directions: reverting to the path-based exemption fails the test, and so
+does the over-broad wrong fix of dropping `/` from `UNLIMITED_PATHS` - which is the guard that
+caught this release's own finding.
+
+**Two items left open, with the gate's view that neither should block.** The
+`days:60, headcount:1e9` payload reaches 3,978,878 bytes against a 4,194,304-byte ceiling: not
+reachable by an internet caller at all, since both parameters are content-authored and content is
+root-owned in the image, and the refusal above the ceiling is enforced rather than asserted. It is
+95% of budget, so **a modest content addition would newly 503 a route operators depend on** - an
+engineering headroom question for the owner, not a security one. And `PROBE_TIMEOUT_SECONDS` stays
+`TBC, re-verify`: the property it exists for is implemented and tested, and what is unknown is
+only the comparison against a `timeoutSeconds` the App Store publishes nowhere in this repository.
+Requested from the owner by name for the fourth time.
+
 ## V0.27.13 (2026-09-10)
 
 **What.** The `security-reviewer` gate returned FAIL with one MAJOR and three MINOR findings, and
@@ -22,8 +95,15 @@ nothing about metering. The gate measured both halves:
 ● `interface_response` read the file through `asyncio.to_thread`, which uses the DEFAULT executor
   -  the same one the store's own work runs in. 64 concurrent floods, 2,225 unlimited requests,
   took a legitimate anonymous `GET /api/v1/sessions` from 0.95 ms to 81.99 ms at the median.
-  85.9 times slower. That is exactly the starvation class `probe_pool` exists to prevent, and
-  this file already records that fault at 1.4 ms to 109 ms.
+  85.9 times slower.
+
+  [Corrected at V0.27.14. **The gate withdrew this half of its own finding on re-review and the
+  figure does not hold.** Flooding `/livez` - plain text, no filesystem, no store, no executor -
+  reproduces 65.4x of the 85.9x, and cold cache against warm is 85.7x against 82.0x, inside the
+  noise. So the degradation was 64 concurrent coroutines saturating a single-threaded event loop
+  in the measurement harness, not the executor. The file read was never the load-bearing cause.
+  Left standing above with this marker rather than edited away, because it is what V0.27.13 was
+  written against and the correction is the record.]
 
 **Fixed twice over, and the second fix is not the one the gate proposed.** The limiter's exemption
 is now on the BRANCH rather than the path: `request.url.path not in UNLIMITED_PATHS or
@@ -34,7 +114,10 @@ header, `*/*`, `application/json` or `text/plain` takes the JSON branch, so the 
 throttled from the same client key, because that ordering is the property.
 
 For the starvation the gate proposed a dedicated single-worker executor, which is the right shape
-for `probe_pool` and the wrong shape here. A probe must actually touch the volume every time; the
+for `probe_pool` and the wrong shape here. [V0.27.14: declining it was still the right call, and
+for the reason given - but the cache is a performance optimisation on immutable image contents and
+NOT a security control, which is how this paragraph reads below. The control that was actually
+missing is the limiter.] A probe must actually touch the volume every time; the
 interface files are IMMUTABLE - baked into the image, read-only at runtime, identical on every
 request - so they are read once per process and held. That does not bound the starvation, it
 removes it: the flood above becomes one read per file for the life of the container, and it needs
