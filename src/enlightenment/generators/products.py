@@ -201,7 +201,17 @@ MAX_SCHEDULE_HOURS: Final = 168.0
 MAX_SENSORS: Final = 24
 MAX_STATE_CHANGE_MARKS: Final = 40
 MAX_REVOLUTIONS: Final = 12.0
-MAX_SPAN_DAYS: Final = 60.0
+#: Ceiling on an authored span, days. **Halved from 60 at V0.27.15 for payload headroom**, on the
+#: owner's instruction after the security gate measured the worst case against the 4 MB response
+#: budget. Measured here at the shipped seed with `headcount` at its own ceiling: 60 days renders
+#: 4,206,985 bytes, which is already 100.3% of `MAX_PAYLOAD_BYTES` and would 503 a route operators
+#: depend on; 30 days renders 2,103,399, or 50.1%. The span scales the sample count linearly, so
+#: the ceiling is the cheapest lever on the budget there is.
+#:
+#: Nothing shipped is affected: the longest span any of the 140 items authors is seven days, so
+#: this leaves a factor of four before an author meets the cap and a factor of two on the budget
+#: after that. A content item asking for more is clamped rather than refused, as before.
+MAX_SPAN_DAYS: Final = 30.0
 
 #: The base of the SYNTHETIC epoch a waterfall's timeline is labelled from, and how far past it a
 #: seed may place a window. Fixed rather than taken from the clock, because the same seed must

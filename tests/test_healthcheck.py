@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from enlightenment import healthcheck
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeResponse:
@@ -152,6 +156,25 @@ def test_the_probe_defaults_to_8080_when_no_port_is_injected(
     assert recorded_url["url"] == "http://127.0.0.1:8080/livez"
 
 
-def test_the_timeout_is_shorter_than_a_platform_probe_window() -> None:
-    """A probe that can hang converts an infrastructure fault into a silent liveness kill."""
-    assert 0 < healthcheck.TIMEOUT_SECONDS < 10
+def test_the_timeout_is_shorter_than_the_dockerfile_window_it_actually_runs_in() -> None:
+    """A probe that can hang converts an infrastructure fault into a silent liveness kill.
+
+    **The comparison was being made against the wrong thing, and that is why it sat at
+    `TBC, re-verify` for months.** The old assertion was `0 < TIMEOUT_SECONDS < 10`, an arbitrary
+    bound, and the comment beside the constant deferred to a platform `timeoutSeconds` this
+    repository does not record. But this script is a DOCKER `HEALTHCHECK`, and the window it runs
+    in is set in the Dockerfile one line above the command: `--timeout=5s`. That figure is in this
+    repository and always was. Kubernetes ignores a Docker `HEALTHCHECK` entirely, so there never
+    was a platform comparison to make here - the platform probes `/healthz` over HTTP instead.
+
+    So the bound is read out of the Dockerfile rather than restated, and a change to either side
+    fails this test and names the other.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    windows = re.findall(r"HEALTHCHECK[^\n]*--timeout=(\d+(?:\.\d+)?)s", dockerfile)
+    assert len(windows) == 1, f"expected exactly one HEALTHCHECK window, found {windows}"
+    window = float(windows[0])
+    assert 0 < healthcheck.TIMEOUT_SECONDS < window, (
+        f"the healthcheck script allows itself {healthcheck.TIMEOUT_SECONDS}s inside a"
+        f" {window}s Docker window, so the runtime kills it before it can report anything"
+    )

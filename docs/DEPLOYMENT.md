@@ -19,7 +19,7 @@ Status: prepared for the FIRST delivery. Not yet submitted. Nothing has been dep
 | Visibility | Private to the Bluestaq Ltd team. Owner decision, 2026-08-18 |
 | App type | Web App |
 | Content directory | `CONTENT_DIR`, and only that name. `ENLIGHTENMENT_CONTENT_DIR` was read by the loader's own resolver at V0.24.0 and is now dead. An operator who set it got the baked-in tree served over HTTP while the validator checked a different one, so verification leg 2 could pass green against content the server never loads. Set nowhere in the Dockerfile: platform injection wins, as for `PORT` and `DATA_DIR` |
-| Version | 0.27.14, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
+| Version | 0.27.15, matching `pyproject.toml` and `src/enlightenment/__init__.py` |
 | Short description | Orbital warfare training application. Records and reviews training sessions against a shared, audited dataset. |
 | Full description | Enlightenment is an orbital warfare training application for the Bluestaq Ltd team. It records training sessions and their outcomes to a durable, audited dataset held on a persistent volume, and serves them over a small authenticated HTTP interface. Every write is authenticated against a shared team token, validated at the boundary, serialised so no concurrent update can be silently lost, and recorded as one structured audit line. Reads, the health paths, and a secret-free diagnostics read-out stay unauthenticated so the service can always be diagnosed. Writes fail closed: with no token configured they are refused rather than opened. The training scenario vocabulary is deliberately left open pending the project owner's controlled terms, rather than populated with invented ones. |
 
@@ -156,7 +156,7 @@ the volume.
 ## Pre-submission checklist
 
 - [x] Verification loop green (`sh scripts/verify.sh`), 1,026 passed and 2 skipped, coverage 97.74%
-- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.27.14`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
+- [x] Pipeline simulation green against the version being shipped (`sh scripts/simulate-pipeline.sh 0.27.15`; with no argument the script defaults to 0.1.0 and would simulate a zip that is not the one going up)
 - [x] Version identical in `pyproject.toml` and `src/enlightenment/__init__.py`
 - [x] Slug identical in code, docs, and this table
 - [x] Package flat, `Dockerfile` at the zip root, tests included
@@ -215,9 +215,13 @@ the volume.
       flattening are confirmed by reading `Dockerfile` lines only and the CI `image` job is the
       binding check; (2) nothing has ever shipped, so recovery is "take out of service", not
       "redeploy the previous version" - **the owner must accept that explicitly, because it is not
-      a rollback in the contract's sense**; (3) `PROBE_TIMEOUT_SECONDS = 2.0` must be strictly
-      below the platform probe's `timeoutSeconds`, which is still `TBC, re-verify` - a Kubernetes
-      default of 1 s would make ours longer, not shorter, and the diagnostic 503 would never
-      render. **That third one blocks the publish, not the hold.** The gate called no submission
+      a rollback in the contract's sense**; (3) `PROBE_TIMEOUT_SECONDS` had to be strictly
+      below the platform probe's `timeoutSeconds`, which the App Store publishes nowhere in this
+      repository. **CLOSED at V0.27.15**, not by obtaining the figure but by removing the need for
+      it: the budget is 0.8 s, below the 1 s Kubernetes default that is the FLOOR of any platform
+      value, so the diagnostic 503 renders whatever the platform turns out to publish. Verified at
+      the shipped default rather than an injected one, and bound by
+      `test_the_probe_timeout_clears_the_worst_case_platform_window_at_the_shipped_default`.
+      **That third one no longer blocks the publish.** The gate called no submission
       tool and authorised nothing.
 - [ ] Explicit human confirmation to publish

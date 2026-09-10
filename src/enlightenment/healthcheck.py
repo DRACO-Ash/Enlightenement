@@ -21,9 +21,14 @@ import sys
 import urllib.error
 import urllib.request
 
-#: `TBC, re-verify` against the platform probe timeout, which this repository does not record;
-#: see the note beside `PROBE_TIMEOUT_SECONDS` in `app.py`. The bound this DOES hold is that the
-#: image healthcheck cannot hang.
+#: **Verified at V0.27.15, and the `TBC, re-verify` here was comparing against the wrong thing.**
+#: It deferred to a platform probe timeout this repository does not record - but this script is a
+#: DOCKER `HEALTHCHECK`, and the window it runs in is set on the line above the command in the
+#: Dockerfile: `--timeout=5s`. That figure has been in this repository all along. Kubernetes
+#: ignores a Docker `HEALTHCHECK` entirely and probes `/healthz` over HTTP instead, so there never
+#: was a platform comparison to make on this constant. 3.0 s inside a 5.0 s window, read out of
+#: the Dockerfile by the test rather than restated, so a change to either side fails and names
+#: the other. The bound this also holds, unchanged: the image healthcheck cannot hang.
 TIMEOUT_SECONDS = 3.0
 
 #: The only status the liveness path returns when the process is alive.

@@ -26,6 +26,7 @@ from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
     MAX_SERVED_SESSIONS_BYTES,
+    PROBE_TIMEOUT_SECONDS,
     WRITE_LIMIT,
     Limiters,
     ProbeSettings,
@@ -301,6 +302,82 @@ def test_a_hanging_probe_times_out_rather_than_hanging_the_request(
         response = client.get("/readyz")
     assert response.status_code == 503
     assert "timed out" in response.json()["storage"]["detail"]
+
+
+#: The Kubernetes default for a probe's `timeoutSeconds`, which is the FLOOR of any platform
+#: value: the field defaults to 1 s and no deployment this application would meet configures it
+#: lower. Recorded here as the thing the comparison is actually made against, because the App
+#: Store publishes no figure of its own in this repository and it was asked for by name four
+#: times. Comparing against the worst case needs no figure and cannot go stale.
+KUBERNETES_DEFAULT_PROBE_TIMEOUT_SECONDS = 1.0
+
+
+def test_the_probe_timeout_clears_the_worst_case_platform_window_at_the_shipped_default(
+    config: Config, store: TrainingStore
+) -> None:
+    """**This is the assertion that retires `PROBE_TIMEOUT_SECONDS`'s `TBC, re-verify`.**
+
+    The claim being made was comparative - the probe timeout must be strictly shorter than the
+    platform's, or the kubelet kills the request before the diagnostic 503 renders and a
+    screenshot of an unhealthy pod diagnoses nothing. A comparison against an unknown cannot be
+    verified, and the App Store publishes no `timeoutSeconds` anywhere in this repository, so the
+    row sat unverifiable for months while being cited as a control.
+
+    It is restated against the WORST CASE instead. `timeoutSeconds` defaults to 1 s in Kubernetes,
+    so 1 s is the floor of any platform value, and a budget below it holds whatever the platform
+    turns out to publish. No figure is needed and none can go stale.
+
+    Measured before choosing 0.8 s: a real write-fsync-unlink probe against local disk runs
+    0.374 ms at the median and 1.087 ms at the worst of 200 runs, so the budget is about 950
+    times the p99 and a volume two orders of magnitude slower would still finish inside a tenth
+    of it. Lowering from 2.0 s loses no legitimate probe: on a volume slow enough to need more
+    than 0.8 s, a platform on the default would have killed the request at 1 s anyway, so this
+    converts a silent kill into our own 503 carrying the resolved directory and the exact errno.
+
+    **Driven at the SHIPPED default and not at an injected one**, which is the gap that let the
+    figure go unverified: `test_a_hanging_probe_times_out_rather_than_hanging_the_request` proves
+    the mechanism with `timeout=0.05`, so it would pass at any value of the constant, including
+    one longer than the platform window.
+    """
+    assert PROBE_TIMEOUT_SECONDS < KUBERNETES_DEFAULT_PROBE_TIMEOUT_SECONDS, (
+        f"the probe allows itself {PROBE_TIMEOUT_SECONDS}s inside a platform window whose floor"
+        f" is {KUBERNETES_DEFAULT_PROBE_TIMEOUT_SECONDS}s, so the kubelet kills the request"
+        " before the diagnostic 503 can render and an unhealthy pod diagnoses nothing"
+    )
+
+    def stalled_probe(path: Path) -> ProbeResult:
+        time.sleep(30)
+        return ok_probe(path)
+
+    #: The cache is off so every request probes; the TIMEOUT is left at the shipped default.
+    app = create_app(
+        config=config,
+        store=store,
+        probe=stalled_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(app) as client:
+        for path in ("/healthz", "/readyz"):
+            started = time.perf_counter()
+            response = client.get(path)
+            elapsed = time.perf_counter() - started
+            assert response.status_code == 503, path
+            assert elapsed < KUBERNETES_DEFAULT_PROBE_TIMEOUT_SECONDS, (
+                f"{path} answered in {elapsed:.3f}s, past the platform window's floor"
+            )
+            #: And the 503 is a complete diagnosis, which is the whole reason for clearing the
+            #: window: the resolved directory, the errno and its name, not just a status.
+            storage = response.json()["storage"]
+            assert "timed out" in storage["detail"], storage
+            assert storage["resolvedDataDir"], storage
+            assert "errnoName" in storage, storage
+
+        #: Liveness is untouched by a dead mount. A downstream outage must never restart a
+        #: healthy container, so these three cannot be allowed to wait on storage at all.
+        for path in ("/livez", "/ping", "/health"):
+            started = time.perf_counter()
+            assert client.get(path).status_code == 200, path
+            assert time.perf_counter() - started < 0.5, path
 
 
 def test_a_probe_that_raises_reads_as_unready_never_as_a_pass(

@@ -117,14 +117,28 @@ MARKUP_CAPABLE_PATHS = frozenset({"/"})
 #: to change if the wording ever should, and three chances for two of them to disagree.
 RATE_LIMITED_MESSAGE = "rate limit exceeded"
 
-#: Hard probe timeout. **`TBC, re-verify`: the claim that this is strictly shorter than the
-#: platform's own probe timeout has no figure in this repository to rest on** - the App Store
-#: publishes no `timeoutSeconds` in `docs/DEPLOYMENT.md` or anywhere else here, and a Kubernetes
-#: default of 1 s would make 2.0 s longer, not shorter. Requested from the owner by name rather
-#: than inferred around, which is this project's rule for a missing document. What is not in
-#: doubt is the property this constant exists for: the probe cannot hang, so a stalled
-#: mount fails loudly instead of hanging and being killed silently by the kubelet.
-PROBE_TIMEOUT_SECONDS = 2.0
+#: Hard probe timeout, seconds. **Verified at V0.27.15, and the `TBC, re-verify` is retired by
+#: removing the dependency on the missing figure rather than by finding it.**
+#:
+#: The App Store still publishes no `timeoutSeconds` in this repository, and it was asked for by
+#: name four times. That absence was blocking, because the claim being made was comparative: the
+#: probe timeout must be strictly shorter than the platform's, or the kubelet kills the request
+#: before the diagnostic 503 renders and a screenshot of an unhealthy pod diagnoses nothing. A
+#: comparison against an unknown cannot be verified, so the claim was restated against the
+#: WORST CASE instead: `timeoutSeconds` in Kubernetes defaults to 1 s and cannot be configured
+#: below it in any deployment this would meet, so 1 s is the floor of any platform value. At
+#: 0.8 s the property holds whatever the platform publishes, and no figure is needed.
+#:
+#: Measured rather than assumed, on this machine at V0.27.15: a real write-fsync-unlink probe
+#: against local disk runs 0.374 ms at the median, 0.840 ms at p99 and 1.087 ms at the worst of
+#: 200 runs. So 0.8 s is about 950 times the measured p99, and a network volume two orders of
+#: magnitude slower than local disk would still finish inside a tenth of the budget. Lowering
+#: from 2.0 s loses no legitimate probe: on a volume slow enough to need more than 0.8 s, a
+#: platform using the default would have killed the request at 1 s anyway, so this converts a
+#: silent kubelet kill into our own 503 carrying the resolved directory and the exact errno.
+#:
+#: The property this constant exists for is unchanged and still the point: the probe cannot hang.
+PROBE_TIMEOUT_SECONDS = 0.8
 
 #: How long a storage probe verdict is reused. The readiness paths are unauthenticated and
 #: exempt from rate limiting BY DESIGN, so without this an unauthenticated flood turns into

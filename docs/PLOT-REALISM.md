@@ -261,22 +261,19 @@ neighbourhood"**, the target's longitude track among the objects sharing its 50 
 
 ## The neighbourhood sheets, 10 September, and the drift rate the belt actually has
 
-Three further products, supplied by the owner on 10 September: neighbourhood results for the GEO
-belt, in two layouts. Both carry a per-object drift rate in degrees per day, which is the column
-this change acts on; between them they also carry longitude and its delta, inclination and its
-delta, right ascension of the ascending node and its delta, days to a longitude crossing,
-absolute and next minimum distance, distance of closest approach, time of closest approach,
-element-set time, a delta-v in metres per second, a score, a source and a high-range-resolution
-flag.
+Three further products, supplied by the owner on 10 September: KBR Neighborhood Results for the
+GEO belt, in two layouts. One carries `Drift (°)/d`, `Days to Longitude Crossing`,
+`Abs. Min. Dist.`, `Next Min. Dist.`, `Dist. (km)`, `ΔV (m/s)`, `Score` and `Source`. The other
+carries `HRR`, `Norad ID`, `Name`, `Country`, `Longitude °`, `Δ Longitude °`, `Inc °`, `Δ Inc °`,
+`RAAN °`, `Δ RAAN °`, `Drift Rate [°/day]`, `Days to cross`, `DCA [km]`, `TCA` and `TLE Time`.
 
-**The full verbatim column schema was in this section and has been removed.** `docs/` ships in
-the upload artefact, so a named commercial product's complete data model would go to the App
-Store with the application; the security gate raised it and the Handling section below asks the
-owner to confirm rather than settling it. The columns are named above in prose because the
-inventory is the point, and the exact spellings are not needed for anything here. **Owner
-decision outstanding: may the verbatim schema ship?** If yes it goes back in one edit; if the
-answer is that it should not be in the repository at all, say so and it comes out of this
-paragraph too.
+**The verbatim schema ships by owner decision, taken on 10 September.** The security gate raised
+it because `docs/` reaches the upload artefact, so a named commercial product's column layout goes
+to the App Store with the application; it was withdrawn at V0.27.13 pending the answer and
+restored at V0.27.15 when the answer came. Recorded as a DECISION rather than left to look like an
+oversight, so nobody removes it again on the same reasoning. Column headers are a tool's data
+model and not readings, and the Handling section below already declares tool documentation for
+publicly catalogued objects to be in scope.
 
 They were supplied with a question, and the question is the finding: would an operator look at
 minus 22,900,000 degrees per day as a valid drill item.

@@ -2,6 +2,74 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.15 (2026-09-10)
+
+**What.** Three owner instructions, all closed. The verbatim column schema ships, the span ceiling
+halves for payload headroom, and **both long-standing `TBC, re-verify` markers on the probe
+timeouts are retired** - one by removing the dependency on the missing figure, the other because
+it had been comparing against the wrong thing all along.
+
+**The schema ships, by decision.** The full 23-column layout of the neighbourhood products is back
+in `docs/PLOT-REALISM.md`, and recorded there as a DECISION rather than left to look like an
+oversight, so nobody removes it again on the same reasoning the security gate used. `docs/` reaches
+the upload artefact, so the column layout goes to the App Store with the application; column
+headers are a tool's data model and not readings, and the Handling section already declares tool
+documentation for publicly catalogued objects in scope.
+
+**Headroom: `MAX_SPAN_DAYS` halves from 60 to 30.** Measured at the shipped seed with `headcount`
+at its own ceiling, which is the worst case the security gate raised: 60 days renders 4,206,985
+bytes, already **100.3%** of `MAX_PAYLOAD_BYTES` and past the point where a route operators depend
+on begins to 503; 30 days renders 2,103,399, or 50.1%. The span scales the sample count linearly,
+so the ceiling is the cheapest lever on the budget there is. Nothing shipped is affected - the
+longest span any of the 140 items authors is seven days - so this leaves a factor of four before
+an author meets the cap and a factor of two on the budget after that.
+
+**`PROBE_TIMEOUT_SECONDS`: 2.0 to 0.8, and the marker retired without the figure.** The claim was
+comparative: strictly shorter than the platform's `timeoutSeconds`, or the kubelet kills the
+request before the diagnostic 503 renders and a screenshot of an unhealthy pod diagnoses nothing.
+The App Store publishes no such figure anywhere in this repository and it was asked for by name
+four times, so the row sat unverifiable for months while being cited as a control.
+
+A comparison against an unknown cannot be verified, so it is made against the WORST CASE instead.
+`timeoutSeconds` defaults to 1 s in Kubernetes and no deployment this would meet configures it
+lower, so 1 s is the floor of any platform value and a budget below it holds whatever the platform
+publishes. No figure is needed and none can go stale. Measured before choosing 0.8: a real
+write-fsync-unlink probe against local disk runs **0.374 ms at the median, 0.840 ms at p99 and
+1.087 ms at the worst of 200 runs**, so the budget is about 950 times the p99 and a volume two
+orders of magnitude slower than local disk would still finish inside a tenth of it. Verified end to
+end at the shipped default with a mount that never answers: `/healthz` and `/readyz` both 503 in
+0.805 s and 0.803 s carrying `resolvedDataDir`, `errno` and `errnoName`, while `/livez`, `/ping`
+and `/health` answered 200 in about 1 ms each.
+
+**Lowering it loses no legitimate probe**, which is the part worth stating plainly: on a volume
+slow enough to need more than 0.8 s, a platform on the default would have killed the request at 1 s
+anyway. So this converts a silent kubelet kill into our own 503 with a complete diagnosis, which is
+the entire reason the constant exists.
+
+**And the test that was supposed to hold this could not.** `test_a_hanging_probe_times_out...`
+injects `timeout=0.05`, so it proves the MECHANISM and would pass at any value of the constant,
+including one longer than the platform window. The new test drives the SHIPPED default. That gap -
+a control tested through an injected value it never uses in production - is why the figure went
+unverified through fifteen releases.
+
+**The image healthcheck marker was comparing against the wrong thing.** `healthcheck.py`'s
+`TIMEOUT_SECONDS = 3.0` deferred to the same missing platform figure, and its test asserted
+`0 < TIMEOUT_SECONDS < 10`, an arbitrary bound. But this script is a DOCKER `HEALTHCHECK`, and the
+window it runs in is set on the line above the command in the Dockerfile: `--timeout=5s`. That
+figure has been in this repository all along. Kubernetes ignores a Docker `HEALTHCHECK` entirely
+and probes `/healthz` over HTTP instead, so **there never was a platform comparison to make on
+this constant** - the marker was a real question pointed at the wrong constant, which is why it
+never closed. The test now reads the window out of the Dockerfile, so a change to either side
+fails and names the other.
+
+`docs/DEPLOYMENT.md` recorded this as the third of three MAJORs blocking the publish. It no longer
+blocks.
+
+**How verified.** Both timeout bindings kill their mutants: restoring `PROBE_TIMEOUT_SECONDS = 2.0`
+fails the new worst-case test, and raising `TIMEOUT_SECONDS` above the Dockerfile window fails the
+rewritten healthcheck test. The payload figures at both span ceilings were rendered and measured
+rather than estimated. Verification loop PASS on all eight legs.
+
 ## V0.27.14 (2026-09-10)
 
 **What.** The security gate returned PASS on V0.27.13 with three MINOR findings and one
