@@ -2,6 +2,87 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.28.1 (2026-09-10)
+
+**What.** The engineering gate returned FAIL on V0.28.0 with three BLOCKERs and two MINORs. All
+five are closed, plus two notes the gate raised in passing. **Not one of them was visible to a
+green suite or to the Chromium sweep**, which is the reason to write this row carefully.
+
+**BLOCKER: three name collisions were live, and a fourth I had caught by grep.** Grep is not a
+control.
+● `.rail` is this stylesheet's **sticky top navigation bar** - `position: sticky`, `z-index: 20`,
+  a backdrop blur, a bottom border, padding and `flex-wrap` - and the flow's step-number column
+  was named `.rail`, so it inherited every one of those on all thirteen procedure screens. The
+  worst of the four and the one I had no idea about.
+● `.sub` is a page-subtitle paragraph, so `<div class="gatehead sub">` in the reporting cap took
+  its `max-width: 620px` and `margin: 0 0 26px` inside a card up to 1124px wide: the header band
+  and its top border stopped two thirds of the way across and a 26px gap opened above the list it
+  heads. Scoped to `p.sub`; all three consumers are paragraphs.
+● `.ask` gave the decision header a 27px subtitle's margin and letter-spacing. Renamed `askhead`.
+● `.act` was the one I caught before shipping: it is the primary button, so naming the step card
+  `.act` restyled every button in the application.
+
+**Every one is invisible to the browser sweep**, because that checks overflow, console errors and
+page exceptions and these are under-fill, wrong spacing and unwanted positioning. So the class is
+now held structurally: a class mentioned anywhere in the Library stylesheet region may not carry a
+bare rule outside it. **The first version of that check passed on all four**, twice over: it read
+class names out of CSS COMMENTS, because the stylesheet's own prose names the classes it discusses,
+and then it only inspected the leftmost compound while three of the four collisions were on a
+descendant or a modifier. Comments are stripped and every mentioned class is inspected, and all
+four mutants now fail by name.
+
+**BLOCKER: the three counts added at V0.28.0 were held by nothing.** The gate inverted each -
+`stops = len(steps)`, `"decisions": 0`, `"onward": 0` - and the whole loop stayed green three
+times. The assertions beside them were key-set, type and `stops <= steps`, and every mutant
+satisfies all three: `stops = len(steps)` is an integer and is not greater than `steps`. The
+figures were correct and nothing would have said if they stopped being, on counts that reach an
+anonymous route and tell an operator where the judgement in a procedure sits. Now recomputed from
+the loaded content per procedure, with absolute anchors a re-derivation cannot satisfy by agreeing
+with itself - 145 steps, 40 decisions, 60 stops, 22 onward - and `PROC-CRM`, which authors neither
+a product nor a handover, so a hardcoded non-zero cannot pass. All three mutants die.
+
+**BLOCKER: the interface fixture no longer matched the server it claims to capture.** Halving
+`MAX_SPAN_DAYS` at V0.27.15 moved `SYNTHETIC_EPOCH_SPAN_HOURS` from 7320 to 8040 and with it the
+seeded window, from 05 June to 30 June, and `ui/tests/fixtures/drill.json` went on asserting the
+old one while its own header says it was captured from a running instance with nothing else
+altered. No assertion was substantively wrong - `views.test.mjs` asserted `/Jun \d\d:\d\dZ/` and the
+new window still opens in June, by coincidence - which is exactly why it needed catching.
+Regenerated, the month assertion replaced by a timestamp SHAPE plus the served tick labels, and a
+parity test added on the PYTHON side, because the interface suite renders nothing and cannot tell
+a stale fixture from a fresh one. Reverting `MAX_SPAN_DAYS` now fails that test.
+
+**MINOR, both closed.** `.proc .mast` was declared twice 200 lines apart and is now cross-
+referenced both ways. The probe test slept 30 s for a 0.8 s budget, costing 31.7 s of wall clock in
+a 193 s leg; it sleeps 2 s, which proves abandonment as completely.
+
+**Two notes the gate raised, both taken.**
+● **`children` was a plain array where the platform gives an `HTMLCollection`** - which has
+  `length`, indexing, `item` and `namedItem` and NOT `forEach`, so it is narrower still than a
+  NodeList. Shipped code touches it once and only for `.length`, so nothing exploited it, but
+  `children.forEach` is the specific trap and would have passed here and thrown in Chromium
+  exactly as `.filter` on a query result did one release ago. Modelled properly, 19 call sites
+  spread, and `children.forEach` in shipped code now fails three tests. Closing the class rather
+  than documenting it, because half-fixing a class is how the second instance arrives. The
+  `NodeList`'s own `forEach` now passes the LIST as its third argument, as the platform does.
+● **The probe-timeout comment now owns its premise.** The bound rests on the platform being
+  Kubernetes-family, which is inferred from pod and kubelet semantics and recorded nowhere here.
+  It is acceptable only because the direction is monotone - 0.8 s clears every window 2.0 s
+  cleared - so "no figure is needed" means the comparison holds without one, not that no
+  assumption remains. And readiness became STRICTER: at `timeoutSeconds: 5` a volume needing 1.5 s
+  used to pass and now returns 503. That trade is deliberate, because a 503 carrying the directory
+  and the errno diagnoses a slow volume and a kubelet kill does not.
+
+**Two smaller things.** The fold label fell back to a number at one end and an empty string at the
+other, so an unnumbered final middle step would have rendered "3-"; both ends fall back to a
+number, and the en dash is a plain hyphen. And `scripts/verify.sh` now records why the node leg
+uses the glob form: `node --test ui/tests/` resolves the path as a module and fails with
+MODULE_NOT_FOUND before running anything, which the gate hit and reported as "fail 1 at clean
+HEAD".
+
+**How verified.** Loop PASS on all eight legs. `ui/app.js` at 100.00% of 1,749 lines. Eleven
+mutants killed across the five fixes: four class collisions by name, three count inversions, a
+reverted span ceiling against the fixture parity test, and `children.forEach`.
+
 ## V0.28.0 (2026-09-10)
 
 **What.** The Library, rebuilt to the design canvas the owner approved. `openProcedure` rendered

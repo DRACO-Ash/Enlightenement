@@ -154,7 +154,17 @@ test('the drill view draws the served stimulus, its table and its legend', async
   //: cannot be correlated against a pass schedule, which is what an operator does with a time
   //: axis. The tick labels come straight off the payload.
   const text = [...frames[0].querySelectorAll('text')].map((node) => node.textContent);
-  assert.ok(text.some((label) => /Jun \d\d:\d\dZ/.test(label)), JSON.stringify(text));
+  //: Matched on the SHAPE of a timestamp, not on a month. This read `/Jun \d\d:\d\dZ/`, and
+  //: halving `MAX_SPAN_DAYS` at V0.27.15 moved `SYNTHETIC_EPOCH_SPAN_HOURS` and with it the
+  //: seeded window - from 05 June to 30 June, which runs into July - so the month had become a
+  //: coincidence that happened to still hold. A test pinned to an incidental fact passes until
+  //: it doesn't, and then fails for a reason that has nothing to do with what it is checking.
+  const stamped = /^\d\d [A-Z][a-z]{2} \d\d:\d\dZ$/;
+  assert.ok(text.some((label) => stamped.test(label)), JSON.stringify(text));
+  //: And the labels are the SERVED ones, so the axis cannot be labelled from anything else.
+  const ticks = DRILL.stimulus[0].panels[0].y.ticks.map(([, label]) => label);
+  assert.ok(ticks.length > 0, 'the fixture carries no tick labels');
+  for (const label of ticks) assert.ok(text.includes(label), `${label} is not on the axis`);
   //: And the refit ran: it is scheduled inside a frame callback, which the harness invokes.
   assert.ok(frames[0].getAttribute('viewBox'), 'the frame never got a viewBox');
 
@@ -196,7 +206,7 @@ test('the confidence group is one radio group with one tab stop, not five button
   await harness.settle();
 
   const group = harness.element('confidence-group');
-  const buttons = group.children;
+  const buttons = [...group.children];
   assert.equal(buttons.length, 5);
   //: `role="radiogroup"` is on the element in `index.html`, so it is the document's claim and
   //: the Python suite asserts it there. What the SCRIPT owns is each option's role and the
@@ -208,11 +218,11 @@ test('the confidence group is one radio group with one tab stop, not five button
   assert.equal(buttons.filter((button) => button.getAttribute('aria-checked') === 'true').length, 0);
 
   buttons[2].fire('click');
-  const checked = () => group.children.find((b) => b.getAttribute('aria-checked') === 'true');
+  const checked = () => [...group.children].find((b) => b.getAttribute('aria-checked') === 'true');
   assert.ok(checked(), 'a click must select');
   const before = checked().textContent;
   //: Arrow keys move the selection and wrap, which is the radiogroup pattern.
-  group.children.find((b) => b.getAttribute('aria-checked') === 'true').fire('keydown', { key: 'ArrowRight' });
+  [...group.children].find((b) => b.getAttribute('aria-checked') === 'true').fire('keydown', { key: 'ArrowRight' });
   assert.notEqual(checked().textContent, before);
   const tabbed = { key: 'Tab', prevented: false };
   group.children[0].fire('keydown', tabbed);
@@ -386,21 +396,21 @@ test('the library lists the procedures, filters them, and opens one', async () =
   //: The status chips are derived from the statuses the CONTENT declares, plus "all". A filter
   //: offering a category the library does not contain can only ever return nothing.
   const chips = harness.element('library-chips');
-  const labels = chips.children.map((chip) => chip.textContent);
+  const labels = [...chips.children].map((chip) => chip.textContent);
   const statuses = new Set(PROCEDURES.procedures.map((procedure) => procedure.status));
   assert.equal(labels.length, statuses.size + 2, JSON.stringify(labels));
   assert.ok(labels.includes('all'));
   //: A legend, so the fieldset has an accessible name.
   assert.equal(chips.children[0].tagName, 'LEGEND');
 
-  const draft = chips.children.find((chip) => chip.textContent === 'draft');
+  const draft = [...chips.children].find((chip) => chip.textContent === 'draft');
   draft.fire('click');
   const shown = harness.element('library-grid').children.length;
   assert.ok(shown > 0 && shown < PROCEDURES.count, `filtering to draft showed ${shown}`);
 
   //: Search narrows on the text an author wrote, and an unmatched query says so rather than
   //: rendering an empty grid that reads as a loading state.
-  chips.children.find((chip) => chip.textContent === 'all').fire('click');
+  [...chips.children].find((chip) => chip.textContent === 'all').fire('click');
   const search = harness.element('library-search');
   search.value = 'zzzz-no-such-procedure';
   search.fire('input');
@@ -446,7 +456,7 @@ test('a library card shows the shape of the work before any of its prose', async
   await harness.settle();
   harness.app.show('library');
   await harness.settle();
-  const cards = harness.element('library-grid').children;
+  const cards = [...harness.element('library-grid').children];
   assert.equal(cards.length, PROCEDURES.count);
 
   const entry = PROCEDURES.procedures.find((row) => row.id === FLOW.id);
@@ -467,9 +477,9 @@ test('a library card shows the shape of the work before any of its prose', async
   //: each other rather than being two notations for one idea.
   const strip = [...card.querySelectorAll('div')].find((node) => node.classList.contains('strip'));
   assert.ok(strip, 'a card rendered no preview strip');
-  const gems = strip.children.filter((node) => node.classList.contains('gem')).length;
-  const boxes = strip.children.filter((node) => node.classList.contains('box')).length;
-  assert.equal(strip.children.filter((node) => node.classList.contains('cap')).length, 1);
+  const gems = [...strip.children].filter((node) => node.classList.contains('gem')).length;
+  const boxes = [...strip.children].filter((node) => node.classList.contains('box')).length;
+  assert.equal([...strip.children].filter((node) => node.classList.contains('cap')).length, 1);
   assert.ok(gems > 0 && gems <= entry.decisions, `${gems} diamonds for ${entry.decisions} decisions`);
   assert.ok(boxes > 0, 'the strip drew no steps');
   //: **Capped, and it SAYS it is capped.** A 21-step procedure at full length is a hairline of
@@ -478,16 +488,16 @@ test('a library card shows the shape of the work before any of its prose', async
   const long = PROCEDURES.procedures.reduce((a, b) => (a.steps + a.decisions > b.steps + b.decisions ? a : b));
   const longCard = cards.find((node) => node.textContent.includes(long.id));
   const longStrip = [...longCard.querySelectorAll('div')].find((node) => node.classList.contains('strip'));
-  const nodes = longStrip.children.filter((n) => n.classList.contains('box') || n.classList.contains('gem')).length;
+  const nodes = [...longStrip.children].filter((n) => n.classList.contains('box') || n.classList.contains('gem')).length;
   if (long.steps + long.decisions > nodes) {
-    const more = longStrip.children.find((node) => node.classList.contains('more'));
+    const more = [...longStrip.children].find((node) => node.classList.contains('more'));
     assert.ok(more, `${long.id} folded its strip silently`);
     assert.equal(more.textContent, `+${long.steps + long.decisions - nodes}`);
   }
 
   //: Status is a dot AND a word here too, never colour alone.
   const mast = [...card.querySelectorAll('span')].find((node) => node.classList.contains('mast'));
-  assert.ok(mast.children.some((node) => node.classList.contains('dot')), 'no status dot');
+  assert.ok([...mast.children].some((node) => node.classList.contains('dot')), 'no status dot');
   assert.ok(mast.textContent.includes(entry.status), mast.textContent);
 });
 
@@ -612,7 +622,7 @@ test('a long procedure folds its middle, names what is inside, and opens on requ
   //: `.leg` rows, so counting legs across the whole body counted 8 steps plus 3 decisions and
   //: reported 11 against an expected 8 - the test measuring the wrong thing, not the code.
   const stepFlow = () => [...body.querySelectorAll('div')].filter((node) => node.classList.contains('flow'))[0];
-  const legs = () => stepFlow().children.filter((node) => node.classList.contains('leg'));
+  const legs = () => [...stepFlow().children].filter((node) => node.classList.contains('leg'));
 
   //: The fixture carries eight steps against a fold threshold of six, so the flow arrives as
   //: two steps, the folded rail, and the last step. A flow nobody scrolls to the end of is a

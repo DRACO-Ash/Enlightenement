@@ -346,7 +346,11 @@ def test_the_probe_timeout_clears_the_worst_case_platform_window_at_the_shipped_
     )
 
     def stalled_probe(path: Path) -> ProbeResult:
-        time.sleep(30)
+        #: Just past the budget, not thirty seconds past it. The request returns at 0.8 s either
+        #: way, and a 30 s sleep cost 31.7 s of wall clock in a 193 s pytest leg for no extra
+        #: assurance: what is being proved is that the probe is abandoned, and two seconds proves
+        #: that as completely as thirty.
+        time.sleep(2)
         return ok_probe(path)
 
     #: The cache is off so every request probes; the TIMEOUT is left at the shipped default.

@@ -137,6 +137,15 @@ RATE_LIMITED_MESSAGE = "rate limit exceeded"
 #: platform using the default would have killed the request at 1 s anyway, so this converts a
 #: silent kubelet kill into our own 503 carrying the resolved directory and the exact errno.
 #:
+#: **Two things this reasoning rests on, owned rather than left implied.** First, the premise is
+#: that the platform is Kubernetes-family: that is inferred from pod and kubelet semantics and is
+#: not recorded anywhere here. It is acceptable only because the direction is monotone - 0.8 s
+#: clears every window 2.0 s cleared, and more - so "no figure is needed" means the comparison
+#: holds without one, not that no assumption remains. Second, readiness became STRICTER, which is
+#: the honest description: if the platform publishes `timeoutSeconds: 5`, a volume needing 1.5 s
+#: used to pass readiness and now returns 503. That is the trade taken deliberately, because a
+#: 503 carrying the directory and the errno diagnoses a slow volume and a kubelet kill does not.
+#:
 #: The property this constant exists for is unchanged and still the point: the probe cannot hang.
 PROBE_TIMEOUT_SECONDS = 0.8
 

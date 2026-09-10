@@ -7,10 +7,72 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { load } from './harness.mjs';
+import { INDEX_HTML, load } from './harness.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/* The stylesheet, with comments stripped, split into the V0.28.0 Library region and everything
+ * before and after it. Comments FIRST, and the first version of this did not strip them: the
+ * stylesheet's own prose names the classes it discusses, so `.act`, `.sub` and `.stepcard` were
+ * read out of comment text as selectors, every clashing class gained a third entry, and the
+ * check passed on all three real collisions. A test that proves nothing, which is the fault it
+ * exists to prevent, one layer up. */
+function stylesheetRegions(markup) {
+  const sheet = markup
+    .slice(markup.indexOf('<style>'), markup.indexOf('</style>'))
+    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const opens = sheet.indexOf('.prochead');
+  const closes = sheet.indexOf('.scope {');
+  assert.ok(opens > 0 && closes > opens, 'the Library stylesheet region moved');
+  return { library: sheet.slice(opens, closes), rest: sheet.slice(0, opens) + sheet.slice(closes) };
+}
+
+/* Every selector in a region, one per entry, commas split. */
+function selectorsIn(region) {
+  const found = [];
+  for (const [, , selector] of region.matchAll(/(^|})\s*([^{}@]+)\{/g)) {
+    for (const part of selector.split(',')) {
+      const trimmed = part.trim();
+      if (trimmed && !trimmed.startsWith('@')) found.push(trimmed);
+    }
+  }
+  return found;
+}
+
+/* EVERY class a selector mentions, not just the leftmost compound's. The first version took only
+ * the owner, and three of the four real collisions were on a descendant or a modifier -
+ * `.leg > .rail`, `.endcap > .gatehead.sub`, `.dec > .ask` - so the check caught `.act` alone and
+ * passed the other three. The name is what carries a bare rule, wherever in a selector it sits. */
+function mentionedClasses(selector) {
+  return [...selector.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+}
+
+test('no new Library component reuses a class name the old stylesheet already styles bare', () => {
+  /* **Three name collisions shipped in V0.28.0 and a fourth was caught by grep**, which is not
+   * a control. `.act` was already the primary button, so naming the step card `.act` restyled
+   * every button in the application. `.rail` is the STICKY TOP NAVIGATION BAR - position sticky,
+   * z-index 20, a backdrop blur, a bottom border - so the flow's step-number column inherited
+   * all of it on every procedure screen. `.sub` is a page-subtitle paragraph, so a
+   * `gatehead sub` header band took its `max-width: 620px` and 26px bottom margin inside a
+   * 1124px card. `.ask` gave the decision header a 27px subtitle's margin and letter-spacing.
+   *
+   * Every one is invisible to a Chromium sweep that checks overflow, console errors and page
+   * exceptions, because the symptom is under-fill, wrong spacing or unwanted position rather
+   * than a break. So the check is structural: a class MENTIONED anywhere in the Library region
+   * may not also carry a BARE rule outside it. A bare rule applies everywhere the name appears,
+   * and nobody adding the name later goes looking for it.
+   */
+  const { library, rest } = stylesheetRegions(readFileSync(INDEX_HTML, 'utf8'));
+  const introduced = new Set(selectorsIn(library).flatMap(mentionedClasses));
+  assert.ok(introduced.size > 15, `only ${introduced.size} Library components found`);
+  const bareElsewhere = new Set(
+    selectorsIn(rest).filter((selector) => /^\.[\w-]+$/.test(selector)).map((s) => s.slice(1)),
+  );
+  const clashes = [...introduced].filter((name) => bareElsewhere.has(name)).sort();
+  assert.deepEqual(clashes, [], `Library classes with a bare rule elsewhere: ${clashes.join(', ')}`);
+});
 
 test('a scatter mark is the right element for its glyph, with the right geometry', () => {
   const { app } = load();
@@ -57,17 +119,17 @@ test('a misshapen regime says so on screen rather than drawing something plausib
   ];
   app.renderLibraryCards();
 
-  const cards = grid.children;
+  const cards = [...grid.children];
   assert.equal(cards.length, 4);
   const tags = cards.map((card) => card.find('tags')[0]);
 
   //: One pill per regime for the array, and the ids are not repr-shaped.
-  const good = tags[0].children.map((pill) => pill.textContent);
+  const good = [...tags[0].children].map((pill) => pill.textContent);
   assert.deepEqual([...good.slice(0, 2)], ['LEO', 'GEO']);
   assert.ok(!good.join('').includes('['), 'a list rendered as its own repr reached an operator once');
 
   for (const index of [1, 2]) {
-    const pills = tags[index].children.map((pill) => pill.textContent);
+    const pills = [...tags[index].children].map((pill) => pill.textContent);
     assert.ok(
       pills.some((text) => text.includes('regime unreadable')),
       `a non-array regime must be reported, not iterated: ${JSON.stringify(pills)}`,
@@ -78,7 +140,7 @@ test('a misshapen regime says so on screen rather than drawing something plausib
 
   //: An ABSENT regime is not a fault. It draws no pill and says nothing, because there is
   //: nothing to report - the unknown marker is for a value of the wrong shape.
-  const absent = tags[3].children.map((pill) => pill.textContent);
+  const absent = [...tags[3].children].map((pill) => pill.textContent);
   assert.ok(!absent.some((text) => text.includes('unreadable')), JSON.stringify(absent));
 });
 

@@ -1271,7 +1271,7 @@ function actionCard(step) {
 /* One rung of the flow: the rail with its numbered node and the spine, then the body beside it. */
 function leg(rung, body, rungClass) {
   const row = el('div', 'leg');
-  const rail = el('div', 'rail');
+  const rail = el('div', 'spinecol');
   const node = el('div', `rung ${rungClass || ''}`.trim());
   if (rungClass && rungClass.includes('gem')) node.appendChild(el('i', null));
   else node.textContent = String(rung);
@@ -1288,7 +1288,10 @@ function leg(rung, body, rungClass) {
  * owns, so it carries the question, every condition, and what follows from each. */
 function decisionCard(point, onJump) {
   const card = el('div', 'dec');
-  const ask = el('div', 'ask');
+  /* `askhead`, not `ask`: a bare `.ask` rule already exists in the stylesheet and the decision
+   * header was inheriting its margin and letter-spacing. Two collisions in one release is why
+   * the new classes are now checked against the old stylesheet rather than assumed distinct. */
+  const ask = el('div', 'askhead');
   const top = el('div', 'asktop');
   top.appendChild(glyph('decision', 15));
   top.appendChild(el('span', 'word', point.id ? `Decision · ${point.id}` : 'Decision'));
@@ -1531,11 +1534,16 @@ function flowLegs(host, steps, expanded) {
     clear(flow);
     flowLegs(flow, steps, true);
   });
-  const first = middle[0];
-  host.appendChild(leg(
-    `${first ? first.n ?? LEAD_STEPS + 1 : ''}–${steps[steps.length - TAIL_STEPS - 1]?.n ?? ''}`,
-    rail, 'folded',
-  ));
+  /* Both ends fall back to a NUMBER, and the first version fell back to `''` at the end, so an
+   * unnumbered final middle step would have rendered "3-". No shipped content reaches it - `n`
+   * is a contiguous integer on every step of all thirteen procedures - but an asymmetric
+   * fallback is a latent difference between the two ends of one label.
+   *
+   * A plain hyphen, not an en dash: a numeric range is conventional typography either way, and
+   * the house rule is easier to hold with one dash character in the interface than with two. */
+  const opens = middle[0]?.n ?? LEAD_STEPS + 1;
+  const closes = steps[steps.length - TAIL_STEPS - 1]?.n ?? steps.length - TAIL_STEPS;
+  host.appendChild(leg(`${opens}-${closes}`, rail, 'folded'));
   for (const step of steps.slice(steps.length - TAIL_STEPS)) {
     host.appendChild(leg(step.n ?? steps.indexOf(step) + 1, actionCard(step), ''));
   }

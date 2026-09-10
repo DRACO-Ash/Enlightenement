@@ -37,11 +37,27 @@ export const INDEX_HTML = join(HERE, '..', 'index.html');
  * `forEach`, and deliberately NO array methods. Real DOM code has to spread a query result before
  * mapping or filtering it, and so does test code here - which is the whole reason this exists.
  * See the note on `querySelectorAll`. */
+/* An `HTMLCollection`, as far as this harness needs one: `length`, index access, `item` and
+ * `namedItem`, and NOT `forEach` - which a real one genuinely lacks. Live-ness is not modelled
+ * and does not need to be: nothing here holds a collection across a mutation. */
+function htmlCollection(nodes) {
+  const list = {
+    length: nodes.length,
+    item: (index) => nodes[index] ?? null,
+    namedItem: (name) => nodes.find((node) => node.getAttribute('id') === name) ?? null,
+    [Symbol.iterator]: () => nodes[Symbol.iterator](),
+  };
+  nodes.forEach((node, index) => { list[index] = node; });
+  return list;
+}
+
 function nodeList(nodes) {
   const list = {
     length: nodes.length,
     item: (index) => nodes[index] ?? null,
-    forEach: (visit, thisArg) => nodes.forEach(visit, thisArg),
+    /* The third callback argument is the LIST, as a real `NodeList` passes, and was the backing
+     * array: generosity one argument deep. */
+    forEach: (visit, thisArg) => nodes.forEach((node, index) => visit.call(thisArg, node, index, list)),
     entries: () => nodes.entries(),
     keys: () => nodes.keys(),
     values: () => nodes.values(),
@@ -79,7 +95,7 @@ class FakeNode {
   constructor(tag, namespace = null) {
     this.tagName = String(tag).toUpperCase();
     this.namespaceURI = namespace;
-    this.children = [];
+    this._children = [];
     this.attributes = new Map();
     this.dataset = {};
     this.style = {};
@@ -125,17 +141,17 @@ class FakeNode {
   /* `textContent` on a parent returns its subtree's text, which is how the real thing behaves
    * and what the assertions need: a card's text is the sum of the spans inside it. */
   get textContent() {
-    if (this.children.length) return this.children.map((child) => child.textContent).join('');
+    if (this._children.length) return this._children.map((child) => child.textContent).join('');
     return this._text;
   }
 
   set textContent(value) {
     this._text = String(value);
-    this.children = [];
+    this._children = [];
   }
 
   get firstChild() {
-    return this.children[0] ?? null;
+    return this._children[0] ?? null;
   }
 
   /* **A real DOM property this harness did not model, and the omission hid a whole section.**
@@ -146,8 +162,20 @@ class FakeNode {
    * `viewBox.baseVal` hid 38. A harness that does not understand the DOM produces tests that
    * prove nothing, so the fix is always to mirror the real thing rather than to bend the app
    * around the fake. Element-only here because `children` holds elements. */
+  /* **`children` is an HTMLCollection-LIKE, for the same reason `querySelectorAll` is a
+   * NodeList-like.** It was a plain array, which is more permissive than the platform in the
+   * direction that surfaces as nothing: an `HTMLCollection` has `length`, indexing, `item` and
+   * `namedItem` and NOT `forEach`, so it is narrower still than a NodeList. Shipped code touches
+   * it in exactly one place and only for `.length`, so nothing exploited it - but
+   * `children.forEach` is the specific trap, and it would have passed here and thrown in
+   * Chromium exactly as `.filter` on a query result did. Closing the class rather than
+   * documenting it, because half-fixing a class is how the second instance arrives. */
+  get children() {
+    return htmlCollection(this._children);
+  }
+
   get childElementCount() {
-    return this.children.length;
+    return this._children.length;
   }
 
   get value() {
@@ -160,12 +188,12 @@ class FakeNode {
 
   appendChild(child) {
     child.parentNode = this;
-    this.children.push(child);
+    this._children.push(child);
     return child;
   }
 
   remove() {
-    const siblings = this.parentNode?.children;
+    const siblings = this.parentNode?._children;
     if (siblings) siblings.splice(siblings.indexOf(this), 1);
     this.parentNode = null;
   }
@@ -263,7 +291,7 @@ class FakeNode {
    * which is a question about the subtree rather than about one node. */
   find(className) {
     const found = [];
-    for (const child of this.children) {
+    for (const child of this._children) {
       if (child._classes.has(className)) found.push(child);
       found.push(...child.find(className));
     }
@@ -271,7 +299,7 @@ class FakeNode {
   }
 
   descendants() {
-    return this.children.flatMap((child) => [child, ...child.descendants()]);
+    return this._children.flatMap((child) => [child, ...child.descendants()]);
   }
 }
 
@@ -361,10 +389,10 @@ export function load({ readyState = 'loading', routes = {}, extraIds = [] } = {}
        * permissive than the element-level ones. Two paths returning two different shapes for
        * one method is exactly how a gap like this survives. */
       if (selector === '#nav button') {
-        return nodeList(root.children.filter((node) => node.getAttribute('data-nav') === 'yes'));
+        return nodeList(root._children.filter((node) => node.getAttribute('data-nav') === 'yes'));
       }
       if (selector === 'main [data-view]') {
-        return nodeList(root.children.filter((node) => node.getAttribute('data-nav') === 'no'));
+        return nodeList(root._children.filter((node) => node.getAttribute('data-nav') === 'no'));
       }
       return root.querySelectorAll(selector);
     },

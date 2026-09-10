@@ -118,6 +118,10 @@ echo "node: $NODE ($("$NODE" --version 2>&1))"
 UI_COVERAGE="${TMPDIR:-/tmp}/enlightenment-ui-coverage-$$"
 rm -rf "$UI_COVERAGE"
 mkdir -p "$UI_COVERAGE"
+# The GLOB form, not the directory form. `node --test ui/tests/` resolves the path as a module
+# and fails with MODULE_NOT_FOUND before running anything, which reads as a failing suite: an
+# engineering review hit exactly that and reported "fail 1 at clean HEAD". Nothing is wrong with
+# the suite; the invocation has to name the files.
 NODE_V8_COVERAGE="$UI_COVERAGE" "$NODE" --test "ui/tests/*.test.mjs"
 "$NODE" ui/tests/coverage.mjs "$UI_COVERAGE" coverage-ui.info
 rm -rf "$UI_COVERAGE"

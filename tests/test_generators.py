@@ -1065,6 +1065,54 @@ def test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object(
     assert separation_ms == pytest.approx(authored_ms), (first, second, authored_ms)
 
 
+def test_the_interface_fixture_still_matches_the_server_it_was_captured_from(
+    package: ContentPackage,
+) -> None:
+    """**A fixture that claims to be a capture, checked against the thing it captures.**
+
+    `ui/tests/fixtures/drill.json` is a capture of DRL-0005's client-facing stimulus at a seed
+    recorded in its own footer, and `ui/tests/views.test.mjs` says the fixtures were taken from a
+    running instance with nothing else altered. That stopped being true at V0.27.15: halving
+    `MAX_SPAN_DAYS` moved `SYNTHETIC_EPOCH_SPAN_HOURS` from 7320 to 8040, which moved the seeded
+    window from 05 June to 30 June, and the fixture went on asserting the old one. No interface
+    assertion was substantively wrong, which is exactly why it needed catching - the divergence
+    was silent, and the next one need not be benign.
+
+    Checked from the PYTHON side deliberately. The interface suite cannot see this: it renders
+    nothing and only reads the file, so a stale fixture is indistinguishable from a fresh one
+    there. The seed comes out of the fixture's own footer rather than from a constant here, so
+    the fixture names the conditions it is to be reproduced under.
+    """
+    fixture = json.loads(
+        (ROOT / "ui" / "tests" / "fixtures" / "drill.json").read_text(encoding="utf-8")
+    )
+    captured = fixture["stimulus"][0]
+    seed = int(captured["footer"].split("seed ")[1].split(" ")[0], 16)
+    drill = next(d for d in package.drills if d.id == fixture["item_id"])
+    live = compose(
+        build_registry(),
+        drill.stimulus.generator,
+        drill.stimulus.params,
+        seed,
+        drill.stimulus.product_id,
+    )[0].for_client()
+
+    #: Header, legend, footer and the axis labels: everything the interface asserts on, and
+    #: everything a moved window would change. The MARKS are trimmed in the fixture by design -
+    #: three tracks of eight points against fourteen tracks of hundreds - so they are compared
+    #: as a prefix rather than whole, which is the one edit the capture is allowed.
+    assert captured["header"] == [list(row) for row in live["header"]], "the header drifted"
+    assert captured["legend"] == [list(row) for row in live["legend"]], "the legend drifted"
+    assert captured["footer"] == live["footer"], "the footer drifted"
+    assert captured["panels"][0]["y"]["ticks"] == [
+        list(tick) for tick in live["panels"][0]["y"]["ticks"]
+    ], "the time axis labels drifted, so the window moved"
+    for index, mark in enumerate(captured["panels"][0]["marks"]):
+        served = live["panels"][0]["marks"][index]
+        assert mark["label"] == served["label"], index
+        assert mark["x"] == list(served["x"])[: len(mark["x"])], f"track {index} drifted"
+
+
 def test_no_waterfall_draws_a_rate_the_real_belt_does_not_produce(
     package: ContentPackage,
 ) -> None:

@@ -161,7 +161,15 @@
   }
   h1 { margin: 0 0 10px; font-size: 44px; font-weight: 700; letter-spacing: -.02em; line-height: 1.04; }
   h2 { margin: 0 0 10px; font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
-  .sub { margin: 0 0 26px; max-width: 620px; font-size: 16px; color: var(--ink-soft); }
+  /* Scoped to `p.sub`, and that is a bug fix rather than tidying. V0.28.0 added
+   * `<div class="gatehead sub">` inside the reporting cap, so this rule - written for a page
+   * subtitle paragraph - applied its `max-width: 620px` and `margin: 0 0 26px` to a header band
+   * inside a card up to 1124px wide: the band and its top border stopped two thirds of the way
+   * across and a 26px gap opened between it and the list it heads, on all thirteen procedure
+   * screens. The same collision class as `.act`, and invisible to a Chromium sweep that checks
+   * overflow, console errors and exceptions, because this is UNDER-fill. All three consumers
+   * are `<p class="sub">`. */
+  p.sub { margin: 0 0 26px; max-width: 620px; font-size: 16px; color: var(--ink-soft); }
   .note { margin: 8px 0 0; font-size: 13px; color: var(--ink-faint); }
   .label {
     display: block; margin: 0 0 8px; font-family: var(--data); font-size: 11px;
@@ -432,6 +440,7 @@
     font-family: var(--data); font-size: 12px; color: var(--accent); white-space: nowrap;
     letter-spacing: .06em;
   }
+  /* The dot layout for this element is in the card-shape block below; keep the two together. */
   .proc .mast { margin-left: auto; font-family: var(--data); font-size: 12px; white-space: nowrap; }
   .proc h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
   .proc p { margin: 0; font-size: 13.5px; color: var(--ink-meta); }
@@ -443,6 +452,8 @@
   /* The card's flow preview and stats footer, V0.28.0. Squares are steps, diamonds decisions,
    * the filled cap closure - the same vocabulary the map inside the procedure uses, so the two
    * teach each other. Every figure is a count the server derived from a list the author wrote. */
+  /* Extends `.proc .mast` above, which carries the font. Declared twice deliberately, and
+   * cross-referenced both ways, because a reader changing the mast should see both. */
   .proc .mast { display: flex; align-items: center; gap: 5px; }
   .proc .mast .dot { width: 6px; height: 6px; border-radius: 999px; display: block; flex: 0 0 auto; }
   .proc .mast .dot.on { background: var(--good); }
@@ -576,20 +587,24 @@
   .flowhead h3 { margin: 0; font-size: 20px; font-weight: 700; }
   .leg { display: grid; grid-template-columns: 46px minmax(0, 1fr); }
   .leg:first-of-type { margin-top: 16px; }
-  .leg > .rail { display: flex; flex-direction: column; align-items: center; }
-  .leg > .rail > .rung {
+  /* `spinecol`, not `rail`: `.rail` is this stylesheet's STICKY TOP NAVIGATION BAR - position
+   * sticky, z-index 20, a backdrop blur and a bottom border - so the flow's step-number column
+   * was inheriting all of it on every procedure screen. The third name collision in this one
+   * release, and the worst; the check in `render.test.mjs` now holds the whole class. */
+  .leg > .spinecol { display: flex; flex-direction: column; align-items: center; }
+  .leg > .spinecol > .rung {
     width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border-strong);
     background: var(--surface-3); display: flex; align-items: center; justify-content: center;
     flex: 0 0 auto; font-family: var(--data); font-size: 14px; font-weight: 700; color: var(--ink-soft);
   }
-  .leg > .rail > .rung.lead { border-color: var(--accent-hover-border); background: var(--accent-wash); color: var(--accent-hi); }
-  .leg > .rail > .rung.folded { border-style: dashed; background: var(--surface-4); font-size: 11px; color: var(--ink-count); }
-  .leg > .rail > .rung.gem { border: 0; background: none; }
-  .leg > .rail > .rung.gem i {
+  .leg > .spinecol > .rung.lead { border-color: var(--accent-hover-border); background: var(--accent-wash); color: var(--accent-hi); }
+  .leg > .spinecol > .rung.folded { border-style: dashed; background: var(--surface-4); font-size: 11px; color: var(--ink-count); }
+  .leg > .spinecol > .rung.gem { border: 0; background: none; }
+  .leg > .spinecol > .rung.gem i {
     width: 25px; height: 25px; transform: rotate(45deg); border: 1.5px solid var(--accent-hi);
     background: var(--accent-wash); display: block;
   }
-  .leg > .rail > .spine { width: 1.5px; flex: 1 1 auto; background: var(--border-strong); margin-top: 6px; }
+  .leg > .spinecol > .spine { width: 1.5px; flex: 1 1 auto; background: var(--border-strong); margin-top: 6px; }
   .leg > .body { padding: 0 0 22px 16px; min-width: 0; }
   /* `stepcard`, and NOT `act`: `.act` is already this stylesheet's primary button, defined
    * 380 lines above, so naming the step card `.act` silently restyled every button in the
@@ -636,7 +651,7 @@
 
   /* A decision. The one marker that is not an instruction: a judgement the operator owns. */
   .dec { border: 1.5px solid var(--accent-border); border-radius: 12px; background: var(--surface-3); overflow: hidden; }
-  .dec > .ask { padding: 15px 18px 16px; background: var(--accent-wash); border-bottom: 1px solid var(--accent-border); }
+  .dec > .askhead { padding: 15px 18px 16px; background: var(--accent-wash); border-bottom: 1px solid var(--accent-border); }
   .dec .asktop { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
   .dec .asktop .word { font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-hi); font-weight: 700; }
   .dec .asktop .rubric { font-family: var(--data); font-size: 10px; color: var(--ink-meta); margin-left: auto; }

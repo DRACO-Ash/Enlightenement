@@ -697,6 +697,64 @@ def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClie
     assert len(body.content) <= MAX_ANONYMOUS_LIBRARY_BYTES, len(body.content)
 
 
+def test_the_index_counts_are_the_ones_the_content_actually_holds(
+    client: TestClient, package: ContentPackage
+) -> None:
+    """**The three counts added at V0.28.0 were correct and held by nothing.**
+
+    The engineering gate inverted each of them - `stops = len(steps)`, `"decisions": 0`,
+    `"onward": 0` - and the whole verification loop stayed green three times. The assertions
+    beside them are key-set, type and `stops <= steps`, and every one of those mutants satisfies
+    all three: `stops = len(steps)` is still an integer and still not greater than `steps`.
+
+    So the figures were right and nothing would have said if they stopped being, on counts that
+    reach an anonymous route and are about to tell an operator where the judgement in a procedure
+    sits and how many products they will have to open before they can finish it.
+
+    Recomputed here from the loaded content rather than restated, so the test cannot drift away
+    from the derivation, plus three absolute anchors below that a re-derivation cannot satisfy by
+    agreeing with itself.
+    """
+    served = {
+        entry["id"]: entry
+        for entry in client.get("/api/v1/content/procedures").json()["procedures"]
+    }
+    assert served, "the index is empty, so this test measures nothing"
+
+    totals = {"steps": 0, "decisions": 0, "stops": 0, "onward": 0}
+    for procedure in package.procedures:
+        extra = procedure.model_extra or {}
+        steps = list(extra.get("steps") or [])
+        points = list(extra.get("decision_points") or [])
+        expected = {
+            "steps": len(steps),
+            "decisions": len(points),
+            "stops": sum(1 for step in steps if step.get("products")),
+            "onward": sum(
+                1
+                for point in points
+                for branch in (point.get("branches") or [])
+                if branch.get("goto_procedure")
+            ),
+        }
+        entry = served[procedure.id]
+        for field, count in expected.items():
+            assert entry[field] == count, (
+                f"{procedure.id}: {field} served {entry[field]}, content has {count}"
+            )
+            totals[field] += count
+
+    #: **Absolute anchors, because a recomputation can only ever agree with itself.** These are
+    #: the figures the content inventory records, so a change to the library fails here and says
+    #: which total moved rather than quietly re-deriving a new one.
+    assert totals == {"steps": 145, "decisions": 40, "stops": 60, "onward": 22}, totals
+
+    #: And one procedure that genuinely authors NEITHER, so a hardcoded non-zero cannot pass.
+    #: `PROC-CRM` names no product on any of its eighteen steps and hands over to nothing.
+    assert served["PROC-CRM"]["stops"] == 0
+    assert served["PROC-CRM"]["onward"] == 0
+
+
 def _tokens(document: str) -> dict[str, str]:
     """Every `--name: #hex` declared in the shipped `:root`, parsed from the document itself.
 
