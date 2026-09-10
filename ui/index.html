@@ -513,7 +513,17 @@
   .libtable tbody tr:hover { background: var(--surface-hover); }
   .libtable tbody td { border-top: 1px solid var(--border-hair); color: var(--ink); }
   .libtable td.r, .libtable th.r { text-align: right; font-family: var(--data); font-size: 12.5px; }
-  .libtable td.pid { font-family: var(--data); font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .libtable td.pid { font-family: var(--data); font-size: 12px; white-space: nowrap; padding: 0; }
+  /* The real control, in the first cell. The row carried `role="button"` and an `aria-label`,
+   * which took the eight figures out of the accessibility tree entirely - a button's name
+   * replaces its contents, so the row announced as "Open X, button" and the numbers this view
+   * exists to compare were not exposed at all. */
+  .libtable td.pid button {
+    width: 100%; padding: 11px 16px; background: none; border: 0; color: var(--accent);
+    font: inherit; text-align: left; cursor: pointer;
+  }
+  .libtable td.pid button:hover { color: var(--accent-hi); text-decoration: underline; }
+  .libtable td.pid button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .libtable td.nm { font-weight: 600; }
   .libtable td.st { white-space: nowrap; }
   .libtable td.st .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; margin-right: 7px; }
@@ -921,7 +931,7 @@
         <form id="answer-form" class="hidden">
           <label for="response" id="response-label">Your call</label>
           <input type="text" id="response" name="response" autocomplete="off" maxlength="300"
-                 placeholder="type the call" aria-describedby="response-help">
+                 placeholder="type your answer" aria-describedby="response-help">
           <p class="note" id="response-help">No list. You produce the answer, which is the only thing that builds recall.</p>
           <!-- A radio group, not five buttons: the handoff names that as a gap to close, and a
                single-select control that announces itself as five independent toggles is a

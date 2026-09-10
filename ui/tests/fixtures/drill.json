@@ -207,7 +207,7 @@
     ]
    ],
    "footer": "observation count 2064 \u00b7 seed 0x8e7ec848c9ab2f1a \u00b7 gaps PROVISIONAL \u00b7 synthetic epoch, seeded",
-   "reads_as": "Time runs down the page with the newest data at the bottom. A NEARLY vertical line is holding station - a controlled object still has a small residual drift - and a clear diagonal is drifting."
+   "reads_as": "Time runs down the page with the newest data at the bottom. Every track here is nearly vertical: every object is holding station, with the small residual drift a controlled object always has."
   }
  ],
  "content_hash": "0e395153ae121a6b6f866db5c63151d0d81535f9ce1cb7aaad97c03d16f5ecd3"

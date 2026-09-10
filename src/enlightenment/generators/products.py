@@ -1212,10 +1212,19 @@ class WaterfallGenerator:
                 f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL"
                 " · synthetic epoch, seeded"
             ),
+            #: **The caption describes THIS panel, not the panel in general.** It read "a clear
+            #: diagonal is drifting" on every waterfall, including the artefact item where every
+            #: track holds station - so it promised the operator a feature that is not on the
+            #: plot and sent them looking for it. The chart was corrected at V0.27.10 and the
+            #: text around it was not, which the owner spotted on the served screen.
             reads_as=(
                 "Time runs down the page with the newest data at the bottom. A NEARLY vertical"
                 " line is holding station - a controlled object still has a small residual"
                 " drift - and a clear diagonal is drifting."
+                if drawn_drifters
+                else "Time runs down the page with the newest data at the bottom. Every track"
+                " here is nearly vertical: every object is holding station, with the small"
+                " residual drift a controlled object always has."
             ),
             derived={
                 "drifter_count": drawn_drifters,

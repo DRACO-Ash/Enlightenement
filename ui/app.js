@@ -649,7 +649,14 @@ function startCountdown(seconds) {
 }
 
 const RESPONSE_LABELS = {
-  free_classification: 'Name the event',
+  /* **"Name the event" contradicted half the items using this format.** DRL-0005 asks "The
+   * tooling reports this drift rate. What do you do?" and its accepted answers are actions -
+   * "reject the value, check epoch separation" - so an operator was asked for an action and
+   * told to name an event. The owner's words on the served screen: "I also don't understand the
+   * question here." `free_classification` covers both "classify this" and "what do you do", so
+   * the label has to be one that neither prompt contradicts. The PROMPT above it is the
+   * question; this names the box. */
+  free_classification: 'Your call',
   ordered_actions: 'The actions, in order',
   yes_no_with_reason: 'Yes or no, and why',
   numeric_estimate: 'Your number',
@@ -689,8 +696,16 @@ async function loadDrill() {
     idrow.appendChild(el('span', null, `rated ${drill.elo}`));
     idrow.appendChild(el('span', null, `target ${drill.time_target_s}s`));
     document.getElementById('drill-prompt').textContent = drill.prompt;
-    document.getElementById('drill-meta').textContent =
-      `Content ${drill.content_hash.slice(0, 12)}.`;
+    /* **The line under the prompt is for the OPERATOR, and it held a bare content hash.**
+     * "Content 0e395153ae12." is the most prominent line after the question, in the position
+     * where a reader looks for context about what they are being asked, and it says nothing
+     * anyone can act on. It is build provenance, it is already in the session strip
+     * ("Session · content 0e395153") and the seed is already in the stimulus footer, so it was
+     * duplicated into the one place it is least useful. The slot now carries the confidence
+     * instruction, which is the thing an operator actually needs before answering. */
+    document.getElementById('drill-meta').textContent = drill.confidence_required
+      ? 'Say how sure you are as well as what you think. Both are scored.'
+      : '';
     startCountdown(drill.time_target_s);
     const host = document.getElementById('stimuli');
     for (const stimulus of drill.stimulus) host.appendChild(drawStimulus(stimulus));
@@ -1117,13 +1132,38 @@ const LIBRARY_COLUMNS = [
   { key: 'onward', label: 'Onward', numeric: true },
 ];
 
-/* One comparison, so the table cannot sort one way and label another. A numeric column compares
- * as a NUMBER and everything else as text with a locale-aware compare; `regime` is a list, so it
- * compares on its joined form, which is what the cell displays. */
+/* What each of the two shaped cells DISPLAYS, in one place, so the cell and the sort cannot
+ * disagree. They did, for malformed content: `status` displayed "status unstated" while the
+ * comparator saw `''`, and `regime` displayed "regime unreadable, TBC re-verify" while the
+ * comparator saw the raw value. Unreachable for shipped data - the index route guarantees a list
+ * regime and a non-empty status - so this closes the class rather than an instance. A table that
+ * sorts on something other than what it shows is unfalsifiable from the screen. */
+function statusText(procedure) {
+  return procedure.status || 'status unstated';
+}
+
+function statusSettled(procedure) {
+  return String(procedure.status || '').toLowerCase() === 'active';
+}
+
+function regimeText(procedure) {
+  /* A non-array is a RENDERING FAULT rather than something to join, and it says so on screen
+   * rather than drawing something plausible - the same refusal the cards make. */
+  return Array.isArray(procedure.regime)
+    ? procedure.regime.join(' ')
+    : 'regime unreadable, TBC re-verify';
+}
+
+/* The text a column sorts on, which is the text the cell shows. */
+const COLUMN_TEXT = { status: statusText, regime: regimeText };
+
+/* One comparison, so the table cannot sort one way and display another. A numeric column
+ * compares as a NUMBER, because a right-aligned column that sorts as text is the specific way a
+ * table lies about its own figures: "10" would come before "9". */
 function compareProcedures(left, right, column) {
   if (column.numeric) return (Number(left[column.key]) || 0) - (Number(right[column.key]) || 0);
-  const text = (row) => (Array.isArray(row[column.key]) ? row[column.key].join(' ') : String(row[column.key] ?? ''));
-  return text(left).localeCompare(text(right));
+  const shown = COLUMN_TEXT[column.key] || ((row) => String(row[column.key] ?? ''));
+  return shown(left).localeCompare(shown(right));
 }
 
 /* The procedures the index is currently showing, filtered by status and query. Shared by both
@@ -1163,8 +1203,11 @@ function renderLibraryTable() {
   const shown = shownProcedures();
   if (!shown.length) {
     /* The same refusal the card grid makes: an empty container reads as a view still loading,
-     * and the operator waits for something that is not coming. */
+     * and the operator waits for something that is not coming. `role="status"` so it is
+     * ANNOUNCED - the card grid's plain paragraph tells a sighted reader and nobody else, which
+     * is the one place this view improves on the pattern it copied. */
     const empty = el('p', 'note');
+    empty.setAttribute('role', 'status');
     empty.textContent = state.library.query
       ? `No procedure matches \u201c${state.library.query}\u201d.`
       : 'No procedure in this status.';
@@ -1193,12 +1236,13 @@ function renderLibraryTable() {
     button.appendChild(el('span', null, entry.label));
     /* A GLYPH for the direction, not colour alone, and only on the column that is sorted. */
     if (active) button.appendChild(el('span', 'caret', state.library.ascending ? '\u25B2' : '\u25BC'));
-    button.setAttribute(
-      'aria-label',
-      active
-        ? `${entry.label}, sorted ${state.library.ascending ? 'ascending' : 'descending'}. Reverse the order.`
-        : `Sort by ${entry.label}`,
-    );
+    /* Lifted out of the attribute call, because a conditional inside a conditional is the
+     * readability pattern just swept out of `src/` - and `sonar.sources=src`, so no gate sees
+     * `ui/`. The rule is worth holding in both runtimes or in neither. */
+    const direction = state.library.ascending ? 'ascending' : 'descending';
+    let label = `Sort by ${entry.label}`;
+    if (active) label = `${entry.label}, sorted ${direction}. Reverse the order.`;
+    button.setAttribute('aria-label', label);
     button.addEventListener('click', () => {
       /* Clicking the sorted column reverses it; clicking another sorts by it. Numeric columns
        * open DESCENDING, because "which has the most steps" is the question a reader clicking
@@ -1218,37 +1262,46 @@ function renderLibraryTable() {
 
   const body = el('tbody');
   for (const procedure of ordered) {
+    /* **A row stays a ROW.** It carried `role="button"`, `tabindex="0"` and an `aria-label`,
+     * and every part of that was wrong in a way no test here could see. `tr` permits only
+     * `role=row` in ARIA in HTML; a `tbody` with a non-row child leaves the eight `td` cells
+     * without the ancestor their `cell` role requires, so table navigation stops reaching
+     * them; and a button's accessible name comes from `aria-label`, which REPLACES its
+     * contents - so the row announced as "Open Manoeuvre, button" and the steps, decisions,
+     * stops and onward figures were not exposed at all. This view exists for cross-row
+     * comparison of exactly those numbers, so for a screen-reader user it carried none of the
+     * thing it is for.
+     *
+     * The control is a real `button` in the Procedure cell, which is what the card grid
+     * already does. The row keeps a click handler as a mouse convenience and nothing else: no
+     * role, no tabindex, no label. A focusable element with no role is its own small lie, and
+     * the button is the keyboard and assistive-technology path. */
     const row = el('tr');
-    row.setAttribute('tabindex', '0');
-    row.setAttribute('role', 'button');
-    row.setAttribute('aria-label', `Open ${procedure.name || procedure.id}`);
+    const open = () => openProcedure(procedure.id);
     for (const entry of LIBRARY_COLUMNS) {
       const classes = [entry.numeric ? 'r' : '', entry.cell || ''].filter(Boolean).join(' ');
       const cell = el('td', classes || null);
-      if (entry.key === 'status') {
+      if (entry.key === 'id') {
+        const control = el('button', 'open');
+        control.type = 'button';
+        control.textContent = cellText(procedure.id);
+        /* The name says what the control DOES and includes its visible text, so a voice
+         * command naming what is on screen reaches it. */
+        control.setAttribute('aria-label', `Open ${procedure.name || procedure.id}`);
+        control.addEventListener('click', open);
+        cell.appendChild(control);
+      } else if (entry.key === 'status') {
         /* Status is a dot AND a word here too, never colour alone. */
-        const settled = String(procedure.status || '').toLowerCase() === 'active';
-        cell.appendChild(el('i', settled ? 'dot on' : 'dot off'));
-        cell.appendChild(el('span', null, procedure.status || 'status unstated'));
+        cell.appendChild(el('i', statusSettled(procedure) ? 'dot on' : 'dot off'));
+        cell.appendChild(el('span', null, statusText(procedure)));
       } else if (entry.key === 'regime') {
-        cell.textContent = Array.isArray(procedure.regime)
-          ? procedure.regime.join(' ')
-          : 'regime unreadable, TBC re-verify';
+        cell.textContent = regimeText(procedure);
       } else {
         cell.textContent = cellText(procedure[entry.key]);
       }
       row.appendChild(cell);
     }
-    const open = () => openProcedure(procedure.id);
     row.addEventListener('click', open);
-    /* A row is a control, so Enter and Space open it. `role="button"` without those is a
-     * promise the row does not keep. */
-    row.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        if (event.preventDefault) event.preventDefault();
-        open();
-      }
-    });
     body.appendChild(row);
   }
   table.appendChild(body);
@@ -1299,8 +1352,12 @@ function renderLibraryCards() {
   const grid = document.getElementById('library-grid');
   clear(grid);
   /* The SHARED filter. This was inline here, and the table's copy drifted from it the moment
-   * either changed: switching layout would then silently change what was on screen. */
-  const query = state.library.query.trim().toLowerCase();
+   * either changed: switching layout would then silently change what was on screen. The local
+   * `query` that stood beside it is gone. The engineering gate reported it as dead once the
+   * filter moved; it was not - the empty state below still read it - and deleting it broke the
+   * card grid's "No procedure matches" message. Caught immediately by a test, which is the
+   * useful half: the empty state reads `state.library.query` directly now, matching the
+   * table's version, so there is one source for it rather than a local that shadows it. */
   const shown = shownProcedures();
   for (const procedure of shown) {
     /* A BUTTON, not a div with a click handler: it is keyboard reachable and announces itself. */
@@ -1343,7 +1400,9 @@ function renderLibraryCards() {
     empty.type = 'button';
     empty.disabled = true;
     empty.appendChild(el('span', 'pid', 'nothing matches'));
-    empty.appendChild(el('h3', null, query ? `No procedure matches \u201c${state.library.query}\u201d` : 'No procedure in this status'));
+    empty.appendChild(el('h3', null, state.library.query
+      ? `No procedure matches \u201c${state.library.query}\u201d`
+      : 'No procedure in this status'));
     empty.appendChild(el('p', null, 'Clear the search or pick another status.'));
     grid.appendChild(empty);
   }

@@ -13,26 +13,21 @@ import { INDEX_HTML, load } from './harness.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/* The stylesheet, with comments stripped, split into the V0.28.0 Library region and everything
- * before and after it. Comments FIRST, and the first version of this did not strip them: the
- * stylesheet's own prose names the classes it discusses, so `.act`, `.sub` and `.stepcard` were
- * read out of comment text as selectors, every clashing class gained a third entry, and the
- * check passed on all three real collisions. A test that proves nothing, which is the fault it
- * exists to prevent, one layer up. */
-function stylesheetRegions(markup) {
-  const sheet = markup
+/* The stylesheet with comments stripped. Comments FIRST, and the first version of this did not
+ * strip them: the stylesheet's own prose names the classes it discusses, so `.act`, `.sub` and
+ * `.stepcard` were read out of comment text as selectors, every clashing class gained a third
+ * entry, and the check passed on all three real collisions. A test that proves nothing, which is
+ * the fault it exists to prevent, one layer up. */
+function stylesheet(markup) {
+  return markup
     .slice(markup.indexOf('<style>'), markup.indexOf('</style>'))
     .replace(/\/\*[\s\S]*?\*\//g, ' ');
-  const opens = sheet.indexOf('.prochead');
-  const closes = sheet.indexOf('.scope {');
-  assert.ok(opens > 0 && closes > opens, 'the Library stylesheet region moved');
-  return { library: sheet.slice(opens, closes), rest: sheet.slice(0, opens) + sheet.slice(closes) };
 }
 
-/* Every selector in a region, one per entry, commas split. */
-function selectorsIn(region) {
+/* Every selector, one per entry, commas split. */
+function selectorsIn(sheet) {
   const found = [];
-  for (const [, , selector] of region.matchAll(/(^|})\s*([^{}@]+)\{/g)) {
+  for (const [, , selector] of sheet.matchAll(/(^|})\s*([^{}@]+)\{/g)) {
     for (const part of selector.split(',')) {
       const trimmed = part.trim();
       if (trimmed && !trimmed.startsWith('@')) found.push(trimmed);
@@ -41,38 +36,109 @@ function selectorsIn(region) {
   return found;
 }
 
-/* EVERY class a selector mentions, not just the leftmost compound's. The first version took only
- * the owner, and three of the four real collisions were on a descendant or a modifier -
- * `.leg > .rail`, `.endcap > .gatehead.sub`, `.dec > .ask` - so the check caught `.act` alone and
- * passed the other three. The name is what carries a bare rule, wherever in a selector it sits. */
-function mentionedClasses(selector) {
-  return [...selector.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+/* The classes in a selector's LEFTMOST compound - the component the rule belongs to - with
+ * pseudo-classes, pseudo-elements and attribute selectors stripped. Stripping matters: without
+ * it `.act:hover` reads as a rule about something other than `.act` and every hover state in
+ * the stylesheet is flagged. */
+function ownerClasses(selector) {
+  const leftmost = selector
+    .split(/[\s>+~]+/)[0]
+    .replace(/::?[\w-]+(\([^)]*\))?/g, '')
+    .replace(/\[[^\]]*\]/g, '');
+  return [...leftmost.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
 }
 
-test('no new Library component reuses a class name the old stylesheet already styles bare', () => {
-  /* **Three name collisions shipped in V0.28.0 and a fourth was caught by grep**, which is not
-   * a control. `.act` was already the primary button, so naming the step card `.act` restyled
-   * every button in the application. `.rail` is the STICKY TOP NAVIGATION BAR - position sticky,
-   * z-index 20, a backdrop blur, a bottom border - so the flow's step-number column inherited
-   * all of it on every procedure screen. `.sub` is a page-subtitle paragraph, so a
-   * `gatehead sub` header band took its `max-width: 620px` and 26px bottom margin inside a
-   * 1124px card. `.ask` gave the decision header a 27px subtitle's margin and letter-spacing.
+/* Classes that carry a bare rule AND are deliberately styled inside another component, each
+ * with the reason. A RATCHET, and the point of the whole check: adding an entry is a visible,
+ * deliberate act in a diff, where a silent collision is not. Four collisions shipped in one
+ * release because nobody could see them; this list is where "yes, that one is on purpose" has
+ * to be written down. */
+const DELIBERATE_CLASS_REUSE = {
+  //: `.scope .tablewrap` squares off a table that sits inside a stimulus panel, which already
+  //: has the border and the radius. The same component, adjusted for its context.
+  tablewrap: ['.scope .tablewrap'],
+  //: `.grid-rows .est .bar` narrows the competency bar inside the estimate grid. Same bar.
+  bar: ['.grid-rows .est .bar'],
+};
+
+test('no component reuses a class name the stylesheet already styles bare', () => {
+  /* **Four name collisions shipped in one release and nobody could see any of them.** `.act` is
+   * the primary button, so naming the step card `.act` restyled every button in the
+   * application. `.rail` is the STICKY TOP NAVIGATION BAR - position sticky, z-index 20, a
+   * backdrop blur - so the flow's step-number column inherited all of it on every procedure
+   * screen. `.sub` is a page-subtitle paragraph, so a header band took its `max-width: 620px`
+   * and 26px margin inside a 1124px card. `.ask` gave the decision header a subtitle's
+   * letter-spacing.
    *
-   * Every one is invisible to a Chromium sweep that checks overflow, console errors and page
+   * Every one is invisible to a browser sweep that checks overflow, console errors and page
    * exceptions, because the symptom is under-fill, wrong spacing or unwanted position rather
-   * than a break. So the check is structural: a class MENTIONED anywhere in the Library region
-   * may not also carry a BARE rule outside it. A bare rule applies everywhere the name appears,
-   * and nobody adding the name later goes looking for it.
+   * than a break. So: a class with a BARE rule may not also be styled where it is not the
+   * component the rule belongs to. A bare rule applies everywhere the name appears, and nobody
+   * adding the name later goes looking for it.
+   *
+   * **This check has now been too narrow twice.** It first read class names out of comments and
+   * only inspected the leftmost compound, and passed on all four collisions. Then it was
+   * delimited `.prochead` to `.scope {` - and the V0.29.0 table region landed BEFORE `.prochead`,
+   * so `.libtable` and eight cell classes fell outside the window entirely. Widening it to
+   * "everything below the card grid" was wrong too: the stylesheet is not ordered that way, and
+   * `.covers` and `.tablewrap` are progress and stimulus components that happen to sit there.
+   * There is no region boundary that means what I wanted it to mean, so there is none: the whole
+   * stylesheet is scanned and the deliberate reuses are declared above by name.
    */
-  const { library, rest } = stylesheetRegions(readFileSync(INDEX_HTML, 'utf8'));
-  const introduced = new Set(selectorsIn(library).flatMap(mentionedClasses));
-  assert.ok(introduced.size > 15, `only ${introduced.size} Library components found`);
-  const bareElsewhere = new Set(
-    selectorsIn(rest).filter((selector) => /^\.[\w-]+$/.test(selector)).map((s) => s.slice(1)),
+  const sheet = stylesheet(readFileSync(INDEX_HTML, 'utf8'));
+  const selectors = selectorsIn(sheet);
+  assert.ok(selectors.length > 200, `only ${selectors.length} selectors parsed`);
+
+  const bare = new Set(
+    selectors.filter((selector) => /^\.[\w-]+$/.test(selector)).map((selector) => selector.slice(1)),
   );
-  const clashes = [...introduced].filter((name) => bareElsewhere.has(name)).sort();
-  assert.deepEqual(clashes, [], `Library classes with a bare rule elsewhere: ${clashes.join(', ')}`);
+  assert.ok(bare.size > 20, `only ${bare.size} bare rules found`);
+
+  /* **The SECOND collision shape, and checking only the first is why `.act` slipped through.**
+   * A class is reused two ways: styled inside somebody else's component (`.leg > .rail`), or
+   * given a second BARE rule of its own by a new component - which is exactly what naming the
+   * step card `.act` did, and what naming the table `.covers` would do. The owner check below
+   * cannot see the second shape, because the new rule owns the name too.
+   *
+   * So the bare-rule COUNT per class is ratcheted. Two classes legitimately have two today,
+   * from `.act, .act2 { shared } .act { specific }`, which is ordinary CSS; a third would mean
+   * a new component has claimed the name. Mechanical, and its diff is readable.
+   */
+  const doubled = [...bare]
+    .map((name) => [name, selectors.filter((selector) => selector === `.${name}`).length])
+    .filter(([, count]) => count > 1)
+    .sort();
+  assert.deepEqual(
+    doubled,
+    [
+      ['act', 2],
+      ['act2', 2],
+    ],
+    `a class gained or lost a bare rule: ${JSON.stringify(doubled)}. Two bare rules for one name`
+      + ' means either the shared-plus-specific pair the buttons use, or a new component that has'
+      + ' claimed a name the stylesheet already styles.',
+  );
+
+  const undeclared = [];
+  for (const name of [...bare].sort()) {
+    const reused = selectors.filter(
+      (selector) => selector.includes(`.${name}`) && !ownerClasses(selector).includes(name),
+    );
+    const allowed = DELIBERATE_CLASS_REUSE[name] || [];
+    for (const selector of reused) {
+      /* `.${name}` as a substring would match `.barchart` for `bar`, so the owner check above
+       * is confirmed against the selector's own class list rather than its text. */
+      if (!selectorsMention(selector, name)) continue;
+      if (!allowed.includes(selector)) undeclared.push(`.${name} is reused by ${selector}`);
+    }
+  }
+  assert.deepEqual(undeclared, [], undeclared.join('\n'));
 });
+
+/* Whether a selector really mentions this class, rather than a longer name starting with it. */
+function selectorsMention(selector, name) {
+  return [...selector.matchAll(/\.([\w-]+)/g)].some(([, found]) => found === name);
+}
 
 test('a scatter mark is the right element for its glyph, with the right geometry', () => {
   const { app } = load();

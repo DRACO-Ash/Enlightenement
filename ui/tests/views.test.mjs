@@ -135,6 +135,40 @@ test('a failed dashboard fetch tells the operator what failed and why', async ()
   assert.match(banner, /volume is read-only/);
 });
 
+test('the line under the prompt helps the operator answer, and the field label agrees with it', async () => {
+  /* **Two text faults the owner found on the served screen**, both in the few lines an operator
+   * reads before answering.
+   *
+   * The slot under the prompt held `Content 0e395153ae12.` - build provenance in the most
+   * prominent position after the question, where a reader looks for context about what they are
+   * being asked. It is already in the session strip and the seed is already in the stimulus
+   * footer, so it was duplicated into the one place it is least useful.
+   *
+   * And the answer field was labelled "Name the event" while DRL-0005 asks "The tooling reports
+   * this drift rate. What do you do?" and accepts actions - "reject the value, check epoch
+   * separation". An operator was asked for an action and told to name an event. The owner's
+   * words: "I also don't understand the question here."
+   */
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('drill');
+  await harness.settle();
+
+  const meta = harness.element('drill-meta').textContent;
+  assert.ok(!/^Content [0-9a-f]/.test(meta), `a bare hash is back under the prompt: ${meta}`);
+  assert.ok(!meta.includes(DRILL.content_hash.slice(0, 12)), 'the content hash is back');
+  //: The fixture requires confidence, so the slot carries the instruction that matters here.
+  assert.equal(DRILL.confidence_required, true, 'the fixture no longer requires confidence');
+  assert.match(meta, /how sure you are/i);
+
+  //: The label must not contradict the prompt. `free_classification` covers both "classify
+  //: this" and "what do you do", so it names the box and the prompt above asks the question.
+  assert.equal(DRILL.response_format, 'free_classification');
+  const label = harness.element('response-label').textContent;
+  assert.ok(!/name the event/i.test(label), `the label contradicts the prompt: ${label}`);
+  assert.match(label, /your call/i);
+});
+
 test('the drill view draws the served stimulus, its table and its legend', async () => {
   const harness = booted();
   await harness.settle();
@@ -637,20 +671,86 @@ test('a numeric column sorts as a number and opens on the question a reader is a
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
 });
 
-test('a table row is a control, reachable by keyboard, that opens the procedure', async () => {
+test('a column sorts on the text its cell shows, even where the content is malformed', async () => {
+  /* The comparator and the cells disagreed for malformed content: `status` displayed
+   * "status unstated" while the comparator saw `''`, and `regime` displayed "regime unreadable,
+   * TBC re-verify" while the comparator saw the raw value. A table that sorts on something other
+   * than what it shows is unfalsifiable from the screen - the order looks arbitrary and there is
+   * nothing on the page to check it against.
+   *
+   * **Driven against the comparator directly, because the shipped index cannot reach it.** Every
+   * regime the route serves is a list and every status is non-empty, so mutating the comparator
+   * back leaves the whole suite green: the divergence is real and unreachable, which makes this
+   * the only assertion that can hold it. Closing the class rather than the instance.
+   */
+  const { app } = load();
+  const compare = app.compareProcedures;
+  const column = { key: 'regime' };
+  const malformed = { regime: 'GEO' };
+  const listed = { regime: ['LEO'] };
+  //: The cell shows "regime unreadable, TBC re-verify" for the malformed row and "LEO" for the
+  //: other, so "LEO" sorts first. On the raw values it would be "GEO" against "LEO" and the
+  //: malformed row would come first - the opposite answer, from the same screen.
+  assert.ok(compare(malformed, listed, column) > 0, 'regime sorts on the raw value');
+  assert.ok(compare(listed, malformed, column) < 0);
+  assert.equal(app.regimeText(malformed), 'regime unreadable, TBC re-verify');
+
+  const status = { key: 'status' };
+  //: An absent status displays "status unstated", which sorts after "active" and after "draft".
+  assert.ok(compare({ status: '' }, { status: 'active' }, status) > 0, 'status sorts on the raw value');
+  assert.ok(compare({ status: 'draft' }, { status: undefined }, status) < 0);
+  assert.equal(app.statusText({}), 'status unstated');
+});
+
+test('a row stays a row, and the control is a real button in the first cell', async () => {
+  /* **`role="button"` on a `<tr>` took the eight figures out of the accessibility tree**, which
+   * is the whole point of this view. Three separate faults in one attribute pair: `tr` permits
+   * only `role=row` in ARIA in HTML; a `tbody` with a non-row child leaves the `td` cells
+   * without the ancestor their `cell` role requires, so table navigation stops reaching them;
+   * and a button's accessible name comes from `aria-label`, which REPLACES its contents - so
+   * the row announced as "Open Manoeuvre, button" and the steps, decisions, stops and onward
+   * figures were not exposed at all. A view that exists for cross-row comparison of exactly
+   * those numbers carried none of them for a screen-reader user.
+   *
+   * Neither the harness (which stores attributes and computes no accessibility tree) nor a
+   * Chromium overflow-and-console sweep can see that, which is why it is asserted here as the
+   * structure it depends on.
+   */
   const harness = await indexed();
   layoutChip(harness, 'table').fire('click');
   const row = bodyRows(harness).find((node) => node.textContent.includes(FLOW.id));
-  //: `role="button"` without a key handler is a promise the row does not keep, and a row with
-  //: only a click handler is unreachable by keyboard entirely.
-  assert.equal(row.getAttribute('role'), 'button');
-  assert.equal(row.getAttribute('tabindex'), '0');
-  assert.match(row.getAttribute('aria-label'), new RegExp(`Open`));
 
-  row.fire('keydown', { key: 'Enter' });
+  //: A row carries no role, no tabindex and no label. A focusable element with no role is its
+  //: own small lie, and an `aria-label` on the row is what hid the figures.
+  assert.equal(row.getAttribute('role'), null, 'the row claims a role again');
+  assert.equal(row.getAttribute('tabindex'), null);
+  assert.equal(row.getAttribute('aria-label'), null);
+
+  //: The control is a real button in the Procedure cell, as the card grid already does, so the
+  //: name "Open X" lives on a control and the cells stay cells.
+  const control = [...row.querySelectorAll('button')][0];
+  assert.ok(control, 'the row rendered no control at all');
+  assert.equal(control.parentNode.tagName, 'TD');
+  assert.ok(control.parentNode.classList.contains('pid'));
+  assert.match(control.getAttribute('aria-label'), /^Open /);
+  //: WCAG 2.5.3: the accessible name contains the visible text, so a voice command naming what
+  //: is on screen reaches the control.
+  assert.ok(control.getAttribute('aria-label').includes(FLOW.name), control.getAttribute('aria-label'));
+  assert.equal(control.textContent, FLOW.id);
+
+  //: **And the figures are still in the row**, which is the assertion that would have failed
+  //: before: every cell is a `td` and the counts are its text, reachable by table navigation.
+  const cells = [...row.children];
+  assert.equal(cells.length, 8);
+  for (const cell of cells) assert.equal(cell.tagName, 'TD');
+  const entry = PROCEDURES.procedures.find((candidate) => candidate.id === FLOW.id);
+  for (const field of ['steps', 'decisions', 'stops', 'onward']) {
+    assert.ok(cells.map((cell) => cell.textContent).includes(String(entry[field])), field);
+  }
+
+  control.fire('click');
   await harness.settle();
   assert.match(harness.element('library-body').textContent, new RegExp(FLOW.id));
-  //: And the index is hidden, exactly as opening from a card does.
   assert.equal(harness.element('library-index').hidden, true);
 });
 

@@ -353,15 +353,21 @@ def test_the_probe_timeout_clears_the_worst_case_platform_window_at_the_shipped_
         time.sleep(2)
         return ok_probe(path)
 
-    #: The cache is off so every request probes; the TIMEOUT is left at the shipped default.
-    app = create_app(
-        config=config,
-        store=store,
-        probe=stalled_probe,
-        probe_settings=ProbeSettings(cache_seconds=0.0),
-    )
-    with TestClient(app) as client:
-        for path in ("/healthz", "/readyz"):
+    #: **One app per path, and that is not tidiness.** Both paths through one client queued on
+    #: the probe pool: the first request abandons its probe at 0.8 s but the worker stays busy
+    #: for the whole sleep, so the second request waited for a free worker and then timed out -
+    #: measured at 1.006 s against a 1.0 s assertion. The property under test is per-REQUEST,
+    #: so each path gets a fresh process-local pool and the strict bound stays strict rather
+    #: than being widened to accommodate a queue the platform would not have.
+    for path in ("/healthz", "/readyz"):
+        #: The cache is off so every request probes; the TIMEOUT is the shipped default.
+        app = create_app(
+            config=config,
+            store=store,
+            probe=stalled_probe,
+            probe_settings=ProbeSettings(cache_seconds=0.0),
+        )
+        with TestClient(app) as client:
             started = time.perf_counter()
             response = client.get(path)
             elapsed = time.perf_counter() - started
@@ -376,8 +382,16 @@ def test_the_probe_timeout_clears_the_worst_case_platform_window_at_the_shipped_
             assert storage["resolvedDataDir"], storage
             assert "errnoName" in storage, storage
 
-        #: Liveness is untouched by a dead mount. A downstream outage must never restart a
-        #: healthy container, so these three cannot be allowed to wait on storage at all.
+    #: Liveness is untouched by a dead mount. A downstream outage must never restart a healthy
+    #: container, so these three cannot be allowed to wait on storage at all. Its own app, so it
+    #: is not measuring a client whose probe pool the readiness checks above have already used.
+    liveness = create_app(
+        config=config,
+        store=store,
+        probe=stalled_probe,
+        probe_settings=ProbeSettings(cache_seconds=0.0),
+    )
+    with TestClient(liveness) as client:
         for path in ("/livez", "/ping", "/health"):
             started = time.perf_counter()
             assert client.get(path).status_code == 200, path

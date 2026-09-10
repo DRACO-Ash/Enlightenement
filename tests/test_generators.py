@@ -39,12 +39,16 @@ from enlightenment.generators.products import (
     MAX_SPAN_DAYS,
     MAX_STATE_CHANGE_MARKS,
     MAX_TABLE_ROWS,
+    MILLISECONDS_PER_DAY,
     NEWEST_AT_VALUES,
     OBSERVED_DRIFTER_BAND_DEG_DAY,
     OBSERVED_HELD_RESIDUAL_DEG_DAY,
     OBSERVED_RATE_LIMIT_DEG_DAY,
     PROVISIONAL_LONGITUDE_SIGMA,
+    SYNTHETIC_EPOCH_BASE,
     TIME_TICKS,
+    DrawnRate,
+    _rate_header,
 )
 from enlightenment.scenario.determinism import SeededRandom
 
@@ -1065,6 +1069,43 @@ def test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object(
     assert separation_ms == pytest.approx(authored_ms), (first, second, authored_ms)
 
 
+def test_a_panels_caption_describes_the_panel_it_is_printed_on() -> None:
+    """**The chart was corrected and the text around it was not.** The owner spotted it on the
+    served screen: the artefact item draws every track holding station, and the caption under it
+    said "a clear diagonal is drifting" - promising a feature that is not on the plot and sending
+    an operator to look for it.
+
+    `reads_as` is the sentence that tells an operator how to read the surface, so a claim in it
+    about something the surface does not contain is worse than no caption: it is a false lead
+    printed under the evidence. The whole bank, because the fault was one branch of one item.
+    """
+    registry = build_registry()
+    for label, params, drifting in (
+        (
+            "artefact",
+            {"days": 5, "derived_rate_deg_day": ABSURD_RATE_DEG_DAY, "epoch_gap_ms": 4},
+            False,
+        ),
+        ("held only", {"days": 6, "drifting": 0}, False),
+        ("one drifter", {"days": 6, "drifting": True}, True),
+        ("three drifters", {"days": 6, "drifting": 3}, True),
+    ):
+        stimulus = compose(registry, "waterfall", params, SEED)[0]
+        caption = stimulus.reads_as
+        drawn = stimulus.derived["drifter_count"]
+        assert bool(drawn) is drifting, f"{label}: {drawn} drifters"
+        if drifting:
+            assert "diagonal is drifting" in caption, label
+        else:
+            #: No promise of a diagonal, and it says positively what IS there rather than going
+            #: silent - "every track here is holding station" is the reading, and an operator
+            #: who is told nothing assumes they have missed something.
+            assert "diagonal is drifting" not in caption, (
+                f"{label}: the caption promises a diagonal that is not on the plot"
+            )
+            assert "holding station" in caption, label
+
+
 def test_a_rate_header_never_carries_both_disclosures_at_once() -> None:
     """One reason the drawing is not the figure, so one set of rows explaining it.
 
@@ -1096,6 +1137,27 @@ def test_a_rate_header_never_carries_both_disclosures_at_once() -> None:
             assert "Elset 2 epoch" in header, label
             assert "Derived rate" in header, label
     assert not both, both
+
+    #: **And the `elif` itself, which the sweep above cannot reach.** Every case reachable from
+    #: `compose` goes through `_drift_rate`, which returns `clamped=False` on the artefact
+    #: branch - so the two cases never arrive together and reverting the `elif` to a second
+    #: `if` leaves the sweep green. The engineering gate measured exactly that. A claim about
+    #: what a header does when BOTH flags are set has to be made against a header built with
+    #: both flags set, so `_rate_header` is called directly with one.
+    contradictory = DrawnRate(
+        drawn=0.0,
+        reported=float(ABSURD_RATE_DEG_DAY),
+        clamped=True,
+        slopes=False,
+        artefact=True,
+    )
+    rows = dict(_rate_header(contradictory, SYNTHETIC_EPOCH_BASE, 5.0, 4 / MILLISECONDS_PER_DAY))
+    assert "Elset 1 epoch" in rows, rows
+    assert "Derived rate" in rows, rows
+    assert "Reported rate" not in rows, (
+        "a header built with both flags set carries the artefact rows AND the clamp's clause, so"
+        " it offers an operator two different stories about the same number on one product"
+    )
 
 
 def test_the_interface_fixture_still_matches_the_server_it_was_captured_from(

@@ -2,6 +2,122 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.29.1 (2026-09-10)
+
+**The owner read the served drill screen and found three things in the few lines an operator sees
+before answering. All three are text, and all three are mine.**
+
+**The chart was corrected and the text around it was not.** `reads_as` is the sentence that tells
+an operator how to read a surface, and it said "a clear diagonal is drifting" on EVERY waterfall -
+including the artefact item, where V0.27.10 corrected the chart so every track holds station. So
+the caption promised a feature that is not on the plot and sent the operator looking for it. A
+false lead printed under the evidence is worse than no caption. It now describes the panel it is
+printed on, and a held-only panel says positively what IS there, because an operator told nothing
+assumes they have missed something.
+
+**The answer field contradicted the question.** DRL-0005 asks "The tooling reports this drift
+rate. What do you do?" and accepts actions - "reject the value, check epoch separation" - while
+the field was labelled "Name the event". The operator was asked for an action and told to name an
+event. The owner's words: "I also don't understand the question here." `free_classification`
+covers both "classify this" and "what do you do", so the label now names the box and the prompt
+above it asks the question.
+
+**The line under the prompt held a bare content hash.** "Content 0e395153ae12." in the most
+prominent position after the question, where a reader looks for context about what they are being
+asked, saying nothing anyone can act on. It is build provenance, already in the session strip, and
+the seed is already in the stimulus footer - duplicated into the one place it is least useful. The
+slot carries the confidence instruction now, which is what an operator needs before answering.
+
+**On the -22,900,000 figure itself, which stays.** That number is the item's entire subject: the
+prompt is "the tooling reports this drift rate, what do you do?" and the accepted answer is to
+reject it and check the epoch separation. Scrubbing it would delete the drill. What was wrong was
+never the figure's presence but everything around it - the plot drawing a plausible -1.44°/day
+drifter, the mechanism authored and unread, and now the caption promising a diagonal - and each of
+those is closed. The two element-set epochs four milliseconds apart are on the header as the
+evidence, which is what makes the question answerable from the product.
+
+**Also fixed: a wall-clock test that flaked.** `test_the_probe_timeout_clears...` drove both
+readiness paths through one client, and they queued on the probe pool - the first request abandons
+at 0.8 s but its worker stays busy for the whole sleep, so the second waited for a free worker and
+timed out at 1.006 s against a 1.0 s assertion. One app per path, so the per-request property is
+measured per request and the strict bound stays strict rather than being widened to accommodate a
+queue the platform would not have. The engineering gate had warned the margin was thin.
+
+
+**What.** The engineering gate returned FAIL on V0.29.0 with two BLOCKERs and three MINORs. All
+five are closed. One of the blockers made the table useless to a screen reader, and one of the
+minors turned out to be the gate being wrong - recorded both ways round.
+
+**BLOCKER: `role="button"` on a `<tr>` took the figures out of the accessibility tree.** Three
+faults in one attribute pair. `tr` permits only `role=row` in ARIA in HTML. A `tbody` with a
+non-row child leaves the eight `td` cells without the ancestor their `cell` role requires, so
+table navigation stops reaching them. And a button's accessible name comes from `aria-label`,
+which REPLACES its contents - so each row announced as "Open Manoeuvre, button" and the steps,
+decisions, stops and onward figures were not exposed at all. **A view whose entire purpose is
+cross-row comparison of those four numbers carried none of them** for an assistive-technology
+user.
+
+The control is a real `button` in the Procedure cell, which is what the card grid already does.
+The row keeps a click handler as a mouse convenience and nothing else: no role, no tabindex, no
+label, because a focusable element with no role is its own small lie.
+
+**Confirmed against the real accessibility tree**, over the DevTools protocol, which is the
+evidence this needed and which neither the harness nor an overflow-and-console sweep can produce:
+15 rows, 105 cells, 8 column headers, one table, two rowgroups, and the cell names carrying the
+figures - `"9"`, `"3"`, `"7"`, `"2"` - alongside 13 `Open …` buttons that live in cells rather
+than on rows.
+
+**BLOCKER: the collision guard did not cover the region this release added, so it was narrower
+than its name. Third time.** It first read class names out of CSS comments and inspected only the
+leftmost compound, and passed on all four collisions. Then it was delimited `.prochead` to
+`.scope {` - and the V0.29.0 table region landed BEFORE `.prochead`, so `.libtable` and eight cell
+classes fell outside the window entirely. Widening it to "everything below the card grid" was
+wrong too: the stylesheet is not ordered that way, and `.covers` and `.tablewrap` are progress and
+stimulus components that happen to sit there. **There is no region boundary that means what I
+wanted it to mean**, so there is none: the whole stylesheet is scanned, pseudo-classes are stripped
+from the leftmost compound so hover states are not flagged, and the two deliberate contextual
+overrides are declared by name with reasons.
+
+**And there are TWO collision shapes, not one.** A class is reused either inside somebody else's
+component (`.leg > .rail`) or by a new component claiming a second BARE rule of its own - which is
+exactly what naming the step card `.act` did, and what naming the table `.covers` would do. The
+owner check cannot see the second shape, because the new rule owns the name too. So the bare-rule
+count per class is ratcheted: two classes legitimately have two today, from the buttons'
+shared-plus-specific pair, and a third would mean a new component has claimed a name. All six
+mutants now fail by name.
+
+**MINOR: the `elif` claim was still only a comment**, and the docstring said otherwise. Every case
+reachable from `compose` goes through `_drift_rate`, which returns `clamped=False` on the artefact
+branch, so the two flags never arrive together and reverting the `elif` left the suite green. A
+claim about what a header does when BOTH flags are set has to be made against a header built with
+both set, so `_rate_header` is called directly with one. The mutant now dies.
+
+**MINOR: the gate was wrong about the dead local, and the test caught it.** It reported
+`const query` in `renderLibraryCards` as unused once the filter moved. It was not - the empty
+state below still read it - and deleting it broke the card grid's "No procedure matches" message.
+Caught immediately by a failing test, which is the useful half. The empty state reads
+`state.library.query` directly now, so there is one source for it rather than a local shadowing
+it.
+
+**MINOR: the comparator sorted on something other than what the cell shows.** `status` displayed
+"status unstated" while the comparator saw `''`, and `regime` displayed "regime unreadable, TBC
+re-verify" while the comparator saw the raw value. A table that sorts on something other than what
+it shows is unfalsifiable from the screen: the order looks arbitrary and there is nothing on the
+page to check it against. One function per shaped cell, shared by the cell and the comparator.
+**Driven against the comparator directly, because the shipped index cannot reach it** - every
+regime the route serves is a list and every status is non-empty, so mutating it back leaves the
+whole suite green. That makes the direct test the only assertion that can hold it.
+
+**Two smaller things taken.** The table's empty state carries `role="status"` so it is announced;
+the card grid's plain paragraph tells a sighted reader and nobody else. And the header's
+`aria-label` held a conditional inside a conditional - the readability pattern just swept out of
+`src/` - which is worth holding in both runtimes or in neither, given `sonar.sources=src` means no
+gate sees `ui/`.
+
+**How verified.** 64 interface tests, `ui/app.js` at 100.00% of its executable lines. Six
+collision mutants, the row-role mutant, the comparator mutant and the `elif` mutant all fail by
+name. The accessibility tree read directly from Chromium.
+
 ## V0.29.0 (2026-09-10)
 
 **What.** The table view, the second index layout the design's index artboard specifies and the
