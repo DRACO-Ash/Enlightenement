@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.11 (2026-09-10)
+
+**What.** The `engineering-reviewer` gate returned FAIL on V0.27.10 with one MAJOR and five
+MINOR findings. All six are closed here. V0.27.10 keeps its own row below because it shipped as a
+commit; this is the row for the corrections, not a rewrite of that one.
+
+**The MAJOR, and it is the same fault V0.27.10 existed to remove.** `expected_text` publishes the
+direction the renderer drew, and `drift_rate > 0` is false at zero - so once the artefact item
+stopped drawing a drifter, its panel published `("west",)`: a direction for a departure that is
+not on the plot, in the same `derived` dict asserting `drifter_count: 0` and `drift_visible:
+False`. On the one item whose entire lesson is that a figure and a picture can disagree. The
+gate's sweep of all 140 drills found it was the only such disagreement in the library and that the
+parent commit did NOT have it, so V0.27.10 opened it. It was harmless only by accident:
+`match_derived_text` is reached solely through the `computed_from_params` sentinel and this item
+authors prose accept strings instead, so nothing read the field. `expected_text` is now empty when
+nothing drifts, which makes that matcher return UNSCORABLE - the fail-closed answer this project
+requires of a control it cannot satisfy. Refusing to score is honest; scoring against a direction
+nothing drew is not.
+
+**The five MINOR findings.**
+● A held track could leave the box its own header states. `held + residual * when` is unbounded
+  in the window length: measured at the longest authorable span, 60 days, a track ran from -3.775
+  to +1.707 under a header reading "-3.0° to +3.0° of the primary". No shipped item authors a span
+  past seven days, but `MAX_SPAN_DAYS` is 60 and the span is content-supplied. Clamped into the
+  authored bounds, and asserted at the CEILING rather than at the shipped spans - which is where
+  it was already true and therefore proves nothing.
+● The artefact guard was looser than the mechanism it documents. `epoch_gap_days > 0.0` admitted
+  ANY positive separation, so an authored 100°/day with a gap of one whole day rendered as an
+  artefact, its header offering two epochs twenty-four hours apart as the evidence for a division
+  by almost nothing. A product whose own stated evidence refutes its own presentation is the fault
+  the branch exists to remove, reproduced one layer along. The guard is now the arithmetic the
+  artefact IS: a rate times its epoch gap recovers the longitude difference the two element sets
+  held, and the branch fires only when that difference comes back inside the authored box. The
+  first draft of the guard compared that recovered difference, in degrees, against a
+  degrees-per-day constant - a unit mismatch that gives the right answer at these magnitudes and
+  would not at others; it is compared against the box now.
+● `_waterfall_tracks` still claimed its draw order was unchanged, ten lines above the new
+  per-object draw that changes it. Corrected to say V0.27.10 deliberately adds one draw, so every
+  waterfall surface changed at that release, and to state what the determinism gate actually
+  asserts: same-seed replay within a build, never surface stability across releases.
+● Two places still called the envelope "transcribed" from the owner's products, contradicting the
+  constants and the promise in `docs/PLOT-REALISM.md` twenty lines away. The provenance claim is
+  load-bearing, so the word matters: "rounded from" in both.
+● `ui/tests/views.test.mjs` had a test named "draws the served stimulus, its table and its legend"
+  that asserted nothing about the legend or the header, so the artefact panel's trimmed one-entry
+  legend and its two millisecond epoch rows were unbound on the interface side. Now asserted both
+  directions - every served entry drawn, and no "Drifting object" entry surviving with no mark
+  against it - with a guard that fails if the fixture stops capturing the artefact panel.
+
+**How verified.** Three new assertions and two new tests, all reproducing the finding first:
+`test_a_held_track_stays_inside_the_box_its_own_header_states` at the 60-day ceiling,
+`test_an_epoch_gap_that_cannot_explain_the_figure_is_not_presented_as_an_artefact` driving both
+directions of the guard, the `expected_text == ()` assertion inside the artefact test, and the
+legend and header assertions on the interface side. Four probe cases were rendered by hand to
+confirm each branch: the shipped item, a whole-day gap, no gap authored, and a 60-day held-only
+span. The gate also recorded one mutation that SURVIVED against V0.27.10 - drawing the residual
+only for held objects, which leaves the draw-order rationale unbound - and that is noted rather
+than closed, because the rationale is a property of the stream's call order that no assertion
+this suite can make would distinguish from the current code.
+
 ## V0.27.10 (2026-09-10)
 
 **What.** Ash supplied three KBR Neighborhood Results products for the GEO belt and asked one

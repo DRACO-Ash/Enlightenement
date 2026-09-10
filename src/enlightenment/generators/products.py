@@ -463,9 +463,30 @@ def _drift_rate(
     """
     if isinstance(authored, int | float) and not isinstance(authored, bool):
         reported = float(authored)
-        if abs(reported) > OBSERVED_RATE_LIMIT_DEG_DAY and epoch_gap_days > 0.0:
-            return DrawnRate(0.0, reported, clamped=False, slopes=False, artefact=True)
+        #: The gap must EXPLAIN the figure, not merely accompany it. `epoch_gap_days > 0.0`
+        #: alone admitted any positive separation: an authored 100°/day with a gap of one whole
+        #: day rendered as an artefact, its header stating two epochs twenty-four hours apart as
+        #: the evidence for a division by almost nothing. A product whose own stated evidence
+        #: refutes its own presentation is the fault this branch exists to remove.
+        #:
+        #: The test is the arithmetic the artefact IS. A derived rate is a longitude difference
+        #: over an epoch separation, so multiplying back gives the difference the two element
+        #: sets actually held. When the gap is what makes the quotient diverge, that difference
+        #: comes back ORDINARY - about a degree here, an unremarkable station-keeping excursion -
+        #: and the impossible figure explains itself. When it comes back larger than the box the
+        #: item authored, the gap is not the explanation and there is nothing to present.
+        #:
+        #: Compared in DEGREES against the box, not against a degrees-per-day rate: the first
+        #: draft of this guard put the recovered difference beside `OBSERVED_RATE_LIMIT_DEG_DAY`,
+        #: which is a unit mismatch that happens to give the right answer at these magnitudes.
         span = abs(bounds[1] - bounds[0]) or DEFAULT_LONGITUDE_HALF_WIDTH_DEG
+        recovered_difference_deg = abs(reported) * epoch_gap_days
+        if (
+            abs(reported) > OBSERVED_RATE_LIMIT_DEG_DAY
+            and epoch_gap_days > 0.0
+            and recovered_difference_deg <= span
+        ):
+            return DrawnRate(0.0, reported, clamped=False, slopes=False, artefact=True)
         limit = span * DRIFT_EXCURSION_FACTOR / max(days, 1.0)
         drawn = max(-limit, min(limit, reported))
         return DrawnRate(drawn, reported, abs(reported) > limit, abs(drawn) > 0.0)
@@ -549,7 +570,14 @@ def _waterfall_samples(
         if drifting:
             longitude = held + scene.drift_rate * max(when - scene.drift_start, 0.0)
         else:
-            longitude = held + residual * when
+            #: Clamped into the box the HEADER states. `residual * when` is unbounded in the
+            #: window length: measured at the longest authorable span, 60 days, a held track ran
+            #: from -3.775 to +1.707 under a header reading "-3.0° to +3.0° of the primary", so
+            #: the product asserted a station-keeping box its own marks left. No shipped item
+            #: authors a span past 7 days, where the residual stays well inside - but
+            #: `MAX_SPAN_DAYS` is 60 and the span is content-supplied, and a bound on a
+            #: content-supplied quantity belongs at the point it reaches a range.
+            longitude = min(max(held + residual * when, scene.bounds[0]), scene.bounds[1])
         xs.append(
             longitude + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
         )
@@ -561,10 +589,16 @@ def _waterfall_tracks(scene: _Neighbourhood, stream: SeededRandom) -> list[Marks
     """One track per object in the neighbourhood, drifting or held.
 
     Lifted out of `render`, which carried this loop inside a loop with two drop conditions and
-    then built the whole stimulus around it. The extraction is behaviour-preserving and the
-    ORDER of draws from `stream` is unchanged, which is the property that matters here: the
-    determinism gate asserts that one seed yields one identical event log, and a reordered draw
-    would change every waterfall this library ships while every assertion about it stayed true.
+    then built the whole stimulus around it. That EXTRACTION was behaviour-preserving and left
+    the order of draws from `stream` untouched.
+
+    **V0.27.10 deliberately adds one draw per object** - the station-keeping residual below - so
+    every waterfall surface this library ships changed at that release. Said here because the
+    docstring went on claiming the order was unchanged ten lines above the new draw, which is
+    the kind of stale claim that stops the next reader looking. What the determinism gate
+    actually asserts is same-seed replay WITHIN a build, not surface stability across releases,
+    so the added draw breaks no guarantee this project makes; the one persisted surface,
+    `ui/tests/fixtures/drill.json`, was regenerated from the generator at its own seed.
     """
     marks: list[Marks] = []
     for index in range(scene.neighbours):
@@ -1145,7 +1179,8 @@ class WaterfallGenerator:
                 #: Authored by DRL-0005 as `epoch_gap_ms: 4` and, until now, read by nothing.
                 "epoch_gap_days": epoch_gap_days,
                 #: Whether the REPORTED figure is a rate the belt actually produces, judged
-                #: against the envelope transcribed from the owner's neighbourhood products.
+                #: against the envelope ROUNDED FROM the owner's neighbourhood products. Rounded
+                #: and not transcribed, which is the whole provenance claim - see the constants.
                 #: False means the product is presenting a tooling artefact, and the panel is
                 #: then drawn as what the object is really doing rather than as the figure.
                 "rate_physically_possible": abs(reported_rate) <= OBSERVED_RATE_LIMIT_DEG_DAY,
@@ -1153,7 +1188,21 @@ class WaterfallGenerator:
                 #: The direction the renderer actually drew. DRL-0030 asks the operator to find
                 #: the drifter and state its direction with `computed_from_params` as the key, so
                 #: the answer is a fact about the surface. Longitude increases eastward.
-                "expected_text": ("east",) if drift_rate > 0 else ("west",),
+                #:
+                #: **EMPTY when nothing drifts, and that was a real hole opened by V0.27.10.**
+                #: `drift_rate > 0` is false at zero, so a panel with no drifter published
+                #: `("west",)` - a direction for a departure that is not on the plot - in the same
+                #: dict that states `drifter_count: 0` and `drift_visible: False`. On the artefact
+                #: item, whose whole lesson is that a figure and a picture can disagree. It was
+                #: harmless only by accident: `match_derived_text` is reached solely through the
+                #: `computed_from_params` sentinel and DRL-0005 authors prose accept strings
+                #: instead, so nothing read it. An empty tuple makes that matcher return
+                #: UNSCORABLE, which is the fail-closed answer this project requires of a control
+                #: it cannot satisfy - refusing to score is honest, scoring against a direction
+                #: nothing drew is not.
+                "expected_text": (
+                    (("east",) if drift_rate > 0 else ("west",)) if drawn_drifters else ()
+                ),
             },
         )
 

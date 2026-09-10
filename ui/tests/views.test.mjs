@@ -157,6 +157,36 @@ test('the drill view draws the served stimulus, its table and its legend', async
   assert.ok(text.some((label) => /Jun \d\d:\d\dZ/.test(label)), JSON.stringify(text));
   //: And the refit ran: it is scheduled inside a frame callback, which the harness invokes.
   assert.ok(frames[0].getAttribute('viewBox'), 'the frame never got a viewBox');
+
+  //: **The legend and the header, which this test claimed in its own name and never asserted.**
+  //: The fixture is DRL-0005, the artefact item: at V0.27.10 its panel lost the "Drifting
+  //: object" legend entry, because with every track holding station that entry described
+  //: nothing and invited an operator to hunt for a track that is not there. The server decides
+  //: which entries exist and the interface must draw exactly those - no more, so a stale entry
+  //: cannot survive here, and no fewer, so a dropped one cannot either.
+  const rendered = stimuli.textContent;
+  const served = DRILL.stimulus[0];
+  assert.deepEqual(
+    served.legend.map(([label]) => label),
+    ['Held longitude'],
+    'the fixture no longer captures the artefact panel this test reasons about',
+  );
+  for (const [label] of served.legend) {
+    assert.ok(rendered.includes(label), `legend entry ${label} was not drawn`);
+  }
+  assert.ok(!rendered.includes('Drifting object'), 'a legend entry with no mark against it');
+
+  //: And the header rows, which carry the whole evidence for this item: the impossible figure
+  //: verbatim and the two element-set epochs to the millisecond. The interface dropping either
+  //: would leave the operator with nothing to reason from, and `for_client()` strips the
+  //: server's derived facts, so these strings are the only client-visible disclosure there is.
+  for (const [label, value] of served.header) {
+    assert.ok(rendered.includes(label), `header label ${label} was not drawn`);
+    assert.ok(rendered.includes(String(value)), `header value for ${label} was not drawn`);
+  }
+  assert.match(rendered, /Elset 1 epoch/);
+  assert.match(rendered, /:\d\d\.\d\d\dZ/, 'the epochs lost their millisecond resolution');
+  assert.ok(rendered.includes('-22,900,000'), 'the reported figure was not drawn verbatim');
 });
 
 test('the confidence group is one radio group with one tab stop, not five buttons', async () => {

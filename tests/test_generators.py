@@ -1008,6 +1008,14 @@ def test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object(
     assert derived["drift_visible"] is False
     assert derived["drawn_rate_deg_day"] == 0.0
     assert derived["rate_clamped"] is False
+    #: And no DIRECTION, which was the hole this change opened and the engineering gate caught.
+    #: `drift_rate > 0` is false at zero, so the artefact panel published `("west",)` - a
+    #: direction for a departure that is not on the plot - in the same dict asserting
+    #: `drifter_count: 0`. Empty makes `match_derived_text` return UNSCORABLE, which is the
+    #: fail-closed answer: refusing to score is honest, scoring against a direction nothing drew
+    #: is not. Harmless only by accident before, because this item authors prose accept strings
+    #: rather than the sentinel that reaches that matcher.
+    assert derived["expected_text"] == (), derived["expected_text"]
     labels = {mark.label for mark in stimulus.panels[0].marks}
     assert labels == {"Held longitude"}, labels
     assert not [entry for entry in stimulus.legend if "Drift" in entry[0]], stimulus.legend
@@ -1048,7 +1056,7 @@ def test_no_waterfall_draws_a_rate_the_real_belt_does_not_produce(
 ) -> None:
     """Every drift rate this library DRAWS is one the GEO belt actually produces.
 
-    The envelope is transcribed from the neighbourhood products the owner supplied: the mass of
+    The envelope is ROUNDED FROM the neighbourhood products the owner supplied: the mass of
     the population inside about +/-0.03 degrees per day and the widest real drifters a little
     over six. Rounded bounds rather than transcribed readings - see the constants for why.
 
@@ -1129,6 +1137,76 @@ def test_a_held_track_carries_a_real_station_keeping_residual() -> None:
     assert OBSERVED_DRIFTER_BAND_DEG_DAY[0] > OBSERVED_HELD_RESIDUAL_DEG_DAY * 10, (
         "the seeded drifter band overlaps the station-keeping residual, so a drawn drifter is not"
         " reliably distinguishable from a controlled object"
+    )
+
+
+def test_a_held_track_stays_inside_the_box_its_own_header_states() -> None:
+    """The residual is a rate, so its excursion grows with the window. The box does not.
+
+    At the longest span the content can author, 60 days, `held + residual * when` ran a "Held
+    longitude" track from -3.775° to +1.707° under a header reading "-3.0° to +3.0° of the
+    primary": a product asserting a station-keeping box its own marks had left. No shipped item
+    authors a span past seven days, where the residual stays well inside - but `MAX_SPAN_DAYS` is
+    60 and the span is content-supplied, and a bound on a content-supplied quantity belongs at
+    the point it reaches a range rather than at the point somebody notices.
+
+    Asserted at the CEILING and not at the shipped spans, because the shipped spans are exactly
+    where this was already true and where it therefore proves nothing.
+    """
+    half_width = DEFAULT_LONGITUDE_HALF_WIDTH_DEG
+    stimulus = compose(build_registry(), "waterfall", {"days": MAX_SPAN_DAYS, "drifting": 0}, SEED)[
+        0
+    ]
+    header = dict(stimulus.header)
+    assert f"{-half_width:+.1f}° to {half_width:+.1f}°" in header["Window"], header["Window"]
+
+    held = [x for m in stimulus.panels[0].marks for x in m.x]
+    assert held, "no held track was drawn, so this asserts nothing"
+    #: The jitter is measurement scatter drawn THROUGH the clamped longitude, so it may sit
+    #: outside the box by its own amplitude. The object's position may not.
+    tolerance = half_width + PROVISIONAL_LONGITUDE_SIGMA
+    assert min(held) >= -tolerance, f"a held track reaches {min(held):.3f}°"
+    assert max(held) <= tolerance, f"a held track reaches {max(held):.3f}°"
+
+
+def test_an_epoch_gap_that_cannot_explain_the_figure_is_not_presented_as_an_artefact() -> None:
+    """The gap has to EXPLAIN the impossible rate, not merely accompany it.
+
+    The first version of the artefact branch admitted any positive separation, so an authored
+    100°/day with a gap of one whole day rendered as a tooling artefact - every track held, and a
+    header offering two epochs twenty-four hours apart as the evidence for a division by almost
+    nothing. A product whose own stated evidence refutes its own presentation is the fault the
+    branch exists to remove, reproduced one layer along.
+
+    The test is the arithmetic the artefact IS. A derived rate is a longitude difference over an
+    epoch separation, so multiplying back recovers the difference the two element sets held. A
+    near-zero gap gives an ORDINARY difference and the impossible figure explains itself; a real
+    gap gives one larger than the authored box, and there is nothing to present.
+    """
+    registry = build_registry()
+    #: DRL-0005's own separation recovers about a degree, an unremarkable excursion.
+    explained = compose(
+        registry,
+        "waterfall",
+        {"days": 5, "derived_rate_deg_day": ABSURD_RATE_DEG_DAY, "epoch_gap_ms": 4},
+        SEED,
+    )[0]
+    assert explained.derived["rate_is_artefact"] is True
+
+    #: A full day of separation recovers 100°, which no station-keeping box holds.
+    unexplained = compose(
+        registry,
+        "waterfall",
+        {"days": 5, "derived_rate_deg_day": 100.0, "epoch_gap_ms": 24 * 60 * 60 * 1000},
+        SEED,
+    )[0]
+    assert unexplained.derived["rate_is_artefact"] is False
+    assert unexplained.derived["rate_clamped"] is True, (
+        "an out-of-envelope figure with no explanation is drawn by the clamp, or it is drawn"
+        " literally and the panel shows nothing"
+    )
+    assert "Elset 1 epoch" not in dict(unexplained.header), (
+        "the product still offers an epoch pair as evidence for an artefact it is not presenting"
     )
 
 
