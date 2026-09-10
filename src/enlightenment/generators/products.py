@@ -116,6 +116,45 @@ SIDEREAL_DEGREES_PER_DAY: Final = 360.9856
 SEEDED_ALTITUDE_DELTA_KM: Final = (4.0, 24.0)
 DEFAULT_ALTITUDE_DELTA_KM: Final = -0.0251
 
+#: **The drift-rate envelope, taken from the GEO neighbourhood products the owner supplied on
+#: 2026-09-10** (the "Drift Rate [deg/day]" and "Drift (deg)/d" columns of the Neighborhood
+#: Results sheets). Recorded because this library had no reference for what the real belt looks
+#: like: across 140 items the ONLY drift rate anything authored was DRL-0005's -22,900,000
+#: artefact, and every station-kept track was drawn at exactly zero. So the trainer taught an
+#: operator to reject the impossible without once showing the ordinary - and rejecting a figure is
+#: a comparison against a distribution you are carrying. If you have never seen the distribution,
+#: the only artefact you can catch is one absurd enough to need no comparison at all.
+#:
+#: **Every figure below is a ROUNDED BOUND and not a transcribed reading.** `docs/PLOT-REALISM.md`
+#: promises that no value from a live operational product is copied into content or code, and two
+#: exact drift rates stood here in the first draft of this change. Rounding costs nothing: the
+#: realism claim is about the SHAPE of the distribution, never about any one datum. What the
+#: sheets show, to the precision recorded: the mass of the population sits inside about
+#: +/-0.03 deg/day, which is the station-keeping residual of a CONTROLLED object rather than zero;
+#: the objects genuinely walking through the belt run from a few tenths of a degree per day up to
+#: a little over six; and nothing on any sheet approaches four orders of magnitude, let alone
+#: seven. The sheets themselves do not ship and the owner holds them.
+OBSERVED_RATE_LIMIT_DEG_DAY: Final = 6.5
+OBSERVED_HELD_RESIDUAL_DEG_DAY: Final = 0.03
+
+#: The band a SEEDED drifter is drawn from: the lower, DRAWABLE part of the observed drifter
+#: population, to one significant figure either end.
+#:
+#: The six-degree members are just as real and are deliberately not drawn. Over the shortest
+#: window this library authors - five days - a 6 deg/day object crosses thirty degrees of a
+#: six-degree station-keeping box, so the held tracks an operator judges it against compress into
+#: a single column and the panel shows one diagonal and nothing else. What a waterfall can express
+#: is about `box * DRIFT_EXCURSION_FACTOR / days`, which is 1.44 deg/day at five days. The band's
+#: ceiling is therefore a property of the PLOT, stated here, and not a claim about the population.
+#:
+#: It replaces an invented [0.25, 0.9): the upper end happened to sit inside the observed range,
+#: and the lower end was chosen for legibility and corresponded to nothing at all.
+OBSERVED_DRIFTER_BAND_DEG_DAY: Final = (0.6, 0.9)
+
+#: Milliseconds in a day. Needed because DRL-0005 authors an epoch separation in milliseconds and
+#: every rate in this module is per day.
+MILLISECONDS_PER_DAY: Final = 86_400_000.0
+
 #: Orbital periods, seconds. GEO is the sidereal day, which is the figure a geostationary
 #: relative-motion plot is drawn against; the low-orbit figure is a representative 92-minute
 #: revolution, matching the pass cadence used above.
@@ -383,34 +422,75 @@ class DrawnRate(NamedTuple):
     #: is the predicate the `drift_visible` key claims. No tolerance figure is invented here,
     #: because none is measured - the only zero this function can produce is an authored zero.
     slopes: bool
+    #: The reported figure is outside the observed envelope AND the content named the mechanism
+    #: that produced it, so the product presents it as the TOOLING ARTEFACT it is: nothing is
+    #: drawn as drifting, because the item's own key says the object has not moved unusually.
+    artefact: bool = False
 
 
 def _drift_rate(
-    authored: Any, bounds: tuple[float, float], days: float, stream: SeededRandom
+    authored: Any,
+    bounds: tuple[float, float],
+    days: float,
+    stream: SeededRandom,
+    epoch_gap_days: float = 0.0,
 ) -> DrawnRate:
     """The rate to DRAW and the rate to REPORT, which are not always the same number.
 
-    DRL-0005 authors `derived_rate_deg_day: -22900000`, the real ASTRA 1M artefact from the
-    flight plan: a tooling output that is physically impossible and that the operator is being
-    trained to recognise as such. Drawn literally it spans 114 million degrees on an axis labelled
-    in degrees, every station-kept object collapses into one pixel column, and the plot conveys
-    nothing - so the item that teaches "distrust this figure" became the item that shows nothing.
+    DRL-0005 authors `derived_rate_deg_day: -22900000`, the real ASTRA 1M artefact recorded in
+    the flight plan at `docs/FLIGHT-PLAN.md`: a tooling output that is physically impossible and
+    that the operator is being trained to recognise as such.
 
-    The absurd figure is REPORTED verbatim, in the header where the tooling would put it, and the
-    drawn track is clamped to something the panel can express. The clamp is stated in the header
-    and in `derived`, because a silently clamped plot would be its own lie.
+    **The clamp that used to stand here drew the item's own key backwards.** The absurd figure was
+    reported verbatim and the track was drawn at whatever the panel could express - at the shipped
+    seed, -1.44 deg/day. That is not an illegible fallback, it is a PLAUSIBLE REAL DRIFT RATE,
+    well inside the few degrees per day the owner's neighbourhood products show. So the product
+    drew an ordinary drifter leaving its station-keeping box while the item's `explain` says, in
+    those words, that the object has not moved unusually at all. An operator reading the plot saw
+    a manoeuvre; the key said there was none. That is the plot-contradicts-its-key fault this
+    module has now been corrected for three times, and here it sat on the one item whose entire
+    lesson is that a number and a picture can disagree.
+
+    So when the content names the mechanism - `epoch_gap_ms`, a near-zero separation between the
+    two element sets the rate was derived from - the object is drawn HELD, because held is the
+    truth. The impossible figure is still reported verbatim where the tooling would put it, and
+    the two epochs are stated to the millisecond so the operator can reach "the epochs are too
+    close together" by READING THE PRODUCT rather than by eliminating the only other option.
+
+    The clamp survives for an out-of-envelope figure whose mechanism the content does NOT name,
+    because there is then nothing better to draw and a silently clamped plot would be its own lie.
+    No shipped item is in that case today.
     """
     if isinstance(authored, int | float) and not isinstance(authored, bool):
         reported = float(authored)
+        if abs(reported) > OBSERVED_RATE_LIMIT_DEG_DAY and epoch_gap_days > 0.0:
+            return DrawnRate(0.0, reported, clamped=False, slopes=False, artefact=True)
         span = abs(bounds[1] - bounds[0]) or DEFAULT_LONGITUDE_HALF_WIDTH_DEG
         limit = span * DRIFT_EXCURSION_FACTOR / max(days, 1.0)
         drawn = max(-limit, min(limit, reported))
         return DrawnRate(drawn, reported, abs(reported) > limit, abs(drawn) > 0.0)
-    #: The seeded branch never draws zero: the magnitude is drawn from [0.25, 0.9) and only the
-    #: sign is random. Stated rather than re-tested, and `slopes` is still computed from the
-    #: value so the claim cannot drift away from the arithmetic above it.
-    drawn = stream.uniform(0.25, 0.9) * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
+    #: The seeded branch never draws zero: the magnitude comes from the observed drifter band and
+    #: only the sign is random. Stated rather than re-tested, and `slopes` is still computed from
+    #: the value so the claim cannot drift away from the arithmetic above it.
+    magnitude = stream.uniform(*OBSERVED_DRIFTER_BAND_DEG_DAY)
+    drawn = magnitude * (1.0 if stream.uniform(0, 1) > EVEN_ODDS else -1.0)
     return DrawnRate(drawn, drawn, False, abs(drawn) > 0.0)
+
+
+def _epoch_gap_days(params: dict[str, Any]) -> float:
+    """The separation between the two element sets a derived rate was computed from, in days.
+
+    DRL-0005 authors `epoch_gap_ms: 4` and NOTHING in this codebase read it. The item's accepted
+    answers are "the epochs are too close together" and "impossible, division by a near-zero time
+    gap", and the only thing on the product pointing at either was the absurd number itself. So
+    the operator could arrive at the answer by elimination and never by reading the evidence,
+    which is the inverse of the skill: the whole competency is catching the artefact from what the
+    product shows. Four milliseconds of separation is now a fact the product states.
+    """
+    authored = params.get("epoch_gap_ms")
+    if isinstance(authored, int | float) and not isinstance(authored, bool):
+        return max(float(authored), 0.0) / MILLISECONDS_PER_DAY
+    return 0.0
 
 
 class _Neighbourhood(NamedTuple):
@@ -434,7 +514,12 @@ class _Neighbourhood(NamedTuple):
 
 
 def _waterfall_samples(
-    scene: _Neighbourhood, held: float, *, drifting: bool, stream: SeededRandom
+    scene: _Neighbourhood,
+    held: float,
+    residual: float,
+    *,
+    drifting: bool,
+    stream: SeededRandom,
 ) -> tuple[list[float], list[float]]:
     """One object's observations: longitude against time, with the gap and the drop-outs applied.
 
@@ -456,8 +541,15 @@ def _waterfall_samples(
             continue
         if stream.uniform(0.0, 1.0) > PROVISIONAL_DROP_RATE:
             continue
-        elapsed = max(when - scene.drift_start, 0.0)
-        longitude = held + (scene.drift_rate * elapsed if drifting else 0.0)
+        #: A drifter walks from its onset; a CONTROLLED object walks slowly from the start of the
+        #: window. Drawn at exactly zero, every held track was a ruler-straight line and the
+        #: discrimination the product exists to train - a 0.02 deg/day station-keeping residual
+        #: against a 0.7 deg/day departure - was free. The owner's neighbourhood sheets put the
+        #: mass of the belt inside +/-0.03 deg/day, never at zero.
+        if drifting:
+            longitude = held + scene.drift_rate * max(when - scene.drift_start, 0.0)
+        else:
+            longitude = held + residual * when
         xs.append(
             longitude + stream.uniform(-PROVISIONAL_LONGITUDE_SIGMA, PROVISIONAL_LONGITUDE_SIGMA)
         )
@@ -478,7 +570,12 @@ def _waterfall_tracks(scene: _Neighbourhood, stream: SeededRandom) -> list[Marks
     for index in range(scene.neighbours):
         held = scene.centre + stream.uniform(scene.bounds[0], scene.bounds[1])
         drifting = index < scene.drifters
-        xs, ys = _waterfall_samples(scene, held, drifting=drifting, stream=stream)
+        #: Every object gets its own station-keeping residual, drawn whether it is used or not so
+        #: that the draw ORDER does not depend on how many of the neighbourhood are drifting. It
+        #: is used only for the held ones. The residual itself is a REAL figure class: see
+        #: `OBSERVED_HELD_RESIDUAL_DEG_DAY` for where +/-0.03 deg/day comes from.
+        residual = stream.uniform(-OBSERVED_HELD_RESIDUAL_DEG_DAY, OBSERVED_HELD_RESIDUAL_DEG_DAY)
+        xs, ys = _waterfall_samples(scene, held, residual, drifting=drifting, stream=stream)
         marks.append(
             Marks(
                 label=("Drifting object" if drifting else "Held longitude"),
@@ -687,6 +784,52 @@ def _stamp(window_start: datetime, observation_day: float) -> str:
     return _moment(window_start + timedelta(days=observation_day))
 
 
+def _precise(instant: datetime) -> str:
+    """One timestamp to the millisecond, the resolution an element set's epoch is quoted at.
+
+    The ordinary product stamp is to the minute, which is ample for an observation time and
+    useless for the one fact DRL-0005 turns on: two epochs four milliseconds apart render as the
+    same MINUTE, so the evidence vanishes into the rounding and the operator is left with nothing
+    but the absurd number to reason from.
+    """
+    return f"{instant:%d %b %H:%M:%S}.{instant.microsecond // 1000:03d}Z"
+
+
+def _rate_header(
+    rates: DrawnRate, window_start: datetime, days: float, epoch_gap_days: float
+) -> tuple[tuple[str, str], ...]:
+    """The reported-rate rows. Which rows appear depends on WHY the drawing is not the figure.
+
+    `for_client()` strips `derived`, so these strings are the ONLY client-visible disclosure of
+    the difference between what the tooling reported and what the panel drew.
+    """
+    if rates.artefact:
+        #: The two element sets the rate was derived from, newest at the end of the window. Quoted
+        #: to the millisecond because that is where the fault is: the operator reads two epochs,
+        #: sees they are the same instant, and the impossible quotient explains itself. Nothing
+        #: here states the conclusion - the product carries the evidence and the judgement is the
+        #: operator's, which is the whole point of the item.
+        second = window_start + timedelta(days=days)
+        first = second - timedelta(days=epoch_gap_days)
+        return (
+            ("Elset 1 epoch", _precise(first)),
+            ("Elset 2 epoch", _precise(second)),
+            (
+                "Derived rate",
+                f"{rates.reported:,.0f}°/day, from the two element sets above",
+            ),
+        )
+    if rates.clamped:
+        return (
+            (
+                "Reported rate",
+                f"{rates.reported:,.0f}°/day as reported; the track is drawn at"
+                f" {rates.drawn:+.2f}°/day so the panel can show it",
+            ),
+        )
+    return ()
+
+
 def _time_ticks(days: float, window_start: datetime) -> tuple[tuple[float, str], ...]:
     """Five labelled instants across the window, matching the interface's five gridlines."""
     return tuple(
@@ -829,6 +972,7 @@ class WaterfallGenerator:
             "drift_begins",
             "ceased_at_cycle",
             "derived_rate_deg_day",
+            "epoch_gap_ms",
             "newest_at",
             "collection_gaps",
             "missed_passes",
@@ -878,12 +1022,21 @@ class WaterfallGenerator:
 
         times = _geo_pass_times(days, stream)
         gap = _waterfall_gap(params, days)
-        rates = _drift_rate(params.get("derived_rate_deg_day"), bounds, days, stream)
+        epoch_gap_days = _epoch_gap_days(params)
+        rates = _drift_rate(
+            params.get("derived_rate_deg_day"), bounds, days, stream, epoch_gap_days
+        )
         drift_rate, reported_rate = rates.drawn, rates.reported
+        #: **Nothing drifts on the artefact item.** DRL-0005's `explain` says the object has not
+        #: moved unusually at all, and the default drifter count is three, so the product drew
+        #: three departing tracks under a header reporting an impossible rate. Every track holds
+        #: station here, which is what the key asserts and what the operator has to see before
+        #: "the number is wrong, the object is fine" is available to them.
+        drawn_drifters = 0 if rates.artefact else drifters
         marks = _waterfall_tracks(
             _Neighbourhood(
                 neighbours=neighbours,
-                drifters=drifters,
+                drifters=drawn_drifters,
                 centre=centre,
                 bounds=bounds,
                 times=times,
@@ -955,29 +1108,26 @@ class WaterfallGenerator:
                 ("From (synthetic)", _stamp(window_start, 0.0)),
                 ("To", _moment(window_end)),
                 ("Window", f"{bounds[0]:+.1f}° to {bounds[1]:+.1f}° of the primary"),
-            )
-            + (
-                (
-                    (
-                        "Reported rate",
-                        f"{reported_rate:,.0f}°/day as reported; the track is drawn at"
-                        f" {drift_rate:+.2f}°/day so the panel can show it",
-                    ),
-                )
-                if rates.clamped
-                else ()
+                *_rate_header(rates, window_start, days, epoch_gap_days),
             ),
-            legend=(("Held longitude", "object-held"), ("Drifting object", "object-drift")),
+            #: The legend names only what is on the panel. With every track holding station the
+            #: "Drifting object" entry described nothing, and a legend entry with no mark against
+            #: it invites an operator to hunt for a track that is not there.
+            legend=(
+                (("Held longitude", "object-held"),)
+                + ((("Drifting object", "object-drift"),) if drawn_drifters else ())
+            ),
             footer=(
                 f"observation count {total} · seed {seed:#x} · gaps PROVISIONAL"
                 " · synthetic epoch, seeded"
             ),
             reads_as=(
-                "Time runs down the page with the newest data at the bottom. A vertical line is"
-                " holding station; a diagonal is drifting."
+                "Time runs down the page with the newest data at the bottom. A NEARLY vertical"
+                " line is holding station - a controlled object still has a small residual"
+                " drift - and a clear diagonal is drifting."
             ),
             derived={
-                "drifter_count": drifters,
+                "drifter_count": drawn_drifters,
                 "observation_count": total,
                 "headcount": neighbours,
                 "newest_at": newest_at,
@@ -987,10 +1137,19 @@ class WaterfallGenerator:
                 #: window and put the onset at its end, so nothing drifted while the item's key
                 #: said the object had stopped station-keeping. A fact nobody could assert on is
                 #: how that survived.
-                "drift_visible": bool(drifters) and drift_start < days and rates.slopes,
+                "drift_visible": bool(drawn_drifters) and drift_start < days and rates.slopes,
                 "drawn_rate_deg_day": drift_rate,
                 "reported_rate_deg_day": reported_rate,
                 "rate_clamped": rates.clamped,
+                #: The separation of the two element sets the reported rate was derived from.
+                #: Authored by DRL-0005 as `epoch_gap_ms: 4` and, until now, read by nothing.
+                "epoch_gap_days": epoch_gap_days,
+                #: Whether the REPORTED figure is a rate the belt actually produces, judged
+                #: against the envelope transcribed from the owner's neighbourhood products.
+                #: False means the product is presenting a tooling artefact, and the panel is
+                #: then drawn as what the object is really doing rather than as the figure.
+                "rate_physically_possible": abs(reported_rate) <= OBSERVED_RATE_LIMIT_DEG_DAY,
+                "rate_is_artefact": rates.artefact,
                 #: The direction the renderer actually drew. DRL-0030 asks the operator to find
                 #: the drifter and state its direction with `computed_from_params` as the key, so
                 #: the answer is a fact about the surface. Longitude increases eastward.

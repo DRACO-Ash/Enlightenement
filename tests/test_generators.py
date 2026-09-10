@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
 
@@ -37,6 +38,10 @@ from enlightenment.generators.products import (
     MAX_STATE_CHANGE_MARKS,
     MAX_TABLE_ROWS,
     NEWEST_AT_VALUES,
+    OBSERVED_DRIFTER_BAND_DEG_DAY,
+    OBSERVED_HELD_RESIDUAL_DEG_DAY,
+    OBSERVED_RATE_LIMIT_DEG_DAY,
+    PROVISIONAL_LONGITUDE_SIGMA,
     TIME_TICKS,
 )
 
@@ -701,6 +706,10 @@ PROBE_VALUES: dict[str, tuple[object, dict[str, object]]] = {
     "drift_begins": (True, {}),
     "ceased_at_cycle": (2, {"cycles_shown": 9}),
     "derived_rate_deg_day": (0.66, {"drifting": True}),
+    #: Probed WITH an out-of-envelope derived rate, because that is the only case the epoch gap
+    #: bears on: it is the mechanism that explains an impossible figure, and against a possible
+    #: one there is nothing for it to explain. DRL-0005 authors both together for that reason.
+    "epoch_gap_ms": (4, {"derived_rate_deg_day": ABSURD_RATE_DEG_DAY}),
     "newest_at": ("top", {}),
     "collection_gaps": (True, {}),
     "missed_passes": (6, {}),
@@ -899,7 +908,18 @@ def test_no_refusal_message_quotes_the_authored_value_that_caused_it() -> None:
 
 
 def test_an_absurd_authored_rate_is_clamped_for_drawing_and_reported_verbatim() -> None:
-    """DRL-0005 authors the real ASTRA 1M artefact: -22,900,000 degrees per day.
+    """An out-of-envelope figure whose MECHANISM the content does not name: the clamp's own case.
+
+    **No shipped item takes this branch, and the reason matters.** DRL-0005 authors
+    `epoch_gap_ms: 4` alongside its impossible rate, so it now renders as the artefact it is -
+    see `test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object`, which binds the
+    shipped item. What remains here is the fallback for a figure outside the belt's envelope with
+    nothing to explain it, where a clamped track is the least bad thing to draw. The parameters
+    below deliberately omit the epoch gap; this test would otherwise have gone on claiming to
+    cover DRL-0005 while covering a path DRL-0005 no longer reaches, which is the
+    binds-less-than-it-claims fault this project has already shipped once.
+
+    The original note follows, because the arithmetic it pins is unchanged.
 
     The whole lesson of the item is that a reported figure cannot be right. Drawn literally it
     spans 114 million degrees on an axis labelled in degrees, every station-kept object collapses
@@ -945,6 +965,171 @@ def test_an_absurd_authored_rate_is_clamped_for_drawing_and_reported_verbatim() 
     assert "22,900,000" in header["Reported rate"]
     assert "drawn to scale" not in header["Reported rate"]
     assert "clamped" in header["Reported rate"] or "drawn at" in header["Reported rate"]
+
+
+def test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object(
+    package: ContentPackage,
+) -> None:
+    """DRL-0005 as SHIPPED, which is a different product from the one the clamp used to draw.
+
+    The item authors -22,900,000 degrees per day - the real ASTRA 1M case recorded at
+    `docs/FLIGHT-PLAN.md` - and its `explain` says, in these words, that the object "has not moved
+    unusually at all". The clamp drew the track at whatever the panel could express: at the
+    shipped seed, -1.44 degrees per day. That is not an illegible fallback. It is a PLAUSIBLE REAL
+    DRIFT RATE, comfortably inside the few degrees per day the owner's neighbourhood sheets show,
+    so the product drew an ordinary drifter leaving its box under a header reporting an impossible
+    figure, while the key said nothing had happened. The plot contradicted its own answer on the
+    one item whose entire lesson is that a number and a picture can disagree.
+
+    So: reported verbatim, drawn as held, and the two element-set epochs stated to the millisecond
+    so the accepted answer - "the epochs are too close together" - is reachable by READING THE
+    PRODUCT rather than by eliminating the only other option on offer.
+    """
+    drill = next(d for d in package.drills if d.id == "DRL-0005")
+    assert drill.stimulus.params.get("epoch_gap_ms"), "DRL-0005 no longer authors an epoch gap"
+    stimulus = compose(
+        build_registry(),
+        drill.stimulus.generator,
+        drill.stimulus.params,
+        SEED,
+        drill.stimulus.product_id,
+    )[0]
+    derived = stimulus.derived
+
+    assert derived["reported_rate_deg_day"] == ABSURD_RATE_DEG_DAY, "the authored figure was lost"
+    assert derived["rate_physically_possible"] is False
+    assert derived["rate_is_artefact"] is True
+    assert derived["epoch_gap_days"] > 0.0, "the authored epoch gap reached nothing"
+
+    #: Nothing drifts, because nothing IS drifting. The default drifter count is three, so before
+    #: this the panel carried three departing tracks and a legend entry inviting the operator to
+    #: find them.
+    assert derived["drifter_count"] == 0
+    assert derived["drift_visible"] is False
+    assert derived["drawn_rate_deg_day"] == 0.0
+    assert derived["rate_clamped"] is False
+    labels = {mark.label for mark in stimulus.panels[0].marks}
+    assert labels == {"Held longitude"}, labels
+    assert not [entry for entry in stimulus.legend if "Drift" in entry[0]], stimulus.legend
+
+    #: `for_client()` strips `derived`, so the header is the only client-visible evidence.
+    header = dict(stimulus.header)
+    assert "22,900,000" in header["Derived rate"]
+    assert "drawn at" not in header["Derived rate"], (
+        "the header still offers a second, plausible-looking rate as what the panel drew"
+    )
+    #: Two epochs, to the MILLISECOND. The ordinary product stamp is to the minute, at which
+    #: resolution a four-millisecond separation is not merely hard to see - it is absent.
+    first, second = header["Elset 1 epoch"], header["Elset 2 epoch"]
+    assert first != second, "both epochs render identically, so the evidence is not on the product"
+    assert re.search(r":\d{2}\.\d{3}Z$", first), first
+    assert re.search(r":\d{2}\.\d{3}Z$", second), second
+
+    #: And the SEPARATION an operator would read off the pair is the one the item authored. Read
+    #: back out of the two rendered strings rather than from `derived`, because the strings are
+    #: what reaches the client and the derived value is stripped before it does.
+    #:
+    #: Asserted as a difference and NOT as "the same second", which was the first version of this
+    #: and was wrong: the shipped window ends on the hour, so the pair straddles a second boundary
+    #: at 17:59:59.996 and 18:00:00.000. Four milliseconds either side of a boundary is exactly as
+    #: real as four milliseconds inside one, and a test that demanded otherwise was asserting a
+    #: property of the seed rather than of the product.
+    stamps = [
+        datetime.strptime(f"2026 {value[:-1]}+0000", "%Y %d %b %H:%M:%S.%f%z")
+        for value in (first, second)
+    ]
+    authored_ms = float(drill.stimulus.params["epoch_gap_ms"])
+    separation_ms = (stamps[1] - stamps[0]).total_seconds() * 1000.0
+    assert separation_ms == pytest.approx(authored_ms), (first, second, authored_ms)
+
+
+def test_no_waterfall_draws_a_rate_the_real_belt_does_not_produce(
+    package: ContentPackage,
+) -> None:
+    """Every drift rate this library DRAWS is one the GEO belt actually produces.
+
+    The envelope is transcribed from the neighbourhood products the owner supplied: the mass of
+    the population inside about +/-0.03 degrees per day and the widest real drifters a little
+    over six. Rounded bounds rather than transcribed readings - see the constants for why.
+
+    Before this, the only drift rate anything in 140 items authored was DRL-0005's -22,900,000
+    artefact, and every station-kept track was drawn at exactly zero. An operator was therefore
+    being trained to reject an impossible figure without ever having been shown an ordinary one -
+    and rejecting a figure is a comparison against a distribution you are carrying. The whole
+    bank, because a sample cannot show an absent distribution.
+    """
+    registry = build_registry()
+    outside: list[str] = []
+    for drill in package.drills:
+        for stimulus in compose(
+            registry,
+            drill.stimulus.generator,
+            drill.stimulus.params,
+            SEED,
+            drill.stimulus.product_id,
+        ):
+            drawn = stimulus.derived.get("drawn_rate_deg_day")
+            if isinstance(drawn, float) and abs(drawn) > OBSERVED_RATE_LIMIT_DEG_DAY:
+                outside.append(f"{drill.id}: drawn at {drawn:,.2f}°/day")
+            #: An impossible REPORTED figure is legitimate - it is the artefact being taught -
+            #: but the product must present it as one rather than drawing a track to match.
+            reported = stimulus.derived.get("reported_rate_deg_day")
+            if (
+                isinstance(reported, float)
+                and abs(reported) > OBSERVED_RATE_LIMIT_DEG_DAY
+                and stimulus.derived.get("drift_visible") is not False
+            ):
+                outside.append(f"{drill.id}: reports {reported:,.0f}°/day and still draws a drift")
+    assert not outside, outside
+
+
+def test_a_held_track_carries_a_real_station_keeping_residual() -> None:
+    """A controlled object is not motionless, and drawn at exactly zero it was a ruler.
+
+    On the owner's sheets the mass of the belt sits inside +/-0.03 degrees per day: small, and
+    not zero. Drawing every held track as a straight vertical line gave away the discrimination
+    the product exists to train - a 0.02 degree-per-day station-keeping residual against a 0.7
+    degree-per-day departure - because the operator only had to find the line that was not
+    straight, which is a different and much easier task than reading a slope.
+
+    Both bounds are asserted. A residual that is too small is the ruler again; one that is too
+    large makes a held object indistinguishable from the drifter it is the reference for.
+    """
+    stimulus = compose(build_registry(), "waterfall", {"days": 6, "drifting": True}, SEED)[0]
+    marks = stimulus.panels[0].marks
+    held = [m for m in marks if m.role == "object-held" and len(m.x) > 2]
+    drifting = [m for m in marks if m.role == "object-drift"]
+    assert held, [m.role for m in marks]
+    assert drifting, [m.role for m in marks]
+
+    #: The jitter alone spans 2 x PROVISIONAL_LONGITUDE_SIGMA = 0.024°, so a residual has to put
+    #: more than that on the track or it is invisible against the scatter it hides in.
+    jitter_span = 2 * PROVISIONAL_LONGITUDE_SIGMA
+    spans = [max(m.x) - min(m.x) for m in held]
+    assert any(span > jitter_span * 2 for span in spans), (
+        f"no held track carries a visible residual: widest span {max(spans):.4f}° against"
+        f" {jitter_span:.4f}° of jitter, so every held object is drawn as a straight line"
+    )
+
+    #: And the residual stays inside the observed band. The window is six days, so the widest a
+    #: real residual may put on a track is 6 x 0.03, plus the jitter it is drawn through.
+    ceiling = OBSERVED_HELD_RESIDUAL_DEG_DAY * 6 + jitter_span
+    assert max(spans) <= ceiling, (
+        f"a held track spans {max(spans):.4f}° over six days, past the {ceiling:.4f}° an object"
+        " inside the observed station-keeping residual can reach"
+    )
+
+    #: The drifter must still be unmistakable against them. Its band's floor is twenty times the
+    #: station-keeping residual, so the two populations cannot be confused.
+    drift_span = max(max(m.x) - min(m.x) for m in drifting)
+    assert drift_span > max(spans) * MIN_DRIFT_LEGIBILITY, (
+        f"the drifter spans {drift_span:.4f}° and the widest held track {max(spans):.4f}°, so the"
+        " reference an operator judges the departure against is no longer a reference"
+    )
+    assert OBSERVED_DRIFTER_BAND_DEG_DAY[0] > OBSERVED_HELD_RESIDUAL_DEG_DAY * 10, (
+        "the seeded drifter band overlaps the station-keeping residual, so a drawn drifter is not"
+        " reliably distinguishable from a controlled object"
+    )
 
 
 def test_an_authored_drift_onset_actually_draws_a_drift() -> None:

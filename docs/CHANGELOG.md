@@ -2,6 +2,86 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.10 (2026-09-10)
+
+**What.** Ash supplied three KBR Neighborhood Results products for the GEO belt and asked one
+question: would an operator look at minus 22,900,000 degrees per day as a valid drill item. The
+answer is no as a drift rate and yes as an artefact, and the build had it the wrong way round in
+three separate ways. All three are closed here, and the belt's real drift-rate distribution is now
+in the application for the first time.
+
+**Why.** The figure itself is not invented. `docs/FLIGHT-PLAN.md` records it as a real case from
+the LEARNED register - a millisecond epoch gap in the denominator - and competency axis five
+exists to train that class. What was wrong was everything around it.
+
+● **The belt's ordinary distribution was nowhere in the application.** Across all 140 items the
+  only drift rate anything authored was this one, and every station-kept track was drawn at
+  exactly zero degrees per day. An operator was being trained to reject the impossible without
+  once having been shown the ordinary - and rejecting a figure is a comparison against a
+  distribution you are carrying. Held objects now carry a real station-keeping residual, so a
+  controlled track is NEARLY vertical rather than a ruler-straight line, and the discrimination
+  the product exists to train is no longer free: before this, finding the drifter meant finding
+  the one line that was not straight, which is a different and much easier task than reading a
+  slope. A seeded drifter is drawn from the observed drifter population rather than an invented
+  band whose lower end corresponded to nothing.
+● **The plot contradicted its own answer key.** The impossible figure was clamped for drawing to
+  whatever the panel could express, which at the shipped seed is minus 1.44 degrees per day. That
+  is not an illegible fallback - it is a perfectly ordinary drift rate on the supplied sheets. So
+  the panel drew a real drifter leaving its station-keeping box, with the default three drifters
+  and a legend inviting the operator to find them, while the item's own `explain` says the object
+  "has not moved unusually at all". This is the plot-contradicts-its-key fault this module has now
+  been corrected for three times, and it sat on the one item whose entire lesson is that a number
+  and a picture can disagree. Every track holds station now, because held is the truth.
+● **The mechanism was authored and read by nothing.** DRL-0005 carries `epoch_gap_ms: 4` and no
+  code in this repository consumed it, so the accepted answer - "the epochs are too close
+  together" - was reachable by eliminating the only other option on offer and never by reading the
+  product. The two element sets' epochs are now stated to the millisecond, which is the resolution
+  the fault lives at: the ordinary product stamp is to the minute, at which a four-millisecond
+  separation is not merely hard to see, it is absent. Nothing on the product states the
+  conclusion; the evidence is there and the judgement stays the operator's.
+
+**The envelope is rounded bounds, not transcribed readings, and that was a correction inside this
+change.** The first draft put two exact drift rates from the sheets into `products.py` as the
+seeded band. `docs/PLOT-REALISM.md` promises that no value from a live operational product is
+copied into content or code, and two readings would have broken it for no analytical gain: the
+realism claim is about the SHAPE of the distribution, never about any one datum. Every figure is
+now a bound to one or two significant figures, and the doc says the promise holds by construction
+rather than by exception. Ash holds the sheets.
+
+**What is inventoried and NOT judged.** The drills also author figures for the sheets' other
+physical columns - `ΔV (m/s)`, `Days to cross`, `DCA [km]`, close-approach distances, period and
+plane changes. Those are listed in `docs/PLOT-REALISM.md` and left alone, because judging them
+needs the same rounded-bound treatment and a column-by-column read that has not been done. Said
+plainly rather than left to look finished: this change closes the drift-rate class and no other.
+Real object names are also deliberately not taken from the sheets - putting catalogue names into
+scored content is a handling decision rather than a rendering one, and has not been asked for.
+
+**How verified.**
+● `test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object` drives the SHIPPED
+  DRL-0005 parameters out of `content/drills.json` rather than a hand-written approximation of
+  them, and binds all of it: the figure reported verbatim, nothing drifting, no clamp, no second
+  plausible-looking rate in the header, and the two epochs to the millisecond with the separation
+  read back out of the rendered strings and compared against the authored gap.
+● `test_no_waterfall_draws_a_rate_the_real_belt_does_not_produce` walks the whole bank, not a
+  sample, because a sample cannot show an absent distribution. Every drawn rate must be inside the
+  envelope, and an out-of-envelope REPORTED figure must be presented as an artefact rather than
+  drawn to match.
+● `test_a_held_track_carries_a_real_station_keeping_residual` asserts both bounds. Too small is
+  the ruler again; too large makes a held object indistinguishable from the drifter it is the
+  reference for.
+● All three FAIL against the previous behaviour, checked by neutralising the two branches in place
+  and re-running: three failures plus `test_every_declared_read_actually_changes_the_surface`,
+  which caught the new `epoch_gap_ms` declaration having no probe before the probe was added.
+● The interface fixture `ui/tests/fixtures/drill.json` is a capture of DRL-0005 and was
+  regenerated from the real generator at its own recorded seed, with the mark trim as the only
+  edit. It had been carrying the old header string and three false drifters. 46 interface tests
+  at 100% line coverage still pass against it.
+
+**One correction to an earlier record.** The `docs/SECURITY.md` row for this behaviour has now been
+wrong twice: it first claimed the header said "drawn to scale", then claimed the clamp was the
+right answer. Both are rewritten in place with what was actually wrong each time, because a
+register row that reads as settled is what stops anyone looking again.
+
 ## V0.27.9 (2026-09-10)
 
 **What.** V0.27.8 deployed: all ten pipeline stages passed and the app went Active. Opening it

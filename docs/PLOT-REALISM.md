@@ -259,11 +259,60 @@ neighbourhood"**, the target's longitude track among the objects sharing its 50 
   screenshot's axis reads "Solar Equatorial Phase Angle". The screenshot is the artefact, so the
   plots follow it, but one of the two is wrong and it would be worth knowing which.
 
+## The neighbourhood sheets, 10 September, and the drift rate the belt actually has
+
+Three further products, supplied by Ash on 10 September: KBR Neighborhood Results for the GEO
+belt, in two layouts. One carries `Drift (°)/d`, `Days to Longitude Crossing`, `Abs. Min. Dist.`,
+`Next Min. Dist.`, `Dist. (km)`, `ΔV (m/s)`, `Score` and `Source`. The other carries `HRR`,
+`Norad ID`, `Name`, `Country`, `Longitude °`, `Δ Longitude °`, `Inc °`, `Δ Inc °`, `RAAN °`,
+`Δ RAAN °`, `Drift Rate [°/day]`, `Days to cross`, `DCA [km]`, `TCA` and `TLE Time`.
+
+They were supplied with a question, and the question is the finding: would an operator look at
+minus 22,900,000 degrees per day as a valid drill item.
+
+**The answer is no as a drift rate and yes as an artefact, and the build had it the wrong way
+round.** The figure is not invented: `docs/FLIGHT-PLAN.md` records it as a real case from the
+LEARNED register, a millisecond epoch gap in the denominator, and competency axis five exists to
+train exactly that class. What was wrong was everything around it.
+
+● **The belt's real distribution was nowhere in the application.** Across all 140 items the only
+  drift rate anything authored was this one, and every station-kept track was drawn at exactly
+  zero degrees per day. So an operator was being trained to reject the impossible without ever
+  having been shown the ordinary - and rejecting a figure is a comparison against a distribution
+  you are carrying. Held objects now carry a real station-keeping residual, and a seeded drifter
+  is drawn from the observed drifter population instead of an invented band.
+● **The plot contradicted its own answer key.** The impossible figure was clamped for drawing to
+  whatever the panel could express: at the shipped seed, minus 1.44 degrees per day. That is not
+  an illegible fallback, it is a perfectly ordinary drift rate on these sheets. So the panel drew
+  a real drifter leaving its station-keeping box while the item's own `explain` says the object
+  "has not moved unusually at all". Every track now holds station, because held is the truth.
+● **The mechanism was authored and read by nothing.** The item carries `epoch_gap_ms: 4` and no
+  code consumed it, so the accepted answer - "the epochs are too close together" - was reachable
+  by eliminating the only other option on offer and never by reading the product. The two element
+  sets' epochs are now stated to the millisecond, which is the resolution the fault lives at: the
+  ordinary product stamp is to the minute, at which a four-millisecond separation is not hard to
+  see, it is absent.
+
+The envelope now held in `generators/products.py` is **rounded bounds, not transcribed readings**,
+so the handling promise below still holds without an exception: the mass of the population inside
+about a few hundredths of a degree per day, the genuine drifters from a few tenths up to a little
+over six, and nothing within four orders of magnitude of the artefact - let alone seven. The
+realism claim is about the SHAPE of the distribution, never about any one datum, so rounding costs
+nothing analytically and keeps a live product's values out of the repository. Ash holds the sheets.
+
+Two things are deliberately NOT taken from them. Object names, because putting real catalogue
+names into scored training content is a handling decision rather than a rendering one and has not
+been asked for. And the `ΔV (m/s)`, `Days to cross` and `DCA [km]` columns, which the drills also
+author figures for: those are inventoried and unjudged, because judging them needs the same
+rounded-bound treatment and a column-by-column read of the sheets that has not been done yet.
+
 ## Handling
 
 These are live operational products and tool documentation for publicly catalogued objects. What
 has been taken is procedure and visual idiom, not data: no residual value, object pairing,
 timestamp, sensor identity or provider characteristic from the screenshots has been copied into
-content or code, and the generated series stay synthetic and seeded. Everything sourced from the
+content or code, and the generated series stay synthetic and seeded. The drift-rate envelope added
+on 10 September is inside that promise by construction and not by exception - see the section
+above for why it is held as rounded bounds. Everything sourced from the
 manual is attributed in `docs/TASK-EVIDENCE.md` so it can be verified or removed as one block. Say
 if any of that needs to be tighter.
