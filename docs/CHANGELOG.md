@@ -2,6 +2,49 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.9 (2026-09-10)
+
+**What.** V0.27.8 deployed: all ten pipeline stages passed and the app went Active. Opening it
+showed `{"name":"Enlightenment","version":"0.27.8","status":"ok"}`, and that was not a broken
+deploy - it was the health contract answering exactly as designed on a path the console sends
+humans to. **The App Store console's "Open App" button opens `/`.** The interface was at `/ui`
+throughout. A correct contract that sends people to the wrong place is still a product fault, and
+this one is mine: the decision to keep `/` machine-readable is right, and I did not check where
+the console's own button points.
+
+**Closed by negotiating on the caller's `Accept` header, at `/`, with the default unchanged.** A
+request that NAMES `text/html` gets the interface. No header at all, `*/*`, `application/json`,
+`text/plain`, an empty header and every probe keep the JSON byte-for-byte. Six of the nine table
+rows in the new test are non-browser, because the contract is the thing that must not break, and
+`text/html;q=0` is honoured as a refusal rather than as a mention - naming the type while ignoring
+the weight would serve a client the one representation it explicitly declined.
+
+**Not a redirect, and that was the tempting wrong answer.** `test_root_returns_200_and_never_a_
+redirect` exists because the platform router reads a 302 at root as unhealthy, and the deploy-gate
+probes it live. Both branches now answer 200 with no `location` header, so the router sees no
+difference between them.
+
+**The security property is that the second path carries the same air gap.** One
+`interface_response` builds the document for both routes, so `_UI_HEADERS` cannot diverge: serving
+this markup from a route that had lost its Content-Security-Policy would strip the no-CDN,
+no-external-call posture silently, which is a security regression dressed as a convenience. A
+register row in `docs/SECURITY.md` carries it.
+
+**And the first draft of that assertion was wrong in the direction that matters.** It checked
+`X-Frame-Options: DENY`, which this response does not carry and never has - framing is refused by
+`frame-ancestors 'none'` in the policy. A test asserting a header that does not exist would have
+reported a posture the response does not hold. Corrected to assert the control that is actually
+present, plus `script-src`, `referrer-policy` and `cache-control`.
+
+**`/ui` stays the canonical path.** It is the one to bookmark and the one the documentation names,
+because it serves the interface whatever the caller's headers say.
+
+**Verified.** Loop green across all eight legs. Both paths return byte-identical markup with
+identical air-gap headers, asserted directly.
+
+**Not done, and unchanged.** Neither binding gate has run against the V0.27.x series - now nine
+releases.
+
 ## V0.27.8 (2026-09-10)
 
 **What.** The interface moved out of `src/`, and it acquired its own test suite: **46 Node tests

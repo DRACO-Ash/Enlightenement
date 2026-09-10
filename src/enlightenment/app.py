@@ -81,7 +81,12 @@ from enlightenment.storage import (
 )
 from enlightenment.training import DrillLoop, ProgressStore
 from enlightenment.training.drill import bounded_reason
-from enlightenment.training_api import register_training_routes, resolve_content_root
+from enlightenment.training_api import (
+    interface_response,
+    register_training_routes,
+    resolve_content_root,
+    wants_markup,
+)
 
 #: Liveness paths. Cheap, dependency-free, always 200: a downstream outage must never
 #: restart a healthy container.
@@ -502,9 +507,22 @@ def _register_probe_routes(app: FastAPI, runtime: _Runtime) -> None:
     """Root, liveness, and readiness. All unauthenticated and never rate-limited."""
 
     @app.get("/", status_code=status.HTTP_200_OK)
-    async def root() -> dict[str, Any]:
-        """200, never a 302: the platform router treats a redirect at root as unhealthy."""
-        return {"name": "Enlightenment", "version": __version__, "status": "ok"}
+    async def root(request: Request) -> Response:
+        """200, never a 302: the platform router treats a redirect at root as unhealthy.
+
+        **Two audiences, one path, and the split is on the caller\'s own `Accept` header.** A
+        request that NAMES `text/html` gets the interface; everything else - no header, `*/*`,
+        `application/json`, every probe - gets the machine-readable body byte-for-byte as before.
+        The default is the JSON, so the health contract cannot be broken by a front-end change,
+        and both branches are 200 with no redirect, so the platform router sees no difference.
+
+        Not a redirect, deliberately: `test_root_returns_200_and_never_a_redirect` exists because
+        the platform router reads a 302 at root as unhealthy, and the deploy-gate probes it live.
+        A 302 to `/ui` would have been the shorter fix and the wrong one.
+        """
+        if wants_markup(request.headers.get("accept")):
+            return await interface_response()
+        return JSONResponse({"name": "Enlightenment", "version": __version__, "status": "ok"})
 
     @app.get("/livez", response_class=PlainTextResponse)
     @app.get("/ping", response_class=PlainTextResponse)

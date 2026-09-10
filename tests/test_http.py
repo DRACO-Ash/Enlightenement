@@ -20,6 +20,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette.routing import WebSocketRoute
 
 from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
+from enlightenment import __version__
 from enlightenment.app import (
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
@@ -64,6 +65,87 @@ def test_root_returns_200_and_never_a_redirect(client: TestClient) -> None:
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+#: What a caller may send at `/`, and what it must get back. The JSON is the DEFAULT and every
+#: row that is not a browser proves it: the App Store health contract reads this path, and a
+#: front-end convenience must not be able to change what a probe sees.
+ROOT_NEGOTIATION = (
+    ("no header at all, which is a kubelet probe", None, "json"),
+    ("*/*, which is curl and most probes", "*/*", "json"),
+    ("application/json", "application/json", "json"),
+    ("text/plain", "text/plain", "json"),
+    ("an empty header", "", "json"),
+    #: What a browser sends, verbatim from Chromium 141.
+    (
+        "a browser",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "html",
+    ),
+    ("text/html alone", "text/html", "html"),
+    ("html named after json", "application/json, text/html", "html"),
+    #: `q=0` is a client stating it does NOT accept HTML. Naming the type while ignoring the
+    #: weight would serve it the one thing it refused.
+    ("html refused by weight", "text/html;q=0, application/json", "json"),
+)
+
+
+@pytest.mark.parametrize(("label", "accept", "expected"), ROOT_NEGOTIATION)
+def test_root_serves_the_interface_only_to_a_caller_that_asks_for_html(
+    client: TestClient, label: str, accept: str | None, expected: str
+) -> None:
+    """`/` serves two audiences, and the split must fail towards the machine-readable body.
+
+    The App Store console's "Open App" button opens `/`, so before V0.27.9 every human who
+    followed it landed on `{"name":"Enlightenment",...}` and reasonably read that as a failed
+    deploy. It was not: all ten pipeline stages passed and the interface was at `/ui` throughout.
+    A correct contract that sends people to the wrong place is still a product fault.
+
+    Every non-browser row here is the contract this must not break, which is why they outnumber
+    the browser rows two to one.
+    """
+    headers = {} if accept is None else {"accept": accept}
+    response = client.get("/", headers=headers, follow_redirects=False)
+    #: 200 in BOTH branches, and never a redirect: the platform router reads a 302 at root as
+    #: unhealthy, so negotiation must not become a redirect under any header.
+    assert response.status_code == 200, label
+    assert "location" not in response.headers, label
+
+    if expected == "json":
+        assert response.headers["content-type"].startswith("application/json"), label
+        assert response.json() == {
+            "name": "Enlightenment",
+            "version": __version__,
+            "status": "ok",
+        }, label
+        return
+
+    assert response.headers["content-type"].startswith("text/html"), label
+    assert "<title>" in response.text, label
+    #: And it carries the SAME air-gap headers as `/ui`. Serving the interface from a second
+    #: route without its Content-Security-Policy would remove the posture silently.
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'self'" in policy, label
+    assert "script-src 'self'" in policy, label
+    #: Framing is refused by `frame-ancestors`, not by `X-Frame-Options`. Asserted by the control
+    #: that is actually present: the first draft of this test asserted the legacy header, passed
+    #: nothing, and would have reported a posture the response does not carry.
+    assert "frame-ancestors 'none'" in policy, label
+    assert response.headers["referrer-policy"] == "no-referrer", label
+    assert response.headers["cache-control"] == "no-store", label
+
+
+def test_the_interface_is_byte_identical_at_the_root_and_at_its_own_path(
+    client: TestClient,
+) -> None:
+    """One responder, so the two paths cannot drift. The headers are the part that matters."""
+    browser = {"accept": "text/html"}
+    root = client.get("/", headers=browser)
+    canonical = client.get("/ui", headers=browser)
+    assert root.status_code == canonical.status_code == 200
+    assert root.text == canonical.text
+    for header in ("content-security-policy", "referrer-policy", "cache-control"):
+        assert root.headers[header] == canonical.headers[header], header
 
 
 @pytest.mark.parametrize("path", ["/livez", "/ping", "/health"])

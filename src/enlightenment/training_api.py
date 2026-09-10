@@ -204,6 +204,60 @@ _UI_HEADERS: Final[dict[str, str]] = {
 }
 
 
+async def interface_response() -> HTMLResponse:
+    """The interface document, with the headers that keep it air-gapped.
+
+    ONE responder for the two routes that serve it - `/ui` and, for a browser, `/`. The
+    alternative was a second `HTMLResponse` built beside the root route, and the thing that must
+    not diverge is `_UI_HEADERS`: serving this markup without its Content-Security-Policy would
+    ship the interface with the air-gap posture silently removed, which is a security regression
+    dressed as a convenience.
+    """
+    path = resolve_ui_file()
+    try:
+        markup = await asyncio.to_thread(path.read_text, encoding="utf-8")
+    except OSError as exc:
+        log_event("ui.unavailable", path=str(path), errno=exc.errno)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "ui_unavailable", "message": "The interface file is missing."},
+        ) from None
+    return HTMLResponse(content=markup, headers=_UI_HEADERS)
+
+
+#: The spellings of a zero quality weight. `text/html;q=0` is a client stating it does NOT accept
+#: HTML, so naming the type while ignoring the weight would serve it the one thing it refused.
+ZERO_WEIGHTS: Final = frozenset({"0", "0.0", "0.00", "0.000"})
+
+
+def wants_markup(accept: str | None) -> bool:
+    """Whether this caller asked for HTML, by name.
+
+    **The default is the machine-readable body, and that direction is the whole design.** `/` is
+    part of the App Store health contract, so an unknown client, a client sending `*/*`, a client
+    sending nothing at all, and every probe keep exactly the JSON they have always had. Only an
+    `Accept` header that NAMES `text/html` gets the interface - which is what a browser sends and
+    what a kubelet probe does not.
+
+    Added at V0.27.9 because the App Store console's "Open App" button opens `/`, so every human
+    who followed it landed on `{"name":"Enlightenment",...}` and reasonably concluded the deploy
+    had failed. It had not: all ten pipeline stages passed and the interface was at `/ui` the
+    whole time. A correct contract that sends people to the wrong place is still a product fault.
+    """
+    if not accept:
+        return False
+    #: Parsed on the media type only. A `q=0` on `text/html` is a client saying it does NOT want
+    #: HTML, and honouring the name while ignoring the weight would serve the opposite.
+    for part in accept.split(","):
+        media, _, parameters = part.strip().partition(";")
+        if media.strip().lower() != "text/html":
+            continue
+        weights = [p.strip() for p in parameters.split(";") if p.strip().startswith("q=")]
+        refused = bool(weights) and weights[0][2:].strip() in ZERO_WEIGHTS
+        return not refused
+    return False
+
+
 def _register_interface(app: FastAPI) -> None:
     """The interface document and its script, and the headers that keep both air-gapped."""
 
@@ -234,23 +288,13 @@ def _register_interface(app: FastAPI) -> None:
     @app.get("/ui", response_class=HTMLResponse)
     @app.get("/ui/", response_class=HTMLResponse)
     async def interface() -> HTMLResponse:
-        """The operator interface.
+        """The operator interface, at its canonical path.
 
-        Served at `/ui` and not at `/`, on purpose: `/` is part of the App Store health contract
-        and answers 200 with a machine-readable body that the platform router and this project's
-        own contract tests both depend on. Moving the interface there would make one route serve
-        two audiences and put the health contract at the mercy of a front-end change.
+        `/` also serves it, but only to a client that asks for HTML: see `interface_response`
+        and the root route in `app.py`. This path is the one to bookmark and the one the
+        documentation names, because it means the interface whatever the caller's headers say.
         """
-        path = resolve_ui_file()
-        try:
-            markup = await asyncio.to_thread(path.read_text, encoding="utf-8")
-        except OSError as exc:
-            log_event("ui.unavailable", path=str(path), errno=exc.errno)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={"error": "ui_unavailable", "message": "The interface file is missing."},
-            ) from None
-        return HTMLResponse(content=markup, headers=_UI_HEADERS)
+        return await interface_response()
 
 
 def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop) -> None:

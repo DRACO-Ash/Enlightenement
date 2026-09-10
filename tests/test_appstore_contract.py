@@ -1236,7 +1236,12 @@ UNCITED_SECURITY_TESTS: frozenset[str] = frozenset(
         "test_a_listing_carries_an_etag_and_answers_304_when_unchanged",
         "test_diagnostics_answers_every_plausible_deploy_question_at_once",
         "test_diagnostics_reports_the_anonymous_write_posture",
-        "test_root_returns_200_and_never_a_redirect",
+        #: `test_root_returns_200_and_never_a_redirect` WAS here, exempted as a deploy-contract
+        #: assertion rather than a security one. V0.27.9 made `/` serve the interface to a browser,
+        #: so the no-redirect property is now load-bearing for a control the register carries: a
+        #: 302 at root is how the negotiation would have been written by someone in a hurry, and
+        #: the platform router reads that as unhealthy. It is cited, so the exemption is gone -
+        #: and this check is what noticed the two claims contradicting each other.
         "test_the_etag_changes_after_a_write",
         # --- test_middleware.py: the body cap's and the drain budget's own boundary and scope
         # cases. The register carries the cap on bytes read, the header order, the method case,
