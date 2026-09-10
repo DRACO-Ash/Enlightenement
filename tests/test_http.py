@@ -22,6 +22,7 @@ from starlette.routing import WebSocketRoute
 from conftest import TEST_ORIGIN, TEST_PLACEHOLDER, failing_probe, ok_probe
 from enlightenment import __version__
 from enlightenment.app import (
+    GLOBAL_LIMIT,
     MAX_BODY_BYTES,
     MAX_REVISION_DIGITS,
     MAX_SERVED_SESSIONS_BYTES,
@@ -87,6 +88,20 @@ ROOT_NEGOTIATION = (
     #: `q=0` is a client stating it does NOT accept HTML. Naming the type while ignoring the
     #: weight would serve it the one thing it refused.
     ("html refused by weight", "text/html;q=0, application/json", "json"),
+    #: **Four spellings of a zero weight that the security gate broke.** The check was a set of
+    #: four literal strings with a case-sensitive parameter name, so every row below named a
+    #: refusal and was served HTML anyway. RFC 9110 makes a parameter name case-insensitive, so
+    #: `Q=0` was a valid refusal being ignored, and enumerating four spellings of a NUMBER is a
+    #: shape that is always incomplete. The weight is parsed as a number now.
+    ("a zero weight with four decimals", "text/html;q=0.0000", "json"),
+    ("a zero weight written 00", "text/html;q=00", "json"),
+    ("a zero weight with a trailing point", "text/html;q=0.", "json"),
+    ("a zero weight on a capitalised parameter", "text/html;Q=0", "json"),
+    ("a zero weight with spaces around it", "text/html ; q = 0", "json"),
+    #: And a MALFORMED weight is not a refusal: a client sending `q=banana` refused nothing, so
+    #: the guarded conversion must not read a parse failure as a rejection.
+    ("an unparsable weight is not a refusal", "text/html;q=banana", "html"),
+    ("a non-zero weight", "text/html;q=0.5", "html"),
 )
 
 
@@ -133,6 +148,90 @@ def test_root_serves_the_interface_only_to_a_caller_that_asks_for_html(
     assert "frame-ancestors 'none'" in policy, label
     assert response.headers["referrer-policy"] == "no-referrer", label
     assert response.headers["cache-control"] == "no-store", label
+
+
+def test_the_markup_branch_at_the_root_is_rate_limited_and_the_probe_branch_is_not(
+    client: TestClient,
+) -> None:
+    """`/` is exempt from rate limiting for the PROBE, not for the 34 kB interface document.
+
+    The exemption exists because the platform probes this path and a 429 there reads as
+    unhealthy. That reasoning covers a dependency-free 58-byte JSON body; V0.27.9 put the
+    interface behind the same path and revisited neither the exemption nor the register row.
+
+    The security gate measured the consequence: 400 unauthenticated `GET /` with
+    `Accept: text/html` all answered 200 with no 429 - a 589-fold body amplification on an
+    unmetered path, with `cache-control: no-store` forcing every request to the origin - while
+    the identical resource at `/ui` was throttled correctly. It also measured the second half,
+    that the filesystem read shared the default executor with the store's own work and took a
+    legitimate anonymous listing from 0.95 ms to 81.99 ms at the median.
+
+    Both directions are asserted here, because a limiter that also throttles the probe branch
+    would break the health contract this exemption was created for, which is the worse failure.
+    """
+    #: Read from the module rather than hardcoded, so raising the allowance cannot quietly turn
+    #: this into a test that never reaches the limit and passes on the strength of not trying.
+    limit = GLOBAL_LIMIT
+
+    #: The MARKUP branch is metered.
+    codes = {client.get("/", headers={"accept": "text/html"}).status_code for _ in range(limit + 5)}
+    assert 429 in codes, "an unauthenticated caller can flood the interface off an exempt path"
+
+    #: And the PROBE branch is not, from the same client key, in the same window, after the
+    #: markup branch has already been throttled. That ordering is the point: the exemption has
+    #: to survive a caller who has already exhausted the bucket.
+    for accept in (None, "*/*", "application/json", "text/plain"):
+        headers = {} if accept is None else {"accept": accept}
+        response = client.get("/", headers=headers)
+        assert response.status_code == 200, accept
+        assert response.json()["status"] == "ok", accept
+    for path in ("/livez", "/ping", "/health", "/healthz", "/readyz"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_a_missing_interface_file_fails_closed_and_is_not_remembered_as_missing(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The 503 branch, which no test reached before, and the cache that must not swallow it.
+
+    The interface files are read once per process and held, because the read sat on the hot path
+    of an unmetered route. Caching a FAILURE would turn one transient unreadable file into a
+    permanently broken interface for the life of the container, which is a worse outcome than
+    the starvation the cache exists to remove.
+
+    **The first version of this test could not see that.** It pointed the resolver at a path
+    that never existed and then restored the real one, so a cached failure sat under the missing
+    path while recovery read the real file: the mutation that caches failures alongside successes
+    passed. It has to be ONE path that fails and then succeeds, which is what a transient
+    unreadable mount actually looks like.
+    """
+    from enlightenment import training_api
+
+    served = tmp_path / "index.html"
+    original = training_api.resolve_ui_file
+    training_api.resolve_ui_file = lambda: served  # type: ignore[assignment]
+    training_api._UI_CACHE.pop(str(served), None)
+    try:
+        failed = client.get("/ui")
+        assert failed.status_code == 503
+        detail = failed.json()["detail"]
+        assert detail["error"] == "ui_unavailable"
+        #: The refusal names no path and no errno. Both are logged server-side.
+        assert str(served) not in failed.text
+        assert "errno" not in failed.text
+
+        #: The SAME path now resolves. A remembered failure would serve the empty body it cached,
+        #: or the 503 again, for the life of the process.
+        served.write_text("<title>Recovered</title>", encoding="utf-8")
+        recovered = client.get("/ui")
+        assert recovered.status_code == 200, recovered.text
+        assert "<title>Recovered</title>" in recovered.text
+
+        #: And the success IS held, which is the whole point of the read being off the hot path.
+        assert training_api._UI_CACHE[str(served)] == "<title>Recovered</title>"
+    finally:
+        training_api.resolve_ui_file = original  # type: ignore[assignment]
+        training_api._UI_CACHE.pop(str(served), None)
 
 
 def test_the_interface_is_byte_identical_at_the_root_and_at_its_own_path(

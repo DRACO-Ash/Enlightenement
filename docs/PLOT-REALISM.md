@@ -1,7 +1,7 @@
 # Plot realism: what real operational products look like, and what ours do not
 
-Five screenshots of live KBR Space Domain Awareness (SDA) tooling, supplied by Ash on 29 August as
-design reference. Publicly catalogued objects throughout (SHIYAN 12 01, GAOFEN 13, BANGABANDHU,
+Five screenshots of live KBR Space Domain Awareness (SDA) tooling, supplied by the owner on 29
+August as design reference. Publicly catalogued objects throughout (SHIYAN 12 01, GAOFEN 13, BANGABANDHU,
 TJS-10). This document records what they show, judges the drill surfaces against them, and lists
 what changes.
 
@@ -180,7 +180,7 @@ stays on every one of them until real figures replace it.
 
 ## The questions, answered
 
-Ash supplied the Sat Xzibit help manual on 30 August. It closes four of the five and changes two
+The owner supplied the Sat Xzibit help manual on 30 August. It closes four of the five and changes two
 things I had written above.
 
 ### The association types are a diagnostic rule, not a legend
@@ -218,11 +218,11 @@ they can, and colour semantics are about as surface as it gets. Options: adopt r
 and find another channel for wrongness, keep the PHOSPHOR meaning and accept the collision
 knowingly, or use red only for recency on plot surfaces and never for verdicts. **My
 recommendation is the third**, because it keeps the two meanings in separate parts of the screen
-where they cannot be confused, but it is a design decision and it is Ash's.
+where they cannot be confused, but it is a design decision and it is the owner's.
 
 ### Pass cadence, which is the number change 2 needed
 
-From Ash directly:
+From the owner directly:
 
 | Regime and phenomenology | Cadence |
 | --- | --- |
@@ -261,11 +261,22 @@ neighbourhood"**, the target's longitude track among the objects sharing its 50 
 
 ## The neighbourhood sheets, 10 September, and the drift rate the belt actually has
 
-Three further products, supplied by Ash on 10 September: KBR Neighborhood Results for the GEO
-belt, in two layouts. One carries `Drift (°)/d`, `Days to Longitude Crossing`, `Abs. Min. Dist.`,
-`Next Min. Dist.`, `Dist. (km)`, `ΔV (m/s)`, `Score` and `Source`. The other carries `HRR`,
-`Norad ID`, `Name`, `Country`, `Longitude °`, `Δ Longitude °`, `Inc °`, `Δ Inc °`, `RAAN °`,
-`Δ RAAN °`, `Drift Rate [°/day]`, `Days to cross`, `DCA [km]`, `TCA` and `TLE Time`.
+Three further products, supplied by the owner on 10 September: neighbourhood results for the GEO
+belt, in two layouts. Both carry a per-object drift rate in degrees per day, which is the column
+this change acts on; between them they also carry longitude and its delta, inclination and its
+delta, right ascension of the ascending node and its delta, days to a longitude crossing,
+absolute and next minimum distance, distance of closest approach, time of closest approach,
+element-set time, a delta-v in metres per second, a score, a source and a high-range-resolution
+flag.
+
+**The full verbatim column schema was in this section and has been removed.** `docs/` ships in
+the upload artefact, so a named commercial product's complete data model would go to the App
+Store with the application; the security gate raised it and the Handling section below asks the
+owner to confirm rather than settling it. The columns are named above in prose because the
+inventory is the point, and the exact spellings are not needed for anything here. **Owner
+decision outstanding: may the verbatim schema ship?** If yes it goes back in one edit; if the
+answer is that it should not be in the repository at all, say so and it comes out of this
+paragraph too.
 
 They were supplied with a question, and the question is the finding: would an operator look at
 minus 22,900,000 degrees per day as a valid drill item.
@@ -298,7 +309,8 @@ so the handling promise below still holds without an exception: the mass of the 
 about a few hundredths of a degree per day, the genuine drifters from a few tenths up to a little
 over six, and nothing within four orders of magnitude of the artefact - let alone seven. The
 realism claim is about the SHAPE of the distribution, never about any one datum, so rounding costs
-nothing analytically and keeps a live product's values out of the repository. Ash holds the sheets.
+nothing analytically and keeps a live product's values out of the repository. The owner holds
+the sheets.
 
 Two things are deliberately NOT taken from them. Object names, because putting real catalogue
 names into scored training content is a handling decision rather than a rendering one and has not
@@ -307,6 +319,11 @@ author figures for: those are inventoried and unjudged, because judging them nee
 rounded-bound treatment and a column-by-column read of the sheets that has not been done yet.
 
 ## Handling
+
+**Attributed to the ROLE and not to a person, throughout.** This file reaches the upload
+artefact, and it named an individual by first name as the supplier and custodian of live
+operational products. The security gate raised the two new instances; all five are changed,
+because fixing half of an identical disclosure is worse than either option.
 
 These are live operational products and tool documentation for publicly catalogued objects. What
 has been taken is procedure and visual idiom, not data: no residual value, object pairing,

@@ -213,21 +213,83 @@ async def interface_response() -> HTMLResponse:
     ship the interface with the air-gap posture silently removed, which is a security regression
     dressed as a convenience.
     """
-    path = resolve_ui_file()
-    try:
-        markup = await asyncio.to_thread(path.read_text, encoding="utf-8")
-    except OSError as exc:
-        log_event("ui.unavailable", path=str(path), errno=exc.errno)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "ui_unavailable", "message": "The interface file is missing."},
-        ) from None
+    markup = await _ui_text(
+        resolve_ui_file(), event="ui.unavailable", message="The interface file is missing."
+    )
     return HTMLResponse(content=markup, headers=_UI_HEADERS)
 
 
-#: The spellings of a zero quality weight. `text/html;q=0` is a client stating it does NOT accept
-#: HTML, so naming the type while ignoring the weight would serve it the one thing it refused.
-ZERO_WEIGHTS: Final = frozenset({"0", "0.0", "0.00", "0.000"})
+#: The interface files, held in memory after the first successful read, keyed by resolved path.
+#: Bounded by the two-entry `_UI_FILES` allowlist plus the document, so it cannot grow with
+#: traffic; about 84 kB in total at the shipped sizes.
+_UI_CACHE: Final[dict[str, str]] = {}
+
+
+async def _ui_text(path: Path, *, event: str, message: str) -> str:
+    """One interface file's text, read from disk ONCE per process and then held.
+
+    **The read sat on the hot path of an UNMETERED route, and that was a starvation surface the
+    security gate measured.** `/` is in `UNLIMITED_PATHS` because the platform probes it and a
+    429 there reads as unhealthy. That exemption was correct for a dependency-free 58-byte JSON
+    reply; V0.27.9 put a filesystem read and a 34 kB document behind the same path and revisited
+    neither. Measured by the gate: 400 unauthenticated `GET /` with `Accept: text/html` all
+    answered 200 with no 429, and because `asyncio.to_thread` uses the DEFAULT executor - the
+    same one `runtime.store` does its work in - 64 concurrent floods took a legitimate anonymous
+    listing from 0.95 ms to 81.99 ms at the median, 85.9 times slower.
+
+    That is the same class of fault `probe_pool` exists to prevent, recorded at 1.4 ms to 109 ms.
+    The fix there was a dedicated single-worker executor, and it is the right shape for a probe
+    that must actually touch the volume every time. It is the wrong shape here, because these
+    files are IMMUTABLE: baked into the image, read-only at runtime, identical on every request.
+    A cache does not bound the starvation, it removes it - the flood above becomes one read per
+    file for the life of the process - and it needs no lifespan release to get right.
+
+    Only SUCCESS is cached, so the 503 branch stays reachable and a missing file is re-attempted
+    rather than remembered as missing. A concurrent race reads twice and stores the same string,
+    which costs one syscall and nothing else.
+    """
+    cached = _UI_CACHE.get(str(path))
+    if cached is not None:
+        return cached
+    try:
+        text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+    except OSError as exc:
+        log_event(event, path=str(path), errno=exc.errno)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "ui_unavailable", "message": message},
+        ) from None
+    _UI_CACHE[str(path)] = text
+    return text
+
+
+def _refuses_html(parameters: str) -> bool:
+    """Whether these `Accept` parameters carry a zero quality weight.
+
+    `text/html;q=0` is a client stating it does NOT accept HTML, so naming the type while
+    ignoring the weight would serve it the one thing it refused.
+
+    **This was a set of four literal spellings and the security gate broke it in four ways.**
+    `q=0.0000`, `q=00`, `q=0.` and `q=Q=0`-cased all named a zero weight and all served HTML,
+    because the set held `{"0", "0.0", "0.00", "0.000"}` and the name match was case-sensitive.
+    RFC 9110 makes a parameter name case-insensitive, so `Q=0` was a valid refusal being
+    ignored. The failure direction was benign - a non-browser client receiving markup that
+    carries the full Content-Security-Policy - but a function that does not do what its docstring
+    asserts is a control nobody can rely on, and the four spellings were an enumeration of a
+    numeric domain, which is a shape that is always incomplete.
+    #: Parsed as a NUMBER now, with the conversion guarded: a malformed weight is not a refusal,
+    #: because a client that sent `q=banana` has not refused anything. Only the parameter whose
+    #: casefolded name is `q` is read, and only the first, which is what the grammar allows.
+    """
+    for parameter in parameters.split(";"):
+        name, _, value = parameter.partition("=")
+        if name.strip().casefold() != "q":
+            continue
+        try:
+            return float(value.strip()) <= 0.0
+        except ValueError:
+            return False
+    return False
 
 
 def wants_markup(accept: str | None) -> bool:
@@ -252,9 +314,7 @@ def wants_markup(accept: str | None) -> bool:
         media, _, parameters = part.strip().partition(";")
         if media.strip().lower() != "text/html":
             continue
-        weights = [p.strip() for p in parameters.split(";") if p.strip().startswith("q=")]
-        refused = bool(weights) and weights[0][2:].strip() in ZERO_WEIGHTS
-        return not refused
+        return not _refuses_html(parameters)
     return False
 
 
@@ -275,14 +335,11 @@ def _register_interface(app: FastAPI) -> None:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "not_found", "message": "No such interface file."},
             )
-        try:
-            body = await asyncio.to_thread((_UI_DIRECTORY / filename).read_text, encoding="utf-8")
-        except OSError as exc:
-            log_event("ui.asset_unavailable", filename=filename, errno=exc.errno)
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={"error": "ui_unavailable", "message": "An interface file is missing."},
-            ) from None
+        body = await _ui_text(
+            _UI_DIRECTORY / filename,
+            event="ui.asset_unavailable",
+            message="An interface file is missing.",
+        )
         return Response(content=body, media_type=media_type, headers=_UI_HEADERS)
 
     @app.get("/ui", response_class=HTMLResponse)

@@ -447,7 +447,21 @@ def _install_rate_limit(app: FastAPI, runtime: _Runtime) -> None:
     async def limit(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        limited = request.url.path not in UNLIMITED_PATHS
+        #: **The exemption is on the BRANCH, not on the path.** `/` is exempt because the
+        #: platform probes it and a 429 there reads as unhealthy - and that reasoning covers the
+        #: 58-byte JSON body a probe receives, not the 34 kB interface document V0.27.9 put
+        #: behind the same path. Measured by the security gate: 400 unauthenticated
+        #: `GET / -H 'Accept: text/html'` all answered 200 with no 429, a 589-fold body
+        #: amplification on an unmetered path with `cache-control: no-store` forcing every
+        #: request to the origin, while the identical resource at `/ui` was throttled correctly.
+        #:
+        #: Safe for the health contract by construction, and checked rather than asserted: all
+        #: five probe paths and `/` with no header, `*/*`, `application/json` or `text/plain`
+        #: take the JSON branch, so a limiter on the markup branch can never 429 a kubelet. Only
+        #: a caller that NAMES `text/html` - a browser - is metered.
+        limited = request.url.path not in UNLIMITED_PATHS or wants_markup(
+            request.headers.get("accept")
+        )
         if limited and not runtime.coarse.allow(_client_key(request)):
             return JSONResponse(
                 {"error": RATE_LIMITED_MESSAGE},

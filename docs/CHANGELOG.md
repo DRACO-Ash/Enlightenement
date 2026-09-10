@@ -2,6 +2,82 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.13 (2026-09-10)
+
+**What.** The `security-reviewer` gate returned FAIL with one MAJOR and three MINOR findings, and
+it was scoped across the whole V0.27.x range rather than one diff, because **neither binding gate
+had run against any of the twelve releases in that series.** All four are closed.
+
+**The MAJOR is a denial-of-service surface I opened at V0.27.9 and it was measured, not
+theorised.** `UNLIMITED_PATHS` contains `/` because the platform probes it and a 429 there reads
+as unhealthy. That reasoning is sound for a dependency-free 58-byte JSON reply. V0.27.9 put the
+34 kB interface document behind the same path and revisited neither the exemption nor the register
+row, which went on claiming the security property was Content-Security-Policy parity and said
+nothing about metering. The gate measured both halves:
+
+● 400 unauthenticated `GET /` with `Accept: text/html` all answered 200 with **no 429**, while
+  the identical resource at `/ui` gave 240 × 200 plus 60 × 429. A 58-byte reply became a
+  34,157-byte one on an unmetered path, and `cache-control: no-store` forces every request to the
+  origin: 589-fold body amplification.
+● `interface_response` read the file through `asyncio.to_thread`, which uses the DEFAULT executor
+  -  the same one the store's own work runs in. 64 concurrent floods, 2,225 unlimited requests,
+  took a legitimate anonymous `GET /api/v1/sessions` from 0.95 ms to 81.99 ms at the median.
+  85.9 times slower. That is exactly the starvation class `probe_pool` exists to prevent, and
+  this file already records that fault at 1.4 ms to 109 ms.
+
+**Fixed twice over, and the second fix is not the one the gate proposed.** The limiter's exemption
+is now on the BRANCH rather than the path: `request.url.path not in UNLIMITED_PATHS or
+wants_markup(...)`, so only a caller that NAMES `text/html` is metered. Safe for the health
+contract by construction and asserted rather than argued - every probe path and `/` with no
+header, `*/*`, `application/json` or `text/plain` takes the JSON branch, so the limiter cannot
+429 a kubelet, and the test drives the probe branch AFTER the markup branch has already been
+throttled from the same client key, because that ordering is the property.
+
+For the starvation the gate proposed a dedicated single-worker executor, which is the right shape
+for `probe_pool` and the wrong shape here. A probe must actually touch the volume every time; the
+interface files are IMMUTABLE - baked into the image, read-only at runtime, identical on every
+request - so they are read once per process and held. That does not bound the starvation, it
+removes it: the flood above becomes one read per file for the life of the container, and it needs
+no lifespan release to get right. Only SUCCESS is cached, so the 503 branch stays reachable and a
+transient unreadable mount is re-attempted rather than remembered as broken for the life of the
+process.
+
+**The three MINOR findings.**
+● `ZERO_WEIGHTS` was a set of four literal spellings with a case-sensitive parameter name, and
+  the gate broke it four ways: `q=0.0000`, `q=00`, `q=0.` and `Q=0` all named a refusal and all
+  served HTML. RFC 9110 makes a parameter name case-insensitive, so `Q=0` was a valid refusal
+  being ignored. Enumerating four spellings of a NUMBER is a shape that is always incomplete, so
+  the weight is parsed numerically with the conversion guarded - `q=banana` refuses nothing.
+  Seven new rows on the negotiation table, four of which are the gate's own counterexamples.
+● The full verbatim 23-column schema of a named commercial product was in
+  `docs/PLOT-REALISM.md`, and `docs/` ships in the upload artefact, so that data model would go
+  to the App Store with the application. **Withdrawn pending an owner decision**, which is stated
+  in the file by name rather than settled by inference: the columns are named in prose because the
+  inventory is the point, and the exact spellings are needed for nothing here.
+● The same file named an individual by first name as the supplier and custodian of live
+  operational products. All five instances are changed to the role, not only the two the gate
+  found: fixing half of an identical disclosure is worse than either option.
+
+**What the gate confirmed rather than found, and it is worth recording.** 28 `Accept` spellings
+all carried the full policy on the HTML branch and left the JSON byte-identical; 16
+traversal and encoding probes on `/ui/{filename}` all 404; the token comparison holds under nine
+cases including an off-by-one length; every CORS wildcard spelling refuses to start; the two
+limiter buckets are genuinely separate; `__proto__` and five other mass-assignment keys all 422;
+log injection is stripped and capped; the token is absent from every served surface and from
+history. On the question this series turned on: **no transcribed drift-rate value survives
+anywhere, including in the branch history.** The only three-decimal figures introduced in all of
+V0.27.x are two measured outputs of this project's own synthetic renderer, quoted in a comment.
+
+**How verified.** Four mutations, each reproducing a finding before the fix: restoring the
+path-based exemption fails the metering test; metering EVERY path fails both it and
+`test_probe_paths_are_never_rate_limited`, which is the worse failure and had to be bound too;
+restoring the literal weight set fails four parametrised rows by name; caching a failure
+alongside a success fails the fail-closed test. That last mutation **survived the first version
+of its own test**, which pointed the resolver at a path that never existed and then restored the
+real one - so the cached failure sat under the missing path while recovery read the real file. It
+has to be ONE path that fails and then succeeds, which is what a transient unreadable mount
+actually looks like. Verification loop PASS on all eight legs.
+
 ## V0.27.12 (2026-09-10)
 
 **What.** The engineering gate returned PASS on V0.27.11 with four MINOR findings left standing.
