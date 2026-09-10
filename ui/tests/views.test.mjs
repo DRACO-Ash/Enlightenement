@@ -153,7 +153,7 @@ test('the drill view draws the served stimulus, its table and its legend', async
   //: The time axis is labelled with the SEED's timestamps, never bare numbers: a day number
   //: cannot be correlated against a pass schedule, which is what an operator does with a time
   //: axis. The tick labels come straight off the payload.
-  const text = frames[0].querySelectorAll('text').map((node) => node.textContent);
+  const text = [...frames[0].querySelectorAll('text')].map((node) => node.textContent);
   assert.ok(text.some((label) => /Jun \d\d:\d\dZ/.test(label)), JSON.stringify(text));
   //: And the refit ran: it is scheduled inside a frame callback, which the harness invokes.
   assert.ok(frames[0].getAttribute('viewBox'), 'the frame never got a viewBox');
@@ -419,6 +419,322 @@ test('the library lists the procedures, filters them, and opens one', async () =
   assert.match(harness.element('library-body').textContent, /PROC-MNV/);
 });
 
+/* ---------------------------------------------------------------- the procedure flow
+ * The Library redesign, V0.28.0. What it replaced rendered `Object.entries(procedure)` through
+ * `JSON.stringify`, and the test above asserted `/PROC-MNV/` and nothing else - so a text dump
+ * and a flow chart pass it identically. These are the assertions that tell them apart. */
+
+const FLOW = PROCEDURE.procedure;
+
+async function opened() {
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  harness.app.openProcedure(FLOW.id);
+  await harness.settle();
+  return harness;
+}
+
+test('a library card shows the shape of the work before any of its prose', async () => {
+  //: An operator choosing between thirteen procedures reads the SHAPE first: how much work, how
+  //: much judgement, how many products they will have to open, whether it hands over. Those four
+  //: counts are derived server-side, because the interface holds the index and not the documents
+  //: and could only compute them by fetching all thirteen - the content-sized body that index
+  //: exists to avoid.
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  const cards = harness.element('library-grid').children;
+  assert.equal(cards.length, PROCEDURES.count);
+
+  const entry = PROCEDURES.procedures.find((row) => row.id === FLOW.id);
+  assert.ok(entry, `${FLOW.id} is not in the index fixture`);
+  for (const field of ['steps', 'decisions', 'stops', 'onward']) {
+    assert.equal(typeof entry[field], 'number', `the index fixture lost ${field}`);
+  }
+  const card = cards.find((node) => node.textContent.includes(FLOW.id));
+  const text = card.textContent;
+  //: Read off the FIXTURE, so the card cannot drift away from the index that feeds it.
+  assert.ok(text.includes(`${entry.steps}`) && text.includes('steps'), text);
+  assert.ok(text.includes(entry.decisions === 1 ? 'decision' : 'decisions'), text);
+  assert.ok(text.includes(entry.stops === 1 ? 'stop' : 'stops'), text);
+  assert.ok(text.includes(`${entry.onward} onward`), text);
+
+  //: The preview strip: one node per step and decision, capped, plus the closure cap. Squares
+  //: and diamonds in the same vocabulary the map inside the procedure uses, so the two teach
+  //: each other rather than being two notations for one idea.
+  const strip = [...card.querySelectorAll('div')].find((node) => node.classList.contains('strip'));
+  assert.ok(strip, 'a card rendered no preview strip');
+  const gems = strip.children.filter((node) => node.classList.contains('gem')).length;
+  const boxes = strip.children.filter((node) => node.classList.contains('box')).length;
+  assert.equal(strip.children.filter((node) => node.classList.contains('cap')).length, 1);
+  assert.ok(gems > 0 && gems <= entry.decisions, `${gems} diamonds for ${entry.decisions} decisions`);
+  assert.ok(boxes > 0, 'the strip drew no steps');
+  //: **Capped, and it SAYS it is capped.** A 21-step procedure at full length is a hairline of
+  //: 12px squares nobody can count, so past the cap the strip draws a remainder rather than
+  //: quietly drawing a shorter procedure than the one on the card.
+  const long = PROCEDURES.procedures.reduce((a, b) => (a.steps + a.decisions > b.steps + b.decisions ? a : b));
+  const longCard = cards.find((node) => node.textContent.includes(long.id));
+  const longStrip = [...longCard.querySelectorAll('div')].find((node) => node.classList.contains('strip'));
+  const nodes = longStrip.children.filter((n) => n.classList.contains('box') || n.classList.contains('gem')).length;
+  if (long.steps + long.decisions > nodes) {
+    const more = longStrip.children.find((node) => node.classList.contains('more'));
+    assert.ok(more, `${long.id} folded its strip silently`);
+    assert.equal(more.textContent, `+${long.steps + long.decisions - nodes}`);
+  }
+
+  //: Status is a dot AND a word here too, never colour alone.
+  const mast = [...card.querySelectorAll('span')].find((node) => node.classList.contains('mast'));
+  assert.ok(mast.children.some((node) => node.classList.contains('dot')), 'no status dot');
+  assert.ok(mast.textContent.includes(entry.status), mast.textContent);
+});
+
+test('a procedure renders as a flow and never as a serialised object', async () => {
+  const harness = await opened();
+  const body = harness.element('library-body');
+  const text = body.textContent;
+
+  //: **The fault this replaced, asserted directly.** `JSON.stringify(value, null, 1)` leaves
+  //: braces, quoted keys and bracketed arrays in operator-facing prose. None may appear.
+  for (const artefact of ['{', '}', '["', '"n":', 'threshold_ref', 'goto_procedure']) {
+    assert.ok(!text.includes(artefact), `the dump artefact ${artefact} reached the operator`);
+  }
+  //: And the key names are rendered as WORDS. `key.replaceAll('_', ' ')` produced "not this
+  //: procedure when" as a heading, which is a field name with the underscores taken out.
+  assert.ok(!text.includes('not this procedure when'));
+  assert.match(text, /Not this procedure when/);
+
+  //: Every step's action is REACHABLE, so nothing is lost to the redesign. Reachable and not
+  //: merely present: the fold hides five of the eight until asked, which is the design and not
+  //: a loss, so the fold is opened first. Asserting against the initial render would have been
+  //: asserting that the fold does not work.
+  const rail = [...body.querySelectorAll('button')].find((node) => node.classList.contains('fold'));
+  assert.ok(rail, 'the fixture no longer folds, so this reads only part of the flow');
+  rail.fire('click');
+  const whole = body.textContent;
+  for (const step of FLOW.steps) {
+    assert.ok(whole.includes(step.action), `step ${step.n} lost its action`);
+  }
+  //: And the reporting block, which is an OBJECT in the content and rendered as
+  //: `[object Object]` in the first draft of this view.
+  assert.ok(!whole.includes('[object Object]'), 'a field reached the operator unrendered');
+  for (const must of FLOW.reporting.must_state) {
+    assert.ok(whole.includes(must), `the report requirement "${must}" was dropped`);
+  }
+  assert.ok(whole.includes(FLOW.reporting.time_standard));
+  //: `verbal_required: false` must render as WORDS. Under a truthiness test it printed nothing,
+  //: so "no verbal report needed" and "the content is silent" looked identical on the page, and
+  //: they are different instructions.
+  assert.match(whole, /Verbal.*(required|not required)/);
+});
+
+test('the exclusions sit above the flow, not buried under the reporting rules', async () => {
+  const harness = await opened();
+  const text = harness.element('library-body').textContent;
+  //: The most useful paragraph on the page was LAST in the dump, below the reporting rules,
+  //: where an operator deciding whether they are even in the right procedure never reached it.
+  const exclusions = text.indexOf('Not this procedure when');
+  const flow = text.indexOf('The flow');
+  const reporting = text.indexOf('Reporting');
+  assert.ok(exclusions > 0 && flow > 0 && reporting > 0, JSON.stringify({ exclusions, flow, reporting }));
+  assert.ok(exclusions < flow, 'the exclusions are below the flow');
+  assert.ok(exclusions < reporting, 'the exclusions are below the reporting rules');
+  //: ANY at one end and ALL at the other, stated in the heading rather than left to a bullet.
+  assert.match(text, /Enter when any of these/);
+  assert.match(text, /Close when all of these/);
+});
+
+test('every marker carries a word and a glyph, never colour alone', async () => {
+  const harness = await opened();
+  const body = harness.element('library-body');
+
+  //: A monochrome print and a screen must read identically, so each marker is a GLYPH plus a
+  //: WORD and the colour is the third carrier. Asserted structurally: every `.mk` row holds an
+  //: svg and a `.word` with text in it.
+  const rows = [...body.querySelectorAll('div')].filter((node) => node.classList.contains('mk'));
+  assert.ok(rows.length > 0, 'no marker rendered at all');
+  for (const row of rows) {
+    assert.equal(row.querySelectorAll('svg').length >= 1, true, 'a marker has no glyph');
+    const word = [...row.querySelectorAll('div')].find((node) => node.classList.contains('word'));
+    assert.ok(word && word.textContent.trim().length > 0, 'a marker has no word');
+  }
+
+  //: And the marker classes the FIXTURE actually carries are the ones that appear. Counted from
+  //: the content rather than hardcoded, so a fixture change fails this instead of passing.
+  const text = body.textContent;
+  const expected = [
+    [FLOW.steps.filter((s) => s.products && s.products.length).length, /Stop — read the product/g],
+    [FLOW.steps.filter((s) => s.threshold_ref).length, /Threshold/g],
+    [FLOW.steps.filter((s) => s.common_error).length, /Common error/g],
+    [FLOW.steps.filter((s) => s.why).length, /Why/g],
+  ];
+  for (const [count, pattern] of expected) {
+    assert.ok(count > 0, `the fixture carries no ${pattern} marker, so this asserts nothing`);
+  }
+  //: **Opened first**, because the fold is doing its job: two of the fixture's markers sit on
+  //: folded steps, so asserting them against the initial render was asserting that the fold does
+  //: not work. This test is about the markers; the fold has its own.
+  const rail = [...body.querySelectorAll('button')].find((node) => node.classList.contains('fold'));
+  if (rail) rail.fire('click');
+  const whole = body.textContent;
+
+  //: The threshold names what to look up and does NOT invent a value to fill the space.
+  for (const step of FLOW.steps.filter((s) => s.threshold_ref)) {
+    assert.ok(whole.includes(step.threshold_ref), `threshold ${step.threshold_ref} was dropped`);
+  }
+  //: A step that names a product renders the product id, because the step cannot be completed
+  //: from its text alone: it names a plot the operator has to actually look at.
+  for (const step of FLOW.steps.filter((s) => s.products && s.products.length)) {
+    for (const product of step.products) assert.ok(whole.includes(product), product);
+  }
+});
+
+test('the map counts what the content actually carries', async () => {
+  const harness = await opened();
+  const text = harness.element('library-body').textContent;
+  const stops = FLOW.steps.filter((s) => s.products && s.products.length).length;
+  const jumps = FLOW.decision_points.reduce(
+    (total, point) => total + point.branches.filter((b) => b.goto_procedure).length, 0,
+  );
+  //: Derived from the fixture, so the tally cannot drift away from the procedure it describes.
+  assert.ok(text.includes(`${FLOW.steps.length} steps`), text.slice(0, 400));
+  assert.ok(text.includes(`${FLOW.decision_points.length} decisions`));
+  assert.ok(text.includes(`${stops} stops`));
+  assert.ok(text.includes(jumps === 1 ? '1 onward link' : `${jumps} onward links`));
+});
+
+test('a long procedure folds its middle, names what is inside, and opens on request', async () => {
+  const harness = await opened();
+  const body = harness.element('library-body');
+  //: Scoped to the FIRST `.flow`, which is the steps. The decision track is a second `.flow` of
+  //: `.leg` rows, so counting legs across the whole body counted 8 steps plus 3 decisions and
+  //: reported 11 against an expected 8 - the test measuring the wrong thing, not the code.
+  const stepFlow = () => [...body.querySelectorAll('div')].filter((node) => node.classList.contains('flow'))[0];
+  const legs = () => stepFlow().children.filter((node) => node.classList.contains('leg'));
+
+  //: The fixture carries eight steps against a fold threshold of six, so the flow arrives as
+  //: two steps, the folded rail, and the last step. A flow nobody scrolls to the end of is a
+  //: flow nobody reads, which is what a 21-step procedure rendered whole.
+  const folded = [...body.querySelectorAll('button')].find((node) => node.classList.contains('fold'));
+  assert.ok(folded, 'nothing folded at eight steps against a threshold of six');
+  assert.match(folded.textContent, /5 steps folded/);
+  //: **Named, not just counted.** "Five steps folded" tells an operator nothing about whether
+  //: the part they need is inside, so the rail carries the first clause of each folded action.
+  const middle = FLOW.steps.slice(2, FLOW.steps.length - 1);
+  for (const step of middle) {
+    const clause = step.action.split(/[.;]/)[0].slice(0, 40);
+    assert.ok(folded.textContent.includes(clause), `the rail does not name step ${step.n}`);
+  }
+  const beforeOpen = legs().length;
+
+  folded.fire('click');
+  //: Opened, every step is on the spine and the rail is gone.
+  assert.equal(legs().length, FLOW.steps.length, `expected ${FLOW.steps.length} legs`);
+  assert.ok(legs().length > beforeOpen);
+  assert.ok(![...body.querySelectorAll('button')].some((node) => node.classList.contains('fold')));
+  for (const step of FLOW.steps) {
+    assert.ok(body.textContent.includes(step.action), `step ${step.n} missing after opening`);
+  }
+});
+
+test('the decision track says out loud that the content does not place the decisions', async () => {
+  const harness = await opened();
+  const text = harness.element('library-body').textContent;
+  //: **The one refusal in this design.** The content ORDERS decision points but does not bind
+  //: them to a step number, so a diamond between step 6 and step 7 would be inventing a
+  //: sequence nobody authored. The decisions keep their own track and the page says why.
+  assert.match(text, /does not bind them to a step/);
+  for (const point of FLOW.decision_points) {
+    assert.ok(text.includes(point.id), `${point.id} is not on the page`);
+    assert.ok(text.includes(point.question), `${point.id} lost its question`);
+    for (const branch of point.branches) {
+      assert.ok(text.includes(branch.condition), `${point.id} lost a condition`);
+      assert.ok(text.includes(branch.then), `${point.id} lost a consequence`);
+    }
+  }
+  //: A decision is the one marker that is not an instruction, so it is framed as a judgement.
+  assert.match(text, /stop · think · then choose/);
+});
+
+test('a branch that names another procedure navigates to it', async () => {
+  const harness = await opened();
+  const body = harness.element('library-body');
+  const jump = [...body.querySelectorAll('button')].find((node) => node.classList.contains('goto'));
+  //: The content names the procedure a branch hands over to, so the chip NAVIGATES rather than
+  //: describing it: the thirteen procedures form a graph and this is the only edge in it.
+  const target = FLOW.decision_points
+    .flatMap((point) => point.branches)
+    .find((branch) => branch.goto_procedure).goto_procedure;
+  assert.ok(jump, 'a branch names a procedure and rendered no way to reach it');
+  assert.match(jump.textContent, new RegExp(target));
+  //: And it carries the target's NAME from the index, not only its id: an operator choosing a
+  //: branch under pressure should not have to remember what PROC-RPO stands for.
+  const named = PROCEDURES.procedures.find((entry) => entry.id === target);
+  if (named) assert.ok(jump.textContent.includes(named.name), jump.textContent);
+
+  jump.fire('click');
+  await harness.settle();
+  //: Asserted on the REQUEST, because the stub serves one fixture for every id, so asserting on
+  //: the rendered body would pass even if the click navigated nowhere.
+  const asked = harness.calls.map((call) => call.path);
+  assert.ok(
+    asked.some((path) => path.includes(encodeURIComponent(target))),
+    `no request for ${target}: ${JSON.stringify(asked)}`,
+  );
+});
+
+test('a procedure replaces the index rather than stacking below it', async () => {
+  //: **The library is TWO screens.** The first draft of this redesign appended the flow beneath
+  //: the card grid, so opening a procedure put 5,900 pixels of it under thirteen cards and an
+  //: operator scrolled past the whole library to reach the step they came for. Every test passed
+  //: and the rendered page said otherwise, which is why this assertion exists: it failed against
+  //: nothing, so nothing was holding the design's own two-screen shape.
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  const index = harness.element('library-index');
+  assert.equal(index.hidden, false, 'the index is hidden before a procedure is even opened');
+
+  harness.app.openProcedure(FLOW.id);
+  await harness.settle();
+  //: `hidden` and not a class, so it is hidden from assistive technology too rather than merely
+  //: painted away - a screen reader walking a hidden grid is the same defect one sense along.
+  assert.equal(index.hidden, true, 'the card index is still on the page under the flow');
+
+  const back = [...harness.element('library-body').querySelectorAll('button')]
+    .find((node) => node.textContent === 'Back to the library');
+  assert.ok(back, 'a procedure opens with no way back to the index');
+  back.fire('click');
+  //: Back restores the index and repaints the grid, and the body is emptied so a stale flow
+  //: cannot sit under the cards.
+  assert.equal(index.hidden, false);
+  assert.equal(harness.element('library-grid').children.length, PROCEDURES.count);
+  assert.equal(harness.element('library-body').children.length, 0);
+});
+
+test('re-entering the library shows the index even if a procedure was left open', async () => {
+  //: Without the reset in `loadLibrary`, opening a procedure and then navigating away and back
+  //: left the view completely blank: the flow was cleared and the index was still hidden, so the
+  //: library had nothing in it at all. A blank view reads as a failed load.
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  harness.app.openProcedure(FLOW.id);
+  await harness.settle();
+  assert.equal(harness.element('library-index').hidden, true);
+
+  harness.app.show('drill');
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  assert.equal(harness.element('library-index').hidden, false, 'the library came back blank');
+  assert.equal(harness.element('library-grid').children.length, PROCEDURES.count);
+});
+
 test('a library fetch that fails does not leave the view looking empty', async () => {
   const harness = booted({
     ...ROUTES,
@@ -439,8 +755,7 @@ test('switching views hides the others and marks the current one for a screen re
   for (const name of ['drill', 'progress', 'library', 'session']) {
     harness.app.show(name);
     await harness.settle();
-    const current = harness.document
-      .querySelectorAll('#nav button')
+    const current = [...harness.document.querySelectorAll('#nav button')]
       .filter((button) => button.getAttribute('aria-current') === 'page');
     assert.equal(current.length, 1, `${name}: exactly one control is current`);
     assert.equal(current[0].getAttribute('data-view'), name);

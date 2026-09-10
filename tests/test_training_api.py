@@ -656,7 +656,20 @@ def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClie
     assert payload["count"] == len(payload["procedures"])
     assert payload["procedures"], "the index is empty, so this test measures nothing"
     for entry in payload["procedures"]:
-        assert set(entry) == {"id", "name", "status", "purpose", "regime", "steps"}, sorted(entry)
+        assert set(entry) == {
+            "id",
+            "name",
+            "status",
+            "purpose",
+            "regime",
+            "steps",
+            #: Added at V0.28.0 for the library card's preview strip and stats footer. All three
+            #: are COUNTS derived from lists the author wrote, never authored figures, so the
+            #: index still inlines no document - see the `int` assertions below.
+            "decisions",
+            "stops",
+            "onward",
+        }, sorted(entry)
         assert len(entry["id"]) <= MAX_CONTENT_STRING, entry["id"]
         assert len(entry["name"]) <= MAX_CONTENT_STRING, entry["name"]
         #: A LIST, bounded in count and per entry. It was a string, and `capped` put a
@@ -668,8 +681,19 @@ def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClie
             assert len(regime) <= MAX_CONTENT_STRING, regime
         assert len(entry["purpose"]) <= MAX_SERVED_PROSE, entry["id"]
         #: A count, not the steps. If this ever becomes a list the index has swallowed the
-        #: documents and the size ceiling below is the only thing left holding it.
-        assert isinstance(entry["steps"], int), entry["id"]
+        #: documents and the size ceiling below is the only thing left holding it. Every one of
+        #: the four, for the same reason and one more: `len()` over a mapping counts its keys and
+        #: over a string counts its characters, so a shape fault here answers 200 with a
+        #: plausible number rather than failing, which is the fault the step count already
+        #: carries a comment about.
+        for field in ("steps", "decisions", "stops", "onward"):
+            assert isinstance(entry[field], int), f"{entry['id']}: {field}"
+            assert not isinstance(entry[field], bool), f"{entry['id']}: {field} is a bool"
+            assert entry[field] >= 0, f"{entry['id']}: {field}"
+        #: A stop is a step, and an onward link is a branch of a decision, so neither can exceed
+        #: what it is counted over. Cheap, and it is the assertion that would have caught the
+        #: counts being taken from the wrong list.
+        assert entry["stops"] <= entry["steps"], entry["id"]
     assert len(body.content) <= MAX_ANONYMOUS_LIBRARY_BYTES, len(body.content)
 
 

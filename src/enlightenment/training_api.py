@@ -555,6 +555,29 @@ def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
         #: LIST, checked: `len()` over a mapping counted its keys and over a string counted its
         #: characters, and both answered 200 with a plausible number in place of a step count.
         steps = _authored_sequence(extra.get("steps"), procedure_id=identifier, field="steps")
+        decisions = _authored_sequence(
+            extra.get("decision_points"), procedure_id=identifier, field="decision_points"
+        )
+        #: A step that names a product is a STOP: it cannot be completed from its text alone.
+        #: Counted over the steps' own `products` lists, each one gated, because a step whose
+        #: `products` is a string would otherwise contribute its character count.
+        stops = sum(
+            1
+            for step in steps
+            if isinstance(step, dict)
+            and _authored_sequence(step.get("products"), procedure_id=identifier, field="products")
+        )
+        #: An ONWARD link is a branch naming another procedure, which is the only edge in the
+        #: graph the thirteen procedures form.
+        onward = sum(
+            1
+            for point in decisions
+            if isinstance(point, dict)
+            for branch in _authored_sequence(
+                point.get("branches"), procedure_id=identifier, field="branches"
+            )
+            if isinstance(branch, dict) and branch.get("goto_procedure")
+        )
         index.append(
             {
                 "id": served_identifier(identifier),
@@ -581,6 +604,21 @@ def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:
                     for entry in regimes[:MAX_SERVED_REGIMES]
                 ],
                 "steps": len(steps),
+                #: **The shape of the work, as COUNTS.** The library index renders a preview
+                #: strip and a stats footer per card, and an operator choosing between thirteen
+                #: procedures reads those before any prose: where the judgement is, how many
+                #: products they will have to open, whether the procedure hands over to another.
+                #:
+                #: Derived here rather than in the interface, because the interface holds the
+                #: index and not the documents - it could only get these by fetching all
+                #: thirteen, which is the content-sized body this index exists to avoid. Derived
+                #: and not authored, so nothing is invented: each is a length of a list the
+                #: author wrote, and each goes through `_authored_sequence` for the reason the
+                #: step count already does - `len()` over a mapping counts its keys and over a
+                #: string counts its characters, and both answer 200 with a plausible number.
+                "decisions": len(decisions),
+                "stops": stops,
+                "onward": onward,
             }
         )
     return index

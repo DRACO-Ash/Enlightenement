@@ -1021,6 +1021,80 @@ function renderLibraryChips() {
   }
 }
 
+/* The most nodes a card's preview strip will draw. A 21-step procedure at full length turns the
+ * strip into a hairline of 12px squares nobody can count, so past this it draws the first
+ * `PREVIEW_NODES` and says how many are behind them. The stats footer carries the real totals,
+ * so nothing is lost and nothing is implied. */
+const PREVIEW_NODES = 11;
+
+/* The shape of a procedure, at a glance, before any of its prose. Squares are steps, diamonds
+ * are decisions, and the filled cap is closure - the same vocabulary as the flow's own map, so
+ * the strip on the card and the map inside the procedure teach each other.
+ *
+ * The counts come from the INDEX route, which derives them server-side: the interface holds the
+ * index and not the documents, so it could only compute these by fetching all thirteen, which is
+ * the content-sized body that index exists to avoid. */
+function previewStrip(procedure) {
+  const strip = el('div', 'strip');
+  const steps = Number(procedure.steps) || 0;
+  const decisions = Number(procedure.decisions) || 0;
+  const total = steps + decisions;
+  if (!total) return strip;
+  const drawn = Math.min(total, PREVIEW_NODES);
+  /* Decisions are spread through the strip rather than bunched at the end, because the strip is
+   * about SHAPE - roughly where in the run of work the judgement falls - and the content does
+   * not bind a decision to a step, which is the same refusal the flow itself makes. It is a
+   * silhouette and not a claim about order, which is why the flow says so in words. */
+  const every = decisions ? Math.max(2, Math.round(drawn / (decisions + 1))) : 0;
+  /* Counted in a local, and that is not a style preference. The first version asked the strip
+   * itself - `strip.querySelectorAll('span').filter(...)` - which works in the test harness and
+   * THROWS in a browser: `querySelectorAll` returns a NodeList, which has no `.filter`. The
+   * whole library screen rendered as one error banner and all 56 interface tests passed. The
+   * harness has been corrected to return a NodeList-like so this class cannot pass again. */
+  let gems = 0;
+  for (let index = 0; index < drawn; index += 1) {
+    if (index) strip.appendChild(el('i', 'link'));
+    const isDecision = every > 0 && index > 0 && index % every === 0 && gems < decisions;
+    if (isDecision) gems += 1;
+    strip.appendChild(el('span', isDecision ? 'gem' : 'box'));
+  }
+  strip.appendChild(el('i', 'link end'));
+  strip.appendChild(el('span', 'cap'));
+  if (total > drawn) strip.appendChild(el('span', 'more', `+${total - drawn}`));
+  return strip;
+}
+
+/* The stats footer: how much work, how much judgement, how many products to open, and whether
+ * the procedure hands over. Four figures an operator reads before any prose when choosing
+ * between thirteen. Every one is a count the server derived from a list the author wrote. */
+function shapeStats(procedure) {
+  const row = el('div', 'shape');
+  const stat = (value, label, tone) => {
+    const cell = el('span', `stat${tone ? ` ${tone}` : ''}`);
+    cell.appendChild(el('b', null, String(value)));
+    cell.appendChild(el('span', null, label));
+    row.appendChild(cell);
+  };
+  const steps = Number(procedure.steps) || 0;
+  stat(steps, steps === 1 ? 'step' : 'steps');
+  /* Rendered only where the index actually carries the figure. An older index served `steps`
+   * alone, so a zero here would be indistinguishable from a field that is not there, and
+   * "0 decisions" is a claim about the procedure rather than about the payload. */
+  if (procedure.decisions !== undefined) {
+    stat(procedure.decisions, procedure.decisions === 1 ? 'decision' : 'decisions', 'judge');
+  }
+  if (procedure.stops !== undefined) {
+    stat(procedure.stops, procedure.stops === 1 ? 'stop' : 'stops', 'halt');
+  }
+  if (procedure.onward) {
+    const cell = el('span', 'stat onward');
+    cell.appendChild(glyph('onward', 13));
+    cell.appendChild(el('span', null, `${procedure.onward} onward`));
+    row.appendChild(cell);
+  }
+  return row;
+}
+
 function renderLibraryCards() {
   const grid = document.getElementById('library-grid');
   clear(grid);
@@ -1036,7 +1110,13 @@ function renderLibraryCards() {
     card.type = 'button';
     const top = el('div', 'top');
     top.appendChild(el('span', 'pid', procedure.id));
-    top.appendChild(el('span', 'mast', procedure.status || 'status unstated'));
+    /* Status as a dot AND a word. The dot is the quick scan across thirteen cards and the word
+     * is what carries when the dot cannot: the same rule the flow's markers hold. */
+    const mast = el('span', 'mast');
+    const settled = String(procedure.status || '').toLowerCase() === 'active';
+    mast.appendChild(el('i', settled ? 'dot on' : 'dot off'));
+    mast.appendChild(el('span', null, procedure.status || 'status unstated'));
+    top.appendChild(mast);
     card.appendChild(top);
     card.appendChild(el('h3', null, procedure.name || procedure.id));
     /* The AUTHORED purpose, which is what the card is for. No mastery percentage: the handoff
@@ -1054,8 +1134,8 @@ function renderLibraryCards() {
     } else if (procedure.regime !== undefined && procedure.regime !== null) {
       tags.appendChild(el('span', null, 'regime unreadable, TBC re-verify'));
     }
-    tags.appendChild(el('span', null,
-      `${procedure.steps} ${procedure.steps === 1 ? 'step' : 'steps'}`));
+    card.appendChild(previewStrip(procedure));
+    card.appendChild(shapeStats(procedure));
     card.appendChild(tags);
     card.addEventListener('click', () => openProcedure(procedure.id));
     grid.appendChild(card);
@@ -1071,31 +1151,492 @@ function renderLibraryCards() {
   }
 }
 
-/* One procedure, in full, fetched on demand from the route that serves the document. Rendered
- * as TEXT through `el`, never as markup: every value here is authored content and
- * `test_the_interface_never_writes_an_untrusted_value_as_markup` binds that. */
+/* ---------------------------------------------------------------- the procedure flow
+ * The Library, redesigned at V0.28.0. What stood here rendered `Object.entries(procedure)` and
+ * `JSON.stringify(value, null, 1)`, so a 21-step procedure arrived as one wall of text with the
+ * exclusions and the reporting rules at the bottom - the paragraph an operator most needs first,
+ * placed where they would reach it last.
+ *
+ * Everything below renders as TEXT through `el`, never as markup: every value is authored content
+ * and `test_the_interface_never_writes_an_untrusted_value_as_markup` binds that. The only markup
+ * this code constructs is the glyph geometry, which is a constant in this file. */
+
+/* The seven markers. Each is a GLYPH, a WORD and a COLOUR, in that order of authority: nothing
+ * in this library means anything by colour alone, so a monochrome print and a screen read
+ * identically. `test_every_marker_carries_a_word_and_a_glyph` binds it. */
+const GLYPHS = {
+  /* An octagon with a bang. Stop and read the named product before going on. */
+  stop: ['M7 2.2h6L17.8 7v6L13 17.8H7L2.2 13V7z', 'M10 6.4v4.2'],
+  /* A triangle with a bang. The mistake people actually make here, named. */
+  error: ['M10 2.6 18.4 17H1.6z', 'M10 7.6v4'],
+  /* A bar chart with no numbers on it: the content carries the threshold's NAME, never its value. */
+  threshold: ['M2.5 13h15', 'M6 13V8.5M10 13V5.5M14 13v-6'],
+  /* A circle with a bang. The reason the step exists, and the quietest marker by design. */
+  why: ['M10 9.2v4.4'],
+  /* A clock hand. The time standard the step is worked to. */
+  time: ['M10 5.6v4.8l3.2 2'],
+  /* An arrow. Onward, and the only marker that draws an edge between procedures. */
+  onward: ['M3 10h11', 'M10 6l4 4-4 4'],
+  /* A cross. Not this procedure - open the one it names instead. */
+  exclude: ['M5 5l10 10M15 5L5 15'],
+  /* A diamond. The judgement the operator has to make and own. */
+  decision: ['M10 2.4 17.6 10 10 17.6 2.4 10z'],
+  /* A tick. Closure. */
+  close: ['M4 10.5 L8 14.5 L16 5.5'],
+  /* A downward arrow: what follows from a branch. */
+  then: ['M10 3v11', 'M5.5 9.5 10 14l4.5-4.5'],
+};
+
+/* Markers whose glyph carries a filled dot for the bang. Drawn as a circle rather than a short
+ * stroke so it reads as a full stop at 18px, which a 1px line does not. */
+const DOTTED = { stop: [10, 13.6], error: [10, 14.4], why: [10, 6.4] };
+
+/* A marker's glyph at a given size and stroke colour. `currentColor` is deliberate: the stroke
+ * follows the marker's own text colour from the stylesheet, so the two cannot drift apart. */
+function glyph(name, size) {
+  const node = svg('svg', {
+    width: size, height: size, viewBox: '0 0 20 20', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': 1.8,
+    'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    'aria-hidden': 'true', focusable: 'false',
+  });
+  if (name === 'why') node.appendChild(svg('circle', { cx: 10, cy: 10, r: 7.6 }));
+  if (name === 'time') node.appendChild(svg('circle', { cx: 10, cy: 10, r: 7.6 }));
+  for (const d of GLYPHS[name] || []) node.appendChild(svg('path', { d }));
+  const dot = DOTTED[name];
+  if (dot) {
+    node.appendChild(svg('circle', { cx: dot[0], cy: dot[1], r: 0.9, fill: 'currentColor', stroke: 'none' }));
+  }
+  return node;
+}
+
+/* One marker row: glyph, word, then whatever the marker carries. `body` may be a paragraph of
+ * authored prose, a monospaced reference, or a row of product chips - the three shapes the
+ * content actually has. */
+function marker(kind, word, build) {
+  const row = el('div', `mk mk-${kind}`);
+  row.appendChild(glyph(kind, 18));
+  const hold = el('div', null);
+  hold.appendChild(el('div', 'word', word));
+  if (build) build(hold);
+  row.appendChild(hold);
+  return row;
+}
+
+/* The products a step names. A STOP, because the step cannot be completed from its text alone:
+ * it names a plot or a table the operator has to actually look at. */
+function stopMarker(products) {
+  return marker('stop', 'Stop — read the product before you go on', (hold) => {
+    const chips = el('div', 'products');
+    for (const product of products) chips.appendChild(el('span', null, product));
+    hold.appendChild(chips);
+  });
+}
+
+/* One step of the procedure, as a card on the spine. Every marker the step carries appears
+ * BESIDE the action rather than in a footnote nobody reaches. */
+function actionCard(step) {
+  const card = el('div', 'stepcard');
+  const doing = el('div', 'doing');
+  const who = el('div', 'who');
+  if (step.role) who.appendChild(el('span', 'rolechip', step.role));
+  who.appendChild(el('span', 'lab', 'acts'));
+  doing.appendChild(who);
+  doing.appendChild(el('p', 'action', step.action || ''));
+  card.appendChild(doing);
+  if (step.products && step.products.length) card.appendChild(stopMarker(step.products));
+  if (step.threshold_ref) {
+    card.appendChild(marker('threshold', 'Threshold', (hold) => {
+      /* The NAME, not the value: the operational figures live in a file that does not ship, so
+       * the marker names what to look up and does not invent a number to fill the space. */
+      hold.appendChild(el('span', 'ref', step.threshold_ref));
+    }));
+  }
+  if (step.time_standard) {
+    card.appendChild(marker('time', 'Time standard', (hold) => {
+      hold.appendChild(el('span', 'ref', step.time_standard));
+    }));
+  }
+  if (step.common_error) {
+    card.appendChild(marker('error', 'Common error', (hold) => {
+      hold.appendChild(el('p', null, step.common_error));
+    }));
+  }
+  if (step.why) {
+    card.appendChild(marker('why', 'Why', (hold) => hold.appendChild(el('p', null, step.why))));
+  }
+  return card;
+}
+
+/* One rung of the flow: the rail with its numbered node and the spine, then the body beside it. */
+function leg(rung, body, rungClass) {
+  const row = el('div', 'leg');
+  const rail = el('div', 'rail');
+  const node = el('div', `rung ${rungClass || ''}`.trim());
+  if (rungClass && rungClass.includes('gem')) node.appendChild(el('i', null));
+  else node.textContent = String(rung);
+  rail.appendChild(node);
+  rail.appendChild(el('div', 'spine'));
+  row.appendChild(rail);
+  const hold = el('div', 'body');
+  hold.appendChild(body);
+  row.appendChild(hold);
+  return row;
+}
+
+/* One decision. The only marker that is not an instruction: a judgement the operator makes and
+ * owns, so it carries the question, every condition, and what follows from each. */
+function decisionCard(point, onJump) {
+  const card = el('div', 'dec');
+  const ask = el('div', 'ask');
+  const top = el('div', 'asktop');
+  top.appendChild(glyph('decision', 15));
+  top.appendChild(el('span', 'word', point.id ? `Decision · ${point.id}` : 'Decision'));
+  top.appendChild(el('span', 'rubric', 'stop · think · then choose'));
+  ask.appendChild(top);
+  ask.appendChild(el('p', 'question', point.question || ''));
+  card.appendChild(ask);
+  const branches = el('div', 'branches');
+  for (const branch of point.branches || []) {
+    const arm = el('div', 'branch');
+    arm.appendChild(el('div', 'iff', 'If'));
+    arm.appendChild(el('p', 'cond', branch.condition || ''));
+    const thenRow = el('div', 'thenrow');
+    thenRow.appendChild(glyph('then', 14));
+    thenRow.appendChild(el('span', 'word', 'Then'));
+    arm.appendChild(thenRow);
+    arm.appendChild(el('p', 'then', branch.then || ''));
+    if (branch.goto_procedure) {
+      /* The content NAMES the procedure it hands over to, so this navigates there rather than
+       * describing it. The thirteen procedures form a graph, not a list. */
+      const jump = el('button', 'goto');
+      jump.type = 'button';
+      jump.appendChild(glyph('onward', 15));
+      jump.appendChild(el('span', 'lead', 'Go to'));
+      jump.appendChild(el('span', 'target', branch.goto_procedure));
+      const named = onJump.name(branch.goto_procedure);
+      if (named) jump.appendChild(el('span', 'naming', named));
+      jump.addEventListener('click', () => onJump.open(branch.goto_procedure));
+      arm.appendChild(jump);
+    }
+    branches.appendChild(arm);
+  }
+  card.appendChild(branches);
+  return card;
+}
+
+/* How many steps a procedure may carry before its middle folds. Six, so the eight-step case the
+ * design was drawn against folds to first two, rail, last one - and the thirteen procedures that
+ * are shorter than this open whole. Launch carries 21 steps and is the reason the fold exists at
+ * all: a flow nobody scrolls to the end of is a flow nobody reads. */
+const FOLD_ABOVE_STEPS = 6;
+const LEAD_STEPS = 2;
+const TAIL_STEPS = 1;
+
+/* The schematic map: the whole procedure on one line, before any of it is read in detail. Each
+ * step is a pip, and a pip carries a dot for each marker class on that step, so the shape of the
+ * work is visible at a glance - where the stops cluster, where the judgement sits. */
+function procedureMap(procedure) {
+  const steps = procedure.steps || [];
+  const decisions = procedure.decision_points || [];
+  const stops = steps.filter((step) => step.products && step.products.length).length;
+  const jumps = decisions.reduce(
+    (total, point) => total + (point.branches || []).filter((b) => b.goto_procedure).length, 0,
+  );
+  const wrap = el('div', 'procmap');
+  const head = el('div', 'maphead');
+  head.appendChild(el('span', 'lab', 'The whole procedure'));
+  head.appendChild(el('span', 'tally', [
+    `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`,
+    `${decisions.length} ${decisions.length === 1 ? 'decision' : 'decisions'}`,
+    `${stops} ${stops === 1 ? 'stop' : 'stops'}`,
+    `${jumps} ${jumps === 1 ? 'onward link' : 'onward links'}`,
+  ].join(' · ')));
+  wrap.appendChild(head);
+
+  const track = el('div', 'maptrack');
+  const cap = (name, word) => {
+    const node = el('div', 'mapnode');
+    const pip = el('div', 'pip');
+    pip.appendChild(glyph(name, 15));
+    node.appendChild(pip);
+    node.appendChild(el('div', 'flags'));
+    node.appendChild(el('span', 'caption', word));
+    return node;
+  };
+  track.appendChild(cap('onward', 'Enter'));
+  track.appendChild(el('div', 'maplink'));
+  steps.forEach((step, index) => {
+    const node = el('div', 'mapnode');
+    node.appendChild(el('div', `pip square${index < LEAD_STEPS ? '' : ' plain'}`, String(step.n ?? index + 1)));
+    const flags = el('div', 'flags');
+    /* One dot per marker class present, in the marker sheet's own order. A pip with three dots
+     * is a step that cannot be done from its text: read the product, mind the figure, avoid the
+     * error. Colour repeats the marker's colour and the dot count carries it without colour. */
+    if (step.products && step.products.length) flags.appendChild(el('i', 'f-stop'));
+    if (step.threshold_ref) flags.appendChild(el('i', 'f-threshold'));
+    if (step.common_error) flags.appendChild(el('i', 'f-error'));
+    node.appendChild(flags);
+    node.appendChild(el('span', 'caption', step.role || ''));
+    track.appendChild(node);
+    if (index < steps.length - 1) track.appendChild(el('div', 'maplink'));
+  });
+  if (decisions.length) {
+    track.appendChild(el('div', 'maplink'));
+    decisions.forEach((point, index) => {
+      const node = el('div', 'mapnode');
+      const pip = el('div', 'pip diamond');
+      pip.appendChild(el('i', null));
+      node.appendChild(pip);
+      node.appendChild(el('div', 'flags'));
+      node.appendChild(el('span', 'caption', point.id || `D${index + 1}`));
+      track.appendChild(node);
+      if (index < decisions.length - 1) track.appendChild(el('div', 'maplink'));
+    });
+  }
+  track.appendChild(el('div', 'maplink'));
+  track.appendChild(cap('close', 'Close'));
+  wrap.appendChild(track);
+  return wrap;
+}
+
+/* A list gate: the heading states ANY or ALL, because the difference is the whole meaning and
+ * leaving it to be inferred from a bullet is how the exclusions got ignored. */
+function gate(kind, glyphName, heading, items) {
+  const box = el('div', `gate ${kind}`);
+  const head = el('div', 'gatehead');
+  head.appendChild(glyph(glyphName, 15));
+  head.appendChild(el('span', null, heading));
+  box.appendChild(head);
+  const list = el('ul', null);
+  for (const item of items) list.appendChild(el('li', null, item));
+  box.appendChild(list);
+  return box;
+}
+
+/* The reporting block, which is an OBJECT and not a list. `[].concat(reporting)` wrapped the
+ * whole dict in an array and rendered it as `[object Object]` - a field name in operator-facing
+ * prose, which is the exact fault this redesign exists to remove, reintroduced by me while
+ * removing it. Caught by asserting on the rendered text rather than by looking at a screen.
+ *
+ * All thirteen procedures carry the same six keys: `notso_required`, `time_standard`,
+ * `must_state` (a list), `verbal_required` (a boolean), and `escalation` and `condition` on ten
+ * and six of them. Read by NAME, so a key the content adds shows up as absent here rather than
+ * as a stringified object on the page. */
+function reportingCap(reporting) {
+  const box = el('div', 'endcap report');
+  const head = el('div', 'gatehead');
+  head.appendChild(glyph('time', 15));
+  head.appendChild(el('span', null, 'Reporting'));
+  box.appendChild(head);
+
+  const facts = el('div', 'reportfacts');
+  const fact = (label, value) => {
+    const row = el('div', 'fact');
+    row.appendChild(el('span', 'lab', label));
+    row.appendChild(el('span', 'val', value));
+    facts.appendChild(row);
+  };
+  if (reporting.notso_required) fact('NOTSO', reporting.notso_required);
+  if (reporting.time_standard) fact('Time standard', reporting.time_standard);
+  /* A BOOLEAN rendered as a word. `verbal_required: false` printed nothing at all under a
+   * truthiness test, so "no verbal report needed" and "the content is silent" looked identical -
+   * and they are different instructions. */
+  if (typeof reporting.verbal_required === 'boolean') {
+    fact('Verbal', reporting.verbal_required ? 'required' : 'not required');
+  }
+  if (facts.children.length) box.appendChild(facts);
+
+  if (reporting.condition) {
+    box.appendChild(marker('threshold', 'Report when', (hold) => {
+      hold.appendChild(el('p', null, reporting.condition));
+    }));
+  }
+  if (reporting.escalation) {
+    box.appendChild(marker('error', 'Escalate when', (hold) => {
+      hold.appendChild(el('p', null, reporting.escalation));
+    }));
+  }
+  const must = [].concat(reporting.must_state || []);
+  if (must.length) {
+    box.appendChild(el('div', 'gatehead sub', 'The report must state'));
+    const list = el('ul', null);
+    for (const item of must) list.appendChild(el('li', null, item));
+    box.appendChild(list);
+  }
+  return box;
+}
+
+function endcap(kind, glyphName, heading, items) {
+  const box = el('div', `endcap ${kind}`);
+  const head = el('div', 'gatehead');
+  head.appendChild(glyph(glyphName, 15));
+  head.appendChild(el('span', null, heading));
+  box.appendChild(head);
+  const list = el('ul', null);
+  for (const item of items) list.appendChild(el('li', null, item));
+  box.appendChild(list);
+  return box;
+}
+
+/* The header: what this procedure is for, its status, and the regimes it applies in. */
+function procedureHeader(procedure) {
+  const head = el('div', 'prochead');
+  const lead = el('div', null);
+  lead.appendChild(el('div', 'lab', `Procedure · ${procedure.id || ''}`));
+  lead.appendChild(el('h2', null, procedure.name || procedure.id || ''));
+  if (procedure.purpose) lead.appendChild(el('p', 'purpose', procedure.purpose));
+  head.appendChild(lead);
+  const aside = el('div', 'aside');
+  if (procedure.status) {
+    /* `provisional` gets the warn tone rather than the good one, because a procedure that is not
+     * settled is a fact the operator needs before they work to it, not after. */
+    const provisional = String(procedure.status).toLowerCase() !== 'active';
+    const pill = el('span', `statuspill${provisional ? ' provisional' : ''}`);
+    pill.appendChild(glyph(provisional ? 'error' : 'close', 13));
+    pill.appendChild(el('span', null, procedure.status));
+    aside.appendChild(pill);
+  }
+  const regimes = [].concat(procedure.regime || []);
+  if (regimes.length) {
+    const row = el('div', 'regimes');
+    for (const regime of regimes) row.appendChild(el('span', null, regime));
+    aside.appendChild(row);
+  }
+  if (procedure.status_note) aside.appendChild(el('span', 'lab', procedure.status_note));
+  head.appendChild(aside);
+  return head;
+}
+
+/* The steps, with the middle folded when there are more than `FOLD_ABOVE_STEPS`. Folded, never
+ * hidden: the rail names how many are behind it, lists what they cover, and opens on a click. */
+function flowLegs(host, steps, expanded) {
+  const folding = steps.length > FOLD_ABOVE_STEPS && !expanded;
+  const shown = folding ? steps.slice(0, LEAD_STEPS) : steps;
+  for (const step of shown) {
+    const index = steps.indexOf(step);
+    host.appendChild(leg(step.n ?? index + 1, actionCard(step), index < LEAD_STEPS ? 'lead' : ''));
+  }
+  if (!folding) return;
+  const middle = steps.slice(LEAD_STEPS, steps.length - TAIL_STEPS);
+  const rail = el('button', 'fold');
+  rail.type = 'button';
+  rail.appendChild(el('span', 'count', `${middle.length} steps folded`));
+  /* Named rather than counted alone. "Five steps folded" tells an operator nothing about whether
+   * the part they need is inside; the actions do. */
+  rail.appendChild(el('span', 'gist', middle.map((step) => firstClause(step.action)).join(' · ')));
+  rail.appendChild(el('span', 'open', 'Open all'));
+  rail.addEventListener('click', () => {
+    const flow = host;
+    clear(flow);
+    flowLegs(flow, steps, true);
+  });
+  const first = middle[0];
+  host.appendChild(leg(
+    `${first ? first.n ?? LEAD_STEPS + 1 : ''}–${steps[steps.length - TAIL_STEPS - 1]?.n ?? ''}`,
+    rail, 'folded',
+  ));
+  for (const step of steps.slice(steps.length - TAIL_STEPS)) {
+    host.appendChild(leg(step.n ?? steps.indexOf(step) + 1, actionCard(step), ''));
+  }
+}
+
+/* The first clause of an action, for the folded rail. Cut at the first sentence end rather than
+ * at a character count, so the summary is a phrase the author wrote and not a truncation. */
+function firstClause(action) {
+  const text = String(action || '').trim();
+  const stop = text.search(/[.;]/);
+  const clause = stop > 0 ? text.slice(0, stop) : text;
+  return clause.length > 58 ? `${clause.slice(0, 57)}…` : clause;
+}
+
+/* One procedure, in full, fetched on demand from the route that serves the document. */
 async function openProcedure(procedureId) {
   const host = document.getElementById('library-body');
   clear(host);
   try {
-    const document_ = await api(`/api/v1/content/procedure/${encodeURIComponent(procedureId)}`);
-    const procedure = document_.procedure;
-    const scope = el('div', 'scope');
-    const head = el('div', 'scope-head');
-    head.appendChild(el('b', null, procedure.name || procedure.id));
-    head.appendChild(el('span', null, procedure.id));
-    head.appendChild(el('span', null, procedure.status || 'status unstated'));
-    scope.appendChild(head);
-    const panels = el('div', 'panels');
-    for (const [key, value] of Object.entries(procedure)) {
-      if (['id', 'name', 'status'].includes(key)) continue;
-      const panel = el('div', null);
-      panel.appendChild(el('p', 'panel-title', key.replaceAll('_', ' ')));
-      panel.appendChild(el('p', null, typeof value === 'string' ? value : JSON.stringify(value, null, 1)));
-      panels.appendChild(panel);
+    /* **The index is HIDDEN while a procedure is open**, because the library is two screens and
+     * not one stacked page. The first draft appended the flow below the grid, so opening a
+     * procedure put 5,900 pixels of it under thirteen cards and an operator had to scroll past
+     * the whole library to reach the step they came for. Every test passed; the page said
+     * otherwise. Hidden with `hidden` rather than a class, so it is hidden from assistive
+     * technology too and not merely painted away. */
+    document.getElementById('library-index').hidden = true;
+    const served = await api(`/api/v1/content/procedure/${encodeURIComponent(procedureId)}`);
+    const procedure = served.procedure;
+    const jumps = {
+      open: openProcedure,
+      name: (id) => (state.library.procedures.find((entry) => entry.id === id) || {}).name || '',
+    };
+    host.appendChild(procedureHeader(procedure));
+    host.appendChild(procedureMap(procedure));
+
+    const gates = el('div', 'gates');
+    const entry = [].concat(procedure.entry_conditions || []);
+    if (entry.length) {
+      gates.appendChild(gate('enter', 'onward', 'Enter when any of these', entry));
     }
-    scope.appendChild(panels);
-    host.appendChild(scope);
+    const exclusions = [].concat(procedure.not_this_procedure_when || []);
+    if (exclusions.length) {
+      /* **The exclusions are at the TOP.** They are the most useful paragraph on the page and
+       * the text dump had them last, under the reporting rules, where nobody reached them. */
+      gates.appendChild(gate('exclude', 'exclude', 'Not this procedure when', exclusions));
+    }
+    if (gates.childElementCount) host.appendChild(gates);
+
+    const steps = [].concat(procedure.steps || []);
+    if (steps.length) {
+      const head = el('div', 'flowhead');
+      head.appendChild(el('h3', null, 'The flow'));
+      head.appendChild(el('span', 'tally', `${steps.length} ${steps.length === 1 ? 'step' : 'steps'} · roles as authored`));
+      host.appendChild(head);
+      const flow = el('div', 'flow');
+      flowLegs(flow, steps, false);
+      host.appendChild(flow);
+    }
+
+    const decisions = [].concat(procedure.decision_points || []);
+    if (decisions.length) {
+      const head = el('div', 'flowhead');
+      head.appendChild(el('h3', null, 'The decisions'));
+      /* **The one refusal in this design, stated on the page rather than hidden.** The content
+       * orders decision points but does not bind them to a step number, so a diamond placed
+       * between step 6 and step 7 would be inventing a sequence the authors did not write. */
+      head.appendChild(el('span', 'tally', 'on their own track: the content does not bind them to a step'));
+      host.appendChild(head);
+      const track = el('div', 'flow');
+      decisions.forEach((point, index) => {
+        track.appendChild(leg(index + 1, decisionCard(point, jumps), 'gem'));
+      });
+      host.appendChild(track);
+    }
+
+    const reporting = procedure.reporting;
+    if (reporting && typeof reporting === 'object') host.appendChild(reportingCap(reporting));
+    const closure = [].concat(procedure.closure_criteria || []);
+    if (closure.length) {
+      host.appendChild(endcap('close', 'close', 'Close when all of these', closure));
+    }
+
+    const covers = [].concat(procedure.competency_ids || []).concat(procedure.sparta_ids || []);
+    if (covers.length) {
+      const note = el('div', 'procnote');
+      note.appendChild(el('div', 'lab', 'Trains'));
+      note.appendChild(el('p', null, covers.join(' · ')));
+      host.appendChild(note);
+    }
+
+    const back = el('div', 'backrow');
+    const button = el('button', 'act ghost');
+    button.type = 'button';
+    button.textContent = 'Back to the library';
+    button.addEventListener('click', () => {
+      clear(host);
+      document.getElementById('library-index').hidden = false;
+      renderLibraryCards();
+    });
+    back.appendChild(button);
+    host.appendChild(back);
     host.scrollIntoView({ block: 'nearest' });
   } catch (error) {
     banner(error.message);
@@ -1104,6 +1645,10 @@ async function openProcedure(procedureId) {
 
 async function loadLibrary() {
   clear(document.getElementById('library-body'));
+  /* Re-entering the view always shows the index. Without this, opening a procedure and then
+   * navigating away and back left the library blank: the flow was cleared and the index was
+   * still hidden, so the view had nothing in it at all. */
+  document.getElementById('library-index').hidden = false;
   try {
     const index = await api('/api/v1/content/procedures');
     state.library.procedures = index.procedures;

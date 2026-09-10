@@ -440,8 +440,267 @@
     padding: 3px 8px; border-radius: 5px; background: var(--surface-row-hi);
     font-family: var(--data); font-size: 10.5px; color: var(--ink-faint); white-space: nowrap;
   }
+  /* The card's flow preview and stats footer, V0.28.0. Squares are steps, diamonds decisions,
+   * the filled cap closure - the same vocabulary the map inside the procedure uses, so the two
+   * teach each other. Every figure is a count the server derived from a list the author wrote. */
+  .proc .mast { display: flex; align-items: center; gap: 5px; }
+  .proc .mast .dot { width: 6px; height: 6px; border-radius: 999px; display: block; flex: 0 0 auto; }
+  .proc .mast .dot.on { background: var(--good); }
+  .proc .mast .dot.off { background: var(--warn); }
+  .proc .strip { margin-top: 14px; display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+  .proc .strip .box {
+    width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-accent);
+    background: var(--surface-3); display: block; flex: 0 0 auto;
+  }
+  .proc .strip .gem {
+    width: 11px; height: 11px; transform: rotate(45deg); border: 1px solid var(--accent-hi);
+    display: block; flex: 0 0 auto;
+  }
+  .proc .strip .cap { width: 12px; height: 12px; border-radius: 3px; background: var(--accent-deep); display: block; flex: 0 0 auto; }
+  .proc .strip .link { flex: 0 0 4px; height: 1px; background: var(--border-strong); display: block; }
+  .proc .strip .link.end { background: var(--accent-deep); }
+  .proc .strip .more { font-family: var(--data); font-size: 9.5px; color: var(--ink-count); margin-left: 4px; }
+  .proc .shape {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-hair);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .proc .shape .stat { display: flex; align-items: baseline; gap: 5px; font-family: var(--data); font-size: 10.5px; color: var(--ink-label); }
+  .proc .shape .stat b { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+  .proc .shape .stat.judge b { color: var(--accent-hi); }
+  .proc .shape .stat.halt b { color: var(--warn); }
+  .proc .shape .stat.onward { margin-left: auto; align-items: center; color: var(--accent); }
   .proc.empty { border-style: dashed; border-color: var(--border-accent); cursor: default; }
   .proc.empty:hover { transform: none; border-color: var(--border-accent); }
+
+  /* ---------------------------------------------------------------- the procedure flow
+   * The Library, redesigned at V0.28.0. What stood here rendered `Object.entries(procedure)`
+   * as `JSON.stringify(value, null, 1)`, so a 21-step procedure arrived as one wall of text
+   * with the exclusions and the reporting rules buried at the bottom - the thing an operator
+   * most needs to read first, placed where they would reach it last.
+   *
+   * **Every marker carries a glyph, a word and a colour, and never colour alone**, so a
+   * monochrome print and a screen read identically. `test_every_marker_carries_a_word_and_a_glyph`
+   * binds that: colour is decoration on top of a label that already says it.
+   *
+   * One thing this design refuses to do. The content ORDERS decision points but does not bind
+   * them to a step number, so a diamond placed between step 6 and step 7 would be inventing a
+   * sequence nobody authored. The decisions keep their own track after the steps and the
+   * heading says so. When the content grows a step reference they move onto the spine and
+   * nothing else here changes. */
+  .prochead { display: flex; flex-wrap: wrap; gap: 18px 28px; justify-content: space-between; }
+  .prochead h2 {
+    margin: 8px 0 0; font-size: clamp(24px, 3.4vw, 34px); line-height: 1.14; font-weight: 700;
+    letter-spacing: -.015em;
+  }
+  .prochead .purpose {
+    margin: 13px 0 0; color: var(--ink-soft); font-size: 15px; max-width: 62ch;
+  }
+  .prochead .aside { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .lab {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--ink-label);
+  }
+  .statuspill {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px 5px 8px;
+    border: 1px solid var(--good-border); background: var(--good-bg); border-radius: var(--r-chip);
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--good);
+  }
+  .statuspill.provisional { border-color: var(--warn-border); background: var(--warn-bg-2); color: var(--warn); }
+  .regimes { display: flex; gap: 5px; flex-wrap: wrap; }
+  .regimes span {
+    font-family: var(--data); font-size: 10.5px; padding: 4px 8px; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--ink-muted); background: var(--surface-2);
+  }
+
+  /* The whole procedure at a glance. Horizontally scrollable on purpose: a 21-step procedure
+   * does not fit any width, and wrapping a flow into rows breaks the reading of it. */
+  .procmap {
+    margin-top: 28px; border: 1px solid var(--border); border-radius: var(--r-card);
+    background: var(--surface-2); overflow: hidden;
+  }
+  .procmap .maphead {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 13px 18px;
+    border-bottom: 1px solid var(--border-hair); background: var(--surface-nav);
+  }
+  .tally { font-family: var(--data); font-size: 11px; color: var(--ink-count); }
+  /* One dot per marker class on that step, in the marker sheet's own order. Colour REPEATS the
+   * marker's colour and never carries alone: the dot COUNT says how loaded a step is without it,
+   * and the step card below spells every marker out in words. */
+  .mapnode .flags i.f-stop { background: var(--warn); }
+  .mapnode .flags i.f-threshold { background: var(--accent); }
+  .mapnode .flags i.f-error { background: var(--bad); }
+  .maptrack { padding: 22px 18px 18px; display: flex; align-items: center; overflow-x: auto; }
+  .mapnode { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 0 0 auto; }
+  .mapnode > .pip {
+    width: 30px; height: 30px; border-radius: 999px; border: 1.5px solid var(--accent-border);
+    background: var(--accent-wash); display: flex; align-items: center; justify-content: center;
+    font-family: var(--data); font-size: 12px; font-weight: 700; color: var(--accent-hi);
+  }
+  .mapnode > .pip.square { border-radius: 9px; border-color: var(--accent-hover-border); }
+  .mapnode > .pip.plain { border-color: var(--border-strong); background: var(--surface-3); color: var(--ink-soft); }
+  .mapnode > .pip.diamond { border: 0; background: none; }
+  .mapnode > .pip.diamond i {
+    width: 22px; height: 22px; transform: rotate(45deg); border: 1.5px solid var(--accent-hi);
+    background: var(--accent-wash); display: block;
+  }
+  .mapnode .caption {
+    font-family: var(--data); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-label); white-space: nowrap;
+  }
+  .mapnode .flags { display: flex; gap: 3px; min-height: 8px; }
+  .mapnode .flags i { width: 6px; height: 6px; border-radius: 999px; display: block; }
+  .maplink { flex: 0 0 20px; height: 1.5px; background: var(--border-strong); margin-bottom: 24px; }
+
+  /* The two gates. ANY at one end, ALL at the other, and the difference is in the heading
+   * rather than left to be inferred from a bullet. */
+  .gates { margin-top: 26px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .gate { border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface-2); overflow: hidden; }
+  .gate > .gatehead {
+    display: flex; align-items: center; gap: 9px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border-hair); font-family: var(--data); font-size: 11px;
+    letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
+  }
+  .gate > ul { margin: 0; padding: 14px 16px; list-style: none; display: grid; gap: 11px; }
+  .gate > ul > li { display: flex; gap: 10px; color: var(--ink-2); }
+  .gate > ul > li::before { content: "\25CF"; flex: 0 0 auto; font-size: 9px; line-height: 1.9; }
+  .gate.enter { border-color: var(--good-border); }
+  .gate.enter > .gatehead { background: var(--good-bg); border-bottom-color: var(--good-border); color: var(--good); }
+  .gate.enter > ul > li::before { color: var(--good); }
+  .gate.exclude { border-color: var(--warn-border); }
+  .gate.exclude > .gatehead { background: var(--warn-bg-2); border-bottom-color: var(--warn-border); color: var(--warn); }
+  .gate.exclude > ul > li::before { color: var(--warn-dim); }
+
+  /* The flow. A 46px rail carries the numbered rung and the spine that joins them. */
+  .flowhead { margin-top: 34px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+  .flowhead h3 { margin: 0; font-size: 20px; font-weight: 700; }
+  .leg { display: grid; grid-template-columns: 46px minmax(0, 1fr); }
+  .leg:first-of-type { margin-top: 16px; }
+  .leg > .rail { display: flex; flex-direction: column; align-items: center; }
+  .leg > .rail > .rung {
+    width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border-strong);
+    background: var(--surface-3); display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; font-family: var(--data); font-size: 14px; font-weight: 700; color: var(--ink-soft);
+  }
+  .leg > .rail > .rung.lead { border-color: var(--accent-hover-border); background: var(--accent-wash); color: var(--accent-hi); }
+  .leg > .rail > .rung.folded { border-style: dashed; background: var(--surface-4); font-size: 11px; color: var(--ink-count); }
+  .leg > .rail > .rung.gem { border: 0; background: none; }
+  .leg > .rail > .rung.gem i {
+    width: 25px; height: 25px; transform: rotate(45deg); border: 1.5px solid var(--accent-hi);
+    background: var(--accent-wash); display: block;
+  }
+  .leg > .rail > .spine { width: 1.5px; flex: 1 1 auto; background: var(--border-strong); margin-top: 6px; }
+  .leg > .body { padding: 0 0 22px 16px; min-width: 0; }
+  /* `stepcard`, and NOT `act`: `.act` is already this stylesheet's primary button, defined
+   * 380 lines above, so naming the step card `.act` silently restyled every button in the
+   * application - accent fill, hover lift and all - from a Library stylesheet. Caught before
+   * it shipped by grepping the class rather than by looking at a screen, which is the only
+   * way a collision like this is ever caught reliably. */
+  .stepcard { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+  .stepcard > .doing { padding: 15px 18px 16px; }
+  .stepcard .who { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+  .rolechip {
+    font-family: var(--data); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); border: 1px solid var(--accent-border); background: var(--accent-wash);
+    padding: 2.5px 7px; border-radius: 5px;
+  }
+  .stepcard .action { margin: 0; font-size: 15.5px; line-height: 1.5; color: var(--ink); font-weight: 600; }
+
+  /* A marker. Glyph, then word, then body. The colour is the third carrier and never the first. */
+  .mk {
+    display: flex; gap: 12px; padding: 12px 18px; background: var(--surface-4);
+    border-top: 1px solid var(--border-hair);
+  }
+  .mk > svg { flex: 0 0 auto; margin-top: 1px; }
+  .mk > div { min-width: 0; }
+  .mk .word {
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    font-weight: 700;
+  }
+  .mk p { margin: 5px 0 0; color: var(--ink-2); }
+  .mk .ref { font-family: var(--data); font-size: 11.5px; color: var(--ink-soft); margin-left: 9px; }
+  .mk-stop { background: var(--warn-bg); border-top-color: var(--warn-border); border-left: 3px solid var(--warn); padding: 13px 18px; }
+  .mk-stop .word { color: var(--warn); }
+  .mk-error { border-left: 3px solid var(--bad); }
+  .mk-error .word { color: var(--bad); }
+  .mk-threshold .word { color: var(--accent); }
+  .mk-why { background: var(--surface-2); }
+  .mk-why .word { color: var(--ink-meta); }
+  .mk-why p { color: var(--ink-soft); }
+  .mk-time .word { color: var(--ink-meta); }
+  .products { margin-top: 6px; display: flex; gap: 7px; flex-wrap: wrap; }
+  .products span {
+    font-family: var(--data); font-size: 11.5px; color: var(--ink-2); background: var(--warn-bg-2);
+    border: 1px solid var(--warn-border); padding: 4px 9px; border-radius: 6px;
+  }
+
+  /* A decision. The one marker that is not an instruction: a judgement the operator owns. */
+  .dec { border: 1.5px solid var(--accent-border); border-radius: 12px; background: var(--surface-3); overflow: hidden; }
+  .dec > .ask { padding: 15px 18px 16px; background: var(--accent-wash); border-bottom: 1px solid var(--accent-border); }
+  .dec .asktop { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; flex-wrap: wrap; }
+  .dec .asktop .word { font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-hi); font-weight: 700; }
+  .dec .asktop .rubric { font-family: var(--data); font-size: 10px; color: var(--ink-meta); margin-left: auto; }
+  .dec .question { margin: 0; font-size: 17px; line-height: 1.42; color: var(--ink); font-weight: 600; }
+  .dec > .branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .branch { padding: 15px 18px; border-top: 1px solid var(--border); }
+  .branch + .branch { border-left: 1px solid var(--border); background: var(--surface-2); }
+  .branch .iff { font-family: var(--data); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+  .branch .cond { margin: 6px 0 0; color: var(--ink-2); }
+  .branch .thenrow { display: flex; align-items: center; gap: 7px; margin: 13px 0 7px; }
+  .branch .thenrow .word { font-family: var(--data); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+  .branch .then { margin: 0; color: var(--ink); font-weight: 600; }
+  .goto {
+    margin-top: 12px; display: inline-flex; align-items: center; gap: 9px; padding: 8px 12px 8px 11px;
+    border: 1px solid var(--accent-hover-border); background: var(--accent-wash); border-radius: var(--r-pill);
+    color: inherit; cursor: pointer; text-align: left; flex-wrap: wrap;
+  }
+  .goto:hover { border-color: var(--accent-hi); }
+  .goto .lead { font-family: var(--data); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-meta); }
+  .goto .target { font-family: var(--data); font-size: 12px; color: var(--accent-hi); font-weight: 700; }
+  .goto .naming { color: var(--ink-soft); font-size: 12.5px; }
+
+  /* The folded middle. Named, counted, and openable - never hidden. */
+  .fold {
+    border: 1px dashed var(--border-strong); border-radius: 12px; background: var(--surface-4);
+    padding: 14px 18px; display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+    color: inherit; cursor: pointer; width: 100%; text-align: left;
+  }
+  .fold:hover { border-color: var(--accent-border); }
+  .fold .count { font-family: var(--data); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-label); }
+  .fold .gist { color: var(--ink-meta); font-size: 13px; min-width: 0; }
+  .fold .open { font-family: var(--data); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-border); padding: 4px 10px; border-radius: 6px; margin-left: auto; }
+
+  /* Reporting and closure. The end caps, and the reason the exclusions are not at the bottom. */
+  .endcap { margin-top: 26px; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface-2); overflow: hidden; }
+  .endcap > .gatehead {
+    display: flex; align-items: center; gap: 9px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border-hair); background: var(--surface-nav);
+    font-family: var(--data); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    font-weight: 600; color: var(--ink-soft);
+  }
+  .endcap > ul { margin: 0; padding: 14px 16px; list-style: none; display: grid; gap: 11px; }
+  .endcap > ul > li { display: flex; gap: 10px; color: var(--ink-2); }
+  .endcap > ul > li::before { content: "\25A0"; flex: 0 0 auto; font-size: 8px; line-height: 2.1; color: var(--ink-faint); }
+  /* The reporting block's named facts. `reporting` is an OBJECT in the content, not a list, and
+   * rendering it as one printed `[object Object]` into operator-facing prose. Each key is read
+   * by name and laid out as a labelled fact, so a key the content adds is absent here rather
+   * than stringified onto the page. */
+  .reportfacts {
+    display: grid; gap: 10px 24px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    padding: 14px 16px; border-bottom: 1px solid var(--border-hair);
+  }
+  .reportfacts .fact { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .reportfacts .val { font-family: var(--data); font-size: 12.5px; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .endcap > .gatehead.sub { border-top: 1px solid var(--border-hair); border-bottom: 0; background: var(--surface-4); }
+  .endcap.close { border-color: var(--good-border); }
+  .endcap.close > .gatehead { background: var(--good-bg); border-bottom-color: var(--good-border); color: var(--good); }
+  .endcap.close > ul > li::before { color: var(--good); }
+  .procnote {
+    margin-top: 22px; padding: 15px 18px; border: 1px solid var(--border);
+    border-radius: 12px; background: var(--surface-4);
+  }
+  .procnote p { margin: 8px 0 0; color: var(--ink-soft); font-size: 13.5px; max-width: 84ch; }
+  .backrow { margin-top: 26px; display: flex; gap: 10px; flex-wrap: wrap; }
 
   /* ---------------------------------------------------------------- stimulus panels */
   .scope {
@@ -629,15 +888,21 @@
   </section>
 
   <section id="view-library" class="hidden">
-    <p class="kicker">Library</p>
-    <h1>The procedures behind the drills</h1>
-    <p class="sub">Read them cold, or come here from a call you got wrong. The library is never gated and never scored.</p>
-    <div class="filters">
-      <input type="search" id="library-search" placeholder="Search the procedures"
-             aria-label="Search the procedures" autocomplete="off">
-      <fieldset class="chips" id="library-chips"></fieldset>
+    <!-- The library is TWO screens, not one stacked page: the index, and one procedure in full.
+         Grouped under `library-index` so opening a procedure hides the index rather than
+         appending 5,900 pixels of flow beneath thirteen cards, which is what shipped in the
+         first draft of the V0.28.0 redesign and was caught by looking at the rendered page. -->
+    <div id="library-index">
+      <p class="kicker">Library</p>
+      <h1>The procedures behind the drills</h1>
+      <p class="sub">Read them cold, or come here from a call you got wrong. The library is never gated and never scored.</p>
+      <div class="filters">
+        <input type="search" id="library-search" placeholder="Search the procedures"
+               aria-label="Search the procedures" autocomplete="off">
+        <fieldset class="chips" id="library-chips"></fieldset>
+      </div>
+      <div class="cardgrid" id="library-grid"></div>
     </div>
-    <div class="cardgrid" id="library-grid"></div>
     <div id="library-body"></div>
   </section>
 

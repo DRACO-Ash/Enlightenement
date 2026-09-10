@@ -33,6 +33,24 @@ export const APP_JS = join(HERE, '..', 'app.js');
 export const INDEX_HTML = join(HERE, '..', 'index.html');
 
 /** Every `id` the shipped document declares. A lookup outside this set is a defect. */
+/* A `NodeList`, as far as this harness needs to model one: `length`, index access, iteration and
+ * `forEach`, and deliberately NO array methods. Real DOM code has to spread a query result before
+ * mapping or filtering it, and so does test code here - which is the whole reason this exists.
+ * See the note on `querySelectorAll`. */
+function nodeList(nodes) {
+  const list = {
+    length: nodes.length,
+    item: (index) => nodes[index] ?? null,
+    forEach: (visit, thisArg) => nodes.forEach(visit, thisArg),
+    entries: () => nodes.entries(),
+    keys: () => nodes.keys(),
+    values: () => nodes.values(),
+    [Symbol.iterator]: () => nodes[Symbol.iterator](),
+  };
+  nodes.forEach((node, index) => { list[index] = node; });
+  return list;
+}
+
 export function declaredIds(markup = readFileSync(INDEX_HTML, 'utf8')) {
   return new Set([...markup.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 }
@@ -120,6 +138,18 @@ class FakeNode {
     return this.children[0] ?? null;
   }
 
+  /* **A real DOM property this harness did not model, and the omission hid a whole section.**
+   * `openProcedure` guards the gates block with `if (gates.childElementCount)`, which is
+   * undefined here, so the entry conditions and the exclusions were dropped from every render
+   * the tests could see - while rendering correctly in a browser. That is the third harness gap
+   * of this kind: `requestAnimationFrame` not calling back hid 68 lines and a missing
+   * `viewBox.baseVal` hid 38. A harness that does not understand the DOM produces tests that
+   * prove nothing, so the fix is always to mirror the real thing rather than to bend the app
+   * around the fake. Element-only here because `children` holds elements. */
+  get childElementCount() {
+    return this.children.length;
+  }
+
   get value() {
     return this._value ?? '';
   }
@@ -192,21 +222,35 @@ class FakeNode {
   }
 
   /* The selector shapes `app.js` uses, and no more: a bare tag, an attribute selector with or
-   * without a value, and a class. Anything else throws. */
+   * without a value, and a class. Anything else throws.
+   *
+   * **Returns a NodeList-LIKE, not an array, and that is the point.** It returned a plain array
+   * for months, which made the harness MORE permissive than the DOM in a way that let a crash
+   * ship: `strip.querySelectorAll('span').filter(...)` passed all 56 interface tests and threw
+   * `filter is not a function` in Chromium, because a real `NodeList` has `length`, indexing,
+   * iteration and `forEach` and no array methods at all. The whole library screen rendered as a
+   * single error banner.
+   *
+   * Every previous harness gap ran the other way - `requestAnimationFrame` not calling back hid
+   * 68 lines, a missing `viewBox.baseVal` hid 38, a missing `childElementCount` hid a whole
+   * section - and those show up as coverage or as a failing assertion. A harness that is more
+   * generous than the platform shows up as nothing at all, which makes it the worse direction
+   * and the one worth naming here. Tests spread it (`[...node.querySelectorAll('x')]`) exactly
+   * as real DOM code has to. */
   querySelectorAll(selector) {
     const all = this.descendants();
     const attribute = selector.match(/^\[([\w-]+)(?:="([^"]*)")?\]$/);
     if (attribute) {
-      return all.filter((node) => {
+      return nodeList(all.filter((node) => {
         const held = node.getAttribute(attribute[1]);
         return held !== null && (attribute[2] === undefined || held === attribute[2]);
-      });
+      }));
     }
     if (/^\.[\w-]+$/.test(selector)) {
-      return all.filter((node) => node._classes.has(selector.slice(1)));
+      return nodeList(all.filter((node) => node._classes.has(selector.slice(1))));
     }
     if (/^\w+$/.test(selector)) {
-      return all.filter((node) => node.tagName === selector.toUpperCase());
+      return nodeList(all.filter((node) => node.tagName === selector.toUpperCase()));
     }
     throw new Error(`the harness does not understand the selector "${selector}"`);
   }
@@ -313,11 +357,14 @@ export function load({ readyState = 'loading', routes = {}, extraIds = [] } = {}
     /* `#nav button` and `main [data-view]` are the two document-level selectors `boot` uses.
      * Both resolve against the controls parsed out of the shipped markup. */
     querySelectorAll: (selector) => {
+      /* Wrapped like every other query result, so the document-level selectors are no more
+       * permissive than the element-level ones. Two paths returning two different shapes for
+       * one method is exactly how a gap like this survives. */
       if (selector === '#nav button') {
-        return root.children.filter((node) => node.getAttribute('data-nav') === 'yes');
+        return nodeList(root.children.filter((node) => node.getAttribute('data-nav') === 'yes'));
       }
       if (selector === 'main [data-view]') {
-        return root.children.filter((node) => node.getAttribute('data-nav') === 'no');
+        return nodeList(root.children.filter((node) => node.getAttribute('data-nav') === 'no'));
       }
       return root.querySelectorAll(selector);
     },

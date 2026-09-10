@@ -2,6 +2,85 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.28.0 (2026-09-10)
+
+**What.** The Library, rebuilt to the design canvas the owner approved. `openProcedure` rendered
+`Object.entries(procedure)` through `JSON.stringify(value, null, 1)`, so a 21-step procedure
+arrived as one wall of text with the exclusions and the reporting rules at the bottom - the
+paragraph an operator most needs first, placed where they would reach it last. It is now a flow:
+a schematic map, the two gates, the steps on a spine with a seven-marker vocabulary, the decisions
+on their own track, and the reporting and closure caps.
+
+**Every marker carries a glyph, a word and a colour, in that order of authority.** Nothing in this
+library means anything by colour alone, so a monochrome print and a screen read identically. The
+seven are Stop (the step names a product that has to be opened), Decision, Onward, Common error,
+Threshold, Why and Role, plus the two gates and the two end caps. Asserted structurally rather
+than by eye: every marker row must hold an svg and a non-empty word.
+
+**The one refusal, stated on the page.** The content ORDERS decision points but does not bind them
+to a step number, so a diamond placed between step 6 and step 7 would be inventing a sequence the
+authors did not write. The decisions keep their own track and the heading says why. When the
+content grows a step reference they move onto the spine and nothing else changes.
+
+**Long procedures fold.** Above six steps the middle folds to a rail that says how many are behind
+it and names the first clause of each, because "five steps folded" tells an operator nothing about
+whether the part they need is inside. Launch carries 21 steps and is the reason the fold exists: a
+flow nobody scrolls to the end of is a flow nobody reads. Folded, never hidden.
+
+**The index cards gained the shape of the work**, which needed a server change to do honestly. The
+cards draw a preview strip - squares for steps, diamonds for decisions, a filled cap for closure,
+the same vocabulary as the map inside the procedure - and a footer carrying steps, decisions,
+stops and onward links. Only `steps` was on the index route, so `decisions`, `stops` and `onward`
+are now derived server-side in `_procedure_index`. Derived and not authored: each is the length of
+a list the author wrote, and each goes through `_authored_sequence` for the reason the step count
+already did. The interface holds the index and not the documents, so it could only have computed
+these by fetching all thirteen, which is the content-sized anonymous body that index exists to
+avoid. The totals cross-check against the content inventory exactly: 145 steps, 40 decisions, 22
+onward links.
+
+**Three defects the browser found that 56 passing tests did not.** Recorded in order, because the
+pattern is the point: every one of them was invisible to a green suite.
+
+● **A crash that took the whole screen down.** `strip.querySelectorAll('span').filter(...)` passed
+  every interface test and threw `filter is not a function` in Chromium: a real `NodeList` has
+  `length`, indexing, iteration and `forEach` and no array methods at all. The library rendered as
+  a single error banner. **The harness was MORE PERMISSIVE than the DOM**, returning a plain
+  array, and that is the worse direction of gap: the three earlier harness gaps ran the other way
+  - `requestAnimationFrame` not calling back hid 68 lines, a missing `viewBox.baseVal` hid 38, a
+  missing `childElementCount` hid a whole section - and those surface as coverage or as a failing
+  assertion. A harness more generous than the platform surfaces as nothing. `querySelectorAll` now
+  returns a NodeList-like at both the element and document level, 15 test call sites spread it as
+  real DOM code must, and reintroducing the crash fails four tests with the browser's own error.
+● **The procedure stacked below the index.** Opening one put 5,900 pixels of flow under thirteen
+  cards, so an operator scrolled past the whole library to reach the step they came for. The
+  library is two screens and the design says so; the index is now hidden with `hidden`, so it goes
+  from assistive technology too rather than being painted away. Every test passed before and after
+  the fix, so the assertion that now holds it was added and mutation-checked.
+● **`reporting` is an object, not a list**, and `[].concat` wrapped the whole dict and rendered
+  `[object Object]` into operator-facing prose - the exact fault this redesign exists to remove,
+  reintroduced by me while removing it. All thirteen procedures carry the same six keys, now read
+  by name and laid out as labelled facts. `verbal_required: false` renders as words, because under
+  a truthiness test it printed nothing and "no verbal report needed" and "the content is silent"
+  are different instructions.
+
+**A class collision caught by grep rather than by looking.** The step card was first named `.act`,
+which is already this stylesheet's primary button 380 lines above, so a Library stylesheet
+silently restyled every button in the application. Renamed `.stepcard`.
+
+**How verified.** Eleven interface tests for the Library, 56 in total, `ui/app.js` at 100.00% of
+1,735 executable lines - up from 1,225, so the whole redesign is covered and not merely present.
+Every new control mutation-tested: stacking the flow below the index, never restoring it on
+re-entry, and reintroducing the NodeList crash each fail. Driven in Chromium over the DevTools
+protocol at 1180px and at 400px: no horizontal overflow at either width, no console errors, no
+page exceptions, 13 map nodes for 8 steps and 3 decisions plus the two caps, 10 markers with zero
+glyphless and zero wordless, the fold opening 7 legs to 8, and no `[object Object]` anywhere.
+The index test route's key set is pinned, so widening it was a deliberate edit to a binding test
+and the three new counts are asserted as non-negative non-boolean integers with `stops <= steps`.
+
+**Not built, and said rather than left to look finished.** The index artboard also shows a
+Cards/Table toggle. That is a second view of the same data and a feature in its own right rather
+than part of this redesign, so it is not here. Say if it is wanted.
+
 ## V0.27.15 (2026-09-10)
 
 **What.** Three owner instructions, all closed. The verbatim column schema ships, the span ceiling

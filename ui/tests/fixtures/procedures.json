@@ -1,1 +1,201 @@
-{"procedures":[{"id":"PROC-MNV","name":"Manoeuvre detection and characterisation","status":"active","purpose":"Detect that an object has departed from its orbital state, establish whether the departure is real, characterise the burn by direction and magnitude, and assess whether the resulting geometry changes the threat picture. This is the most frequently executed analytical procedure and the foundation of nearly every other one.","regime":["LEO","MEO","GEO","HEO"],"steps":8},{"id":"PROC-RPO","name":"Rendezvous and proximity operations","status":"active","purpose":"Recognise that one object is deliberately establishing or maintaining proximity to another, characterise the phase and type of the operation, assess intent from the geometry and the fuel cost, and provide maximum warning to affected operators.","regime":["LEO","MEO","GEO"],"steps":8},{"id":"PROC-SEP","name":"Separation processing","status":"active","purpose":"Process the intentional release of a new object from an existing orbiting object, establish what the new object is and what it is doing, and assess the threat it poses to assets in its reach.","regime":["LEO","MEO","GEO","HEO"],"steps":9},{"id":"PROC-BRK","name":"Breakup processing","status":"active","purpose":"Process an unintentional or unexpected fragmentation, establish the extent and cause, assess the risk to nearby assets, and hand over to the cataloguing authority while maintaining coverage of the debris cloud.","regime":["LEO","MEO","GEO","HEO"],"steps":9},{"id":"PROC-UCT","name":"Uncorrelated track discovery","status":"active","purpose":"Investigate an object detected in the vicinity of an asset of interest that does not correlate to anything in the catalogue, determine where it came from and what it is doing, and ensure an undetected object cannot approach a protected payload unobserved.","regime":["LEO","MEO","GEO","HEO"],"steps":9},{"id":"PROC-PHOT","name":"Photometric change processing","status":"active","purpose":"Assess a change in an object's brightness signature, establish whether it is real rather than an artefact of collection, determine what it indicates about the object's configuration or activity, and report it where it meets criteria. Photometric change and signature change are the same event and the terms are used interchangeably.","regime":["GEO","MEO","HEO","LEO"],"steps":16},{"id":"PROC-DAASAT-LEO","name":"LEO direct ascent anti-satellite processing","status":"active","purpose":"Identify which satellites are at risk from a ground-launched interceptor targeting low Earth orbit, warn the affected operators, and confirm afterwards whether any target was struck. The interceptor itself will not be tracked; the entire value of the procedure is in target filtering and post-event verification.","regime":["LEO"],"steps":8},{"id":"PROC-DAASAT-GEO","name":"GEO direct ascent anti-satellite processing","status":"active","purpose":"Provide successive, progressively refined warnings to high value assets during the hours-long ascent of an interceptor toward geosynchronous altitude, so that operators have time to upload commands and move out of the threatened volume.","regime":["GEO"],"steps":11},{"id":"PROC-PS","name":"Predictive surveillance","status":"active","purpose":"Anticipate rather than react. Monitor upcoming longitudinal crossings between drifting objects of interest and the objects near them, raise tasking before the crossing rather than after, and give asset owners time to prepare.","regime":["GEO"],"steps":7},{"id":"PROC-LAUNCH","name":"Launch processing","status":"active","purpose":"Anticipate where a launch will place its objects, warn before it happens, acquire and identify what results, and report at each phase so partners know what has entered orbit and where it is going. Second most common report type by volume and among the lowest scoring for quality, so structure matters here more than almost anywhere.","regime":["LEO","MEO","GEO","HEO","XGEO"],"steps":21},{"id":"PROC-CRM","name":"Changeover, crew resource management and handover","status":"active","purpose":"Transfer the operating picture, open events, tasking state and outstanding obligations from one crew to the next without loss, and maintain crew coordination and error management through the shift. The foundation of a successful shift is a solid handover, and handover quality is decided by the record kept during the preceding shift rather than by the briefing itself.","regime":["ANY"],"steps":18},{"id":"PROC-DOCK","name":"Docked object processing","status":"active","purpose":"Establish whether two objects have joined into a single physical body, decide which is the primary, and hold custody of the pair so that a later separation is recognised as a separation rather than as a new object.","regime":["LEO","MEO","GEO","HEO"],"steps":10},{"id":"PROC-FP","name":"Force package processing","status":"draft","purpose":"Handle two or more objects acting together against a localised target set as one event, so that the collaboration is the reported finding rather than a series of separate proximity reports that never add up.","regime":["LEO","MEO","GEO","HEO"],"steps":11}],"count":13}
+{
+ "procedures": [
+  {
+   "id": "PROC-MNV",
+   "name": "Manoeuvre detection and characterisation",
+   "status": "active",
+   "purpose": "Detect that an object has departed from its orbital state, establish whether the departure is real, characterise the burn by direction and magnitude, and assess whether the resulting geometry changes the threat picture. This is the most frequently executed analytical procedure and the foundation of nearly every other one.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 8,
+   "decisions": 3,
+   "stops": 6,
+   "onward": 1
+  },
+  {
+   "id": "PROC-RPO",
+   "name": "Rendezvous and proximity operations",
+   "status": "active",
+   "purpose": "Recognise that one object is deliberately establishing or maintaining proximity to another, characterise the phase and type of the operation, assess intent from the geometry and the fuel cost, and provide maximum warning to affected operators.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO"
+   ],
+   "steps": 8,
+   "decisions": 4,
+   "stops": 6,
+   "onward": 1
+  },
+  {
+   "id": "PROC-SEP",
+   "name": "Separation processing",
+   "status": "active",
+   "purpose": "Process the intentional release of a new object from an existing orbiting object, establish what the new object is and what it is doing, and assess the threat it poses to assets in its reach.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 9,
+   "decisions": 3,
+   "stops": 6,
+   "onward": 4
+  },
+  {
+   "id": "PROC-BRK",
+   "name": "Breakup processing",
+   "status": "active",
+   "purpose": "Process an unintentional or unexpected fragmentation, establish the extent and cause, assess the risk to nearby assets, and hand over to the cataloguing authority while maintaining coverage of the debris cloud.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 9,
+   "decisions": 3,
+   "stops": 7,
+   "onward": 2
+  },
+  {
+   "id": "PROC-UCT",
+   "name": "Uncorrelated track discovery",
+   "status": "active",
+   "purpose": "Investigate an object detected in the vicinity of an asset of interest that does not correlate to anything in the catalogue, determine where it came from and what it is doing, and ensure an undetected object cannot approach a protected payload unobserved.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 9,
+   "decisions": 2,
+   "stops": 7,
+   "onward": 1
+  },
+  {
+   "id": "PROC-PHOT",
+   "name": "Photometric change processing",
+   "status": "active",
+   "purpose": "Assess a change in an object's brightness signature, establish whether it is real rather than an artefact of collection, determine what it indicates about the object's configuration or activity, and report it where it meets criteria. Photometric change and signature change are the same event and the terms are used interchangeably.",
+   "regime": [
+    "GEO",
+    "MEO",
+    "HEO",
+    "LEO"
+   ],
+   "steps": 16,
+   "decisions": 4,
+   "stops": 9,
+   "onward": 4
+  },
+  {
+   "id": "PROC-DAASAT-LEO",
+   "name": "LEO direct ascent anti-satellite processing",
+   "status": "active",
+   "purpose": "Identify which satellites are at risk from a ground-launched interceptor targeting low Earth orbit, warn the affected operators, and confirm afterwards whether any target was struck. The interceptor itself will not be tracked; the entire value of the procedure is in target filtering and post-event verification.",
+   "regime": [
+    "LEO"
+   ],
+   "steps": 8,
+   "decisions": 1,
+   "stops": 1,
+   "onward": 1
+  },
+  {
+   "id": "PROC-DAASAT-GEO",
+   "name": "GEO direct ascent anti-satellite processing",
+   "status": "active",
+   "purpose": "Provide successive, progressively refined warnings to high value assets during the hours-long ascent of an interceptor toward geosynchronous altitude, so that operators have time to upload commands and move out of the threatened volume.",
+   "regime": [
+    "GEO"
+   ],
+   "steps": 11,
+   "decisions": 4,
+   "stops": 4,
+   "onward": 1
+  },
+  {
+   "id": "PROC-PS",
+   "name": "Predictive surveillance",
+   "status": "active",
+   "purpose": "Anticipate rather than react. Monitor upcoming longitudinal crossings between drifting objects of interest and the objects near them, raise tasking before the crossing rather than after, and give asset owners time to prepare.",
+   "regime": [
+    "GEO"
+   ],
+   "steps": 7,
+   "decisions": 2,
+   "stops": 5,
+   "onward": 2
+  },
+  {
+   "id": "PROC-LAUNCH",
+   "name": "Launch processing",
+   "status": "active",
+   "purpose": "Anticipate where a launch will place its objects, warn before it happens, acquire and identify what results, and report at each phase so partners know what has entered orbit and where it is going. Second most common report type by volume and among the lowest scoring for quality, so structure matters here more than almost anywhere.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO",
+    "XGEO"
+   ],
+   "steps": 21,
+   "decisions": 5,
+   "stops": 2,
+   "onward": 1
+  },
+  {
+   "id": "PROC-CRM",
+   "name": "Changeover, crew resource management and handover",
+   "status": "active",
+   "purpose": "Transfer the operating picture, open events, tasking state and outstanding obligations from one crew to the next without loss, and maintain crew coordination and error management through the shift. The foundation of a successful shift is a solid handover, and handover quality is decided by the record kept during the preceding shift rather than by the briefing itself.",
+   "regime": [
+    "ANY"
+   ],
+   "steps": 18,
+   "decisions": 3,
+   "stops": 0,
+   "onward": 0
+  },
+  {
+   "id": "PROC-DOCK",
+   "name": "Docked object processing",
+   "status": "active",
+   "purpose": "Establish whether two objects have joined into a single physical body, decide which is the primary, and hold custody of the pair so that a later separation is recognised as a separation rather than as a new object.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 10,
+   "decisions": 3,
+   "stops": 3,
+   "onward": 2
+  },
+  {
+   "id": "PROC-FP",
+   "name": "Force package processing",
+   "status": "draft",
+   "purpose": "Handle two or more objects acting together against a localised target set as one event, so that the collaboration is the reported finding rather than a series of separate proximity reports that never add up.",
+   "regime": [
+    "LEO",
+    "MEO",
+    "GEO",
+    "HEO"
+   ],
+   "steps": 11,
+   "decisions": 3,
+   "stops": 4,
+   "onward": 2
+  }
+ ],
+ "count": 13
+}

@@ -32,7 +32,7 @@ test('a tabular product renders its columns, its alignment and its emphasis', ()
   const stimulus = SURFACES.table;
   const scope = draw(harness, stimulus);
 
-  const headers = scope.querySelectorAll('th').map((cell) => cell.textContent);
+  const headers = [...scope.querySelectorAll('th')].map((cell) => cell.textContent);
   assert.deepEqual([...headers], stimulus.columns.map((column) => column.label));
   //: A right-aligned column is right-aligned in the HEAD as well as the body. Numbers that line
   //: up under a left-aligned header are harder to compare, which is the whole point of a table.
@@ -56,7 +56,7 @@ test('an axis with no authored ticks generates its own, and honours inversion', 
   const stimulus = SURFACES.noticks;
   const scope = draw(harness, stimulus);
   const frame = scope.querySelectorAll('svg')[0];
-  const labels = frame.querySelectorAll('text').map((node) => node.textContent);
+  const labels = [...frame.querySelectorAll('text')].map((node) => node.textContent);
   //: Five generated ticks, so an axis the content did not label is still readable. An unlabelled
   //: axis is a picture rather than a measurement.
   assert.ok(labels.length >= 5, `only ${labels.length} labels on an unticked axis`);
@@ -97,8 +97,7 @@ test('an unramped product legends its roles with a swatch each', () => {
 test('a step series is drawn as a staircase, never as a curve through the changes', () => {
   const harness = load();
   const scope = draw(harness, SURFACES.step);
-  const paths = scope
-    .querySelectorAll('path')
+  const paths = [...scope.querySelectorAll('path')]
     .map((node) => node.getAttribute('d'))
     .filter(Boolean);
   //: `H` then `V` is the staircase. A discrete state change drawn as a slope asserts a
@@ -217,7 +216,7 @@ test('a non-finite sample is dropped rather than drawn at a nonsense coordinate'
   const scope = draw(harness, stimulus);
   //: It must render, and it must not carry NaN into an attribute: `d="MNaN 12"` is a path the
   //: browser drops silently, so the whole series disappears rather than one point.
-  const drawn = scope.querySelectorAll('path').map((node) => node.getAttribute('d')).join(' ');
+  const drawn = [...scope.querySelectorAll('path')].map((node) => node.getAttribute('d')).join(' ');
   assert.ok(!drawn.includes('NaN'), drawn.slice(0, 120));
   assert.ok(!drawn.includes('Infinity'), drawn.slice(0, 120));
 });
