@@ -2,6 +2,46 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.28.2 (2026-09-10)
+
+**What.** Two SonarQube findings in `generators/products.py`, both fair and both closed, plus a
+scan showing neither pattern survives anywhere else in the shipped source.
+
+**`_rate_header` returned tuple literals of three, one and zero rows from three exits.** The rows
+genuinely vary - that is the function's whole job, and the caller splats the result - so the
+varying LENGTH was never a defect and no caller destructures it. What was worth fixing is what the
+rule is really about: a reader had to hold three shapes at once to answer "what can this return",
+and a fourth case would have been a fourth `return` rather than a fourth append. It builds a list
+and returns once, so the answer reads top to bottom.
+
+The two branches also became `if`/`elif` rather than two independent `if`s. They were already
+exclusive - `_drift_rate` returns `clamped=False` on the artefact branch, so the artefact case
+returned before the clamp case could be reached - and stating the exclusion means a future change
+to that function cannot quietly produce a header carrying both. **That is a claim, so it is now
+asserted rather than left in a comment**: no header may carry an element-set pair and a "drawn at"
+clause together, because that would tell an operator two different stories about the same number
+on the same product, and an epoch pair without the derived rate it was computed from is evidence
+for a conclusion nobody stated.
+
+**The `expected_text` key held a conditional inside a conditional inside a dict literal.** Three
+levels of indirection to answer what one key contains, on the key the scoring path reads through
+`computed_from_params` - the last place to make a reader work. Resolved into a named local above
+the payload, with the reason it can be empty written out once instead of in a comment block
+sitting on top of the expression it describes. It needed an explicit `tuple[str, ...]` annotation,
+because mypy infers `tuple[str]` from the first branch and then refuses the empty tuple in the
+second; the variadic type is what the key actually holds.
+
+**Neither pattern survives elsewhere.** Both were swept for across the whole of `src/` with an AST
+walk rather than a text search - functions returning tuple literals of differing arity, and any
+conditional expression with another conditional in its test, body or alternative - and the shipped
+source now carries none of either. Recorded because the finding arrives one instance at a time and
+fixing one instance of a class is how the second one arrives.
+
+**How verified.** Behaviour-preserving, checked by driving all five branches of both sites before
+and after and comparing: the artefact header's three rows, the clamped header's one, an ordinary
+seeded drifter's none, an authored rate of exactly zero, and a held-only neighbourhood. Every
+`expected_text` and every header row identical across the refactor. Loop PASS on all eight legs.
+
 ## V0.28.1 (2026-09-10)
 
 **What.** The engineering gate returned FAIL on V0.28.0 with three BLOCKERs and two MINORs. All

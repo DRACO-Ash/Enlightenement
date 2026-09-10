@@ -867,7 +867,15 @@ def _rate_header(
 
     `for_client()` strips `derived`, so these strings are the ONLY client-visible disclosure of
     the difference between what the tooling reported and what the panel drew.
+
+    **Built as a list and returned once**, rather than from three exits returning tuple literals
+    of three, one and zero rows. The rows genuinely vary - that is the function's whole job, and
+    the caller splats the result - so the varying LENGTH was never a defect. The three separate
+    literal exits were: a reader has to hold three shapes at once to answer "what can this
+    return", and a fourth case would be a fourth `return` rather than a fourth append. One
+    construction site and one exit answers that question by reading top to bottom.
     """
+    rows: list[tuple[str, str]] = []
     if rates.artefact:
         #: The two element sets the rate was derived from, newest at the end of the window. Quoted
         #: to the millisecond because that is where the fault is: the operator reads two epochs,
@@ -876,23 +884,23 @@ def _rate_header(
         #: operator's, which is the whole point of the item.
         second = window_start + timedelta(days=days)
         first = second - timedelta(days=epoch_gap_days)
-        return (
-            ("Elset 1 epoch", _precise(first)),
-            ("Elset 2 epoch", _precise(second)),
-            (
-                "Derived rate",
-                f"{rates.reported:,.0f}°/day, from the two element sets above",
-            ),
+        rows.append(("Elset 1 epoch", _precise(first)))
+        rows.append(("Elset 2 epoch", _precise(second)))
+        rows.append(
+            ("Derived rate", f"{rates.reported:,.0f}°/day, from the two element sets above")
         )
-    if rates.clamped:
-        return (
+    elif rates.clamped:
+        rows.append(
             (
                 "Reported rate",
                 f"{rates.reported:,.0f}°/day as reported; the track is drawn at"
                 f" {rates.drawn:+.2f}°/day so the panel can show it",
-            ),
+            )
         )
-    return ()
+    #: `elif`, not a second `if`: the two cases are exclusive by construction - `_drift_rate`
+    #: returns `clamped=False` on the artefact branch - and stating the exclusion here means a
+    #: future change to that function cannot quietly produce a header carrying both.
+    return tuple(rows)
 
 
 def _time_ticks(days: float, window_start: datetime) -> tuple[tuple[float, str], ...]:
@@ -1098,6 +1106,24 @@ class WaterfallGenerator:
         #: station here, which is what the key asserts and what the operator has to see before
         #: "the number is wrong, the object is fine" is available to them.
         drawn_drifters = 0 if rates.artefact else drifters
+
+        #: **The drift direction, resolved BEFORE the payload rather than inside it.** It stood
+        #: as a conditional inside a conditional inside a dict literal, which is three levels of
+        #: indirection to answer "what does this key hold" - and the key is the one the scoring
+        #: path reads through `computed_from_params`, so it is the last place to make a reader
+        #: work. Named here, with the reason it can be empty stated once.
+        #:
+        #: Empty when nothing is drawn as drifting OR when nothing slopes. `drift_rate > 0` is
+        #: false at zero, so an authored rate of exactly zero published `("west",)` for a
+        #: departure that is not on the plot. An empty value makes `match_derived_text` return
+        #: UNSCORABLE, which is the fail-closed answer this project requires of a control it
+        #: cannot satisfy: refusing to score is honest, scoring against a direction nothing drew
+        #: is not. Longitude increases eastward.
+        #: Annotated, because mypy infers `tuple[str]` from the first branch and then refuses
+        #: the empty tuple in the second - the variadic type is what this key actually holds.
+        expected_direction: tuple[str, ...] = ()
+        if drawn_drifters and rates.slopes:
+            expected_direction = ("east",) if drift_rate > 0 else ("west",)
         marks = _waterfall_tracks(
             _Neighbourhood(
                 neighbours=neighbours,
@@ -1218,29 +1244,9 @@ class WaterfallGenerator:
                 "rate_is_artefact": rates.artefact,
                 #: The direction the renderer actually drew. DRL-0030 asks the operator to find
                 #: the drifter and state its direction with `computed_from_params` as the key, so
-                #: the answer is a fact about the surface. Longitude increases eastward.
-                #:
-                #: **EMPTY when nothing drifts, and that was a real hole opened by V0.27.10.**
-                #: `drift_rate > 0` is false at zero, so a panel with no drifter published
-                #: `("west",)` - a direction for a departure that is not on the plot - in the same
-                #: dict that states `drifter_count: 0` and `drift_visible: False`. On the artefact
-                #: item, whose whole lesson is that a figure and a picture can disagree. It was
-                #: harmless only by accident: `match_derived_text` is reached solely through the
-                #: `computed_from_params` sentinel and DRL-0005 authors prose accept strings
-                #: instead, so nothing read it. An empty tuple makes that matcher return
-                #: UNSCORABLE, which is the fail-closed answer this project requires of a control
-                #: it cannot satisfy - refusing to score is honest, scoring against a direction
-                #: nothing drew is not.
-                #: Guarded on `slopes` as WELL as on the count, which closes the class rather
-                #: than the one instance. `drifting: true` with an authored rate of exactly zero
-                #: gives `drifter_count: 1`, `drift_visible: False` and still published a
-                #: direction. That predates V0.27.10 and no shipped item authors an exact zero,
-                #: which is precisely why it would have waited for one to be written.
-                "expected_text": (
-                    (("east",) if drift_rate > 0 else ("west",))
-                    if drawn_drifters and rates.slopes
-                    else ()
-                ),
+                #: the answer is a fact about the surface. Resolved above, where the reason it
+                #: can be empty is written out - a hole V0.27.10 opened and V0.27.11 closed.
+                "expected_text": expected_direction,
             },
         )
 

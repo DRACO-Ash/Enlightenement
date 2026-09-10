@@ -1065,6 +1065,39 @@ def test_the_astra_artefact_is_reported_verbatim_and_drawn_as_a_held_object(
     assert separation_ms == pytest.approx(authored_ms), (first, second, authored_ms)
 
 
+def test_a_rate_header_never_carries_both_disclosures_at_once() -> None:
+    """One reason the drawing is not the figure, so one set of rows explaining it.
+
+    `_rate_header` was three exits returning tuple literals of three, one and zero rows - a
+    SonarQube finding, and a fair one: the rows genuinely vary, which is the function's job, but
+    a reader had to hold three shapes at once to answer what it can return. It builds a list and
+    returns once now, and the two cases became `if`/`elif` rather than two independent `if`s.
+
+    That `elif` is a claim, so it is asserted rather than left in a comment. The cases are
+    exclusive by construction today - `_drift_rate` returns `clamped=False` on the artefact
+    branch - and a header carrying an element-set pair AND a "drawn at" clause would be telling
+    an operator two different stories about the same number on the same product.
+    """
+    registry = build_registry()
+    both: list[str] = []
+    for label, params in (
+        ("artefact", {"days": 5, "derived_rate_deg_day": ABSURD_RATE_DEG_DAY, "epoch_gap_ms": 4}),
+        ("clamped", {"days": 5, "drifting": True, "derived_rate_deg_day": ABSURD_RATE_DEG_DAY}),
+        ("ordinary", {"days": 6, "drifting": True}),
+        ("authored zero", {"days": 7, "drifting": True, "derived_rate_deg_day": 0.0}),
+        ("held only", {"days": 6, "drifting": 0}),
+    ):
+        header = dict(compose(registry, "waterfall", params, SEED)[0].header)
+        if "Elset 1 epoch" in header and "Reported rate" in header:
+            both.append(label)
+        #: And exactly one of the three shapes, never a partial one: an epoch pair without the
+        #: derived rate it was computed from is evidence for a conclusion nobody stated.
+        if "Elset 1 epoch" in header:
+            assert "Elset 2 epoch" in header, label
+            assert "Derived rate" in header, label
+    assert not both, both
+
+
 def test_the_interface_fixture_still_matches_the_server_it_was_captured_from(
     package: ContentPackage,
 ) -> None:
