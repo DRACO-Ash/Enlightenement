@@ -53,7 +53,10 @@ const state = {
    * way - operators "motivated by competence and mission readiness, not by trivia or streaks" -
    * so the flag is where that disagreement lives until one document gives. */
   showGameLayer: true,
-  library: { procedures: [], query: '', status: 'all' },
+  /* `layout` is the index's second view and `sort` is the column it is ordered by. Both live in
+   * state rather than in the DOM so switching views and filtering do not fight each other: the
+   * table and the cards read the same filtered list. */
+  library: { procedures: [], query: '', status: 'all', layout: 'cards', sort: 'id', ascending: true },
 };
 
 function el(tag, className, text) {
@@ -1015,7 +1018,7 @@ function renderLibraryChips() {
     chip.addEventListener('click', () => {
       state.library.status = status;
       renderLibraryChips();
-      renderLibraryCards();
+      renderLibraryIndex();
     });
     host.appendChild(chip);
   }
@@ -1095,15 +1098,210 @@ function shapeStats(procedure) {
   return row;
 }
 
-function renderLibraryCards() {
-  const grid = document.getElementById('library-grid');
-  clear(grid);
+/* The index's TABLE columns. Cards answer "what is this procedure"; a table answers "which of
+ * the thirteen should I be in", which is a comparison across rows - so every numeric column is
+ * sortable and every one is a figure the server derived from the content the author wrote. No
+ * column here is decoration, and none is invented: `key` names a field the index route serves.
+ *
+ * `numeric` drives both the right alignment and the sort comparator, because a right-aligned
+ * column that sorts as text is the specific way a table lies about its own numbers: "10" would
+ * come before "9". */
+const LIBRARY_COLUMNS = [
+  { key: 'id', label: 'Procedure', cell: 'pid' },
+  { key: 'name', label: 'Name', cell: 'nm' },
+  { key: 'status', label: 'Status', cell: 'st' },
+  { key: 'regime', label: 'Regime', cell: 'rg' },
+  { key: 'steps', label: 'Steps', numeric: true },
+  { key: 'decisions', label: 'Decisions', numeric: true, cell: 'judge' },
+  { key: 'stops', label: 'Stops', numeric: true, cell: 'halt' },
+  { key: 'onward', label: 'Onward', numeric: true },
+];
+
+/* One comparison, so the table cannot sort one way and label another. A numeric column compares
+ * as a NUMBER and everything else as text with a locale-aware compare; `regime` is a list, so it
+ * compares on its joined form, which is what the cell displays. */
+function compareProcedures(left, right, column) {
+  if (column.numeric) return (Number(left[column.key]) || 0) - (Number(right[column.key]) || 0);
+  const text = (row) => (Array.isArray(row[column.key]) ? row[column.key].join(' ') : String(row[column.key] ?? ''));
+  return text(left).localeCompare(text(right));
+}
+
+/* The procedures the index is currently showing, filtered by status and query. Shared by both
+ * views deliberately: the cards and the table showed different sets while this was inline in
+ * `renderLibraryCards`, so switching layout silently changed what was on screen. */
+function shownProcedures() {
   const query = state.library.query.trim().toLowerCase();
-  const shown = state.library.procedures.filter((procedure) => {
+  return state.library.procedures.filter((procedure) => {
     if (state.library.status !== 'all' && procedure.status !== state.library.status) return false;
     if (!query) return true;
     return `${procedure.id} ${procedure.name} ${procedure.purpose || ''}`.toLowerCase().includes(query);
   });
+}
+
+function renderLibraryLayoutChips() {
+  const host = document.getElementById('library-layouts');
+  clear(host);
+  const legend = el('legend', 'offscreen', 'Layout');
+  host.appendChild(legend);
+  for (const layout of ['cards', 'table']) {
+    const chip = el('button', null, layout);
+    chip.type = 'button';
+    /* `aria-pressed`, matching the status chips: a toggle that only changes colour is invisible
+     * to a screen reader, and this pair is the one control that changes the whole view. */
+    chip.setAttribute('aria-pressed', String(state.library.layout === layout));
+    chip.addEventListener('click', () => {
+      state.library.layout = layout;
+      renderLibraryIndex();
+    });
+    host.appendChild(chip);
+  }
+}
+
+function renderLibraryTable() {
+  const host = document.getElementById('library-table');
+  clear(host);
+  const shown = shownProcedures();
+  if (!shown.length) {
+    /* The same refusal the card grid makes: an empty container reads as a view still loading,
+     * and the operator waits for something that is not coming. */
+    const empty = el('p', 'note');
+    empty.textContent = state.library.query
+      ? `No procedure matches \u201c${state.library.query}\u201d.`
+      : 'No procedure in this status.';
+    host.appendChild(empty);
+    return;
+  }
+  const column = LIBRARY_COLUMNS.find((entry) => entry.key === state.library.sort) || LIBRARY_COLUMNS[0];
+  const ordered = [...shown].sort((left, right) => {
+    const order = compareProcedures(left, right, column);
+    return state.library.ascending ? order : -order;
+  });
+
+  const wrap = el('div', 'libtable');
+  const table = el('table');
+  const head = el('thead');
+  const headRow = el('tr');
+  for (const entry of LIBRARY_COLUMNS) {
+    const th = el('th', entry.numeric ? 'r' : null);
+    th.setAttribute('scope', 'col');
+    const active = entry.key === state.library.sort;
+    /* `aria-sort` only on the sorted column, which is what the attribute means: setting it to
+     * "none" on the rest announces eight sortable columns as eight sort states. */
+    if (active) th.setAttribute('aria-sort', state.library.ascending ? 'ascending' : 'descending');
+    const button = el('button');
+    button.type = 'button';
+    button.appendChild(el('span', null, entry.label));
+    /* A GLYPH for the direction, not colour alone, and only on the column that is sorted. */
+    if (active) button.appendChild(el('span', 'caret', state.library.ascending ? '\u25B2' : '\u25BC'));
+    button.setAttribute(
+      'aria-label',
+      active
+        ? `${entry.label}, sorted ${state.library.ascending ? 'ascending' : 'descending'}. Reverse the order.`
+        : `Sort by ${entry.label}`,
+    );
+    button.addEventListener('click', () => {
+      /* Clicking the sorted column reverses it; clicking another sorts by it. Numeric columns
+       * open DESCENDING, because "which has the most steps" is the question a reader clicking
+       * a count column is asking, and ascending would answer the opposite one first. */
+      if (active) state.library.ascending = !state.library.ascending;
+      else {
+        state.library.sort = entry.key;
+        state.library.ascending = !entry.numeric;
+      }
+      renderLibraryTable();
+    });
+    th.appendChild(button);
+    headRow.appendChild(th);
+  }
+  head.appendChild(headRow);
+  table.appendChild(head);
+
+  const body = el('tbody');
+  for (const procedure of ordered) {
+    const row = el('tr');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Open ${procedure.name || procedure.id}`);
+    for (const entry of LIBRARY_COLUMNS) {
+      const classes = [entry.numeric ? 'r' : '', entry.cell || ''].filter(Boolean).join(' ');
+      const cell = el('td', classes || null);
+      if (entry.key === 'status') {
+        /* Status is a dot AND a word here too, never colour alone. */
+        const settled = String(procedure.status || '').toLowerCase() === 'active';
+        cell.appendChild(el('i', settled ? 'dot on' : 'dot off'));
+        cell.appendChild(el('span', null, procedure.status || 'status unstated'));
+      } else if (entry.key === 'regime') {
+        cell.textContent = Array.isArray(procedure.regime)
+          ? procedure.regime.join(' ')
+          : 'regime unreadable, TBC re-verify';
+      } else {
+        cell.textContent = cellText(procedure[entry.key]);
+      }
+      row.appendChild(cell);
+    }
+    const open = () => openProcedure(procedure.id);
+    row.addEventListener('click', open);
+    /* A row is a control, so Enter and Space open it. `role="button"` without those is a
+     * promise the row does not keep. */
+    row.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        if (event.preventDefault) event.preventDefault();
+        open();
+      }
+    });
+    body.appendChild(row);
+  }
+  table.appendChild(body);
+
+  const foot = el('tfoot');
+  const footRow = el('tr');
+  const footCell = el('td');
+  footCell.setAttribute('colspan', String(LIBRARY_COLUMNS.length));
+  /* The totals of the rows ACTUALLY SHOWN, not of the library, so a filtered table does not
+   * report figures for procedures that are not on it. */
+  const sum = (key) => ordered.reduce((total, row) => total + (Number(row[key]) || 0), 0);
+  footCell.textContent = [
+    `${ordered.length} of ${state.library.procedures.length} procedures`,
+    `${sum('steps')} steps`,
+    `${sum('decisions')} decisions`,
+    `${sum('stops')} stops`,
+    `${sum('onward')} onward links`,
+  ].join(' \u00b7 ');
+  footRow.appendChild(footCell);
+  foot.appendChild(footRow);
+  table.appendChild(foot);
+
+  wrap.appendChild(table);
+  host.appendChild(wrap);
+}
+
+/* The index in whichever layout is selected. One entry point, so the chips, the search box and
+ * the status filter all repaint the same way and neither view can be left stale under the other. */
+function renderLibraryIndex() {
+  const cards = document.getElementById('library-grid');
+  const table = document.getElementById('library-table');
+  const asTable = state.library.layout === 'table';
+  /* `hidden`, not a class: the view that is not showing must be gone from assistive technology
+   * too, or a screen reader walks thirteen cards and then thirteen rows of the same thing. */
+  cards.hidden = asTable;
+  table.hidden = !asTable;
+  renderLibraryLayoutChips();
+  if (asTable) {
+    clear(cards);
+    renderLibraryTable();
+  } else {
+    clear(table);
+    renderLibraryCards();
+  }
+}
+
+function renderLibraryCards() {
+  const grid = document.getElementById('library-grid');
+  clear(grid);
+  /* The SHARED filter. This was inline here, and the table's copy drifted from it the moment
+   * either changed: switching layout would then silently change what was on screen. */
+  const query = state.library.query.trim().toLowerCase();
+  const shown = shownProcedures();
   for (const procedure of shown) {
     /* A BUTTON, not a div with a click handler: it is keyboard reachable and announces itself. */
     const card = el('button', 'proc');
@@ -1641,7 +1839,9 @@ async function openProcedure(procedureId) {
     button.addEventListener('click', () => {
       clear(host);
       document.getElementById('library-index').hidden = false;
-      renderLibraryCards();
+      /* Back to whichever layout they left, not always the cards: switching to the table,
+       * opening a procedure and returning to a card grid loses the view they chose. */
+      renderLibraryIndex();
     });
     back.appendChild(button);
     host.appendChild(back);
@@ -1664,12 +1864,12 @@ async function loadLibrary() {
     if (!search.dataset.wired) {
       search.addEventListener('input', () => {
         state.library.query = search.value;
-        renderLibraryCards();
+        renderLibraryIndex();
       });
       search.dataset.wired = 'yes';
     }
     renderLibraryChips();
-    renderLibraryCards();
+    renderLibraryIndex();
   } catch (error) {
     banner(error.message);
   }

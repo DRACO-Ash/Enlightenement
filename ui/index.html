@@ -483,6 +483,50 @@
   .proc.empty { border-style: dashed; border-color: var(--border-accent); cursor: default; }
   .proc.empty:hover { transform: none; border-color: var(--border-accent); }
 
+  /* ---------------------------------------------------------------- the library table
+   * The second view of the index, added at V0.29.0. Cards answer "what is this procedure";
+   * a table answers "which of the thirteen should I be in", which is a comparison across rows
+   * and the reason a table exists at all. So the numeric columns are sortable and every one is
+   * a figure the server derived from the content - no column here is decoration. */
+  .chips.layouts { margin-left: auto; }
+  .libtable { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-card); }
+  .libtable table { width: 100%; border-collapse: collapse; }
+  .libtable th, .libtable td { padding: 11px 16px; text-align: left; font-size: 14px; }
+  .libtable thead th {
+    background: var(--surface-nav); border-bottom: 1px solid var(--border);
+    font-family: var(--data); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-label); font-weight: 600; white-space: nowrap; padding: 0;
+  }
+  /* The header is a BUTTON, so a keyboard reaches the sort and a screen reader announces it.
+   * A `th` with a click handler is reachable by neither. */
+  .libtable thead th button {
+    width: 100%; padding: 11px 16px; background: none; border: 0; color: inherit; font: inherit;
+    letter-spacing: inherit; text-transform: inherit; text-align: inherit; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .libtable thead th.r button { justify-content: flex-end; }
+  .libtable thead th button:hover { color: var(--ink); }
+  .libtable thead th button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .libtable thead th[aria-sort] button { color: var(--accent); }
+  .libtable thead th button .caret { font-size: 9px; line-height: 1; }
+  .libtable tbody tr { cursor: pointer; }
+  .libtable tbody tr:hover { background: var(--surface-hover); }
+  .libtable tbody td { border-top: 1px solid var(--border-hair); color: var(--ink); }
+  .libtable td.r, .libtable th.r { text-align: right; font-family: var(--data); font-size: 12.5px; }
+  .libtable td.pid { font-family: var(--data); font-size: 12px; color: var(--accent); white-space: nowrap; }
+  .libtable td.nm { font-weight: 600; }
+  .libtable td.st { white-space: nowrap; }
+  .libtable td.st .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; margin-right: 7px; }
+  .libtable td.st .dot.on { background: var(--good); }
+  .libtable td.st .dot.off { background: var(--warn); }
+  .libtable td.rg { font-family: var(--data); font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
+  .libtable td.judge { color: var(--accent-hi); }
+  .libtable td.halt { color: var(--warn); }
+  .libtable tfoot td {
+    border-top: 1px solid var(--border); background: var(--surface-4);
+    font-family: var(--data); font-size: 11px; color: var(--ink-count);
+  }
+
   /* ---------------------------------------------------------------- the procedure flow
    * The Library, redesigned at V0.28.0. What stood here rendered `Object.entries(procedure)`
    * as `JSON.stringify(value, null, 1)`, so a 21-step procedure arrived as one wall of text
@@ -915,8 +959,13 @@
         <input type="search" id="library-search" placeholder="Search the procedures"
                aria-label="Search the procedures" autocomplete="off">
         <fieldset class="chips" id="library-chips"></fieldset>
+        <!-- Cards or table, the second view the index artboard specifies. A fieldset with an
+             off-screen legend, the same shape as the status chips, so the pair has an
+             accessible name rather than being two unexplained buttons. -->
+        <fieldset class="chips layouts" id="library-layouts"></fieldset>
       </div>
       <div class="cardgrid" id="library-grid"></div>
+      <div id="library-table"></div>
     </div>
     <div id="library-body"></div>
   </section>

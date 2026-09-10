@@ -501,6 +501,204 @@ test('a library card shows the shape of the work before any of its prose', async
   assert.ok(mast.textContent.includes(entry.status), mast.textContent);
 });
 
+/* ---------------------------------------------------------------- the library table
+ * The index's second view, V0.29.0. Cards answer "what is this procedure"; a table answers
+ * "which of the thirteen should I be in", which is a comparison across rows. */
+
+async function indexed() {
+  const harness = booted();
+  await harness.settle();
+  harness.app.show('library');
+  await harness.settle();
+  return harness;
+}
+
+function layoutChip(harness, name) {
+  return [...harness.element('library-layouts').children].find((chip) => chip.textContent === name);
+}
+
+function headerButton(harness, label) {
+  return [...harness.element('library-table').querySelectorAll('button')]
+    .find((node) => node.textContent.includes(label));
+}
+
+/* The DATA rows, and the footer is not one. Filtering on "has a td" counted the totals row and
+ * reported 14 of 13 procedures, then indexed a one-cell row for a step count. */
+function bodyRows(harness) {
+  const all = [...harness.element('library-table').querySelectorAll('tr')];
+  return all.filter((row) => row.parentNode && row.parentNode.tagName === 'TBODY');
+}
+
+test('the layout toggle swaps the whole view and hides the other from assistive technology', async () => {
+  const harness = await indexed();
+  //: `hidden`, not a class. A screen reader walking thirteen cards and then thirteen rows of the
+  //: same thirteen procedures is the same defect one sense along from a stacked page.
+  assert.equal(harness.element('library-grid').hidden, false);
+  assert.equal(harness.element('library-table').hidden, true);
+
+  const cards = layoutChip(harness, 'cards');
+  const table = layoutChip(harness, 'table');
+  assert.ok(cards && table, 'the layout chips did not render');
+  //: A toggle that only changes colour is invisible to a screen reader, and this pair changes
+  //: the entire view - the same `aria-pressed` shape the status chips already use.
+  assert.equal(cards.getAttribute('aria-pressed'), 'true');
+  assert.equal(table.getAttribute('aria-pressed'), 'false');
+  //: And the fieldset has an accessible name rather than being two unexplained buttons.
+  assert.equal(harness.element('library-layouts').children[0].tagName, 'LEGEND');
+
+  table.fire('click');
+  assert.equal(harness.element('library-grid').hidden, true);
+  assert.equal(harness.element('library-table').hidden, false);
+  assert.equal(layoutChip(harness, 'table').getAttribute('aria-pressed'), 'true');
+  //: The view that is not showing is EMPTIED, so a stale grid cannot sit under the table.
+  assert.equal(harness.element('library-grid').children.length, 0);
+  assert.equal(bodyRows(harness).length, PROCEDURES.count);
+
+  layoutChip(harness, 'cards').fire('click');
+  assert.equal(harness.element('library-grid').children.length, PROCEDURES.count);
+  assert.equal(harness.element('library-table').children.length, 0);
+});
+
+test('the table carries every derived figure and totals only the rows it is showing', async () => {
+  const harness = await indexed();
+  layoutChip(harness, 'table').fire('click');
+  const text = harness.element('library-table').textContent;
+
+  //: Every column is a figure the server derived from the content; none is decoration and none
+  //: is invented. Read off the FIXTURE so the table cannot drift from the index that feeds it.
+  for (const entry of PROCEDURES.procedures) {
+    const row = bodyRows(harness).find((node) => node.textContent.includes(entry.id));
+    assert.ok(row, `${entry.id} is not in the table`);
+    const cells = [...row.children].map((cell) => cell.textContent);
+    assert.ok(cells.includes(entry.name), entry.id);
+    assert.ok(cells.some((cell) => cell.includes(entry.status)), entry.id);
+    assert.ok(cells.includes(entry.regime.join(' ')), entry.id);
+    for (const field of ['steps', 'decisions', 'stops', 'onward']) {
+      assert.ok(cells.includes(String(entry[field])), `${entry.id}: ${field}`);
+    }
+    //: Status is a dot AND a word here too, never colour alone.
+    const status = [...row.children].find((cell) => cell.classList.contains('st'));
+    assert.ok([...status.children].some((node) => node.classList.contains('dot')), entry.id);
+  }
+
+  //: The footer totals the rows ACTUALLY SHOWN. A filtered table reporting the library's totals
+  //: is a figure about procedures that are not on the screen.
+  const sum = (key) => PROCEDURES.procedures.reduce((total, row) => total + row[key], 0);
+  assert.ok(text.includes(`${sum('steps')} steps`), text.slice(-200));
+  assert.ok(text.includes(`${sum('decisions')} decisions`));
+  assert.ok(text.includes(`${sum('stops')} stops`));
+  assert.ok(text.includes(`${sum('onward')} onward links`));
+  assert.ok(text.includes(`${PROCEDURES.count} of ${PROCEDURES.count} procedures`));
+
+  //: Filter, and the totals follow the filter rather than the library.
+  const search = harness.element('library-search');
+  search.value = PROCEDURES.procedures[0].id;
+  search.fire('input');
+  const filtered = harness.element('library-table').textContent;
+  assert.ok(filtered.includes(`1 of ${PROCEDURES.count} procedures`), filtered.slice(-200));
+  assert.ok(filtered.includes(`${PROCEDURES.procedures[0].steps} steps`));
+});
+
+test('a numeric column sorts as a number and opens on the question a reader is asking', async () => {
+  const harness = await indexed();
+  layoutChip(harness, 'table').fire('click');
+  const stepsOf = () => bodyRows(harness).map((row) => Number([...row.children][4].textContent));
+
+  //: **A right-aligned column that sorts as text is the specific way a table lies about its own
+  //: numbers**: "10" would come before "9". The fixture spans 7 to 21 steps, so a string sort
+  //: and a numeric sort give different answers and this can tell them apart.
+  const counts = PROCEDURES.procedures.map((row) => row.steps);
+  assert.ok(Math.max(...counts) > 9 && Math.min(...counts) < 10, 'the fixture cannot separate the two sorts');
+
+  headerButton(harness, 'Steps').fire('click');
+  const descending = stepsOf();
+  //: A count column opens DESCENDING, because "which has the most steps" is the question a
+  //: reader clicking it is asking, and ascending answers the opposite one first.
+  assert.deepEqual(descending, [...descending].sort((a, b) => b - a), JSON.stringify(descending));
+  assert.equal(descending[0], Math.max(...counts));
+
+  //: Clicking the sorted column reverses it.
+  headerButton(harness, 'Steps').fire('click');
+  const ascending = stepsOf();
+  assert.deepEqual(ascending, [...ascending].sort((a, b) => a - b), JSON.stringify(ascending));
+
+  //: `aria-sort` on the sorted column only. Setting it to "none" on the other seven announces
+  //: eight sortable columns as eight sort states.
+  const headers = [...harness.element('library-table').querySelectorAll('th')];
+  const sorted = headers.filter((th) => th.getAttribute('aria-sort') !== null);
+  assert.equal(sorted.length, 1, headers.map((th) => th.getAttribute('aria-sort')).join(','));
+  assert.equal(sorted[0].getAttribute('aria-sort'), 'ascending');
+  //: And the direction carries a GLYPH, not colour alone.
+  assert.match(sorted[0].textContent, /[\u25B2\u25BC]/);
+
+  //: A text column sorts as text and opens ASCENDING, which is the useful direction for a name.
+  headerButton(harness, 'Name').fire('click');
+  const names = bodyRows(harness).map((row) => [...row.children][1].textContent);
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
+});
+
+test('a table row is a control, reachable by keyboard, that opens the procedure', async () => {
+  const harness = await indexed();
+  layoutChip(harness, 'table').fire('click');
+  const row = bodyRows(harness).find((node) => node.textContent.includes(FLOW.id));
+  //: `role="button"` without a key handler is a promise the row does not keep, and a row with
+  //: only a click handler is unreachable by keyboard entirely.
+  assert.equal(row.getAttribute('role'), 'button');
+  assert.equal(row.getAttribute('tabindex'), '0');
+  assert.match(row.getAttribute('aria-label'), new RegExp(`Open`));
+
+  row.fire('keydown', { key: 'Enter' });
+  await harness.settle();
+  assert.match(harness.element('library-body').textContent, new RegExp(FLOW.id));
+  //: And the index is hidden, exactly as opening from a card does.
+  assert.equal(harness.element('library-index').hidden, true);
+});
+
+test('back from a procedure returns to the layout that was left, not always the cards', async () => {
+  const harness = await indexed();
+  layoutChip(harness, 'table').fire('click');
+  bodyRows(harness)[0].fire('click');
+  await harness.settle();
+
+  const back = [...harness.element('library-body').querySelectorAll('button')]
+    .find((node) => node.textContent === 'Back to the library');
+  back.fire('click');
+  //: Switching to the table, opening a procedure and coming back to a card grid loses the view
+  //: the operator chose. The layout is state, so the return honours it.
+  assert.equal(harness.element('library-table').hidden, false);
+  assert.equal(harness.element('library-grid').hidden, true);
+  assert.equal(bodyRows(harness).length, PROCEDURES.count);
+});
+
+test('an empty table says so rather than rendering an empty frame', async () => {
+  const harness = await indexed();
+  layoutChip(harness, 'table').fire('click');
+  const search = harness.element('library-search');
+  search.value = 'zzzz-no-such-procedure';
+  search.fire('input');
+  //: The same refusal the card grid makes: an empty container reads as a view still loading and
+  //: the operator waits for something that is not coming.
+  const shown = harness.element('library-table').textContent;
+  assert.match(shown, /No procedure matches/);
+  assert.equal(bodyRows(harness).length, 0);
+
+  //: And a status filter that matches nothing says the other thing, because the two are
+  //: different problems with different fixes.
+  //: And a status filter that matches nothing says the other thing, because the two are
+  //: different problems with different fixes. Reached through the app's own state, which is
+  //: how `render.test.mjs` drives the library, rather than through a chip: every status the
+  //: chips offer is derived from the content and therefore matches at least one procedure.
+  search.value = '';
+  search.fire('input');
+  //: `state` is a top-level `const`, so it lives in the vm's lexical scope rather than on the
+  //: context object: `harness.app.state` is undefined and the harness's `value` reader is the
+  //: way in. Same for the renderer, which is a function declaration and therefore IS on the
+  //: context.
+  harness.value('state').library.status = 'nonexistent-status';
+  harness.app.renderLibraryIndex();
+  assert.match(harness.element('library-table').textContent, /No procedure in this status/);
+});
+
 test('a procedure renders as a flow and never as a serialised object', async () => {
   const harness = await opened();
   const body = harness.element('library-body');

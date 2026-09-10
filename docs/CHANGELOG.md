@@ -2,6 +2,63 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.29.0 (2026-09-10)
+
+**What.** The table view, the second index layout the design's index artboard specifies and the
+one thing V0.28.0 shipped without. Cards answer "what is this procedure"; a table answers "which
+of the thirteen should I be in", which is a comparison across rows, so the columns sort.
+
+**Eight columns, and not one of them is decoration.** Procedure, name, status, regime, and the
+four derived counts - steps, decisions, stops, onward links. Every one is a field the index route
+already serves, and the four counts are the figures V0.28.0 derived server-side, so the table
+needed no new endpoint and invents nothing.
+
+**The filter is now shared, and that was a real fault waiting to happen.** It was inline in
+`renderLibraryCards`, so the table would have carried a second copy: the moment either changed,
+switching layout would silently have changed what was on screen. Both views read one
+`shownProcedures()`, and one `renderLibraryIndex()` is the single entry point every repaint goes
+through - the search box, the status chips, the layout chips and the return from a procedure.
+
+**A numeric column sorts as a NUMBER.** A right-aligned column that sorts as text is the specific
+way a table lies about its own figures: "10" would come before "9". The library spans 7 to 21
+steps, so a string sort and a numeric sort give visibly different answers and the test can tell
+them apart rather than passing on a list that happens to be ordered either way. A count column
+also opens DESCENDING, because "which has the most steps" is the question a reader clicking it is
+asking and ascending answers the opposite one first; a text column opens ascending, which is the
+useful direction for a name.
+
+**The accessibility is the part most easily got wrong here, so it is asserted.** Each header is a
+real `button`, because a `th` with a click handler is reachable by neither keyboard nor screen
+reader. `aria-sort` sits on the sorted column ONLY - setting it to "none" on the other seven
+announces eight sortable columns as eight sort states. The direction carries a glyph, not colour
+alone. A row is `role="button"` with `tabindex` AND Enter and Space handlers, because
+`role="button"` without them is a promise the row does not keep. The layout chips carry
+`aria-pressed` and sit in a fieldset with an off-screen legend, matching the status chips, so the
+pair has a name instead of being two unexplained buttons. And the view that is not showing is
+emptied AND `hidden`, so a screen reader does not walk thirteen cards and then thirteen rows of
+the same thirteen procedures.
+
+**Two smaller decisions.** The footer totals the rows ACTUALLY SHOWN rather than the library, so a
+filtered table never reports figures for procedures that are not on it - checked by filtering to
+one row and asserting the totals follow. And returning from a procedure goes back to the layout
+that was left rather than always to the cards, because switching to the table, opening something
+and landing on a card grid loses the view the operator chose.
+
+**How verified.** Six new interface tests, 63 in total, `ui/app.js` at 100.00% of 1,939 executable
+lines - up from 1,749, so the whole view is covered rather than merely present. Driven in Chromium
+over the DevTools protocol: 13 rows, 8 headers, exactly one sorted column, the card grid hidden,
+the footer reading "13 of 13 procedures · 145 steps · 40 decisions · 60 stops · 22 onward links"
+which matches the content inventory exactly, and sorting by steps giving
+21, 18, 16, 11, 11, 10, 9, 9, 9, 8, 8, 8, 7 - numeric order, not string order. No horizontal
+overflow at 1180px or at 400px, no console errors, no page exceptions.
+
+**Three of my own test expectations were wrong before the code was.** The row filter counted the
+footer row, so it reported 14 of 13 procedures and then indexed a one-cell row for a step count;
+and `harness.app.state` is undefined because `state` is a top-level `const` living in the vm's
+lexical scope rather than on the context object, which is what the harness's `value` reader is
+for. Recorded because it is now the seventh release where a failing new test was my error and not
+the code's.
+
 ## V0.28.2 (2026-09-10)
 
 **What.** Two SonarQube findings in `generators/products.py`, both fair and both closed, plus a
