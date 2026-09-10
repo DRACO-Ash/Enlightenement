@@ -383,18 +383,7 @@ def test_sonar_configuration_scopes_sources_tests_and_the_coverage_report() -> N
 
 #: Every path excluded from the COVERAGE metric, and nothing else may be. Each one is a
 #: suppression, so each is named here and argued for in `sonar-project.properties` beside the key.
-DECLARED_COVERAGE_EXCLUSIONS = (
-    "src/enlightenment/asgi.py",
-    #: Four spellings of one directory. V0.27.6 declared the first alone and the platform's
-    #: metric did not move, so every form that could match is declared rather than guessed at
-    #: one upload per guess. The reasoning, and the arithmetic that proved the metric did not
-    #: move, are beside the key in `sonar-project.properties`.
-    "src/enlightenment/ui/**",
-    "src/enlightenment/ui/**/*",
-    "**/ui/**",
-    "**/*.js",
-    "**/*.html",
-)
+DECLARED_COVERAGE_EXCLUSIONS = ("src/enlightenment/asgi.py",)
 
 
 def test_the_properties_reader_joins_a_continued_value_rather_than_truncating_it(
@@ -436,11 +425,16 @@ def test_every_coverage_exclusion_is_declared_and_no_path_leaves_the_analysis() 
     ABSENT: excluding a file from analysis drops it out of the zero-issue half of the same gate
     too, which is a far wider suppression wearing the same clothes.
 
-    `src/enlightenment/ui/**` was added at V0.27.6 after the platform scored the project 77.1%
-    against a Python figure of 97.74%: `sonar.sources` is forced to `src`, the interface is
-    1,181 lines of JavaScript inside it, and the platform's generated pipeline runs `pip install`
-    and `pytest` only, so no JavaScript coverage report can exist where the gate reads. Taken to
-    the owner and approved, not applied quietly.
+    **The interface is no longer excluded here, and the history is the point.** V0.27.6 added
+    `src/enlightenment/ui/**` after the platform scored 77.1% against a Python figure of 97.74%,
+    and V0.27.7 added five more spellings of the same directory. Neither moved the metric: the
+    reported figure went 77.1% to 76.5% to 76.5%, which is the interface still in the denominator
+    and only its own length changing. Two experiments, no movement, so the property is overridden
+    or unread on that platform whatever the Foundations skills say. V0.27.8 moved the files to a
+    root-level `ui/` instead, outside the forced `sonar.sources=src`, which is a location a
+    scanner argument cannot override - and where they belong anyway, beside the content tree they
+    resemble. So this list is back to one entry, and it should stay that way: an exclusion that
+    does not change the number is worse than none, because it looks like a fix.
     """
     raw = _require_local_file("sonar-project.properties").read_text(encoding="utf-8")
     settings = _properties(_require_local_file("sonar-project.properties"))
@@ -478,7 +472,16 @@ def test_a_bare_pytest_run_still_emits_the_cobertura_report_the_gate_reads() -> 
     """
     addopts = _pyproject()["tool"]["pytest"]["ini_options"]["addopts"]
     assert "--cov-report=xml:coverage.xml" in addopts
-    assert "--cov-fail-under=80" in addopts
+    #: OUR bar, raised over 90% on owner instruction and asserted as a FLOOR rather than an
+    #: exact string. Pinning `=80` meant the assertion had to be edited to raise the bar, which
+    #: is one more place to forget; pinning the floor means lowering it fails here and raising
+    #: it does not. The platform's own threshold is 80 and is a different control.
+    declared = re.search(r"--cov-fail-under=(\d+)", addopts)
+    assert declared is not None, f"the coverage floor is not declared in addopts: {addopts}"
+    assert int(declared.group(1)) > 90, (
+        f"the suite's coverage floor is {declared.group(1)}%, and this project's floor is over"
+        " 90%. The platform requires 80; this bar is deliberately above it."
+    )
 
 
 def test_no_configuration_file_shadows_the_manifests_pytest_settings() -> None:
@@ -4182,6 +4185,96 @@ def test_the_content_validator_runs_as_a_verification_leg() -> None:
     assert "tools/validate_content.py" in excluded, (
         "the vendored validator must be excluded from format and lint, or every package update"
         " becomes a merge against a reformatted copy"
+    )
+
+
+def test_the_interface_lives_outside_the_analysed_source_tree() -> None:
+    """`ui/` is at the ROOT, not under `src/`, and the reason is measured rather than stylistic.
+
+    The platform forces `sonar.sources=src`. A browser script inside that tree can carry no
+    coverage report - the generated pipeline runs `pip install` and `pytest` and nothing else -
+    so its executable lines counted as uncovered and put the gate's 80% threshold beyond reach
+    by arithmetic: 3,057 of 3,928 lines is 77.83% even with PERFECT Python tests. Two rounds of
+    `sonar.coverage.exclusions` did not move the number. A location cannot be overridden by a
+    scanner argument, which is why this is one.
+
+    Asserted from both sides, because "it moved" and "it did not move back" are different claims.
+    """
+    assert (ROOT / "ui" / "index.html").is_file(), "the served document is not at ui/index.html"
+    assert (ROOT / "ui" / "app.js").is_file(), "the served script is not at ui/app.js"
+    stray = list((ROOT / "src").rglob("*.js")) + list((ROOT / "src").rglob("*.html"))
+    assert not stray, (
+        f"a browser asset is back inside the analysed source tree: {[str(p) for p in stray]}."
+        " Every executable line of it counts against the quality gate's coverage metric with no"
+        " report to cover it, which is the fault V0.27.8 moved the directory to fix."
+    )
+    #: And the server resolves it from the PACKAGE ROOT, like the content tree, so the path is
+    #: the same from a checkout and from `/app` in the container.
+    source = (ROOT / "src" / "enlightenment" / "training_api.py").read_text(encoding="utf-8")
+    assert '_UI_DIRECTORY: Final = _PACKAGE_ROOT / "ui"' in source, (
+        "the interface directory is no longer resolved from the package root, so a checkout and"
+        " the container would disagree about where it lives"
+    )
+
+
+def test_the_interface_ships_in_the_upload_and_in_the_image_without_its_tests() -> None:
+    """The interface is DATA the server serves, so it ships. Its harness is not, so it does not.
+
+    Both halves matter and they pull apart. Leave `ui` out of the packaging allowlist and the
+    artefact deploys a server with no interface, which is a worse failure than the coverage metric
+    that prompted the move. Leave `ui/tests` in the image context and the shipped layer carries a
+    test harness and 30 kB of fixtures, which is the rule `requirements-runtime.txt` already holds
+    for pip packages applied to a directory.
+    """
+    packaging = (ROOT / "scripts" / "package-appstore.sh").read_text(encoding="utf-8")
+    directory_loop = re.search(r"^for dir in (.+); do$", packaging, re.MULTILINE)
+    assert directory_loop is not None, "the packaging script's directory allowlist moved"
+    assert "ui" in directory_loop.group(1).split(), (
+        f"ui/ is not staged into the upload: {directory_loop.group(1)}. The deployed server would"
+        " answer /ui with a 503 for a file that exists in the repository."
+    )
+
+    assert "COPY ui ./ui" in DOCKER_INSTRUCTIONS, "the image does not carry the interface"
+    ignored = {
+        line.strip()
+        for line in _live_lines(ROOT / ".dockerignore")
+        if line.strip() and not line.strip().startswith("!")
+    }
+    assert "ui/tests" in ignored, "the interface's test harness would ship inside the image"
+    assert "ui" not in ignored, (
+        "ui/ is excluded from the image context, so the container would have no interface to"
+        " serve while the upload artefact carries one - the worst of both"
+    )
+
+
+def test_the_interface_has_its_own_tests_and_they_are_a_leg_of_the_loop() -> None:
+    """1,300 lines of JavaScript had no direct test until V0.27.8. The leg is what keeps it so.
+
+    The Python suite asserts the served BYTES, which is the right level for what reaches an
+    operator and cannot reach a function's branches. Both halves exist now, and the second one
+    only counts if the loop runs it: a test suite nobody runs is a file.
+    """
+    assert (ROOT / "ui" / "tests" / "harness.mjs").is_file()
+    suites = sorted(path.name for path in (ROOT / "ui" / "tests").glob("*.test.mjs"))
+    assert suites, "the interface has no test suite"
+
+    loop = "\n".join(_live_lines(ROOT / "scripts" / "verify.sh"))
+    assert "--test" in loop, "the loop invokes no test runner over the interface"
+    assert "ui/tests" in loop, "the interface tests are not a leg of the loop"
+    assert "ui/tests/coverage.mjs" in loop, "the interface's coverage is measured by nothing"
+    #: The leg must FAIL when node is absent, never skip. An untested interface is what it exists
+    #: to stop, and a leg that quietly opts out is how that came to be true in the first place.
+    assert "FAIL: node is not installed" in (ROOT / "scripts" / "verify.sh").read_text(
+        encoding="utf-8"
+    ), "the interface leg skips instead of failing when its runtime is missing"
+
+    #: The floor is over 90%, on the same owner instruction as the Python suite's 95%.
+    reporter = (ROOT / "ui" / "tests" / "coverage.mjs").read_text(encoding="utf-8")
+    declared = re.search(r"export const FLOOR = (\d+);", reporter)
+    assert declared is not None, "the interface coverage floor is not declared"
+    assert int(declared.group(1)) > 90, (
+        f"the interface coverage floor is {declared.group(1)}%, and this project's floor is over"
+        " 90%"
     )
 
 

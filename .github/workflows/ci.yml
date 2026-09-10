@@ -47,8 +47,20 @@ jobs:
       - name: Confirm the locked install left the lockfiles unchanged
         run: git diff --exit-code -- requirements.txt requirements-dev.txt requirements-runtime.txt
 
+      # Leg 7 of the loop runs the interface's own tests through `node --test`, and it FAILS
+      # rather than skips when node is absent - an untested interface is what it exists to stop.
+      # Pinned to a major, because the loop's whole doctrine is that its own inputs are pinned.
+      # No package is installed: the runner is Node's own and the coverage comes from V8.
+      - name: Install the pinned Node for the interface tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Run the verification loop
         run: sh scripts/verify.sh
+
+      - name: Confirm the interface coverage report exists
+        run: test -s coverage-ui.info && grep -q '^SF:ui/app.js$' coverage-ui.info
 
       - name: Confirm the coverage artefact the quality gate reads exists
         run: test -s coverage.xml && grep -q '<coverage' coverage.xml

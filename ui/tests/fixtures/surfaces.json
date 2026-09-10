@@ -1,0 +1,769 @@
+{
+ "table": {
+  "product_id": "PRD-COCO",
+  "generator": "coco",
+  "title": "Co-orbital coplanar",
+  "panels": [],
+  "columns": [
+   {
+    "key": "designator",
+    "label": "Object",
+    "align": "left",
+    "emphasis": false
+   },
+   {
+    "key": "astat",
+    "label": "ASTAT",
+    "align": "right",
+    "emphasis": false
+   },
+   {
+    "key": "coplanar_angle_deg",
+    "label": "Coplanar angle (deg)",
+    "align": "right",
+    "emphasis": false
+   },
+   {
+    "key": "ra_dot_deg_day",
+    "label": "RA rate (deg/day)",
+    "align": "right",
+    "emphasis": false
+   },
+   {
+    "key": "days_to_ra_zero",
+    "label": "Days to RA zero",
+    "align": "right",
+    "emphasis": true
+   },
+   {
+    "key": "sustained_ca_possible",
+    "label": "Sustained CA possible",
+    "align": "left",
+    "emphasis": false
+   }
+  ],
+  "rows": [
+   {
+    "designator": "OBJ-2000",
+    "astat": 1,
+    "coplanar_angle_deg": 0.624,
+    "ra_dot_deg_day": 0.0294,
+    "days_to_ra_zero": 23.5,
+    "sustained_ca_possible": true
+   },
+   {
+    "designator": "OBJ-2003",
+    "astat": 2,
+    "coplanar_angle_deg": 2.779,
+    "ra_dot_deg_day": 0.0544,
+    "days_to_ra_zero": 74.1,
+    "sustained_ca_possible": true
+   },
+   {
+    "designator": "OBJ-2006",
+    "astat": 2,
+    "coplanar_angle_deg": 1.943,
+    "ra_dot_deg_day": -0.072,
+    "days_to_ra_zero": 37.4,
+    "sustained_ca_possible": false
+   },
+   {
+    "designator": "OBJ-2009",
+    "astat": 1,
+    "coplanar_angle_deg": 1.168,
+    "ra_dot_deg_day": -0.0013,
+    "days_to_ra_zero": 11.3,
+    "sustained_ca_possible": false
+   }
+  ],
+  "header": [
+   [
+    "ASTAT 1",
+    "fully associated"
+   ],
+   [
+    "ASTAT 2",
+    "closely associated"
+   ],
+   [
+    "Bands",
+    "resolved from the local threshold file"
+   ]
+  ],
+  "legend": [],
+  "footer": "seed 0xc0ffee",
+  "reads_as": "Days to right ascension zero is when the planes align. A sustained close approach needs the planes to stay together, not merely to cross."
+ },
+ "noticks": {
+  "product_id": "PRD-EPHEMERIS",
+  "generator": "ephemeris",
+  "title": "Ephemeris",
+  "panels": [
+   {
+    "title": "Osculating radii",
+    "x": {
+     "label": "Time from epoch",
+     "unit": "minutes",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Radius",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Apogee radius",
+      "role": "series-a",
+      "x": [
+       0.0,
+       1.0,
+       2.0,
+       3.0,
+       4.0,
+       5.0
+      ],
+      "y": [
+       6558.137,
+       6597.399899,
+       6636.620755,
+       6675.757568,
+       6714.768431,
+       6753.611568
+      ],
+      "glyph": "line",
+      "ramp": []
+     },
+     {
+      "label": "Perigee radius",
+      "role": "series-b",
+      "x": [
+       0.0,
+       1.0,
+       2.0,
+       3.0,
+       4.0,
+       5.0
+      ],
+      "y": [
+       6545.767002,
+       6547.160109,
+       6543.350886,
+       6547.226524,
+       6555.035794,
+       6554.916578
+      ],
+      "glyph": "line",
+      "ramp": []
+     }
+    ],
+    "steps": [],
+    "notes": [
+     "A perigee radius below the Earth's surface is a ballistic ascent, not an orbit."
+    ]
+   },
+   {
+    "title": "Specific orbital energy",
+    "x": {
+     "label": "Time from epoch",
+     "unit": "minutes",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Energy",
+     "unit": "km\u00b2/s\u00b2",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Energy",
+      "role": "series-a",
+      "x": [
+       0.0,
+       1.0,
+       2.0,
+       3.0,
+       4.0,
+       5.0
+      ],
+      "y": [
+       -29.5,
+       -29.518438,
+       -29.536875,
+       -29.555313,
+       -29.57375,
+       -29.592188
+      ],
+      "glyph": "line",
+      "ramp": []
+     }
+    ],
+    "steps": [],
+    "notes": [
+     "Fitted, not propagated: energy drifts about six per cent across the file."
+    ]
+   }
+  ],
+  "columns": [],
+  "rows": [],
+  "header": [
+   [
+    "Reference frame",
+    "TEME of epoch"
+   ],
+   [
+    "Source",
+    "exercise, fitted"
+   ]
+  ],
+  "legend": [
+   [
+    "Apogee radius",
+    "series-a"
+   ],
+   [
+    "Perigee radius",
+    "series-b"
+   ],
+   [
+    "Earth radius",
+    "reference"
+   ]
+  ],
+  "footer": "seed 0xc0ffee \u00b7 96 states \u00b7 96 minutes",
+  "reads_as": "Read the perigee against the Earth's radius first. Everything else follows from whether this is an orbit."
+ },
+ "ramp": {
+  "product_id": "PRD-PHOTOMETRY",
+  "generator": "light_curve",
+  "title": "Light curve",
+  "panels": [
+   {
+    "title": "Visual magnitude against solar equatorial phase angle",
+    "x": {
+     "label": "Solar equatorial phase angle",
+     "unit": "degrees",
+     "inverted": false,
+     "minimum": -90.0,
+     "maximum": 90.0,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Visual magnitude",
+     "unit": "mag",
+     "inverted": true,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "brighter upward",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Interval 0",
+      "role": "interval-0",
+      "x": [
+       -68.880954,
+       -65.711323,
+       -87.726888,
+       -77.186213,
+       -83.025236,
+       -68.214268
+      ],
+      "y": [
+       14.185134,
+       14.099528,
+       14.860957,
+       14.467681,
+       14.88206,
+       14.362681
+      ],
+      "glyph": "cross",
+      "ramp": [
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.0,
+       0.0
+      ]
+     },
+     {
+      "label": "Interval 1",
+      "role": "interval-1",
+      "x": [
+       -40.871863,
+       -57.318649,
+       -57.731764,
+       -48.345359,
+       -58.536072,
+       -52.220231
+      ],
+      "y": [
+       13.630178,
+       14.154606,
+       14.031455,
+       13.707709,
+       14.187298,
+       13.853147
+      ],
+      "glyph": "cross",
+      "ramp": [
+       0.2,
+       0.2,
+       0.2,
+       0.2,
+       0.2,
+       0.2
+      ]
+     }
+    ],
+    "steps": [],
+    "notes": [
+     "Specular feature near 5\u00b0.",
+     "Interval 0 is the most recent."
+    ]
+   }
+  ],
+  "columns": [],
+  "rows": [],
+  "header": [
+   [
+    "Display mode",
+    "interval"
+   ],
+   [
+    "Intervals",
+    "6"
+   ]
+  ],
+  "legend": [
+   [
+    "Interval 0",
+    "interval-0"
+   ],
+   [
+    "Interval 1",
+    "interval-1"
+   ],
+   [
+    "Interval 2",
+    "interval-2"
+   ],
+   [
+    "Interval 3",
+    "interval-3"
+   ],
+   [
+    "Interval 4",
+    "interval-4"
+   ],
+   [
+    "Interval 5",
+    "interval-5"
+   ]
+  ],
+  "footer": "seed 0xc0ffee \u00b7 magnitude scatter PROVISIONAL",
+  "reads_as": "Magnitude runs brighter upward. A narrow brightening near zero phase angle is a specular return."
+ },
+ "step": {
+  "product_id": "PRD-TRIC",
+  "generator": "tric",
+  "title": "Relative motion",
+  "panels": [
+   {
+    "title": "Cross-track over in-track",
+    "x": {
+     "label": "In-track",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Cross-track",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Relative track",
+      "role": "track",
+      "x": [
+       -8.0,
+       -8.717114,
+       -9.428455,
+       -10.128295,
+       -10.810999,
+       -11.47107
+      ],
+      "y": [
+       0.0,
+       0.013522,
+       0.026935,
+       0.040131,
+       0.053004,
+       0.06545
+      ],
+      "glyph": "line",
+      "ramp": [
+       0.0,
+       0.007194,
+       0.014388,
+       0.021583,
+       0.028777,
+       0.035971
+      ]
+     },
+     {
+      "label": "Reference state change",
+      "role": "state-change",
+      "x": [
+       -8.0,
+       -8.0,
+       -8.0,
+       -8.0
+      ],
+      "y": [
+       0.0,
+       0.0,
+       -0.0,
+       0.0
+      ],
+      "glyph": "square",
+      "ramp": []
+     }
+    ],
+    "steps": [],
+    "notes": []
+   },
+   {
+    "title": "Radial over in-track",
+    "x": {
+     "label": "In-track",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Radial",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Relative track",
+      "role": "track",
+      "x": [
+       -8.0,
+       -8.717114,
+       -9.428455,
+       -10.128295,
+       -10.810999,
+       -11.47107
+      ],
+      "y": [
+       4.0,
+       3.983897,
+       3.935718,
+       3.855851,
+       3.744939,
+       3.603875
+      ],
+      "glyph": "line",
+      "ramp": [
+       0.0,
+       0.007194,
+       0.014388,
+       0.021583,
+       0.028777,
+       0.035971
+      ]
+     }
+    ],
+    "steps": [],
+    "notes": []
+   },
+   {
+    "title": "Radial over cross-track",
+    "x": {
+     "label": "Cross-track",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Radial",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Relative track",
+      "role": "track",
+      "x": [
+       0.0,
+       0.013522,
+       0.026935,
+       0.040131,
+       0.053004,
+       0.06545
+      ],
+      "y": [
+       4.0,
+       3.983897,
+       3.935718,
+       3.855851,
+       3.744939,
+       3.603875
+      ],
+      "glyph": "line",
+      "ramp": [
+       0.0,
+       0.007194,
+       0.014388,
+       0.021583,
+       0.028777,
+       0.035971
+      ]
+     }
+    ],
+    "steps": [],
+    "notes": []
+   },
+   {
+    "title": "Distance",
+    "x": {
+     "label": "Time",
+     "unit": "hours",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Distance",
+     "unit": "km",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Separation",
+      "role": "track",
+      "x": [
+       0.0,
+       0.341921,
+       0.683842,
+       1.025763,
+       1.367684,
+       1.709605
+      ],
+      "y": [
+       8.944272,
+       9.584347,
+       10.216965,
+       10.837507,
+       11.441375,
+       12.024045
+      ],
+      "glyph": "line",
+      "ramp": [
+       0.0,
+       0.007194,
+       0.014388,
+       0.021583,
+       0.028777,
+       0.035971
+      ]
+     },
+     {
+      "label": "Minimum distance",
+      "role": "minimum",
+      "x": [
+       42.056282
+      ],
+      "y": [
+       0.234478
+      ],
+      "glyph": "dot",
+      "ramp": []
+     }
+    ],
+    "steps": [],
+    "notes": []
+   },
+   {
+    "title": "Solar aspect angle",
+    "x": {
+     "label": "Time",
+     "unit": "hours",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Angle",
+     "unit": "degrees",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [
+     {
+      "label": "Aspect",
+      "role": "track",
+      "x": [
+       0.0,
+       0.341921,
+       0.683842,
+       1.025763,
+       1.367684,
+       1.709605
+      ],
+      "y": [
+       90.0,
+       93.163117,
+       96.319771,
+       99.463515,
+       102.587925,
+       105.686619
+      ],
+      "glyph": "line",
+      "ramp": [
+       0.0,
+       0.007194,
+       0.014388,
+       0.021583,
+       0.028777,
+       0.035971
+      ]
+     }
+    ],
+    "steps": [],
+    "notes": []
+   },
+   {
+    "title": "Right ascension delta",
+    "x": {
+     "label": "Time",
+     "unit": "hours",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "y": {
+     "label": "Right ascension",
+     "unit": "degrees",
+     "inverted": false,
+     "minimum": null,
+     "maximum": null,
+     "inversion_note": "",
+     "ticks": []
+    },
+    "marks": [],
+    "steps": [
+     {
+      "label": "Fitted right ascension",
+      "role": "state-change",
+      "x": [
+       0.0,
+       0.341921,
+       0.683842,
+       1.025763,
+       1.367684,
+       1.709605
+      ],
+      "y": [
+       41.1,
+       41.1,
+       41.1,
+       41.1,
+       41.1,
+       41.1
+      ],
+      "glyph": "step",
+      "ramp": []
+     }
+    ],
+    "notes": [
+     "A staircase, not a curve. Each tread is a refit."
+    ]
+   }
+  ],
+  "columns": [],
+  "rows": [],
+  "header": [
+   [
+    "Frame",
+    "Hill, from the Clohessy-Wiltshire solution"
+   ],
+   [
+    "Panel scales",
+    "independent"
+   ]
+  ],
+  "legend": [
+   [
+    "Relative track, time gradient",
+    "track"
+   ],
+   [
+    "Reference state change",
+    "state-change"
+   ],
+   [
+    "Minimum distance",
+    "minimum"
+   ]
+  ],
+  "footer": "seed 0xc0ffee \u00b7 140 samples \u00b7 2 revolutions",
+  "reads_as": "A closed repeating loop is bounded relative motion. An open track is a drift-by."
+ }
+}

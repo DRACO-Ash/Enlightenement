@@ -25,6 +25,12 @@ build
 docs
 tests
 *.zip
+# The interface's own test suite and its fixtures. `ui/` ships - it IS the served interface - but
+# its tests are not runtime and the image stays lean: no test tooling in the shipped layer, which
+# is the same rule `requirements-runtime.txt` holds for pip packages. The suite still reaches the
+# UPLOAD artefact, where the platform's pytest run ignores it, and a contract test holds both
+# halves so the image cannot start carrying a harness by accident.
+ui/tests
 # Workstation scripts. `tools/udl_characterise.py` reads real UDL credentials and runs on the
 # networked workstation, per the flight plan: "Runs on the networked workstation, never in the
 # container." Excluded from the image context here and from the upload allowlist in
@@ -32,6 +38,6 @@ tests
 tools
 
 # Design canvas working files. Versioned, reviewable, and never shipped: the packaging
-# allowlist in scripts/package-appstore.sh names only src tests scripts docs content .github,
+# allowlist in scripts/package-appstore.sh names only src tests scripts docs content ui .github,
 # so this is belt and braces for the image build context.
 design

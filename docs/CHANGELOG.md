@@ -2,6 +2,84 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.27.8 (2026-09-10)
+
+**What.** The interface moved out of `src/`, and it acquired its own test suite: **46 Node tests
+over `ui/app.js` at 100.00% line coverage of 1,225 executable lines.** Two owner instructions,
+and they turned out to be the same instruction: the coverage gate could not be passed by testing,
+and the interface deserved testing anyway.
+
+**The gate was unreachable, and that is arithmetic rather than an opinion about test quality.**
+`sonar.sources` is forced to `src`, so 1,300 lines of browser JavaScript sat in the coverage
+denominator with nothing able to describe them: the platform's generated pipeline runs
+`pip install` and `pytest` and nothing else. `coverage.xml` reports 3,005 of 3,057 Python lines,
+98.30% on its own, while the platform reported 76.50% - a denominator near 3,928 and about 871
+JavaScript lines in it. **Even at PERFECT Python coverage the score would have been 3,057/3,928 =
+77.83%**, below the 80% threshold, so no amount of test-writing could have closed it and writing
+more would only have proved the point more expensively.
+
+**`sonar.coverage.exclusions` was tried twice and ignored twice** - one pattern at V0.27.6, six
+spellings at V0.27.7 covering base-relative, any-depth and by-extension forms. The reported figure
+went 77.1%, 76.5%, 76.5%: the interface never left the denominator and only its own length moved.
+So the fix is the files' LOCATION, which a scanner argument cannot override.
+
+**`ui/` is where they belong regardless, and that is not a rationalisation.** `content/` already
+sits at the repository root and resolves through the same `_PACKAGE_ROOT`, for the same reason:
+it is DATA the server reads rather than Python source. Markup and a browser script are the same
+kind of thing. Both are copied into `/app` by the Dockerfile and staged by the packaging
+allowlist, so the path is identical from a checkout and from the container - which is why all
+1,033 Python tests passed across the move without one of them changing: they assert over HTTP.
+
+**Then the other half: the interface is tested directly now.** The Python suite asserts the served
+BYTES - the contrast floor on nineteen ink pairs, the absence of every invented figure from the
+mockup, the verdict-colour reservation - which is the right level for what reaches an operator and
+cannot reach a function's branches. Forty-six tests in three files now do that, with **no
+dependency added**: the runner is `node --test` and the coverage is V8's own.
+
+**The harness runs the SHIPPED file, unchanged.** `ui/app.js` is served under `script-src 'self'`
+and must stay loadable by a plain `<script>` tag, so it gains no module exports: adding them
+would mean the tested file is not the shipped file. It is evaluated in a `vm` context instead,
+where its function declarations become properties of that context. Three places where the fake
+DOM deliberately mirrors the real one, each because a defect hides behind it: `getElementById`
+REFUSES an id `index.html` does not declare, `querySelectorAll` throws on a selector it does not
+understand rather than returning an empty list, and `requestAnimationFrame` calls back
+synchronously. That last one was worth 68 lines of coverage on its own, and the `viewBox.baseVal`
+property another 38 - both were paths that looked tested and were not.
+
+**The fixtures came from the running server and the real generators, not from a keyboard.** Six
+payloads captured over HTTP from a live instance, plus four client-form stimuli composed through
+`compose(build_registry(), ...)` at a fixed seed - a table, an axis with no authored ticks, a
+recency ramp, a step series. A payload invented by the test author agrees with the author's belief
+about the API rather than with the API, and this project has already shipped one defect from
+exactly that gap.
+
+**Five things the new tests found or corrected, none of them in the fixtures.** The session
+kicker's capitals come from `text-transform`, so a test asserting the rendered string was
+asserting the stylesheet. `role="radiogroup"` is the document's claim, not the script's. PRD-TRIC
+ramps four of its seven groups, so "which products use the ramp" is a fact about the generators
+and not something to infer from a name. The submit button re-arms in `finally` on purpose, and
+what prevents a double score is the run id the server refuses twice. And the progress view's
+identity line is the PRIVACY statement rather than a name, which is now asserted so the screen
+cannot start naming an individual by accident.
+
+**Both floors are over 90%, on owner instruction.** The Python suite's `--cov-fail-under` is 95
+against a measured 97.78%, and it is asserted as a FLOOR rather than an exact string so lowering
+it fails and raising it does not. The interface's floor is 95 against a measured 100.00%. The
+platform's own threshold is 80 and is a different control; raising ours cannot move its number,
+and that is written down where both are declared.
+
+**The new leg FAILS when node is absent rather than skipping.** An untested interface is the thing
+it exists to stop, and a leg that quietly opts out is how that came to be true for eight releases.
+Four contract tests hold the shape: the interface is outside `src` and resolved from the package
+root, it ships in the artefact and in the image while `ui/tests` reaches neither the image nor the
+runtime, the suite exists and the loop runs it, and the floor is over 90%.
+
+**Verified.** Loop green at head across all eight legs. Pipeline simulation green. The artefact
+unzipped and driven in Chromium, all four screens, to confirm the relocation did not break the
+served paths.
+
+**Not done, and unchanged.** Neither binding gate has run against the V0.27.x series.
+
 ## V0.27.7 (2026-09-09)
 
 **What.** The quality gate went from 52 issues to 3, and those 3 are closed here. The coverage

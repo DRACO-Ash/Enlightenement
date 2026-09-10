@@ -67,7 +67,9 @@ done
 # assertion. The platform generates and commits its own pipeline regardless and ignores this one.
 #
 # `content` is DATA the running server loads, so it ships with the source or the deployed
-# container has no procedures to score against. Absence is NAMED rather than fatal, matching the
+# container has no procedures to score against. `ui` is the same case and was added at V0.27.8
+# when the interface moved out of `src/`: without it the artefact deploys a server with no
+# interface, which is a worse failure than the coverage metric that prompted the move. Absence is NAMED rather than fatal, matching the
 # file loop above: an unconditional copy of a directory that a given checkout does not carry is
 # how this script was once killed inside the platform's own test job.
 # `tools` is NOT in this list and must not be. The engineering gate proposed adding it, because
@@ -77,7 +79,7 @@ done
 # `test_the_workstation_tools_never_reach_the_upload_or_the_image` holds in both contracts. The
 # limitation is real and is documented at leg 2 of `verify.sh` instead; the platform runs pytest
 # against the zip, not this loop.
-for dir in src tests scripts docs content .github; do
+for dir in src tests scripts docs content ui .github; do
   python3 -c '
 import pathlib, shutil, sys
 source, stage = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])

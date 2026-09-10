@@ -52,6 +52,14 @@ COPY --chown=10001:10001 src ./src
 # itself. Placed BEFORE the sweep below, because nothing may follow it.
 COPY content ./content
 
+# The interface: the served document and its script. DATA on the same terms as the content tree
+# above - read by the server, never written by it, so root-owned and world-readable rather than
+# chowned to the application user. It moved out of `src/` at V0.27.8 because the platform forces
+# `sonar.sources=src` and a browser script inside the analysed tree can carry no coverage report,
+# which put the quality gate's 80% out of reach by arithmetic. Placed BEFORE the sweep below,
+# because nothing may follow it.
+COPY ui ./ui
+
 # Fail-CLOSED: strip the package manager and every build artefact from what ships, THEN clear
 # every setuid and setgid bit. One instruction, two fail-closed steps, in that order.
 #

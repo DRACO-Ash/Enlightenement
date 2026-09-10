@@ -1,0 +1,210 @@
+{
+ "drill_run_id": "a69ad663c5f9441cb793c5fba81667a2",
+ "item_id": "DRL-0005",
+ "cue_id": "CUE-026",
+ "prompt": "The tooling reports this drift rate. What do you do?",
+ "response_format": "free_classification",
+ "elo": 1250,
+ "confidence_required": true,
+ "time_target_s": 20,
+ "stimulus": [
+  {
+   "product_id": "PRD-WATERFALL",
+   "generator": "waterfall",
+   "title": "Waterfall: the neighbourhood",
+   "panels": [
+    {
+     "title": "Longitude over time",
+     "x": {
+      "label": "Longitude",
+      "unit": "degrees",
+      "inverted": false,
+      "minimum": null,
+      "maximum": null,
+      "inversion_note": "",
+      "ticks": []
+     },
+     "y": {
+      "label": "Observation time",
+      "unit": "UTC",
+      "inverted": true,
+      "minimum": null,
+      "maximum": null,
+      "inversion_note": "newest nearest the longitude axis at the bottom",
+      "ticks": [
+       [
+        0.0,
+        "05 Jun 10:00Z"
+       ],
+       [
+        1.25,
+        "06 Jun 16:00Z"
+       ],
+       [
+        2.5,
+        "07 Jun 22:00Z"
+       ],
+       [
+        3.75,
+        "09 Jun 04:00Z"
+       ],
+       [
+        5.0,
+        "10 Jun 10:00Z"
+       ]
+      ]
+     },
+     "marks": [
+      {
+       "label": "Drifting object",
+       "role": "object-drift",
+       "x": [
+        2.066635,
+        2.054461,
+        2.035094,
+        2.000983,
+        1.969444,
+        1.928967,
+        1.83358,
+        1.792276
+       ],
+       "y": [
+        0.001839,
+        0.012911,
+        0.026977,
+        0.040602,
+        0.067358,
+        0.090042,
+        0.155745,
+        0.181767
+       ],
+       "glyph": "cross",
+       "ramp": [
+        0.999632,
+        0.997418,
+        0.994605,
+        0.99188,
+        0.986528,
+        0.981992,
+        0.968851,
+        0.963647
+       ]
+      },
+      {
+       "label": "Drifting object",
+       "role": "object-drift",
+       "x": [
+        1.254663,
+        1.225472,
+        1.209804,
+        1.204986,
+        1.170474,
+        1.141001,
+        1.119484,
+        1.076216
+       ],
+       "y": [
+        0.001839,
+        0.012911,
+        0.026977,
+        0.040602,
+        0.055762,
+        0.076942,
+        0.090042,
+        0.117867
+       ],
+       "glyph": "cross",
+       "ramp": [
+        0.999632,
+        0.997418,
+        0.994605,
+        0.99188,
+        0.988848,
+        0.984612,
+        0.981992,
+        0.976427
+       ]
+      },
+      {
+       "label": "Drifting object",
+       "role": "object-drift",
+       "x": [
+        2.29744,
+        2.282655,
+        2.241347,
+        2.231457,
+        2.208793,
+        2.163578,
+        2.132346,
+        2.127873
+       ],
+       "y": [
+        0.001839,
+        0.012911,
+        0.026977,
+        0.040602,
+        0.055762,
+        0.090042,
+        0.102437,
+        0.117867
+       ],
+       "glyph": "cross",
+       "ramp": [
+        0.999632,
+        0.997418,
+        0.994605,
+        0.99188,
+        0.988848,
+        0.981992,
+        0.979513,
+        0.976427
+       ]
+      }
+     ],
+     "steps": [],
+     "notes": [
+      "Newest observations at the bottom, nearest the longitude axis.",
+      "Objects within 50 km of the primary."
+     ]
+    }
+   ],
+   "columns": [],
+   "rows": [],
+   "header": [
+    [
+     "Span",
+     "5 days"
+    ],
+    [
+     "From (synthetic)",
+     "05 Jun 10:00Z"
+    ],
+    [
+     "To",
+     "10 Jun 10:00Z"
+    ],
+    [
+     "Window",
+     "-3.0\u00b0 to +3.0\u00b0 of the primary"
+    ],
+    [
+     "Reported rate",
+     "-22,900,000\u00b0/day as reported; the track is drawn at -1.44\u00b0/day so the panel can show it"
+    ]
+   ],
+   "legend": [
+    [
+     "Held longitude",
+     "object-held"
+    ],
+    [
+     "Drifting object",
+     "object-drift"
+    ]
+   ],
+   "footer": "observation count 2065 \u00b7 seed 0x8e7ec848c9ab2f1a \u00b7 gaps PROVISIONAL \u00b7 synthetic epoch, seeded",
+   "reads_as": "Time runs down the page with the newest data at the bottom. A vertical line is holding station; a diagonal is drifting."
+  }
+ ],
+ "content_hash": "0e395153ae121a6b6f866db5c63151d0d81535f9ce1cb7aaad97c03d16f5ecd3"
+}

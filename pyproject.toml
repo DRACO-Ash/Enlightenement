@@ -1,6 +1,6 @@
 [project]
 name = "enlightenment"
-version = "0.27.7"
+version = "0.27.8"
 description = "Orbital warfare training application for the Bluestaq App Store."
 requires-python = ">=3.12,<3.13"
 
@@ -8,7 +8,16 @@ requires-python = ">=3.12,<3.13"
 # addopts owns its flags so the platform's test stage produces the artefact the
 # SonarQube gate reads even when it invokes a bare `pytest`. Only the xml report
 # writes the Cobertura file; a bare run would score 0% coverage and fail the gate.
-addopts = "-q --strict-markers --strict-config --cov=src --cov-branch --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=80"
+#
+# `--cov-fail-under=95`, which is OUR bar and is deliberately above the platform's 80.
+# Owner instruction, 2026-09-10: raise the pass-mark over 90%. The measured figure is
+# 97.78%, so this holds roughly three points of headroom - enough that a legitimate
+# addition does not turn the loop red on arrival, tight enough that a chunk of untested
+# code cannot land quietly. The PLATFORM's binding threshold is still 80 and is not ours
+# to change; raising this one cannot move the platform's reported percentage, because that
+# figure counts JavaScript lines this report does not contain. Recorded so nobody reads
+# the two numbers as the same control.
+addopts = "-q --strict-markers --strict-config --cov=src --cov-branch --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=95"
 testpaths = ["tests"]
 pythonpath = ["src"]
 

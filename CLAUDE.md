@@ -79,10 +79,13 @@ sh scripts/build-image.sh enlightenment:<version>           build the container 
 sh scripts/lock-requirements.sh                             re-lock after a dependency change
 ```
 
-The loop runs cheapest-first, six legs: `scripts/check-environment.py` (installed versions
-must equal the lock-file pins), `ruff format --check`, `ruff check`, `mypy` strict, `pytest`
-with Cobertura coverage to `coverage.xml` at 80% or more, then `pip-audit`. A leg that
-cannot run locally exits non-zero with a "deferred to CI" banner; it is never a green pass.
+The loop runs cheapest-first, eight legs: `scripts/check-environment.py` (installed versions
+must equal the lock-file pins), `tools/validate_content.py`, `ruff format --check`, `ruff check`,
+`mypy` strict, `pytest` with Cobertura coverage to `coverage.xml` at 95% or more, `node --test`
+over `ui/tests/` with the interface's own line coverage at 95% or more, then `pip-audit`. A leg
+that cannot run locally exits non-zero with a "deferred to CI" banner; it is never a green pass.
+**The interface leg FAILS when node is absent rather than skipping**, because an untested
+interface is the thing it exists to stop.
 
 **Every leg runs through one resolved interpreter, never a bare tool name.** `verify.sh`
 resolves `$PY` (`ENLIGHTENMENT_PYTHON`, then `.venv/bin/python`, then `$VIRTUAL_ENV`, then
@@ -106,6 +109,16 @@ src/enlightenment/scenario/ the determinism substrate: seeded randomness, an int
 src/enlightenment/          the application source. Sources live under src/ deliberately:
                             the platform forces sonar.sources=src, so this placement and the
                             committed sonar-project.properties agree instead of racing.
+ui/                         the served interface: the document, its script, and its own Node
+                            test suite. At the ROOT and NOT under src/, because the forced
+                            sonar.sources=src put 1,300 lines of JavaScript that no coverage
+                            report can describe into the quality gate's denominator and made
+                            the 80% threshold unreachable by arithmetic. Two rounds of
+                            sonar.coverage.exclusions did not move the metric; a location
+                            cannot be overridden by a scanner argument. It resolves through
+                            _PACKAGE_ROOT exactly as content/ does, because both are served
+                            DATA rather than Python source. Ships in the artefact and in the
+                            image; ui/tests does not reach the image.
 tests/                      the suite the platform runs against the uploaded zip
 scripts/                    the verification loop, packaging, and pipeline simulation
 docs/                       deployment parameters, security policy, changelog

@@ -105,7 +105,21 @@ def resolve_content_root() -> Path:
 #: than inline because the response sets `script-src 'self'`, and the alternatives to a separate
 #: file are a maintained CSP hash or `'unsafe-inline'`. One extra file is cheaper than either, and
 #: `'unsafe-inline'` on script is not available to this project at any price.
-_UI_DIRECTORY: Final = Path(__file__).resolve().parent / "ui"
+#:
+#: **At the REPOSITORY ROOT, resolved through `_PACKAGE_ROOT`, exactly as `content/` is.** It sat
+#: under the package until V0.27.8. The platform forces `sonar.sources=src`, so 1,322 lines of
+#: JavaScript that no coverage report can ever describe were inside the analysed tree and counted
+#: as uncovered: the gate scored 76.5% against a Python figure of 98.30%, and the arithmetic put
+#: the CEILING at 77.83% even with perfect Python tests, so 80% was unreachable by testing.
+#: `sonar.coverage.exclusions` was tried twice, with one pattern and then six, and the metric did
+#: not move either time.
+#:
+#: The placement is right on its own merits and not only because of the gate. This is served
+#: DATA, like the content tree beside it - markup and a browser script, not Python source - and
+#: `content/` already sits at the root for that reason and resolves through the same constant.
+#: Both are copied into `/app` by the Dockerfile and staged by the packaging allowlist, so the
+#: path is identical from a checkout and from the container.
+_UI_DIRECTORY: Final = _PACKAGE_ROOT / "ui"
 
 #: What may be served out of the interface directory, by exact name. An allowlist rather than a
 #: path join with a traversal check: a two-entry allowlist cannot be traversed, and every

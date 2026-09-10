@@ -39,7 +39,7 @@ else
 fi
 echo "interpreter: $PY ($("$PY" --version 2>&1))"
 
-green "1/7 environment matches the lock files"
+green "1/8 environment matches the lock files"
 # First, and deliberately so: a mismatch here means every leg below is measuring something
 # other than what ships. Cheapest leg and the one that gives the rest their meaning.
 # All THREE lock files, including the lean one the image installs. Its pins are currently a
@@ -50,7 +50,7 @@ green "1/7 environment matches the lock files"
 "$PY" scripts/check-environment.py "$PY" \
   requirements-runtime.txt requirements.txt requirements-dev.txt
 
-green "2/7 content package validates"
+green "2/8 content package validates"
 # Second, and before any analyser touches the code: the content IS the asset, and the
 # application is a delivery mechanism for it. Seventeen assertions, ten seconds, and two of them
 # exist specifically to protect the handover: `generators_canonical` fails if any drill
@@ -69,23 +69,60 @@ green "2/7 content package validates"
 "$PY" tools/validate_content.py --content-dir content --self-test \
   | "$PY" -c 'import json,sys; r=json.load(sys.stdin); print("content", r["counts"], "errors", len(r["errors"]), "warnings", len(r["warnings"])); sys.exit(1 if r["errors"] else 0)'
 
-green "3/7 format (ruff format --check)"
+green "3/8 format (ruff format --check)"
 "$PY" -m ruff format --check .
 
-green "4/7 lint (ruff check)"
+green "4/8 lint (ruff check)"
 "$PY" -m ruff check .
 
-green "5/7 types (mypy strict)"
+green "5/8 types (mypy strict)"
 "$PY" -m mypy
 
-green "6/7 tests with coverage (pytest, Cobertura to coverage.xml)"
+green "6/8 tests with coverage (pytest, Cobertura to coverage.xml)"
 "$PY" -m pytest
 if [ ! -s coverage.xml ]; then
   echo "FAIL: coverage.xml is missing or empty; the SonarQube gate would score 0%." >&2
   exit 1
 fi
 
-green "7/7 dependency vulnerability scan (pip-audit)"
+green "7/8 interface tests with coverage (node --test over ui/)"
+# The interface is 1,300 lines of JavaScript and it used to have no direct test at all: the
+# Python suite asserts the served BYTES - the contrast floor, the absence of invented figures,
+# the verdict-colour reservation - which is the right level for "what reaches the operator" and
+# cannot reach a function's branches. Both halves now exist.
+#
+# The runner is Node's own, with no dependency added: `node --test` and V8's coverage. The
+# harness evaluates `ui/app.js` in a `vm` context so the file stays loadable by a plain
+# `<script>` tag under `script-src 'self'` and gains no module exports it does not ship with.
+# Node's built-in coverage reporter does not attribute a vm-run script - it reported 97.96%
+# while listing only the test files - so the figure comes from V8's raw byte ranges instead,
+# by the method written out at the top of ui/tests/coverage.mjs.
+#
+# THIS LEG IS REPOSITORY-ONLY, like leg 2. The platform's generated pipeline runs `pip install`
+# and `pytest` and nothing else, so it never runs this and the interface's coverage never
+# reaches the quality gate. That is also why `ui/` sits outside `src/`: see
+# sonar-project.properties.
+if [ -n "${ENLIGHTENMENT_NODE:-}" ]; then
+  NODE="$ENLIGHTENMENT_NODE"
+elif command -v node >/dev/null 2>&1; then
+  NODE=node
+elif [ -x /opt/node22/bin/node ]; then
+  NODE=/opt/node22/bin/node
+else
+  echo "FAIL: node is not installed, so the interface tests cannot run. This leg is not" >&2
+  echo "      optional and it does not skip: an untested interface is what it exists to stop." >&2
+  echo "      Set ENLIGHTENMENT_NODE, or install Node 22 (see environment-setup)." >&2
+  exit 1
+fi
+echo "node: $NODE ($("$NODE" --version 2>&1))"
+UI_COVERAGE="${TMPDIR:-/tmp}/enlightenment-ui-coverage-$$"
+rm -rf "$UI_COVERAGE"
+mkdir -p "$UI_COVERAGE"
+NODE_V8_COVERAGE="$UI_COVERAGE" "$NODE" --test "ui/tests/*.test.mjs"
+"$NODE" ui/tests/coverage.mjs "$UI_COVERAGE" coverage-ui.info
+rm -rf "$UI_COVERAGE"
+
+green "8/8 dependency vulnerability scan (pip-audit)"
 # pip-audit exits non-zero both for a real advisory AND for an unreachable advisory
 # endpoint. Those are not the same result: a failure to CHECK is never a pass.
 #
