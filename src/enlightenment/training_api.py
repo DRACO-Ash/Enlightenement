@@ -384,8 +384,23 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
         """
         result = content.result
         served = loop.manifest()
+        #: **The library index's own shape faults, which the LOADER cannot see.** A malformed
+        #: nested value - a step's `products` or a decision's `branches` as a string - is caught
+        #: at SERVE time by `_authored_sequence`, so `result.errors` knows nothing about it and
+        #: this surface reported `ok: true, errors: 0` while the library index 503'd for all
+        #: thirteen procedures. The refusal is right; the DISAGREEMENT was the defect. The
+        #: manifest is the surface an operator checks first, so a manifest saying healthy over a
+        #: blank library sends them to look in the wrong place.
+        #:
+        #: Derived rather than asserted: the index is built here and the fault relayed, so the
+        #: two surfaces cannot contradict each other by construction. Thirteen procedures of
+        #: counting, which is cheaper than the response it is attached to. The detail names the
+        #: field and the TYPE and never the value, so this echoes no content - the security gate
+        #: planted a canary string in all three nested paths and confirmed it reaches neither
+        #: the 503 body nor this manifest.
+        index_faults = _index_faults(content)
         return {
-            "ok": result.ok,
+            "ok": result.ok and not index_faults,
             "content_hash": result.content_hash,
             "counts": dict(result.counts),
             #: Bounded per entry AND capped in count, like the 503 below. Bounding only that exit
@@ -393,7 +408,9 @@ def _register_library(app: FastAPI, *, content: ContentPackage, loop: DrillLoop)
             #: V0.26.6 cites as the defect it closed, in this file, 110 lines away. There were four
             #: surfaces carrying the class, not three, and this codebase's own sentence for it is
             #: "a bound applied at one of two exits is a bound at neither".
-            "errors": [bounded_reason(str(error)) for error in result.errors[:MAX_SERVED_ERRORS]],
+            "errors": ([bounded_reason(str(error)) for error in result.errors] + index_faults)[
+                :MAX_SERVED_ERRORS
+            ],
             "thresholds_source": content.thresholds.source,
             "scored_scenarios_ready": content.scored_scenarios_ready,
             #: What is NOT wired, disclosed on a surface an operator can actually reach. These
@@ -531,6 +548,30 @@ def _authored_sequence(value: Any, *, procedure_id: str, field: str) -> list[Any
     if isinstance(value, list):
         return value
     raise _content_shape_fault(procedure_id, field, value)
+
+
+def _index_faults(content: ContentPackage) -> list[str]:
+    """The library index's own shape faults, as bounded reasons for the manifest.
+
+    A module-level helper rather than a `try` inside the registrar, because the registrar was at
+    ruff's complexity cap and this tipped it - the same reason `_procedure_index` sits out here,
+    and extracting is the fix where raising the cap would be the suppression.
+    """
+    #: A FIXED reason naming the route that explains it, rather than the 503's own message
+    #: relayed onto a second surface. Three reasons, in order of weight. Starlette types
+    #: `HTTPException.detail` as `str` while `_content_shape_fault` builds a mapping, so reading
+    #: it by key needs a cast and reading it defensively is a branch mypy proves dead. The
+    #: contradiction is what had to be fixed - a manifest reading healthy over a blank library -
+    #: and `ok: false` with a pointer fixes it. And a diagnosis echoed onto a second route is a
+    #: second place for it to leak from, where the 503 already carries the field and the type.
+    try:
+        _procedure_index(content)
+    except HTTPException:
+        return [
+            "the procedure index cannot be served: a content record has the wrong shape."
+            " GET /api/v1/content/procedures names the procedure and the field."
+        ]
+    return []
 
 
 def _procedure_index(content: ContentPackage) -> list[dict[str, Any]]:

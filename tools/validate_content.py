@@ -48,7 +48,9 @@ ID_PATTERNS: Final[dict[str, re.Pattern[str]]] = {
     "stage": re.compile(r"^STG-\d{2}$"),
 }
 
-FORBIDDEN_RESPONSE_FORMATS: Final[frozenset[str]] = frozenset({"multiple_choice", "select_one", "true_false"})
+FORBIDDEN_RESPONSE_FORMATS: Final[frozenset[str]] = frozenset(
+    {"multiple_choice", "select_one", "true_false"}
+)
 
 # A bare five-digit token in shipped content is very likely a catalogue number.
 CATALOGUE_NUMBER: Final = re.compile(r"(?<![\d.\-])\d{5}(?![\d.])")
@@ -155,7 +157,9 @@ def check_id_formats(defined: dict[str, set[str]], report: Report) -> None:
                 report.error(f"{kind}: identifier {identifier!r} does not match {pattern.pattern}")
 
 
-def check_references(data: dict[str, dict[str, Any]], defined: dict[str, set[str]], report: Report) -> None:
+def check_references(
+    data: dict[str, dict[str, Any]], defined: dict[str, set[str]], report: Report
+) -> None:
     """Every cross-reference must resolve to a defined identifier."""
 
     def verify(kind: str, values: Any, where: str) -> None:
@@ -171,10 +175,33 @@ def check_references(data: dict[str, dict[str, Any]], defined: dict[str, set[str
         for step in proc.get("steps", []):
             verify("product", step.get("products"), f"procedure {proc['id']} step {step['n']}")
         for point in proc.get("decision_points", []):
-            for branch in point.get("branches", []):
+            #: **Shape-guarded, because the traceback was on the one surface that must diagnose.**
+            #: `branch.get(...)` on a string raised `AttributeError: 'str' object has no attribute
+            #: 'get'`, so an author whose `branches` is malformed got a Python traceback instead
+            #: of a named content error. It failed closed - non-zero exit, nothing ships - which
+            #: is why it went unnoticed. What makes it worth fixing is WHICH field it is: this is
+            #: the same nested value the library index now reads, so the validator crashed on
+            #: exactly the shape the index was hardened against, and the gate that exists to
+            #: diagnose the fault was the only place that could not.
+            branches = point.get("branches")
+            if not isinstance(branches, list):
+                report.error(
+                    f"procedure {proc['id']} {point.get('id', '?')}: branches is a"
+                    f" {type(branches).__name__}, and the schema declares a list"
+                )
+                continue
+            for branch in branches:
+                if not isinstance(branch, dict):
+                    report.error(
+                        f"procedure {proc['id']} {point.get('id', '?')}: a branch is a"
+                        f" {type(branch).__name__}, and the schema declares a mapping"
+                    )
+                    continue
                 target = branch.get("goto_procedure")
                 if target and target not in defined["procedure"]:
-                    report.error(f"procedure {proc['id']} {point['id']}: unresolved goto {target!r}")
+                    report.error(
+                        f"procedure {proc['id']} {point['id']}: unresolved goto {target!r}"
+                    )
 
     for cue in data["cues"]["cues"]:
         verify("product", cue.get("seen_in"), f"cue {cue['id']}")
@@ -196,7 +223,11 @@ def check_references(data: dict[str, dict[str, Any]], defined: dict[str, set[str
         verify("procedure", scenario.get("procedure_ids"), f"scenario {scenario['id']}")
         verify("competency", scenario.get("competency_ids"), f"scenario {scenario['id']}")
         for trigger in scenario.get("trigger_events", []):
-            verify("competency", trigger.get("competency_ids"), f"scenario {scenario['id']} {trigger['id']}")
+            verify(
+                "competency",
+                trigger.get("competency_ids"),
+                f"scenario {scenario['id']} {trigger['id']}",
+            )
 
     for trace in data["traces"]["expert_traces"]:
         if trace["scenario_id"] not in defined["scenario"]:
@@ -212,16 +243,16 @@ def check_references(data: dict[str, dict[str, Any]], defined: dict[str, set[str
                 report.error(f"rubric {rubric['id']} {rule['id']}: unresolved competency")
 
 
-def check_declared_enums(data: dict[str, dict[str, Any]], schemas: dict[str, Any], report: Report) -> None:
+def check_declared_enums(
+    data: dict[str, dict[str, Any]], schemas: dict[str, Any], report: Report
+) -> None:
     """Every response_format used must be declared in the schema enum.
 
     Added after a self-audit found four formats in live use and absent from the
     schema. The validator passed because it never checked, which is exactly the
     class of blind spot a validator exists to prevent.
     """
-    declared = set(
-        schemas["$defs"]["drillItem"]["properties"]["response_format"]["enum"]
-    )
+    declared = set(schemas["$defs"]["drillItem"]["properties"]["response_format"]["enum"])
     used = {d["response_format"] for d in data["drills"]["drills"]}
     undeclared = used - declared
     if undeclared:
@@ -241,7 +272,9 @@ def check_generator_contract(data: dict[str, dict[str, Any]], report: Report) ->
     if not contract:
         report.error("drills: no _generator_contract block. Engineers cannot know what to build.")
         return
-    canonical = set(contract.get("product_renderers", {})) | set(contract.get("composition_modes", {}))
+    canonical = set(contract.get("product_renderers", {})) | set(
+        contract.get("composition_modes", {})
+    )
     if not canonical:
         report.error("drills: _generator_contract declares no generators")
         return
@@ -322,7 +355,12 @@ def walk_threshold_refs(node: Any, found: set[str]) -> None:
         for key, value in node.items():
             if key == "threshold_ref" and isinstance(value, str):
                 found.add(value)
-            elif key == "time_standard" and isinstance(value, str) and "." in value and " " not in value:
+            elif (
+                key == "time_standard"
+                and isinstance(value, str)
+                and "." in value
+                and " " not in value
+            ):
                 found.add(value)
             else:
                 walk_threshold_refs(value, found)
@@ -363,7 +401,9 @@ def check_thresholds(data: dict[str, dict[str, Any]], report: Report) -> set[str
     return used
 
 
-COUNT_KEYS: Final = re.compile(r'"(obs_count|rows|revolutions|days|duration_\w+|\w*_count|\w*_km|elo|difficulty_seed)"\s*:')
+COUNT_KEYS: Final = re.compile(
+    r'"(obs_count|rows|revolutions|days|duration_\w+|\w*_count|\w*_km|elo|difficulty_seed)"\s*:'
+)
 
 
 def check_redaction(content_dir: Path, report: Report) -> None:
@@ -388,7 +428,9 @@ def check_redaction(content_dir: Path, report: Report) -> None:
                 )
 
 
-def check_coverage(data: dict[str, dict[str, Any]], defined: dict[str, set[str]], report: Report) -> None:
+def check_coverage(
+    data: dict[str, dict[str, Any]], defined: dict[str, set[str]], report: Report
+) -> None:
     """Every competency and active procedure should be reachable from content."""
     covered_by_cue: set[str] = set()
     for cue in data["cues"]["cues"]:
@@ -412,14 +454,18 @@ def check_coverage(data: dict[str, dict[str, Any]], defined: dict[str, set[str]]
     traced = {t["scenario_id"] for t in data["traces"]["expert_traces"]}
     untraced = defined["scenario"] - traced
     if untraced:
-        report.warn(f"coverage: scenarios with no expert trace, cannot be debriefed: {sorted(untraced)}")
+        report.warn(
+            f"coverage: scenarios with no expert trace, cannot be debriefed: {sorted(untraced)}"
+        )
 
 
 def validate(content_dir: Path) -> Report:
     """Run the full validation suite over a content directory."""
     report = Report()
     data = collect(content_dir)
-    schemas = json.loads((content_dir.parent / "schemas" / "enlightenment.schema.json").read_text(encoding="utf-8"))
+    schemas = json.loads(
+        (content_dir.parent / "schemas" / "enlightenment.schema.json").read_text(encoding="utf-8")
+    )
     check_version_blocks(data, report)
     check_declared_enums(data, schemas, report)
     check_generator_contract(data, report)
@@ -480,9 +526,7 @@ def self_test(content_dir: Path) -> dict[str, Any]:
         "every axis declares how it is measured",
     )
     rubric_axes = {
-        rule["competency_id"]
-        for rub in data["rubrics"]["rubrics"]
-        for rule in rub["rules"]
+        rule["competency_id"] for rub in data["rubrics"]["rubrics"] for rule in rub["rules"]
     }
     assert_that(
         "every_competency_is_scored",
@@ -491,7 +535,9 @@ def self_test(content_dir: Path) -> dict[str, Any]:
     )
     assert_that(
         "no_recognition_formats",
-        all(d["response_format"] not in FORBIDDEN_RESPONSE_FORMATS for d in data["drills"]["drills"]),
+        all(
+            d["response_format"] not in FORBIDDEN_RESPONSE_FORMATS for d in data["drills"]["drills"]
+        ),
         "no drill uses a multiple choice or recognition response format",
     )
     assert_that(
@@ -526,7 +572,9 @@ def self_test(content_dir: Path) -> dict[str, Any]:
         "every expert trace states what the expert found hard",
     )
     contract = data["drills"].get("_generator_contract", {})
-    canonical = set(contract.get("product_renderers", {})) | set(contract.get("composition_modes", {}))
+    canonical = set(contract.get("product_renderers", {})) | set(
+        contract.get("composition_modes", {})
+    )
     assert_that(
         "detection_patterns_compile",
         all(_compiles(c["pattern"]) for c in data["patterns"]["checks"]),
@@ -534,12 +582,16 @@ def self_test(content_dir: Path) -> dict[str, Any]:
     )
     assert_that(
         "generators_canonical",
-        bool(canonical) and {d["stimulus"]["generator"] for d in data["drills"]["drills"]} <= canonical,
+        bool(canonical)
+        and {d["stimulus"]["generator"] for d in data["drills"]["drills"]} <= canonical,
         f"{len(canonical)} canonical generators declared, all drill references within them",
     )
     declared_formats = set(
-        json.loads((content_dir.parent / "schemas" / "enlightenment.schema.json").read_text(encoding="utf-8"))
-        ["$defs"]["drillItem"]["properties"]["response_format"]["enum"]
+        json.loads(
+            (content_dir.parent / "schemas" / "enlightenment.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )["$defs"]["drillItem"]["properties"]["response_format"]["enum"]
     )
     assert_that(
         "response_formats_declared",
@@ -548,19 +600,12 @@ def self_test(content_dir: Path) -> dict[str, Any]:
     )
     assert_that(
         "every_procedure_has_discrimination",
-        all(
-            p.get("not_this_procedure_when")
-            for p in data["procedures_core"]["procedures"]
-        ),
+        all(p.get("not_this_procedure_when") for p in data["procedures_core"]["procedures"]),
         "every core procedure states when it is not the right procedure",
     )
     assert_that(
         "every_rubric_rule_explains",
-        all(
-            r.get("explain")
-            for rub in data["rubrics"]["rubrics"]
-            for r in rub["rules"]
-        ),
+        all(r.get("explain") for rub in data["rubrics"]["rubrics"] for r in rub["rules"]),
         "every scoring rule carries operator-facing explain text",
     )
     used_refs: set[str] = set()
@@ -589,8 +634,12 @@ def self_test(content_dir: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     parser = argparse.ArgumentParser(description="Validate ENLIGHTENMENT training content.")
-    parser.add_argument("--content-dir", type=Path, default=Path("content"), help="path to the content directory")
-    parser.add_argument("--self-test", action="store_true", help="run assertions and emit a JSON manifest")
+    parser.add_argument(
+        "--content-dir", type=Path, default=Path("content"), help="path to the content directory"
+    )
+    parser.add_argument(
+        "--self-test", action="store_true", help="run assertions and emit a JSON manifest"
+    )
     parser.add_argument("--verbose", action="store_true", help="log at debug level")
     args = parser.parse_args(argv)
 

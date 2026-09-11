@@ -574,11 +574,14 @@ def _waterfall_samples(
     gap_start, gap_end = scene.gap
     #: **The residual is SCALED to the room remaining, not clamped against the wall.**
     #: `residual * when` is unbounded in the window length: measured at the longest authorable
-    #: span, 60 days, a held track ran from -3.775° to +1.707° under a header reading
-    #: "-3.0° to +3.0° of the primary", so the product asserted a station-keeping box its own
-    #: marks had left. No shipped item authors a span past seven days - but `MAX_SPAN_DAYS` is 60
-    #: and the span is content-supplied, and a bound on a content-supplied quantity belongs where
-    #: the value reaches the range rather than where somebody notices.
+    #: span - 60 days at the time, measured there - a held track ran from -3.775° to +1.707°
+    #: under a header reading "-3.0° to +3.0° of the primary", so the product asserted a
+    #: station-keeping box its own marks had left. **That figure is historical: the ceiling has
+    #: been 30 since V0.27.15**, so the span it describes is one the code now refuses, and it is
+    #: kept rather than re-measured because it is the evidence the bound was built from. No
+    #: shipped item authors a span past seven days - but the span is content-supplied, and a
+    #: bound on a content-supplied quantity belongs where the value reaches the range rather
+    #: than where somebody notices.
     #:
     #: A CLAMP was the first fix and was worse than it looked. It held the track inside the box
     #: and, at 60 days, parked one of fourteen held tracks at exactly +3.0° for 755 of its 1,703

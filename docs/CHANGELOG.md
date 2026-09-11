@@ -2,6 +2,72 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.29.3 (2026-09-11)
+
+**What.** `security-reviewer` returned **PASS** on V0.29.2 - the first security verdict since
+V0.27.13, nine releases back - with no blocker and no major, and three MINORs. All three closed.
+
+**The manifest read healthy over a blank library.** A malformed nested value is caught at SERVE
+time by `_authored_sequence`, so the loader knows nothing about it:
+`GET /api/v1/content/manifest` reported `ok: true, errors: 0` while
+`GET /api/v1/content/procedures` 503'd for all thirteen procedures. The gate agreed the refusal
+is right - a partial index that silently omits a procedure is worse for a library than an honest
+refusal - so **the disagreement was the defect**. The manifest is the surface an operator checks
+first, and one saying healthy over a blank library sends them to look in the wrong place.
+
+The manifest now builds the index and reports a FIXED reason naming the route that explains it,
+rather than relaying the 503's own message. Three reasons, in order of weight: Starlette types
+`HTTPException.detail` as `str` while the fault builds a mapping, so reading it by key needs a
+cast and reading it defensively is a branch mypy proves dead; the contradiction is what had to be
+fixed and `ok: false` with a pointer fixes it; and a diagnosis echoed onto a second route is a
+second place for it to leak from, where the 503 already carries the field and the type. Extracted
+to `_index_faults` because the registrar was at ruff's complexity cap and this tipped it - the
+same reason `_procedure_index` already sits outside it, and extracting is the fix where raising
+the cap would be the suppression.
+
+**The content validator crashed on the one shape it exists to diagnose.** `branch.get(...)` on a
+string raised `AttributeError: 'str' object has no attribute 'get'`, so an author whose `branches`
+is malformed got a Python traceback instead of a named content error. It failed closed - non-zero
+exit, nothing ships - which is why it went unnoticed. What makes it worth fixing is WHICH field it
+is: **this is the same nested value the library index now reads**, so the validator crashed on
+exactly the shape the index was hardened against, and the gate that exists to diagnose the fault
+was the only surface that could not. Both the list and the mapping are guarded, each reporting the
+field and the type.
+
+**A stale figure in the comment that justifies a bound.** `products.py` still said
+"`MAX_SPAN_DAYS` is 60" and quoted a measurement taken at 60 days, which the code has refused
+since V0.27.15. Marked as historical with the release it was taken at, rather than re-measured,
+because it is the evidence the bound was built from - but a comment whose whole purpose is to
+justify a bound against the worst authorable case cannot quote a span the code rejects.
+
+**What the gate verified rather than found, recorded because a negative result is evidence.** It
+planted a canary string as `step.products`, `decision.branches` and `decision_points` in turn: all
+three 503 naming only the field, the served id and the Python type, with the canary absent from
+both the 503 body and the manifest. A 400-procedure hostile tree hit the 64 kB ceiling with a
+220-byte refusal. It re-derived the payload headroom independently rather than trusting my figure
+- 2,126,883 bytes at the worst grid point, 48.0% on the wire, **2.1x margin** - and agreed the
+span ceiling was the right lever. It attacked the 0.8 s probe budget with 1,440 unauthenticated
+`/readyz` requests interleaved with 2,400 cancelled starters and got `{200: 1440}`, zero
+self-inflicted 503. And it swept the double-fire as a CLASS rather than an instance: every
+clickable element in every layout, one synthetic click each, one fetch on all thirteen nested
+controls, with the sweep shown to be non-vacuous.
+
+**On the probe budget, the gate's own words are worth keeping.** Asked whether 0.8 s can make a
+healthy pod unready where 2.0 s would not, it said yes - any platform with `timeoutSeconds >= 2`
+and a volume stalling in the 0.8-to-2.0 s band - and then why it does not outweigh losing the
+diagnostic 503: the band needs a volume roughly 1,500 times slower than measured p99, so it is a
+genuinely degraded mount rather than a busy one; at the DEFAULT `timeoutSeconds: 1` the old 2.0 s
+budget was always killed before rendering, so the change strictly increases the number of
+configurations that produce a diagnosis; and a pod removed from readiness with a 503 naming the
+directory and the errno is recoverable, where a silent kubelet kill is the undiagnosable outage
+the split paths exist to prevent.
+
+**How verified.** The manifest agreement is driven through real content trees on disk for both
+nested paths, and the mutant that stops reporting the fault fails it. The validator's guard is
+driven against three malformed shapes - `branches` as a string, a branch as a string, `products`
+as a string - each exiting non-zero with a named error and zero tracebacks. Loop PASS on all
+eight legs.
+
 ## V0.29.2 (2026-09-11)
 
 **What.** The engineering gate returned FAIL on V0.29.1 with two BLOCKERs, both inside the six

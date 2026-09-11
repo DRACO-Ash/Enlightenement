@@ -697,6 +697,59 @@ def test_the_procedure_index_is_bounded_and_inlines_no_document(client: TestClie
     assert len(body.content) <= MAX_ANONYMOUS_LIBRARY_BYTES, len(body.content)
 
 
+def test_the_manifest_never_reads_healthy_while_the_library_index_refuses(
+    config: Config, store: TrainingStore, tmp_path: Path
+) -> None:
+    """**Two surfaces, one truth.** A malformed nested value - a step's `products` or a decision's
+    `branches` as a string - is caught at SERVE time by `_authored_sequence`, so the loader knows
+    nothing about it: `content.result.errors` was empty and the manifest reported
+    `ok: true, errors: 0` while the library index 503'd for all thirteen procedures.
+
+    The refusal is right, and the security gate agreed: a partial index that silently omits a
+    procedure is worse for a library than an honest refusal. **The disagreement was the defect.**
+    The manifest is the surface an operator checks first, so a manifest reading healthy over a
+    blank library sends them to look in the wrong place.
+
+    Driven through a real content tree on disk, because the fault only exists in content the
+    loader accepted, and both nested paths are exercised rather than one.
+    """
+    for field, malform in (
+        ("products", lambda proc: proc["steps"][0].update(products="PRD-RESIDUAL")),
+        ("branches", lambda proc: proc["decision_points"][0].update(branches="not a list")),
+    ):
+        root = tmp_path / field
+        shutil.copytree(CONTENT_ROOT, root)
+        core = root / "procedures" / "procedures-core.json"
+        document = json.loads(core.read_text(encoding="utf-8"))
+        malform(document["procedures"][0])
+        core.write_text(json.dumps(document), encoding="utf-8")
+
+        app = create_app(
+            config=config,
+            store=store,
+            probe=ok_probe,
+            training=TrainingPaths(
+                content_root=root, progress_path=tmp_path / f"progress-{field}.json"
+            ),
+        )
+        with TestClient(app) as client:
+            index = client.get("/api/v1/content/procedures")
+            assert index.status_code == 503, f"{field}: the index served a malformed record"
+
+            manifest = client.get("/api/v1/content/manifest").json()
+            #: The two cannot contradict each other any more.
+            assert manifest["ok"] is False, f"{field}: the manifest reads healthy over a 503"
+            assert manifest["errors"], f"{field}: the manifest names no fault"
+            named = " ".join(manifest["errors"])
+            assert "procedure index" in named, named
+            #: And it POINTS at the route that explains it, rather than relaying the 503's own
+            #: message onto a second surface - one diagnosis, one place it can leak from.
+            assert "/api/v1/content/procedures" in named, named
+            #: The reason echoes no content: the field name and the route, never the value.
+            assert "PRD-RESIDUAL" not in named, named
+            assert "not a list" not in named, named
+
+
 def test_the_index_counts_are_the_ones_the_content_actually_holds(
     client: TestClient, package: ContentPackage
 ) -> None:
