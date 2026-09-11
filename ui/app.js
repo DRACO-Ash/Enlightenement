@@ -1285,10 +1285,26 @@ function renderLibraryTable() {
         const control = el('button', 'open');
         control.type = 'button';
         control.textContent = cellText(procedure.id);
-        /* The name says what the control DOES and includes its visible text, so a voice
-         * command naming what is on screen reaches it. */
-        control.setAttribute('aria-label', `Open ${procedure.name || procedure.id}`);
-        control.addEventListener('click', open);
+        /* **The accessible name must CONTAIN the visible text** - WCAG 2.5.3 Label in Name,
+         * Level A - and this read `Open ${procedure.name}` alone, so the visible "PROC-MNV" was
+         * nowhere in "Open Manoeuvre detection and characterisation" for any of the thirteen
+         * rows. `aria-label` wins the name computation, so a speech-input user reading the
+         * screen and saying "click PROC-MNV" did not reach the control.
+         *
+         * The comment that stood here claimed the opposite, and the test asserted the id as the
+         * visible text and the NAME in the label - locking the violation in as correct. The
+         * header buttons ten lines up had it right all along: "Sort by Steps" contains "Steps". */
+        const naming = procedure.name ? `, ${procedure.name}` : '';
+        control.setAttribute('aria-label', `Open ${cellText(procedure.id)}${naming}`);
+        /* **Stopped here, or one click opens the procedure twice.** The row below carries its
+         * own click handler so the whole row is clickable, and without this the event bubbles
+         * into it: two fetches, two rendered documents, and two rate-limit tokens for one
+         * activation. The row handler is kept because a clickable row is worth having in a
+         * table; what it cannot do is run in addition to the control inside it. */
+        control.addEventListener('click', (event) => {
+          if (event.stopPropagation) event.stopPropagation();
+          open();
+        });
         cell.appendChild(control);
       } else if (entry.key === 'status') {
         /* Status is a dot AND a word here too, never colour alone. */

@@ -2,6 +2,66 @@
 
 One audit row per change: what changed, why, and how it was verified.
 
+## V0.29.2 (2026-09-11)
+
+**What.** The engineering gate returned FAIL on V0.29.1 with two BLOCKERs, both inside the six
+lines of the table's new cell control, and one MINOR that explains why neither was visible. All
+three closed.
+
+**BLOCKER: one click opened the procedure twice.** The Procedure button called `openProcedure` and
+the event then bubbled into the row's own click handler, which called it again. Measured by the
+gate: **two** `GET /api/v1/content/procedure/...` per activation, two procedure headers, four flow
+blocks and 22 top-level children in `library-body` - because `openProcedure` clears synchronously
+before its `await`, so both invocations cleared an already-empty host and then both appended. In a
+browser a reader clicking the button got the whole document stacked twice.
+
+And it had a server-side cost: `/api/v1/content/procedure/` is not in `UNLIMITED_PATHS`, so every
+activation spent two rate-limit tokens. The control stops propagation; the row handler is kept,
+because a clickable row is worth having in a table, and what it cannot do is run in addition to
+the control inside it.
+
+**BLOCKER: the control failed WCAG 2.5.3 Label in Name, the comment claimed it passed, and my
+test pinned the violation as correct.** The visible text was "PROC-MNV" and the accessible name
+was "Open Manoeuvre detection and characterisation". `aria-label` wins the name computation, so
+the visible string appeared in the accessible name for **none** of the thirteen rows, and a
+speech-input user reading the screen and saying "click PROC-MNV" could not reach the control.
+
+The third part is the worst of it. The comment above the line said the name "includes its visible
+text, so a voice command naming what is on screen reaches it" - the opposite of what the code did
+- and the test asserted the id as the visible text and the procedure NAME in the label, locking
+the mismatch in as intended. **A test pinning a defect is worse than no test, because the claim is
+what stops anyone looking.** The name carries both now and the assertion is the property - the
+accessible name contains the control's own `textContent` - rather than the instance. The header
+buttons ten lines up had it right the whole time: "Sort by Steps" contains "Steps".
+
+**MINOR, and it is the reason both blockers shipped: the harness did not bubble.** `fire()`
+dispatched to the target only, so any defect depending on a handler above the target was invisible
+to all 65 tests. **The fifth fidelity gap in this harness**, after `requestAnimationFrame` not
+calling back (68 lines hidden), a missing `viewBox.baseVal` (38), a missing `childElementCount` (a
+whole section) and `querySelectorAll` returning an array (a crash that took the library screen
+down). Three of the five surface as coverage or a failing assertion. **Two surface as nothing**,
+and both of those were the harness being more permissive than the platform.
+
+So `fire()` now bubbles, honours `stopPropagation`, and carries `target` and `currentTarget` -
+and the dispatch contract has its own test, because an instrument that flatters the code is worse
+than no instrument and this one has now needed correcting five times. The gate measured that the
+patch costs nothing before proposing it: all 65 tests passed with it in place.
+
+**The one figure the gate could not reconcile, resolved.** It queried my accessibility-tree
+measurement: `thead`, `tbody` and `tfoot` should give three rowgroups and I reported two, and it
+flagged that the missing one might be the footer carrying the totals. Re-measured: the DOM has all
+three sections, Chromium exposes two as `rowgroup`, and the totals line IS in the tree - on a cell,
+inside a row, among the fifteen. Nothing is missing from the tree; the role mapping simply differs
+from the element count. Worth recording precisely rather than leaving a number unexplained in the
+record.
+
+**How verified.** The double-fire was made to fail a test BEFORE it was fixed, by patching the
+harness first - one click, two requests, named in the failure. Five mutants: dropping
+`stopPropagation` restores the double fetch; labelling without the visible text fails on
+"does not contain PROC-MNV"; stopping the harness bubbling and ignoring `stopPropagation` each
+fail the new contract test. 66 interface tests, `ui/app.js` at 100.00% of its executable lines,
+loop PASS on all eight legs.
+
 ## V0.29.1 (2026-09-10)
 
 **The owner read the served drill screen and found three things in the few lines an operator sees

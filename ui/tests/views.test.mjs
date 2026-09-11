@@ -732,10 +732,17 @@ test('a row stays a row, and the control is a real button in the first cell', as
   assert.ok(control, 'the row rendered no control at all');
   assert.equal(control.parentNode.tagName, 'TD');
   assert.ok(control.parentNode.classList.contains('pid'));
-  assert.match(control.getAttribute('aria-label'), /^Open /);
-  //: WCAG 2.5.3: the accessible name contains the visible text, so a voice command naming what
-  //: is on screen reaches the control.
-  assert.ok(control.getAttribute('aria-label').includes(FLOW.name), control.getAttribute('aria-label'));
+  const name = control.getAttribute('aria-label');
+  assert.match(name, /^Open /);
+  //: **WCAG 2.5.3 Label in Name, Level A: the accessible name must CONTAIN the visible text.**
+  //: `aria-label` wins the name computation, so a label of "Open Manoeuvre detection and
+  //: characterisation" over a visible "PROC-MNV" leaves a speech-input user unable to reach the
+  //: control by reading the screen. The first version of this test asserted the id as the
+  //: visible text and the procedure NAME in the label, which locked the violation in as
+  //: correct - a test pinning a defect is worse than no test.
+  assert.ok(name.includes(control.textContent), `${name} does not contain ${control.textContent}`);
+  assert.ok(name.includes(FLOW.id), name);
+  assert.ok(name.includes(FLOW.name), name);
   assert.equal(control.textContent, FLOW.id);
 
   //: **And the figures are still in the row**, which is the assertion that would have failed
@@ -748,10 +755,27 @@ test('a row stays a row, and the control is a real button in the first cell', as
     assert.ok(cells.map((cell) => cell.textContent).includes(String(entry[field])), field);
   }
 
+  //: **One activation, ONE fetch and ONE document.** The button's handler called `open()` and
+  //: the event then bubbled to the row's own click handler, which called it again: two
+  //: `GET /api/v1/content/procedure/...` per click, two procedure headers, four flow blocks and
+  //: 22 top-level children in `library-body`, because `openProcedure` clears synchronously
+  //: before its `await` so both invocations cleared an empty host and then both appended. And
+  //: that route is not exempt from rate limiting, so every click spent two tokens.
+  //:
+  //: Invisible to every test, because the harness dispatched to the target only and never
+  //: bubbled; invisible to a browser sweep of the index, because that never clicked.
+  const before = harness.calls.length;
   control.fire('click');
   await harness.settle();
+  const asked = harness.calls.slice(before).filter((call) => call.path.includes('/content/procedure/'));
+  assert.equal(asked.length, 1, `one click made ${asked.length} requests`);
   assert.match(harness.element('library-body').textContent, new RegExp(FLOW.id));
   assert.equal(harness.element('library-index').hidden, true);
+  //: One header, not two. The node count is the assertion that would have caught the duplicate
+  //: render even if the fetch had been cached.
+  const headers = [...harness.element('library-body').querySelectorAll('div')]
+    .filter((node) => node.classList.contains('prochead'));
+  assert.equal(headers.length, 1, `the procedure rendered ${headers.length} times`);
 });
 
 test('back from a procedure returns to the layout that was left, not always the cards', async () => {

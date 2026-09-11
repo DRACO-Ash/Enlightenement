@@ -61,6 +61,58 @@ const DELIBERATE_CLASS_REUSE = {
   bar: ['.grid-rows .est .bar'],
 };
 
+test('the harness dispatches events the way the DOM does, because four gaps say it must', () => {
+  /* **The harness is an instrument, and an instrument that flatters the code is worse than
+   * none.** Four fidelity gaps so far: `requestAnimationFrame` not calling back hid 68 lines, a
+   * missing `viewBox.baseVal` hid 38, a missing `childElementCount` hid a whole section, and
+   * `querySelectorAll` returning an array let a crash ship that took the library screen down.
+   * The fifth was `fire()` dispatching to the target only: a button inside a clickable table
+   * row called `openProcedure`, the event bubbled to the row's handler and called it again, and
+   * no test could see one click become two fetches.
+   *
+   * Three of those five surface as coverage or as a failing assertion. Two - the array and the
+   * missing bubble - surface as NOTHING, which is the direction worth a test of its own. This
+   * one holds the dispatch contract, so a future simplification of `fire()` fails here rather
+   * than quietly blinding every test that depends on it.
+   */
+  const { app, document } = load();
+  const outer = document.createElement('div');
+  const inner = document.createElement('button');
+  outer.appendChild(inner);
+
+  const seen = [];
+  outer.addEventListener('click', () => seen.push('outer'));
+  inner.addEventListener('click', () => seen.push('inner'));
+  inner.fire('click');
+  //: Target first, then up the chain - which is what made the double-fire possible.
+  assert.deepEqual(seen, ['inner', 'outer'], 'the harness does not bubble');
+
+  //: `stopPropagation` is honoured, which is the fix the double-fire needed.
+  const stopped = [];
+  const held = document.createElement('div');
+  const control = document.createElement('button');
+  held.appendChild(control);
+  held.addEventListener('click', () => stopped.push('outer'));
+  control.addEventListener('click', (event) => {
+    event.stopPropagation();
+    stopped.push('inner');
+  });
+  control.fire('click');
+  assert.deepEqual(stopped, ['inner'], 'stopPropagation is ignored');
+
+  //: And the event carries the target and the node currently handling it, as the DOM does.
+  let targets = null;
+  const parent = document.createElement('div');
+  const child = document.createElement('span');
+  parent.appendChild(child);
+  parent.addEventListener('click', (event) => {
+    targets = { target: event.target === child, current: event.currentTarget === parent };
+  });
+  child.fire('click');
+  assert.deepEqual(targets, { target: true, current: true });
+  assert.ok(app, 'the app context loaded');
+});
+
 test('no component reuses a class name the stylesheet already styles bare', () => {
   /* **Four name collisions shipped in one release and nobody could see any of them.** `.act` is
    * the primary button, so naming the step card `.act` restyled every button in the

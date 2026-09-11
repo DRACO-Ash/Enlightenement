@@ -228,11 +228,39 @@ class FakeNode {
     this.listeners.get(name).push(handler);
   }
 
-  /* Fire a recorded handler. The interface wires behaviour through listeners, so a test that
-   * cannot fire one can only assert on markup. */
+  /* Fire a recorded handler, **and BUBBLE as the DOM does**. The interface wires behaviour
+   * through listeners, so a test that cannot fire one can only assert on markup.
+   *
+   * It called listeners on the target ONLY, so any defect depending on a handler above the
+   * target was invisible - and one was: a button in a table cell called `openProcedure` and the
+   * event then bubbled to the row's own handler, which called it again. One click, two fetches,
+   * the whole procedure document rendered twice, and two rate-limit tokens spent. No test could
+   * see it and a browser sweep of the index could not either, because it never clicked.
+   *
+   * **The fourth time this harness has been less faithful than the platform, and the second in
+   * the dangerous direction** - after `querySelectorAll` returning an array, which let a crash
+   * ship. A harness stricter than the DOM shows up as a failing test; a harness more permissive
+   * shows up as nothing. `stopPropagation` is honoured, and `currentTarget` moves up the chain
+   * as the real thing does. */
   fire(name, event = {}) {
-    const fired = { preventDefault() {}, ...event };
-    for (const handler of this.listeners.get(name) ?? []) handler(fired);
+    let stopped = false;
+    const fired = {
+      preventDefault() {},
+      stopPropagation() {
+        stopped = true;
+      },
+      target: this,
+      ...event,
+    };
+    let node = this;
+    while (node) {
+      fired.currentTarget = node;
+      for (const handler of node.listeners.get(name) ?? []) {
+        handler(fired);
+        if (stopped) return fired;
+      }
+      node = node.parentNode;
+    }
     return fired;
   }
 
